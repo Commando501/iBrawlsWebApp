@@ -2170,3 +2170,18 @@ The next browser run uses frozen gate-protocol v2 calibration `m7-obstacle-8bot-
 Every noise window and paired p95 ratio meets its frozen limit, with no invalid-evidence reasons. **All eight absolute p95 measurements exceed 4 ms**, so the performance gate fails and the CLI reports **exit 1**. Cold refresh maxima across both passes are **32.4–51.3 ms**; warm maxima are **13.9–20.0 ms**. No outliers were removed and no threshold changed. This validates the new protocol's real execution path but does not certify performance.
 
 The original jobs retain the preceding serial proofs' exact gameplay hashes and 218/186 warm refresh ticks. Seed 101 reaches the intended 60-second cap with 11 respawns and a 1–1 score; seed 102 reaches match end with 10 respawns and a 2–0 score. The cost increase relative to earlier runs requires diagnosis; a matching hardware/browser identity does not prove unchanged machine load or clock behavior. A process inspection after completion found no other Node validation workload, but cannot establish conditions throughout the measurement. This failed result remains authoritative for this run. Performance, broader execution coverage and held-out quality remain open.
+
+## 2026-09-30 — isolate defense in the Stadium development regression
+
+`output/m7-defense-ablation-proof/` completes **8/8 main matches** and **four exact null-control pairs**, with 155 Quick checks, TypeScript, three builds, startup and live correctness passing (CLI exit **0** for its requested diagnostic gates). The baseline enables all current tactics; the candidate changes only the focal team's `defenseEnabled` to false. Opponent configurations are identical in every pair. Source: `92d86fd87c611e3b4767bfed23e860467d425a75`, dirty hash `8b4d2d03f66115ef7c5da4131ea5f53d625fce7ac7a887b5deac284d7576cb05`, including concurrent outline edits and preceding the route-cache experiment. Startup and Stadium screenshots were inspected.
+
+| Seed / side | Defense enabled: focal score (finish tick) | Defense disabled: focal score (finish tick) |
+| --- | --- | --- |
+| 101 original | 0–2 (3,550) | 2–1 (5,216) |
+| 101 mirrored | 2–1 (5,055) | 2–1 (6,619) |
+| 102 original | 0–2 (2,836) | 2–1 (5,284) |
+| 102 mirrored | 0–2 (2,850) | 2–0 (3,055) |
+
+The defense-disabled configuration wins all four selected matches versus one with defense enabled, for an exploratory goal-margin difference of +2.5. These are only two known development seeds against one opponent style on one map; no quality hypothesis or performance gate was requested, and this is not held-out generalization or a proposal to remove defense.
+
+In seed 102 original, both versions lose the first pickup at tick 715. With defense disabled the carrier drops at tick 745 and blue acquires possession at tick 802; with defense enabled blue never acquires possession. Planned support positions already differ before pickup, so this experiment does not isolate loose-ball screening from carrier defense. Code inspection confirms that `applyGrifballTanking` computes support orders before `applyGrifballDefense` replaces every non-retriever's tanking order during loose-ball and enemy-carrier play. This identifies module precedence as the next focused investigation, without yet proving which replacement causes the regression.
