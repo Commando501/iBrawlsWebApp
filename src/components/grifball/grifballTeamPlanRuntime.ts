@@ -38,7 +38,9 @@ export function createLiveGrifballTacticalSnapshot(
   const red = getEnemyGoalPos('blue');
   // Project the existing spawn selection from current public positions; re-evaluate as players move.
   const spawnFor = (team: string, id: string) => getGrifballTeamSpawn(activeCustomMap, team,
-    createDefaultSpawnPoints(state.arenaRadius * 0.65), [state.playerPos, ...[...state.otherPlayers.values()]
+    createDefaultSpawnPoints(state.arenaRadius * 0.65), [
+      ...(!state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0 && id !== 'player' ? [state.playerPos] : []),
+      ...[...state.otherPlayers.values()]
       .filter(p => p.id !== id && p.hp > 0 && (p.respawnTimer ?? 0) <= 0).map(p => p.pos)]);
   const respawns = [...state.otherPlayers.values()].filter(p => !p.isObserver && p.team && (p.respawnTimer ?? 0) > 0).map(p => ({
     id: p.id, team: p.team!, pos: point(spawnFor(p.team!, p.id)), seconds: p.respawnTimer!, speed: 5.2 * state.settings.speedForward / 100,

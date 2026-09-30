@@ -5,6 +5,7 @@ import { createGrifballTacticalSnapshot } from '../game/grifballTacticalContract
 import { defaultGrifballTactics, type GrifballTacticsConfig } from '../game/grifballTacticsConfig';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
+import { selectSimRespawnPosition } from './spawns';
 
 /** Remaining headless timers are NOT elapsed live animation timers. */
 export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSettings, execution: SimCombatExecution = 'legacy-v1') {
@@ -70,19 +71,25 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
   // Versioned execution aims along +sin/+cos; live model yaw is offset by PI.
   // Preserve the original observation contract for legacy training callers.
   const headingSign = !state.combatExecution || state.combatExecution === 'legacy-v1' ? -1 : 1;
+  // The live mixed snapshot always observes the local player before roster actors,
+  // independently of the simulator's serialized actor storage order.
+  const observedActors = state.combatExecution === 'live-mixed-v1'
+    ? [...state.combatants].sort((a, b) => Number(b.id === state.localPlayerId) - Number(a.id === state.localPlayerId))
+    : state.combatants;
+  const respawningActors = state.combatants.filter(c => !c.alive && c.respawnTimer > 0);
+  if (state.combatExecution === 'live-mixed-v1')
+    respawningActors.sort((a, b) => Number(a.id === state.localPlayerId) - Number(b.id === state.localPlayerId));
   return createGrifballTacticalSnapshot({
     match: state.match, settings: state.settings, map: state.map, arenaRadius: state.map.arenaRadius,
     tactics: options.tactics ?? defaultGrifballTactics(), roster,
-    players: state.combatants.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
+    players: observedActors.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
       id: c.id, team: c.team, scripted: scripted(c), difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, pos: c.pos, vel: c.vel, height: c.pos.y,
       heading: { x: headingSign * Math.sin(c.yaw), z: headingSign * Math.cos(c.yaw) }, pickupRequested: undefined,
       space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c)),
     })),
     goals: { blue: state.goalPlates.find(p => p.team === 'blue')?.position ?? null, red: state.goalPlates.find(p => p.team === 'red')?.position ?? null },
-    respawns: state.combatants.filter(c => !c.alive && c.respawnTimer > 0).map(c => {
-      const cluster = state.spawns[c.team] ?? [];
-      const index = state.combatants.filter(p => p.team === c.team).indexOf(c);
-      return { id: c.id, team: c.team, pos: cluster[index % cluster.length] ?? { x: 0, z: 0 },
+    respawns: respawningActors.map(c => {
+      return { id: c.id, team: c.team, pos: selectSimRespawnPosition(state, c),
         seconds: c.respawnTimer, speed: 5.2 * state.settings.speedForward / 100 };
     }),
   });
