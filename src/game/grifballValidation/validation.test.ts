@@ -11,7 +11,7 @@ import { canonicalJSON, createSuitePlan, hashInput } from './plan';
 import { createSuiteManifest } from './profiles';
 import { validateManifest } from './manifest';
 import { aggregateSuiteReport } from './report';
-import { GATES, type CheckResult, type CodeIdentity, type SuiteEvidence, type SuiteManifest, type SuitePlan } from './types';
+import { GATES, MAP_IDS, type CheckResult, type CodeIdentity, type SuiteEvidence, type SuiteManifest, type SuitePlan } from './types';
 
 const code: CodeIdentity = { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src', 'scripts/sim'] };
 function small(): SuiteManifest {
@@ -21,6 +21,23 @@ function small(): SuiteManifest {
 }
 const pass = (id: string): CheckResult => ({ id, state: 'completed', verdict: 'pass', summary: 'Checked fixture.', evidence: ['fixture.json'] });
 const complete = (p: SuitePlan): SuiteEvidence => ({ planId: p.id, jobs: p.jobs.map(j => pass(j.id)), gates: p.manifest.requiredGates.map(pass) });
+
+test('every supplied goal-capable arena is selectable with authored geometry and spawns frozen intact', async () => {
+  const authored = PREMADE_MAPS.map(toGrifballArena).filter(map => getGoalPlates(map).length === 2);
+  assert.equal(authored.length, 5);
+  assert.deepEqual(new Set(MAP_IDS.filter(id => !RESERVED_VALIDATION_MAPS.includes(id as any))), new Set(authored.map(map => map.id)));
+  const hashes = new Set<string>();
+  for (const map of authored) {
+    const manifest = createSuiteManifest('standard');
+    manifest.cases = [{ ...manifest.cases.find(c => c.roster === 'scripted-3v4')!, mapId: map.id as typeof MAP_IDS[number], roster: 'local-4v4', seeds: [101] }];
+    const plan = await createSuitePlan(manifest, code), frozen = plan.cases[0];
+    assert.deepEqual(frozen.map, map); assert.notEqual(frozen.map, map);
+    assert.ok(Object.isFrozen(frozen.map.objects)); assert.ok(Object.isFrozen(frozen.map.teamSpawns));
+    assert.ok(plan.jobs.some(job => job.mirrored)); assert.equal(frozen.roster.length, 7);
+    assert.ok(!hashes.has(frozen.geometryHash)); hashes.add(frozen.geometryHash);
+    assert.throws(() => { frozen.map.teamSpawns!.blue[0].x++; }, TypeError);
+  }
+});
 
 test('mixed local matches freeze the input protocol, seven bots and distinct ownership identity', async () => {
   const manifest = createSuiteManifest('standard');

@@ -18,6 +18,7 @@ export const REQUIRED_GATES: Record<SuiteProfile, readonly Gate[]> = {
   quick: GATES.slice(0, 5), standard: GATES.slice(0, 7), acceptance: GATES,
 };
 export const MAP_IDS = ['championship_stadium', 'forerunner_canyon',
+  'synthwave_grid_arena', 'rainy_industrial_streets', 'winter_glacier_rink',
   'validation-staggered-lanes-v1', 'validation-split-midfield-v1'] as const;
 export const ROSTERS = ['lab-3v4', 'scripted-1v1', 'scripted-3v4', 'scripted-4v4', 'local-4v4'] as const;
 export const DIFFICULTIES = ['easy', 'normal', 'hard', 'nightmare'] as const;
