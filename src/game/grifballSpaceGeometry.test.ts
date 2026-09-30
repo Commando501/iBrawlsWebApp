@@ -75,3 +75,19 @@ test('reusing a router preserves results across near, far, direct and blocked qu
     }
   }
 });
+
+test('route queries isolate modes, metadata mutations and signed-zero endpoints', () => {
+  const geometry = wall(), start = { x: -8, z: 0 }, end = { x: 8, z: 0 };
+  const factory = createSpaceRouterFactory(geometry), route = factory(start);
+  const path = structuredClone(route(end)), distance = structuredClone(route(end, true));
+  assert.equal(path.status, 'routed');
+  assert.ok(path.points.length > 0); assert.deepEqual(distance.points, []);
+  const changed = route(end); changed.length = -1; changed.status = 'blocked'; changed.points.length = 0;
+  const changedDistance = route(end, true); changedDistance.length = -2; changedDistance.points.push({ x: 900, z: 900 });
+  assert.deepEqual(route(end), path); assert.deepEqual(route(end, true), distance);
+  for (const distanceOnly of [false, true]) for (const z of [0, -0, 0, -0]) {
+    const point = { x: -4, z };
+    assert.deepEqual(route(point, distanceOnly), factory(start)(point, distanceOnly));
+    assert.ok(Object.is(route(point, distanceOnly).points[0].z, z));
+  }
+});
