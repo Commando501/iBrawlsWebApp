@@ -5,6 +5,7 @@ import { createSuitePlan } from './plan';
 import { appendLabResult, checkpointLabel, importLabRun, labRunReport, newLabRun, readableLabReport, retainedReports, reportBytes, UNKNOWN_CODE, type LabRuntimeIdentity } from './labReport';
 import { trialCheck, type TrialResult } from './runner';
 import { LiveTimings } from './telemetry';
+import { RESERVED_VALIDATION_MAPS } from './maps';
 const runtime: LabRuntimeIdentity = { kind: 'lab-browser', buildId: null, userAgent: 'test-browser', fixedHz: 60, model: 'v2-medium' };
 async function fixture() {
   const manifest = createSuiteManifest('quick'); manifest.cases = manifest.cases.slice(0, 1);
@@ -39,6 +40,19 @@ test('changed frozen maps, forged trial results, duplicate jobs and unsupported 
   await mutate(r => r.runtime.fixedHz = 30);
   await mutate(r => r.results[0].end = {});
   await mutate(r => r.version = 2);
+});
+
+test('reserved layout reports round-trip their frozen geometry and reject edited obstacles', async () => {
+  for (const mapId of RESERVED_VALIDATION_MAPS) {
+    const manifest = createSuiteManifest('quick');
+    manifest.cases = [{ ...manifest.cases[0], mapId, seeds: [101], mirrored: false }];
+    const run = newLabRun(await createSuitePlan(manifest, UNKNOWN_CODE), runtime);
+    const imported = await importLabRun(JSON.stringify(run));
+    assert.deepEqual(imported.plan, run.plan);
+    const altered = structuredClone(run);
+    altered.plan.cases[0].map.objects.find(object => object.isCollidable)!.position.x++;
+    await assert.rejects(importLabRun(JSON.stringify(altered)));
+  }
 });
 
 test('timing imports retain historical evidence and validate the playing-tick warmup contract', async () => {

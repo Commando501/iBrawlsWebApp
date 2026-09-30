@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createEvaluationJobs, EVALUATION_STYLES } from '../grifballEvaluation';
 import { PREMADE_MAPS } from '../premadeMaps';
+import { toGrifballArena } from '../grifballMaps';
+import { getGoalPlates } from '../grifballGoals';
+import { buildGrifballSpaceGeometry, createSpaceRouter, isSpacePointOpen, isSpaceSegmentOpen } from '../grifballSpaceGeometry';
+import { createValidationMap, RESERVED_VALIDATION_MAPS } from './maps';
 import { resolveMatchConfig } from '../grifballMatch';
 import { canonicalJSON, createSuitePlan, hashInput } from './plan';
 import { createSuiteManifest } from './profiles';
@@ -76,6 +80,61 @@ test('mechanic overrides resolve into the real gameplay contract', async () => {
   assert.equal(c.roster[0].effectiveKnobs.reactionLatency, 0.02);
   assert.equal(c.mechanics.visualModelPolicy, 'v2');
   assert.ok(!('playerName' in c.mechanics));
+});
+
+test('reserved evaluation layouts have distinct symmetric obstacles and reachable objectives', async () => {
+  const geometries = new Set(['championship_stadium', 'forerunner_canyon'].map(id => {
+    const base = PREMADE_MAPS.find(map => map.id === id)!;
+    return buildGrifballSpaceGeometry(toGrifballArena(base), base.arenaRadius).key;
+  }));
+  for (const mapId of RESERVED_VALIDATION_MAPS) {
+    const manifest = small(); manifest.cases[0].mapId = mapId;
+    const plan = await createSuitePlan(manifest, code), map = plan.cases[0].map;
+    assert.equal(map.id, mapId);
+    const geometry = buildGrifballSpaceGeometry(map, map.arenaRadius), goals = getGoalPlates(map);
+    assert.equal(goals.length, 2);
+    assert.equal(geometry.blockers.length, 4);
+    assert.ok(!geometries.has(geometry.key)); geometries.add(geometry.key);
+    assert.ok(isSpacePointOpen(geometry, { x: 0, z: 0 }));
+    assert.equal(isSpaceSegmentOpen(geometry, goals[0].position, goals[1].position), false);
+    for (const blocker of geometry.blockers)
+      assert.ok(geometry.blockers.some(other => other.x === -blocker.x && other.z === -blocker.z &&
+        other.kind === 'box' && blocker.kind === 'box' && other.hx === blocker.hx && other.hz === blocker.hz));
+    for (const team of ['blue', 'red'] as const) {
+      assert.equal(map.teamSpawns![team]!.length, 4);
+      const goal = goals.find(goal => goal.team !== team)!.position;
+      for (const spawn of map.teamSpawns![team]!) {
+        assert.ok(isSpacePointOpen(geometry, spawn));
+        for (const destination of [{ x: 0, z: 0 }, goal]) {
+          const route = createSpaceRouter(geometry, spawn)(destination);
+          assert.notEqual(route.status, 'blocked', `${mapId}: ${team} spawn must reach objectives`);
+          let from = spawn;
+          for (const point of route.points) {
+            assert.ok(isSpaceSegmentOpen(geometry, from, point));
+            from = { ...point, y: 0 };
+          }
+        }
+      }
+    }
+    assert.deepEqual(await createSuitePlan(JSON.parse(JSON.stringify(manifest)), code), plan);
+  }
+});
+
+test('validation map construction is isolated and default profiles keep development maps', () => {
+  for (const id of ['championship_stadium', 'forerunner_canyon'] as const) {
+    const original = toGrifballArena(PREMADE_MAPS.find(map => map.id === id)!);
+    assert.deepEqual(createValidationMap(id), original);
+    const independent = createValidationMap(id); independent.objects.length = 0;
+    assert.ok(original.objects.length > 0);
+  }
+  for (const id of RESERVED_VALIDATION_MAPS) {
+    const a = createValidationMap(id), b = createValidationMap(id);
+    a.objects[0].position.x = 999; a.teamSpawns!.blue![0].x = 999;
+    assert.deepEqual(createValidationMap(id), b);
+    assert.ok(!PREMADE_MAPS.some(map => map.id === id));
+  }
+  for (const profile of ['quick', 'standard'] as const)
+    assert.ok(createSuiteManifest(profile).cases.every(c => c.mapId === 'championship_stadium' || c.mapId === 'forerunner_canyon'));
 });
 
 test('content identities change with mechanics, maps, difficulty, configs and dirty source', async () => {

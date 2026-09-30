@@ -1,7 +1,6 @@
 import type { UniversalSettings } from '../../types';
 import { createEvaluationJobs } from '../grifballEvaluation';
-import { PREMADE_MAPS } from '../premadeMaps';
-import { toGrifballArena } from '../grifballMaps';
+import { createValidationMap } from './maps';
 import { getGoalPlates } from '../grifballGoals';
 import { DEFAULT_ADMIN_SETTINGS, stripPlayerIdentitySettings } from '../../settings/gameplaySettings';
 import { rosterTemplateFromSettings, resolveKnobsFromRosterSlot, resolveDerivedFromRosterSlot } from '../rosterSlotConfig';
@@ -46,9 +45,7 @@ function validateCode(value: CodeIdentity): CodeIdentity {
 export async function createSuitePlan(input: unknown, identity: CodeIdentity): Promise<SuitePlan> {
   const manifest = validateManifest(input), code = validateCode(identity);
   const frozenInputs = manifest.cases.map(specification => {
-    const base = PREMADE_MAPS.find(m => m.id === specification.mapId);
-    if (!base) throw new Error(`Missing built-in map ${specification.mapId}`);
-    const map = snapshot(toGrifballArena(base));
+    const map = snapshot(createValidationMap(specification.mapId));
     const goals = getGoalPlates(map);
     if (!['blue', 'red'].every(team => goals.some(goal => goal.team === team) && map.teamSpawns?.[team]?.length))
       throw new Error(`${specification.mapId}: requires both goals and team spawns`);
