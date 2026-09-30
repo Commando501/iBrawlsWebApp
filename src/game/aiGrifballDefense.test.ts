@@ -15,6 +15,80 @@ function scene(): GrifballTacticalSnapshot {
 }
 const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
+
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const frontId of ['front', 'main_ai'])
+  test(`the only reachable interceptor is not reserved as safety: ${mirror}/${reverse}/${frontId}`, () => {
+    const s = scene();
+    s.players = [p(frontId, 'blue', -6), p('late-a', 'blue', 3, 1), p('late-b', 'blue', 5, -1), p('late-c', 'blue', 8),
+      p('runner', 'red', 0), p('escort-a', 'red', 6, 6), p('escort-b', 'red', 8, -6), p('escort-c', 'red', 10)];
+    const runner = s.players.find(a => a.id === 'runner')!;
+    runner.vel.x = -7.54; runner.space!.speed = 7.54;
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue';
+      actor.pos.x *= -1; actor.pos.z *= -1; actor.vel.x *= -1;
+    }
+    if (reverse) s.players.reverse();
+    const state = run(s), team = mirror ? 'red' : 'blue';
+    const orders = [...state.assignments.values()].filter(a => a.team === team);
+    const intercept = orders.find(a => a.defense?.mode === 'intercept')!;
+    assert.equal(intercept.botId, frontId, 'trailing teammates cannot catch the faster carrier within the horizon');
+    assert.ok(intercept.defense!.arrivalETA <= intercept.defense!.carrierETA + intercept.tuning!.defensePressure * .25);
+    assert.equal(orders.filter(a => a.defense?.mode === 'last-defender').length, 1);
+    assert.notEqual(orders.find(a => a.defense?.mode === 'last-defender')!.botId, frontId);
+    const before = orders.map(a => [a.botId, a.defense!.mode]);
+    updateGrifballTeamPlan(state, s, 1);
+    assert.deepEqual([...state.assignments.values()].filter(a => a.team === team).map(a => [a.botId, a.defense!.mode]), before);
+  });
+test('interceptor readiness takes precedence over proximity to the projected carrier', () => {
+  const s = scene();
+  s.players = [p('safety', 'blue', -18), p('ready', 'blue', -6), p('recovering', 'blue', -10), p('runner', 'red', 0)];
+  s.players[2].space!.mobileIn = 10;
+  s.players[3].vel.x = -7.54; s.players[3].space!.speed = 7.54;
+  const orders = blue(run(s));
+  assert.equal(orders.find(a => a.defense?.mode === 'intercept')!.botId, 'ready');
+  assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'safety');
+});
+
+test('a sealed route cannot make a nearby defender a feasible interceptor', () => {
+  const s = scene();
+  s.geometry = { key: 'sealed-defense', shape: 'rectangular', x: 52, z: 23,
+    blockers: [{ kind: 'box', x: -3, z: 0, hx: .5, hz: 30 }] };
+  s.players = [p('blocked', 'blue', -6), p('reachable', 'blue', 2), p('runner', 'red', 0)];
+  s.players[2].vel.x = -7.54; s.players[2].space!.speed = 7.54;
+  const orders = blue(run(s));
+  const intercept = orders.find(a => a.defense?.mode === 'intercept')!;
+  assert.equal(intercept.botId, 'reachable');
+  assert.ok(Number.isFinite(intercept.defense!.arrivalETA));
+  assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'blocked');
+});
+
+test('containment keeps the front defender as safety even when it alone could intercept', () => {
+  const s = scene();
+  s.players = [p('front', 'blue', -6), p('late', 'blue', 8), p('runner', 'red', 0)];
+  s.players[2].vel.x = -7.54; s.players[2].space!.speed = 7.54;
+  s.tactics!.defaults.defensePressure = 0;
+  const orders = blue(run(s));
+  assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'front');
+  assert.equal(orders.find(a => a.defense?.mode === 'contain')!.botId, 'late');
+});
+
+test('multiple feasible interceptors preserve the existing goal-side safety', () => {
+  const s = scene();
+  s.players = [p('front', 'blue', -6), p('second', 'blue', -3), p('runner', 'red', 0)];
+  s.players[2].vel.x = -7.54; s.players[2].space!.speed = 7.54;
+  const orders = blue(run(s));
+  assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'front');
+  assert.equal(orders.find(a => a.defense?.mode === 'intercept')!.botId, 'second');
+});
+
+test('a carrier retreating away from the goal does not pull the safety into pursuit', () => {
+  const s = scene();
+  s.players = [p('front', 'blue', 6), p('late', 'blue', -15), p('runner', 'red', 0)];
+  s.players[2].vel.x = 7.54; s.players[2].space!.speed = 7.54;
+  const orders = blue(run(s));
+  assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'front');
+});
+
 test('defenders intercept a visible cut, reserve one safety and assign distinct marks deterministically', () => {
   const s = scene(); s.players[3].vel = { x: -3, z: 3 };
   const state = run(s), orders = blue(state);

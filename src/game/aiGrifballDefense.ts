@@ -52,7 +52,30 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const cost = (a: GrifballAssignment) => routeLength(a.botId, safetyPoint) - (previous.get(a.botId)?.defense?.mode === 'last-defender' ? tuning.reassignmentAdvantage : 0);
     return cost(a) - cost(b) || a.botId.localeCompare(b.botId);
   });
-  const safety = ranked[0];
+  const interceptions = new Map<string, { point: FieldPoint; time: number; reachable: boolean }>();
+  const interception = (a: GrifballAssignment) => {
+    const cached = interceptions.get(a.botId);
+    if (cached) return cached;
+    const self = players.find(p => p.id === a.botId)!;
+    for (let i = 1; i <= 6; i++) {
+      const t = tuning.defenseLookahead * i / 6, fraction = i / 6;
+      const point = { x: anchor.x + (projected.x - anchor.x) * fraction, z: anchor.z + (projected.z - anchor.z) * fraction };
+      if (estimateSpaceAttackTime(self, point, routeLength(self.id, point)) <= t + tuning.defensePressure * 0.25) {
+        const result = { point, time: t, reachable: true };
+        interceptions.set(a.botId, result);
+        return result;
+      }
+    }
+    const result = { point: projected, time: tuning.defenseLookahead, reachable: false };
+    interceptions.set(a.botId, result);
+    return result;
+  };
+  let safety = ranked[0];
+  // Do not reserve the only viable cut for a safety while a slower teammate tail-chases.
+  // Containment and lone-defender coverage still take precedence over pressure.
+  const reachable = carrier && !contain && !emergency && defenders.length > 1
+    ? defenders.filter(a => interception(a).reachable) : [];
+  if (reachable.length === 1 && reachable[0] === safety && distance(projected, goal) < distance(anchor, goal)) safety = ranked[1];
   const assign = (a: GrifballAssignment, mode: DefenseOrder['mode'], point: FieldPoint, target: GrifballTacticalPlayer | undefined, carrierETA = 0) => {
     const self = players.find(p => p.id === a.botId)!;
     delete a.tanking; delete a.escort;
@@ -76,16 +99,8 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   }
   // A lone defender preserves the goal side until the emergency range is reached.
   if (!rest.length) return;
-  const interception = (a: GrifballAssignment) => {
-    const self = players.find(p => p.id === a.botId)!;
-    for (let i = 1; i <= 6; i++) {
-      const t = tuning.defenseLookahead * i / 6, fraction = i / 6;
-      const point = { x: anchor.x + (projected.x - anchor.x) * fraction, z: anchor.z + (projected.z - anchor.z) * fraction };
-      if (estimateSpaceAttackTime(self, point, routeLength(self.id, point)) <= t + tuning.defensePressure * 0.25) return { point, time: t };
-    }
-    return { point: projected, time: tuning.defenseLookahead };
-  };
-  rest.sort((a, b) => routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId));
+  rest.sort((a, b) => Number(reachable.includes(b)) - Number(reachable.includes(a)) ||
+    routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId));
   const primary = rest.shift()!, intercept = interception(primary);
   const containment = toward(projected, goal, enemyReach + pressureMargin);
   assign(primary, contain ? 'contain' : 'intercept', emergency ? anchor : contain ? containment : intercept.point, carrier, intercept.time);
