@@ -2254,3 +2254,9 @@ The fixed development matrix compares tactics disabled against full tactics on C
 | Stadium | −3.75 | +0.25 | −2.25 |
 
 Values are mean paired goal-margin differences. Stadium/balanced is flagged as a regression, with interval [−6.9265, −0.5735]: baseline wins all four selected matches while candidate loses all four 0–2. All six strata remain unaccepted. The quality gate reports **inconclusive** because inputs overlap the declared tuning ledger and several supporting metrics lack possession opportunities; the overall report is also inconclusive. This is not a quality pass, and no performance gate was requested. The negative results remain retained. Broader parity and held-out quality are still open; Stadium/balanced possession and coverage behavior is the next gameplay diagnostic after completing the target-loss regression fix.
+
+## 2026-09-30 — full protocol v64 aggregate
+
+The complete v64 aggregate launched from `78081b4e` passes its test assertions in **1,220.64 seconds** (`output/m7-v64-aggregate.log`): **0/8,919** differing action/objective traces, **0/696** failing live decision traces and **0/92** failing map-mobility traces. All required revival, jump and post-reset passing witness groups are present. The retained report includes 45 sampled trace families, including all 48 turning-flight cases: `output/m7-v64-aggregate/gates/execution-parity.json`, SHA-256 `f488d73527c6422406474adbb552f031aa3b86163cb3fdb5aa2ebc286451c266`.
+
+This completes the aggregate verification pending in the v64 entry. Its verdict remains **inconclusive**, with the four declared coverage gaps intact. The running process had already loaded its source before the later target-loss changes; this result does not certify protocol v65 or those runtime changes.
