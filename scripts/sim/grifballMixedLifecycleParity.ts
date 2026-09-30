@@ -8,10 +8,12 @@ import { updatePlayerHorizontalMovementForState, updatePlayerVerticalIntegration
 import { triggerPlayerSwordSlashForState, triggerPlayerHammerSwingForState, triggerPlayerSwordLungeForState } from '../../src/components/grifball/playerWeaponActions';
 import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
 import { executeMainAITradeForState } from '../../src/components/grifball/tradeRuntime';
-import { areGrifballCombatantsHostileForState } from '../../src/components/grifball/grifballObjectiveRuntime';
+import { areGrifballCombatantsHostileForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
+import { advanceGrifballFrameForState } from '../../src/components/grifball/activeFrameRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
 import { tickCombatantInvulnerability } from '../../src/components/grifball/aiTickState';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
+import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
 import { stepSimulation } from '../../src/sim/step';
 import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { idleAction } from '../../src/sim/actions';
@@ -28,13 +30,13 @@ export const MIXED_LIFECYCLE_CASES: MixedLifecycleCase[] = KINDS.flatMap(kind =>
 /** Committed incoming roster flight followed through damage, revival and shield expiry.
  * The player proxy supplies a target snapshot only; live health is owned by runtime state. */
 export interface OpposedFlightMotion { playerHeight: number; playerVelocityY: number; botHeight: number; botVelocityY: number; directionY: number; directionZ: number }
-export interface OpposedFlightCase { motion?: OpposedFlightMotion; first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
+export interface OpposedFlightCase { pickup?: { actor: 'player' | 'roster'; hp: number }; motion?: OpposedFlightMotion; first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
 export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: number, opposed?: OpposedFlightCase) {
   const f = lungeFixture(spec.main ? 'main_ai' : 'attacker', false);
   const { state, sim, bot, target, refs, map } = f;
   const [self, player] = sim.combatants;
   state.otherPlayers.delete(target.id); refs.otherPlayerMeshes.delete(target.id);
-  self.id = bot.id; player.id = 'player'; player.controller = 'remote';
+  self.id = bot.id; self.controller = 'ai'; player.id = 'player'; player.controller = 'remote';
   sim.combatExecution = 'live-mixed-v1'; sim.localPlayerId = player.id;
   sim.match.phase = 'playing';
   const direction = spec.mirror ? -1 : 1;
@@ -116,42 +118,76 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     if (spec.kind === 'double-respawn') { bot.hp = self.hp = 0; self.alive = false; bot.isLunging = self.isLunging = false; bot.respawnTimer = self.respawnTimer = .025; }
   }
   if (spec.reverse) sim.combatants.reverse();
+  const pickup = opposed?.pickup;
+  if (pickup) {
+    state.grifballTactics = defaultGrifballTactics();
+    // Both sword flights are already committed. The ball starts on the selected
+    // actor's path and is acquired by a real pickup request after two movement ticks.
+    state.settings.grifballRunnerHealth = sim.settings.grifballRunnerHealth = pickup.hp;
+    state.settings.grifballRunnerHealRate = sim.settings.grifballRunnerHealRate = 0;
+    const z = pickup.actor === 'player' ? player.pos.z - direction * .8 : direction * .8;
+    sim.match.ball.pos = { x: 0, y: .35, z };
+    sim.match.ball.home = { x: 0, y: .35, z };
+    state.grifball = structuredClone(sim.match);
+  }
+  const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const constrain = (pos: THREE.Vector3, vel?: THREE.Vector3) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius });
   const kills = new Map<string, number>(), deaths = new Map<string, number>(), frames = [];
   let restored: SimState | undefined;
   for (let tick = 1; tick <= 300; tick++) {
     withSimulationRandom(random, tick / 60, () => {
-      const dead = updatePlayerRespawnForState({ state, dt: 1 / 60, isMultiplayer: false,
-        getMainAi: () => state.otherPlayers.get('main_ai'), activeCustomMap: map, spawnPoints: [], playRespawn: noop });
-      if (!dead) {
-        if (state.isLunging) {
-          const effects = { state, playExplosion: noop, playDeath: noop, playSwing: noop, pushStatsUpdate: noop,
-            spawnVoxelShockwaveParticles: noop, recordBotCalibrationDeath: noop, evaluatePlayerKillMedals: () => [] };
-          updatePlayerSwordLungeForState({ ...effects, dt: 1 / 60, isMultiplayer: false, activeCustomMap: map,
-            multiplayerSocket: null, getMainAi: () => state.otherPlayers.get('main_ai'),
-            areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
-            constrainCombatantToArena: constrain, renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: noop,
-            recordPlayerCounterSuccess: noop, recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: noop,
-            executeTrade: reason => executeMainAITradeForState({ ...effects, mainAi: state.otherPlayers.get('main_ai'), reason }) });
-        } else {
-          updatePlayerHorizontalMovementForState({ state, refs, dt: 1 / 60, keysPressed: {}, movementKeybindings: DEFAULT_KEYBINDINGS,
-          actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: null, mobileControlsActive: false,
-          sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
-          updatePlayerVerticalIntegrationForState({ state, dt: 1 / 60, gravityAcceleration: 18, constrainCombatantToArena: constrain });
+      const physics = () => {
+        const dead = updatePlayerRespawnForState({ state, dt: 1 / 60, isMultiplayer: false,
+          getMainAi: () => state.otherPlayers.get('main_ai'), activeCustomMap: map, spawnPoints: [], playRespawn: noop });
+        if (!dead) {
+          if (state.isLunging) {
+            const effects = { state, playExplosion: noop, playDeath: noop, playSwing: noop, pushStatsUpdate: noop,
+              spawnVoxelShockwaveParticles: noop, recordBotCalibrationDeath: noop, evaluatePlayerKillMedals: () => [] };
+            updatePlayerSwordLungeForState({ ...effects, dt: 1 / 60, isMultiplayer: false, activeCustomMap: map,
+              multiplayerSocket: null, getMainAi: () => state.otherPlayers.get('main_ai'),
+              areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
+              constrainCombatantToArena: constrain, renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: noop,
+              recordPlayerCounterSuccess: noop, recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: noop,
+              executeTrade: reason => executeMainAITradeForState({ ...effects, mainAi: state.otherPlayers.get('main_ai'), reason }) });
+          } else {
+            updatePlayerHorizontalMovementForState({ state, refs, dt: 1 / 60, keysPressed: {}, movementKeybindings: DEFAULT_KEYBINDINGS,
+            actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: null, mobileControlsActive: false,
+            sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
+            updatePlayerVerticalIntegrationForState({ state, dt: 1 / 60, gravityAcceleration: 18, constrainCombatantToArena: constrain });
+          }
         }
+      };
+      const updateAI = () => {
+        if (bot.hp > 0) {
+          tickCombatantInvulnerability(bot, 1 / 60); bot.aiTimer = Math.max(0, (bot.aiTimer ?? 0) - 1 / 60);
+          const proxy = { ...target, id: 'player', team: state.localPlayerTeam, hp: state.playerHP, maxHp: state.playerMaxHP,
+            pos: state.playerPos, vel: state.playerVel, activeWeapon: state.activeWeapon as 'sword' | 'hammer' | 'ball', isLunging: state.isLunging,
+            invulnerabilityTimer: state.playerInvulnerabilityTimer, isCrouching: state.isCrouching };
+          if (opposed?.motion) f.gravityPrelude(bot);
+          f.flightFor(bot, proxy);
+        }
+      };
+      if (pickup) {
+        state.playerPickupRequested = tick === 2 && pickup.actor === 'player';
+        bot.pickupRequested = tick === 2 && pickup.actor === 'roster';
+        advanceGrifballFrameForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef,
+          dt: 1 / 60, isPlaying: true, isPausedRef: { current: false }, replayData: null,
+          keysPressed: { current: {} }, grifbHoldTimerRef: { current: 0 }, secretAudioRef: { current: null },
+          isMultiplayer: false, multiplayerRole: null, multiplayerSocket: null,
+          replayRecordingRef: { current: null }, replayRecordingElapsedTimeRef: { current: 0 }, lastRecordTimeRef: { current: 0 },
+          spawnVoxelShockwaveParticles: noop, rebuildHostModel: noop, updatePhysics: physics,
+          updateHammerAnimations: f.weaponFrame, runAIOrchestrator: f.respawns, updateAI,
+          updateGrifball: dt => updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef,
+            dt, isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => { throw new Error('Unexpected goal reset'); }, pushStatsUpdate: noop }),
+          updateCharacterSkeletalAnimations: f.visuals, updateMatchTimers: noop, enforceArenaBounds: noop,
+          renderGame: noop, updateFloatingNameplate: noop, pushStatsUpdate: noop, updateRadarDOM: noop,
+          runReplayPlaybackLoop: noop, recordReplayFrame: noop, playRespawn: noop });
+      } else {
+        physics(); f.weaponFrame(1 / 60); f.respawns(1 / 60); updateAI(); f.visuals(1 / 60);
       }
-      f.weaponFrame(1 / 60); f.respawns(1 / 60);
-      if (bot.hp > 0) {
-        tickCombatantInvulnerability(bot, 1 / 60); bot.aiTimer = Math.max(0, (bot.aiTimer ?? 0) - 1 / 60);
-        const proxy = { ...target, id: 'player', team: state.localPlayerTeam, hp: state.playerHP, maxHp: state.playerMaxHP,
-          pos: state.playerPos, vel: state.playerVel, activeWeapon: state.activeWeapon === 'sword' ? 'sword' as const : 'hammer' as const, isLunging: state.isLunging,
-          invulnerabilityTimer: state.playerInvulnerabilityTimer, isCrouching: state.isCrouching };
-        if (opposed?.motion) f.gravityPrelude(bot);
-        f.flightFor(bot, proxy);
-      }
-      f.visuals(1 / 60);
     });
-    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: c.yaw }]));
+    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: c.yaw,
+      pickup: !!pickup && tick === 2 && c.id === (pickup.actor === 'player' ? player.id : self.id) }]));
     const events = stepSimulation(sim, actions, { settings: sim.settings });
     if (restored) {
       const restoredEvents = stepSimulation(restored, actions, { settings: restored.settings });
@@ -178,8 +214,19 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
       for (let i = 0; i < 3; i++) record.compare(tick, `bot.vel.${i}`, liveBot.vel[i], simBot.vel[i], 1e-6);
       if (bot.hp > 0) record.compare(tick, 'bot.cooldown', liveBot.cooldown, simBot.cooldown, 1e-6);
     }
-    frames.push({ tick, live, headless, liveBot, simBot });
+    const liveBall = pickup ? structuredClone(state.grifball.ball) : undefined;
+    const simBall = pickup ? structuredClone(sim.match.ball) : undefined;
+    if (liveBall && simBall) {
+      for (const field of ['state', 'holderId', 'looseTimer'] as const) record.compare(tick, `ball.${field}`, liveBall[field], simBall[field], 1e-6);
+      for (const field of ['pos', 'vel'] as const) for (const axis of ['x', 'y', 'z'] as const) record.compare(tick, `ball.${field}.${axis}`, liveBall[field][axis], simBall[field][axis], 1e-6);
+      record.compare(tick, 'bot.weapon', bot.activeWeapon, self.weapon);
+      record.compare(tick, 'bot.maxHp', bot.maxHp, self.maxHp);
+      record.compare(tick, 'player.maxHp', state.playerMaxHP, player.maxHp);
+    }
+    frames.push({ tick, live, headless, liveBot, simBot, ...(pickup ? { liveBall, simBall } : {}) });
   }
+  if (pickup) return { name: 'carrier-opposed', scenario: { ...spec, opposed },
+    ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   if (opposed && !opposed.shields && !opposed.motion) {
     const { first, playerHp, botHp, trade, reload } = opposed;
     const playerDamage = trade || first === 'roster' || botHp > 1 ? 1 : 0;
