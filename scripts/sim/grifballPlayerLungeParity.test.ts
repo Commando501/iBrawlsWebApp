@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PLAYER_LUNGE_PARITY_CASES, runPlayerLungeParityTrace } from './grifballPlayerLungeParity';
+import { PLAYER_LUNGE_PARITY_CASES, PLAYER_LUNGE_GEOMETRY_CASES, runPlayerLungeParityTrace } from './grifballPlayerLungeParity';
 import { createMatch } from '../../src/sim/factory';
 import { stepSimulation } from '../../src/sim/step';
 import { hashState } from '../../src/sim/hash';
@@ -8,6 +8,12 @@ import { hashState } from '../../src/sim/hash';
 for (const spec of PLAYER_LUNGE_PARITY_CASES) test(`mixed player parity ${JSON.stringify(spec)}`, () => {
   const trace = runPlayerLungeParityTrace(spec);
   assert.equal(trace.differenceCount, 0, JSON.stringify(trace.differences.slice(0, 12)));
+});
+
+for (const spec of PLAYER_LUNGE_GEOMETRY_CASES) test(`mixed player geometry ${JSON.stringify(spec)}`, () => {
+  const trace = runPlayerLungeParityTrace(spec, 'live-mixed-v1', 5);
+  assert.equal(trace.differenceCount, 0, JSON.stringify(trace.differences.slice(0, 12)));
+  assert.equal(trace.frames.length, 120);
 });
 
 test('mixed execution rejects missing, unknown and ambiguous local player identities before stepping', () => {

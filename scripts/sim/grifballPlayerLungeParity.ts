@@ -23,9 +23,26 @@ const KINDS = ['hit-one', 'hit-two', 'shield', 'friendly', 'timeout', 'boundary'
   'melee-first', 'player-first', 'same-frame-one', 'same-frame-two', 'killed-flight', 'damaged-flight'] as const;
 export interface PlayerLungeParityCase {
   kind: typeof KINDS[number]; mainTarget: boolean; reverse: boolean; mirror: boolean;
+  geometry?: {
+    name: string; targetZ: number; targetCrouch?: boolean; large?: boolean;
+    playerY?: number; playerCrouch?: boolean; pitch?: number; finishTick: number;
+  };
 }
 export const PLAYER_LUNGE_PARITY_CASES: PlayerLungeParityCase[] = KINDS.flatMap(kind =>
   [false, true].flatMap(mainTarget => [false, true].flatMap(reverse => [false, true].map(mirror => ({ kind, mainTarget, reverse, mirror })))));
+// Independent sampled-contact sentinels: at tick 8 the horizontal separation is
+// 1.48 or 1.68. Crouching adds a .305 vertical separation; large models add .2 reach.
+export const PLAYER_LUNGE_GEOMETRY_CASES: PlayerLungeParityCase[] = ([
+  { name: 'standing-boundary', targetZ: 4.68, finishTick: 8 },
+  { name: 'crouched-target-boundary', targetZ: 4.68, targetCrouch: true, finishTick: 9 },
+  { name: 'medium-boundary', targetZ: 4.88, finishTick: 9 },
+  { name: 'large-boundary', targetZ: 4.88, large: true, finishTick: 8 },
+  { name: 'large-crouched-boundary', targetZ: 4.88, large: true, targetCrouch: true, finishTick: 9 },
+  { name: 'crouched-launch', targetZ: 5, playerCrouch: true, pitch: -.8, finishTick: 9 },
+  { name: 'airborne-launch', targetZ: 5, playerY: 2, pitch: .8, finishTick: 9 },
+] satisfies NonNullable<PlayerLungeParityCase['geometry']>[]).flatMap(geometry =>
+  [false, true].flatMap(mainTarget => [false, true].flatMap(reverse => [false, true].map(mirror =>
+    ({ kind: 'hit-two' as const, mainTarget, reverse, mirror, geometry })))));
 const phase = (c: Combatant) => c.weaponState === 'ready' ? 'idle'
   : ['swing_up', 'melee_up'].includes(c.weaponState ?? '') ? 'windup'
   : ['swing_down', 'melee_down'].includes(c.weaponState ?? '') ? 'active' : 'recovering';
@@ -48,9 +65,9 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
   const pairs = [[bot, sim.combatants[0]], [target, sim.combatants[1]]] as const;
   const team = spec.mirror ? 'red' : 'blue', opponent = spec.mirror ? 'blue' : 'red';
   state.localPlayerTeam = player.team = team;
-  const targetZ = trade ? 1.8 : threatened ? 12 : spec.kind === 'melee-first' ? 4.6
+  const targetZ = spec.geometry?.targetZ ?? (trade ? 1.8 : threatened ? 12 : spec.kind === 'melee-first' ? 4.6
     : spec.kind === 'player-first' ? 3.8 : spec.kind.startsWith('same-frame') ? 4.2
-    : spec.kind === 'timeout' || spec.kind === 'boundary' ? 50 : 5;
+    : spec.kind === 'timeout' || spec.kind === 'boundary' ? 50 : 5);
   for (const [a, b] of pairs) {
     b.id = a.id; a.hp = a.maxHp = b.hp = b.maxHp = 20;
     a.invulnerabilityTimer = b.invulnerabilityTimer = b.weaponReadyTimer = 0;
@@ -69,6 +86,15 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
   for (const [a, b] of pairs) { b.pos = { x: a.pos.x, y: a.pos.y, z: a.pos.z }; b.yaw = a.yaw - Math.PI; }
   state.activeWeapon = player.weapon = 'sword'; state.playerPos.set(0, 0, 0); state.playerVel.set(0, 0, 0);
   player.pos = { x: 0, y: 0, z: 0 }; player.vel = { x: 0, y: 0, z: 0 };
+  if (spec.geometry) {
+    state.playerPos.y = player.pos.y = spec.geometry.playerY ?? 0;
+    state.isJumping = player.isJumping = state.playerPos.y > 0;
+    state.isCrouching = player.isCrouching = !!spec.geometry.playerCrouch;
+    state.crouchAmount = player.crouchAmount = spec.geometry.playerCrouch ? .6 : 0;
+    state.pitch = player.pitch = spec.geometry.pitch ?? 0;
+    target.isCrouching = pairs[1][1].isCrouching = !!spec.geometry.targetCrouch;
+    target.modelType = pairs[1][1].modelType = spec.geometry.large ? 'large' : 'medium';
+  }
   state.playerHP = state.playerMaxHP = player.hp = player.maxHp = spec.kind.endsWith('two') || spec.kind === 'damaged-flight' ? 2 : 1;
   state.yaw = spec.mirror ? 0 : Math.PI; player.yaw = state.yaw - Math.PI;
   state.playerInvulnerabilityTimer = player.invulnerabilityTimer = player.weaponReadyTimer = state.swapCooldownTimer = 0;
@@ -120,7 +146,8 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
       for (const c of state.otherPlayers.values()) if (c.hp > 0) tickCombatantInvulnerability(c, 1 / 60);
       f.visuals(1 / 60);
     });
-    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: c.yaw }]));
+    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: c.yaw,
+      crouch: c.id === target.id && !!spec.geometry?.targetCrouch } ]));
     const events = stepSimulation(sim, actions, { settings: sim.settings });
     if (restored) {
       const restoredEvents = stepSimulation(restored, actions, { settings: restored.settings });
@@ -137,6 +164,16 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
       elapsed: player.weaponPhaseElapsed ?? 0, respawn: player.respawnTimer, pos: Object.values(player.pos), vel: Object.values(player.vel), kills: kills.get('player') ?? 0, deaths: deaths.get('player') ?? 0 };
     for (const field of ['hp', 'lunging', 'phase', 'elapsed', 'respawn', 'kills', 'deaths'] as const) record.compare(tick, `player.${field}`, livePlayer[field], headlessPlayer[field], 1e-6);
     for (const field of ['pos', 'vel'] as const) for (let i = 0; i < 3; i++) record.compare(tick, `player.${field}.${i}`, livePlayer[field][i], headlessPlayer[field][i], 1e-6);
+    if (spec.geometry) {
+      record.compare(tick, 'player.pitch', state.pitch, player.pitch, 1e-9);
+      record.compare(tick, 'player.crouchAmount', state.crouchAmount, player.crouchAmount, 1e-9);
+      record.compare(tick, 'player.crouching', state.isCrouching, player.isCrouching);
+      record.compare(tick, 'player.jumping', state.isJumping, player.isJumping);
+      if (tick === 1) {
+        record.compare(tick, 'expected.live.groundedLaunch', state.playerPos.y, 0);
+        record.compare(tick, 'expected.live.uncrouchedLaunch', state.isCrouching, false);
+      }
+    }
     const actorFrames = pairs.map(([a, b]) => {
       const live = { hp: a.hp, phase: phase(a), elapsed: a.weaponTimer, respawn: a.respawnTimer, shield: a.invulnerabilityTimer, kills: a.kills ?? 0, deaths: a.deaths ?? 0 };
       const headless = { hp: b.hp, phase: b.weaponState, elapsed: b.weaponPhaseElapsed ?? 0, respawn: b.respawnTimer, shield: b.invulnerabilityTimer, kills: kills.get(b.id) ?? 0, deaths: deaths.get(b.id) ?? 0 };
@@ -154,10 +191,10 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
     record.compare(120, `expected.${side}.playerHP`, hp, expectedPlayerHp);
     record.compare(120, `expected.${side}.targetHP`, targetHp, expectedTargetHp);
   }
-  const expectedFinish = trade ? 1 : spec.kind === 'boundary' ? 9 : spec.kind === 'timeout' ? 40
+  const expectedFinish = spec.geometry?.finishTick ?? (trade ? 1 : spec.kind === 'boundary' ? 9 : spec.kind === 'timeout' ? 40
     : ['shield', 'friendly'].includes(spec.kind) ? 1 : spec.kind === 'player-first' ? 6
     : spec.kind === 'melee-first' ? 8 : spec.kind.startsWith('same-frame') || spec.kind === 'killed-flight' ? 7
-    : spec.kind === 'damaged-flight' ? 27 : 9;
+    : spec.kind === 'damaged-flight' ? 27 : 9);
   record.compare(120, 'expected.live.finish', endTick, expectedFinish); record.compare(120, 'expected.headless.finish', simEndTick, expectedFinish);
   const expectedPlayerKills = ['hit-one', 'player-first', 'same-frame-one', 'damaged-flight'].includes(spec.kind) || spec.kind.endsWith('trade-one') ? 1 : 0;
   const expectedBotKills = ['melee-first', 'same-frame-two', 'killed-flight'].includes(spec.kind) ? 1 : 0;
@@ -165,8 +202,8 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
   record.compare(120, 'expected.headless.playerKills', kills.get('player') ?? 0, expectedPlayerKills);
   record.compare(120, 'expected.live.botKills', bot.kills ?? 0, expectedBotKills);
   record.compare(120, 'expected.headless.botKills', kills.get(bot.id) ?? 0, expectedBotKills);
-  return { name: `${spec.kind}/${spec.mainTarget ? 'main' : 'regular'}/${spec.reverse ? 'reversed' : 'forward'}/${spec.mirror ? 'mirrored' : 'original'}`,
+  return { name: `${spec.geometry?.name ?? spec.kind}/${spec.mainTarget ? 'main' : 'regular'}/${spec.reverse ? 'reversed' : 'forward'}/${spec.mirror ? 'mirrored' : 'original'}`,
     scenario: spec, combatExecution: execution, ticks: 120, ...record.result(), frames };
 }
 
-export const runPlayerLungeParity = () => PLAYER_LUNGE_PARITY_CASES.map(spec => runPlayerLungeParityTrace(spec));
+export const runPlayerLungeParity = () => [...PLAYER_LUNGE_PARITY_CASES, ...PLAYER_LUNGE_GEOMETRY_CASES].map(spec => runPlayerLungeParityTrace(spec));
