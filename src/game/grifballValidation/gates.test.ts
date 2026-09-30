@@ -251,7 +251,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v59');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v60');
   assert.deepEqual(details.revivalAttackWitnesses.missing, []);
   assert.deepEqual(details.jumpWitnesses.mobility.missing, []);
   assert.deepEqual(details.jumpWitnesses.match.missing, []);
@@ -275,7 +275,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
   const sampledFamilies = Object.values(details).filter((value: any) => Array.isArray(value) && value[0]?.frameEvidence) as any[][];
-  assert.equal(sampledFamilies.length, 41);
+  assert.equal(sampledFamilies.length, 42);
   for (const traces of sampledFamilies) for (const trace of traces) {
     assert.ok(trace.frameCount >= trace.frames.length);
     assert.ok(trace.frames.length <= 32);
@@ -310,6 +310,9 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.roundCombatTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.roundFrameTraces.length, 80);
   assert.ok(details.roundFrameTraces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.airborneRunnerTraces.length, 384);
+  assert.equal(details.airborneRunnerTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 46080);
+  assert.ok(details.airborneRunnerTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.fullRosterFrameTraces.length, 240);
   assert.equal(details.fullRosterFrameTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 48000);
   assert.ok(details.fullRosterFrameTraces.every((t: any) => t.differenceCount === 0));
