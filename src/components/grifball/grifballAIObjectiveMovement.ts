@@ -163,23 +163,25 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       return true;
     }
 
+    const routeDistance = waypoint ? Math.hypot(waypoint.x - frame.pos.x, waypoint.z - frame.pos.z) : 0;
+    const escaping = assignment?.runner && assignment.runner.selected.action !== 'wait' && waypoint && routeDistance > 0.1;
     let closestEnemy: { pos: THREE.Vector3 } | null = null;
     let closestDist = Infinity;
+    const considerEnemy = (pos: THREE.Vector3) => {
+      // Keep the planned escape instead of initiating a stationary duel behind it.
+      // Filter before choosing the nearest threat so a pursuer cannot hide a blocker ahead.
+      if (escaping && (pos.x - frame.pos.x) * (waypoint.x - frame.pos.x) +
+        (pos.z - frame.pos.z) * (waypoint.z - frame.pos.z) < 0) return;
+      const dist = frame.pos.distanceTo(pos);
+      if (dist < closestDist) { closestEnemy = { pos }; closestDist = dist; }
+    };
 
     if (state.playerHP > 0 && state.playerRespawnTimer <= 0 && !state.isObserverMode && state.localPlayerTeam !== self.team) {
-      const dist = frame.pos.distanceTo(state.playerPos);
-      if (dist < closestDist) {
-        closestEnemy = { pos: state.playerPos };
-        closestDist = dist;
-      }
+      considerEnemy(state.playerPos);
     }
     state.otherPlayers.forEach((other) => {
       if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && other.team !== self.team) {
-        const dist = frame.pos.distanceTo(other.pos);
-        if (dist < closestDist) {
-          closestEnemy = { pos: other.pos };
-          closestDist = dist;
-        }
+        considerEnemy(other.pos);
       }
     });
 
@@ -207,7 +209,6 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       settleAsApproaching(frame, true, dt);
       return true;
     }
-    const routeDistance = waypoint ? Math.hypot(waypoint.x - frame.pos.x, waypoint.z - frame.pos.z) : 0;
     // Planned routes already account for pressure; local repulsion must not reverse a cut or finish.
     const steer = assignment?.runner && waypoint
       ? { x: (waypoint.x - frame.pos.x) / Math.max(0.001, routeDistance), z: (waypoint.z - frame.pos.z) / Math.max(0.001, routeDistance) }

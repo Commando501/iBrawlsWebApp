@@ -33,6 +33,68 @@ test('planned runner direction overrides local avoidance without gaining movemen
   assert.ok(result.frame.vel.length() <= 5.8 * (state.settings.speedForward / 100) * (state.settings.grifballRunnerSpeedForward! / 100) + 0.001);
 });
 
+for (const team of ['blue', 'red'] as const) for (const finish of [false, true]) for (const id of ['a', 'main_ai'])
+  test(`a planned runner keeps its escape route instead of turning to punch a pursuer: ${team}/${finish}/${id}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!, direction = team === 'blue' ? 1 : -1;
+    state.otherPlayers.delete('a'); runner.id = id; runner.team = team; state.otherPlayers.set(id, runner);
+    runner.pos.set((finish ? 44 : 0) * direction, 0, 0); runner.activeWeapon = 'ball';
+    state.otherPlayers.get('b')!.team = team;
+    const enemy = state.otherPlayers.get('enemy')!; enemy.team = team === 'blue' ? 'red' : 'blue';
+    enemy.pos.copy(runner.pos); enemy.pos.x -= 1.5 * direction;
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = id;
+    state.grifballTactics = defaultGrifballTactics();
+    Object.assign(state.grifballTactics.defaults, { runnerRiskWeight: 0, styleVariation: 0 });
+    updateGrifballTeamPlanForState(state, 0.2, goal);
+    assert.equal(state.aiMatchContext.grifballTeamPlan.runnerPlans[team].selected.action, finish ? 'finish' : 'advance');
+    const before = runner.pos.x, result = move(state, id, {}, [], true);
+    assert.equal(result.attacks, 0, 'an uncommitted rear duel must not stop a planned escape');
+    assert.ok((result.frame.pos.x - before) * direction > 0);
+    assert.equal(result.frame.weaponState, 'ready');
+  });
+
+test('a nearer pursuer does not hide a frontal blocker from the runner punch selector', () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!;
+  runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
+  const rear = state.otherPlayers.get('enemy')!; rear.pos.set(-1, 0, 0);
+  state.otherPlayers.set('front', { ...rear, id: 'front', pos: new THREE.Vector3(1.8, 0, 0), vel: new THREE.Vector3() });
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  state.grifballTactics = defaultGrifballTactics();
+  Object.assign(state.grifballTactics.defaults, { runnerRiskWeight: 0, styleVariation: 0 });
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  const result = move(state, 'a', {}, [], true);
+  assert.equal(result.attacks, 1);
+  assert.equal(result.frame.yaw, -Math.PI / 2);
+  assert.equal(result.frame.vel.length(), 0);
+});
+
+test('runner escape filtering also observes a local human pursuer without commanding them', () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!;
+  runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
+  state.isObserverMode = false; state.localPlayerTeam = 'red'; state.playerPos.set(-1.5, 0, 0);
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  state.grifballTactics = defaultGrifballTactics();
+  Object.assign(state.grifballTactics.defaults, { runnerRiskWeight: 0, styleVariation: 0 });
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  const before = state.playerPos.clone(), result = move(state, 'a', {}, [], true);
+  assert.equal(result.attacks, 0); assert.ok(result.frame.pos.x > 0);
+  assert.deepEqual(state.playerPos, before);
+  assert.equal(state.aiMatchContext.grifballTeamPlan.assignments.has('player'), false);
+});
+
+test('runner escape does not interrupt a committed punch or change the disabled-planner fallback', () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!;
+  runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
+  state.otherPlayers.get('enemy')!.pos.set(-1.5, 0, 0);
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.runnerRiskWeight = 0;
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  const committed = move(state, 'a', { weaponState: 'swing_up', yaw: Math.PI / 2 }, [], true);
+  assert.equal(committed.attacks, 0); assert.equal(committed.frame.pos.x, 0); assert.equal(committed.frame.yaw, Math.PI / 2);
+  state.grifballTactics.defaults.enabled = false;
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  assert.equal(move(state, 'a', {}, [], true).attacks, 1);
+});
+
 test('coverage waiting preserves reload and leaves committed airborne movement with its executor', () => {
   const state = setup(), runner = state.otherPlayers.get('a')!;
   runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
