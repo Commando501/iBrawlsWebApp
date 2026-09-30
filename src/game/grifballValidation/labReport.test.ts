@@ -21,6 +21,38 @@ function result(id: string, termination: TrialResult['termination'] = 'scenario-
     trace: Array.from({ length: 200 }, () => ({ ...frame })), droppedTraceEntries: 0, metrics: null, simulationCost: { samples: 60, meanMs: 1, maxMs: 2 } };
 }
 
+test('Lab bounds planner timing traces, preserves totals, and rejects malformed imports', async () => {
+  const run = await fixture(), trial = result(run.plan.jobs[0].id), timing = new LiveTimings();
+  for (let i = 0; i < 300; i++) { timing.playingTicks = 120 + i; timing.record('plannerRefresh', i % 5 + 1); }
+  trial.end = { ...trial.end!, tick: 500 }; trial.timings = timing.finish();
+  const populated = appendLabResult(run, trial), trace = populated.results[0].timings!.plannerRefreshTrace!;
+  assert.equal(trace.samples.length, 128); assert.equal(trace.dropped, 172);
+  assert.equal(trial.timings.plannerRefreshTrace!.samples.length, 300, 'CLI result remains intact');
+  assert.deepEqual((await importLabRun(JSON.stringify(populated))).results[0].timings, populated.results[0].timings);
+  const bad = structuredClone(populated);
+  bad.results[0].timings!.plannerRefreshTrace!.samples[0][0] = 119;
+  await assert.rejects(importLabRun(JSON.stringify(bad)), /Malformed planner refresh trace/);
+});
+
+test('Lab shares a fixed planner trace budget across jobs without changing distributions', async () => {
+  const manifest = createSuiteManifest('quick'); manifest.cases = manifest.cases.slice(0, 1);
+  manifest.cases[0].seeds = Array.from({ length: 10 }, (_, i) => i + 101); manifest.cases[0].mirrored = false;
+  let run = newLabRun(await createSuitePlan(manifest, UNKNOWN_CODE), runtime);
+  const timing = new LiveTimings();
+  for (let i = 0; i < 300; i++) { timing.playingTicks = 120 + i; timing.record('plannerRefresh', 2); }
+  for (const job of run.plan.jobs) {
+    const trial = result(job.id); trial.end = { ...trial.end!, tick: 500 }; trial.timings = timing.finish();
+    run = appendLabResult(run, trial);
+  }
+  assert.equal(run.results.reduce((sum, r) => sum + r.timings!.plannerRefreshTrace!.samples.length, 0), 2048);
+  for (const r of run.results) {
+    const trace = r.timings!.plannerRefreshTrace!;
+    assert.equal(trace.samples.length + trace.dropped, 300);
+    assert.deepEqual(r.timings!.warm.plannerRefresh, timing.finish().warm.plannerRefresh);
+  }
+  assert.equal((await importLabRun(JSON.stringify(run))).results.length, run.results.length);
+});
+
 test('mixed local observations round-trip and reject malformed or foreign ownership evidence', async () => {
   const manifest = createSuiteManifest('standard');
   manifest.cases = [{ ...manifest.cases.find(c => c.roster === 'scripted-3v4')!, roster: 'local-4v4', seeds: [101] }];

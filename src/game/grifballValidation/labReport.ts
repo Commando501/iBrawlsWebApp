@@ -1,4 +1,4 @@
-import { COST_CHANNELS } from './telemetry';
+import { assertPlannerRefreshTrace, COST_CHANNELS, retainPlannerRefreshTrace } from './telemetry';
 import { validLocalPlayerEvidence } from './localPlayerInput';
 import { assertDecisionTrace, retainDecisionTrace } from './decisionTrace';
 import { correctnessGate, reproducibilityGate } from './gates';
@@ -37,11 +37,15 @@ export function newLabRun(plan: SuitePlan, runtime: LabRuntimeIdentity, selected
 export function appendLabResult(run: LabRun, result: TrialResult): LabRun {
   let budget = 1024;
   let decisionBudget = 128;
+  let timingBudget = 2048;
   const results = [...run.results.filter(r => r.jobId !== result.jobId), result].reverse().map(r => {
     const count = Math.min(64, budget, r.trace.length); budget -= count;
     const decisions = r.decisions ? retainDecisionTrace(r.decisions, Math.min(64, decisionBudget)) : undefined;
     decisionBudget -= decisions?.frames.length ?? 0;
-    return { ...r, ...(decisions ? { decisions } : {}), trace: count ? r.trace.slice(-count) : [], droppedTraceEntries: r.droppedTraceEntries + r.trace.length - count };
+    const timingTrace = r.timings?.plannerRefreshTrace;
+    const timings = timingTrace ? { ...r.timings!, plannerRefreshTrace: retainPlannerRefreshTrace(timingTrace, Math.min(128, timingBudget)) } : r.timings;
+    timingBudget -= timings?.plannerRefreshTrace?.samples.length ?? 0;
+    return { ...r, ...(decisions ? { decisions } : {}), ...(timings ? { timings } : {}), trace: count ? r.trace.slice(-count) : [], droppedTraceEntries: r.droppedTraceEntries + r.trace.length - count };
   }).reverse();
   return { ...run, results, currentJobId: null };
 }
@@ -129,6 +133,7 @@ export async function importLabRun(text: string): Promise<LabRun> {
           const d = phase[channel]; return !d || !Number.isInteger(d.samples) || d.samples < 0 ||
             [d.p50Ms, d.p95Ms, d.maxMs].some(n => !Number.isFinite(n) || n < 0) || d.p50Ms > d.p95Ms || d.p95Ms > d.maxMs;
         }))) throw new Error('Malformed timing evidence');
+      assertPlannerRefreshTrace(t);
     }
     normalized = { ...appendLabResult(normalized, copy), source: 'imported' };
   }
