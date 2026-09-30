@@ -5,7 +5,7 @@
  * without being sensitive to insignificant trailing bits.
  */
 
-import { type SimState, type SimCombatant } from './simState';
+import { type SimState, type SimCombatant, combatExecutionForActor } from './simState';
 
 /** Quantize a float to 1e-5 resolution and stringify stably. */
 function q(n: number): string {
@@ -38,6 +38,10 @@ export function serializeState(state: SimState): string {
     `t=${state.tick}`,
     `seed=${state.seed}`,
     `rng=${state.rngState}`,
+    // Old/neutral and legacy snapshots keep their hashes. Nonzero player view
+    // geometry changes future impacts and must survive determinism comparisons.
+    ...state.combatants.filter(c => combatExecutionForActor(state, c) === 'live-player-v1' && (c.pitch || c.crouchAmount))
+      .map(c => `view=${c.id}:${q(c.pitch ?? 0)}:${q(c.crouchAmount ?? 0)}`),
     // Preserve historical profile hashes; mixed execution also depends on actor
     // roles, commitment headings, phase clocks and weapon-specific trade history.
     ...(state.combatExecution === 'live-mixed-v1' ? [

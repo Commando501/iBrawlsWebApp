@@ -67,6 +67,9 @@ export interface SimCombatant {
   pos: Vec3;
   vel: Vec3;
   yaw: number;
+  /** Opt-in player view geometry; absent in legacy training snapshots. */
+  pitch?: number;
+  crouchAmount?: number;
   /** Effective gameplay model for v2 roster hit tests; absent in older snapshots means medium. */
   modelType?: CharacterModelType;
   isCrouching: boolean;

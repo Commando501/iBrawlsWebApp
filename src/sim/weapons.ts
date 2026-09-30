@@ -163,25 +163,27 @@ function applyHit(
 /**
  * Stationary-swing hit test, faithful to the live player melee resolver: 3D distance from
  * the attacker's eye (pos.y + 1.65) to the victim's body center must be within `reach`, and
- * the victim must lie inside the 1.0-rad facing cone. Sim combatants have no pitch, so the
- * look heading is `forwardDir(yaw)` (y = 0). Pure geometry — no alive/hostile/invuln checks.
+ * the victim must lie inside the 1.0-rad facing cone. Opt-in player geometry also
+ * uses view pitch, interpolated crouch height and model reach. Legacy stays planar.
  */
 export function inMeleeHitVolume(
   attacker: SimCombatant,
   victim: SimCombatant,
-  settings?: UniversalSettings
+  settings?: UniversalSettings,
+  playerView = false
 ): boolean {
-  const reach = meleeReach(attacker, settings);
-  const fwd = forwardDir(attacker.yaw); // y = 0 (no pitch)
-  const ey = attacker.pos.y + MELEE_EYE_HEIGHT;
-  const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+  const reach = playerView ? adjustRangeForTargetModel(meleeReach(attacker, settings), victim.modelType) : meleeReach(attacker, settings);
+  const fwd = playerView ? playerLookDirection(attacker) : forwardDir(attacker.yaw);
+  const ey = attacker.pos.y + MELEE_EYE_HEIGHT - (playerView ? attacker.crouchAmount ?? 0 : 0);
+  const cy = victim.pos.y + (!playerView && victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
   const dx = victim.pos.x - attacker.pos.x;
   const dy = cy - ey;
   const dz = victim.pos.z - attacker.pos.z;
   const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
   if (dist > reach) return false;
-  if (dist <= 1e-4) return true;
-  const dot = (fwd.x * dx + fwd.z * dz) / dist;
+  if (dist <= 1e-4 && !playerView) return true;
+  if (dist === 0) return false; // Live normalization leaves the zero vector; its cone angle is PI/2.
+  const dot = (fwd.x * dx + fwd.y * dy + fwd.z * dz) / dist;
   return dot >= MELEE_CONE_COS;
 }
 
@@ -194,17 +196,18 @@ export function inMeleeHitVolume(
 export function inHammerStrikeVolume(
   attacker: SimCombatant,
   victim: SimCombatant,
-  settings: UniversalSettings
+  settings: UniversalSettings,
+  playerView = false
 ): boolean {
-  const fwd = forwardDir(attacker.yaw); // y = 0 (no pitch)
+  const fwd = playerView ? playerLookDirection(attacker) : forwardDir(attacker.yaw);
   const ix = attacker.pos.x + fwd.x * strikeRange(settings);
-  const iy = attacker.pos.y + MELEE_EYE_HEIGHT; // impact y = eye height (look heading is planar)
+  const iy = attacker.pos.y + MELEE_EYE_HEIGHT - (playerView ? attacker.crouchAmount ?? 0 : 0) + fwd.y * strikeRange(settings);
   const iz = attacker.pos.z + fwd.z * strikeRange(settings);
-  const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+  const cy = victim.pos.y + (!playerView && victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
   const dx = victim.pos.x - ix;
   const dy = cy - iy;
   const dz = victim.pos.z - iz;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz) <= strikeRadius(settings);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) <= (playerView ? adjustRangeForTargetModel(strikeRadius(settings), victim.modelType) : strikeRadius(settings));
 }
 
 /** Resolve a swipe/slash/punch cone hit from `attacker` at its active frame. */
@@ -218,7 +221,7 @@ function resolveMeleeHit(
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
-    if (inMeleeHitVolume(attacker, v, settings)) {
+    if (inMeleeHitVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) {
       if (!applyHit(state, attacker, v, settings, events, initiatesTrade)) break; // attacker traded out
     }
   }
@@ -234,17 +237,22 @@ function resolveHammerStrike(
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
-    if (inHammerStrikeVolume(attacker, v, settings)) strike(state, attacker, v, settings, events);
+    if (inHammerStrikeVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) strike(state, attacker, v, settings, events);
   }
 }
 
 /** Player punch uses a 1.5-unit splash around its projected impact, not a swipe cone. */
 export function inPlayerPunchVolume(attacker: SimCombatant, victim: SimCombatant, settings: UniversalSettings): boolean {
-  const fwd = forwardDir(attacker.yaw);
+  const fwd = playerLookDirection(attacker);
   const reach = resolvePunchLungeDistance(settings);
   return Math.hypot(victim.pos.x - attacker.pos.x - fwd.x * reach,
-    victim.pos.y + BODY_CENTER_HEIGHT - attacker.pos.y - MELEE_EYE_HEIGHT,
-    victim.pos.z - attacker.pos.z - fwd.z * reach) <= 1.5;
+    victim.pos.y + BODY_CENTER_HEIGHT - attacker.pos.y - MELEE_EYE_HEIGHT + (attacker.crouchAmount ?? 0) - fwd.y * reach,
+    victim.pos.z - attacker.pos.z - fwd.z * reach) <= adjustRangeForTargetModel(1.5, victim.modelType);
+}
+
+function playerLookDirection(c: SimCombatant) {
+  const pitch = c.pitch ?? 0, planar = Math.cos(pitch);
+  return { x: Math.sin(c.yaw) * planar, y: Math.sin(pitch), z: Math.cos(c.yaw) * planar };
 }
 
 function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[]): void {
@@ -333,7 +341,8 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       else {
         resolveHammerStrike(state, c, settings, events);
         // Live hammer-jump window is based on distance from the projected impact to feet.
-        if (Math.hypot(strikeRange(settings), MELEE_EYE_HEIGHT) <= (settings.hammerJumpTriggerRadius ?? 3.5)) {
+        const aim = playerLookDirection(c), reach = strikeRange(settings);
+        if (Math.hypot(aim.x * reach, MELEE_EYE_HEIGHT - (c.crouchAmount ?? 0) + aim.y * reach, aim.z * reach) <= (settings.hammerJumpTriggerRadius ?? 3.5)) {
           c.hammerJumpWindowTimer = settings.hammerJumpWindow ?? .6;
         }
       }
@@ -695,6 +704,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.pos = { x: spawn.x, y: rosterV2 ? spawn.y : 0, z: spawn.z };
   c.vel = { x: 0, y: 0, z: 0 };
   c.yaw = inwardSpawnYaw(spawn);
+  if (combatExecutionForActor(state, c) === 'live-player-v1') c.pitch = 0;
   // Both player and roster actors use +Z aim in the mixed execution profile.
   if (state.combatExecution === 'live-mixed-v1') c.yaw -= Math.PI;
   c.alive = true;

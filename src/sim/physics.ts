@@ -15,7 +15,7 @@
  *
  * Divergences (documented in README): sprint/slide input is not part of the discrete
  * action space (and `enableSprint`/`enableSlide` default off), so those branches are
- * inert; crouch height interpolation and VFX/SFX are dropped.
+ * inert; legacy execution drops crouch height interpolation and all profiles omit VFX/SFX.
  */
 
 import * as THREE from 'three';
@@ -67,6 +67,12 @@ export function stepCombatantMovement(
   dt: number
 ): void {
   if (!c.alive) return;
+  const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
+  if (playerView && action.aimPitch !== undefined) {
+    if (!Number.isFinite(action.aimPitch)) throw new Error('Player aimPitch must be finite');
+    // Same mouse/gamepad view limit as playerInputRuntime.
+    c.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, action.aimPitch));
+  }
 
   // Timers tick down regardless of action.
   if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
@@ -125,6 +131,7 @@ export function stepCombatantMovement(
     c.vel.x = c.dashDir.x * speed;
     c.vel.z = c.dashDir.z * speed;
   } else {
+    if (playerView) c.crouchAmount = (c.crouchAmount ?? 0) + ((c.isCrouching ? .72 : 0) - (c.crouchAmount ?? 0)) * 12 * dt;
     forwardDir(c.yaw, _f);
     rightDir(c.yaw, _r);
 
