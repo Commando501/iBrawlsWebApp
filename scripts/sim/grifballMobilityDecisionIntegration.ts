@@ -1,4 +1,5 @@
 import { runOpposedDecisionTrace, type OpposedDecisionCase } from './grifballOpposedDecisionIntegration';
+import { validateDashDecisionTrace } from './grifballDashDecisionValidation';
 
 // Fixed contiguous development matrix, including both original seeds. Keep all
 // outcomes; absence of a flight in one seed is not a physics failure.
@@ -9,7 +10,10 @@ export const MOBILITY_DECISION_CASES: OpposedDecisionCase[] = Array.from({ lengt
  * strike, flight, landing and return to tactical play comes from live decisions. */
 export function runMobilityDecisionTrace(spec: OpposedDecisionCase) {
   const trace = runOpposedDecisionTrace(spec, 'mobility');
-  return validateMobilityDecisionTrace(trace);
+  const dash = validateDashDecisionTrace(trace);
+  trace.failureCount += dash.failureCount;
+  trace.failures.push(...dash.failures.slice(0, Math.max(0, 64 - trace.failures.length)));
+  return { ...validateMobilityDecisionTrace(trace), dash };
 }
 
 export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOpposedDecisionTrace>) {

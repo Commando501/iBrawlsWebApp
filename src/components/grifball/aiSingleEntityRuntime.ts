@@ -678,7 +678,7 @@ export function createAISingleEntityUpdaterForState({
           slideActive,
           weaponState,
         });
-        const noTargetMode = resolveNoTargetAIFrameForCombatant({
+        resolveNoTargetAIFrameForCombatant({
           state: s,
           botId,
           self,
@@ -707,20 +707,9 @@ export function createAISingleEntityUpdaterForState({
           applyGrifballAIObjectiveFrameToLocals(noTargetFrame));
         self.pickupRequested = pickupRequested;
   
-        if (noTargetMode === 'airborne' || noTargetMode === 'support_objective') {
-          syncStateAndMesh();
-          return;
-        }
-  
-        syncAICombatantPoseAndState({
-          self,
-          mesh: botMesh,
-          pos,
-          vel,
-          yaw,
-          aiState: state,
-          timer: 0,
-        });
+        // Spawn guarding must also retain this frame's mobility cooldowns and
+        // cancelled commitment, just like airborne and objective recovery.
+        syncStateAndMesh();
         return;
       }
   

@@ -221,6 +221,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const tankActions: (ReturnType<typeof captureTankState> & { id: string; kind: string })[] = [];
   const mainJumpRequests: { tick: number; accepted: boolean; dash: number; swap: number }[] = [];
   const targetLookups: { tick: number; id: string; target: string }[] = [];
+  let dashRequests = 0;
+  let resolvedTarget: string | null = null;
   const update = createAISingleEntityUpdaterForState({ stateRef: { current: state }, threeRef: { current: refs },
     mai: () => state.otherPlayers.get('main_ai'), resolveBotKnobs: () => knobs, resolveBotDerived: () => derived,
     resolveBotFlags: () => NEUTRAL_PERSONALITY_FLAGS, getMatchScoreContext, grifballEnemyGoalPos: goal,
@@ -228,12 +230,15 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     ...targets,
     getBestTacticalTarget: (id: string, pos: THREE.Vector3, difficulty: string) => {
       const target = targets.getBestTacticalTarget(id, pos, difficulty);
+      resolvedTarget = target?.id ?? null;
       if (target) targetLookups.push({ tick, id, target: target.id });
       return target;
     },
     getTacticalTargetById: (id: string, target: string) => {
       targetLookups.push({ tick, id, target });
-      return targets.getTacticalTargetById(id, target);
+      const found = targets.getTacticalTargetById(id, target);
+      resolvedTarget = found?.id ?? null;
+      return found;
     },
     triggerCombatantAttack: (self, weapon, melee = false) => {
       if (tankContest) tankActions.push({ ...captureTankState(), id: self.id, kind: melee ? 'melee' : 'swing' });
@@ -262,7 +267,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     triggerCombatantLunge: () => check('unexpected sword lunge', true, false),
     swapCombatantWeapon: () => check('unexpected weapon swap', true, false),
     spawnVoxelShockwaveParticles: noop,
-    playDash: noop, playJump: noop, playExplosion: noop, playDeath: noop,
+    playDash: () => { dashRequests++; }, playJump: noop, playExplosion: noop, playDeath: noop,
   });
   const actions = createCombatantActionCallbacksForState({ getState: () => state, getRefs: () => refs,
     spawnPoints: [], getRosterAI: () => [...state.otherPlayers.values()], getActiveCustomMap: () => map,
@@ -280,6 +285,14 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const random = seededRandom(spec.seed ?? 17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
+  const dashState = (id: string) => {
+    const c = state.otherPlayers.get(id)!;
+    return { pos: c.pos.toArray(), vel: c.vel.toArray(), hp: c.hp, weapon: c.activeWeapon,
+      remaining: c.aiDashRemaining ?? 0, cooldown: c.aiDashCooldownTimer ?? 0,
+      direction: { ...c.aiDashDir }, jumping: !!c.isJumping,
+      role: state.aiMatchContext.grifballTeamPlan.assignments.get(id)?.role ?? null };
+  };
+  const dashSamples: { tick: number; id: string; requested: boolean; target: string | null; before: ReturnType<typeof dashState>; after: ReturnType<typeof dashState> }[] = [];
   const tacticalSamples: { tick: number; holderId: string | null; assignments: { id: string; team: string; role: string; slot: number; destination: { x: number; z: number }; tanking: { mode: string; targetId: string | null; partnerId: string | null; recoveryId: string | null; doubleCommit: boolean } | null; escort: string | null }[] }[] = [];
   const mainJumpImpacts: { tick: number; launched: boolean; budget: number }[] = [];
   const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
@@ -290,7 +303,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = rosterMatch ? 108000 : passRecovery ? 600 : tankContest ? 300 : rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = rosterMatch ? 108000 : passRecovery ? 600 : tankContest ? 300 : rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 3600 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -380,7 +393,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
             check('revived bot assigned before decisions', plan.assignments.has(r.id), state.grifball.phase === 'playing');
           }
         }, updateSingleAIEntity: (id, delta) => {
+          const dashBefore = mobility ? dashState(id) : null;
+          const requestsBefore = dashRequests;
+          resolvedTarget = null;
           updates.push(id); update(id, delta);
+          if (dashBefore) dashSamples.push({ tick, id, requested: dashRequests > requestsBefore, target: resolvedTarget, before: dashBefore, after: dashState(id) });
           if (passRecovery) recoveryIntents.push({ id, pickup: !!state.otherPlayers.get(id)!.pickupRequested });
         } }),
       updateGrifball: delta => {
@@ -642,7 +659,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     } else {
       const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
       check('expected recovery owner', pickups[0]?.id, recoveryId);
-      check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 53 : 107);
+      // Target-loss cancellation no longer restores a stale airborne dash. The
+      // two-actor winner therefore reaches recovery one/two frames earlier;
+      // physical pickup range, ownership and credit are independently checked.
+      check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 51 : 106);
       if (spec.mode === 'contested') {
         const followups = impacts.filter(i => i.victims.includes('escort'));
         // The fixed opening/match fixtures require a follow-up hit. Mobility
@@ -658,7 +678,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (rosterContest) check('tactical configuration preserved', JSON.stringify(state.grifballTactics), tacticsBefore);
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
-  return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
+  return { ...(mobility ? { dashSamples, dashSettings: { distance: state.settings.dashDistance, duration: state.settings.dashDuration, cooldown: state.settings.dashCooldown } } : {}),
+    name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
     boundary: passRecovery ? 'live-pass-recovery' as const : earnedTank ? 'live-earned-tank-contest' as const : tankContest ? 'live-tank-contest' as const : rosterContest ? 'live-roster-contest' as const : mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
     failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, pendingMainJumpRequests, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }

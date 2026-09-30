@@ -57,6 +57,9 @@ export function resolveNoTargetAIFrameForCombatant({
     finishSwordLungeTargetDead();
   }
   self.aiDashRemaining = 0;
+  // The caller synchronizes its working frame after this function returns.
+  // Cancel both copies so airborne/support recovery cannot restore the dash.
+  frame.dashRemaining = 0;
 
   if (recoverAirborneCombatantForFrame({
     self,
