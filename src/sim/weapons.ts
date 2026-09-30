@@ -35,7 +35,7 @@ import {
   SWORD_SLASH_FORWARD_FACTOR,
   SWORD_SLASH_RADIUS,
 } from '../components/grifball/combatGeometry';
-import { type SimState, type SimCombatant, findCombatant, isRosterExecution, isMixedPlayer, usesRosterLifecycle, combatExecutionForActor } from './simState';
+import { type SimState, type SimCombatant, findCombatant, isRosterExecution, isMixedPlayer, usesRosterLifecycle, combatExecutionForActor, weaponAttackCooldown } from './simState';
 import * as THREE from 'three';
 import { selectSimRespawnPosition } from './spawns';
 import { isVectorXZAtArenaBoundary } from '../components/grifball/arenaBounds';
@@ -562,7 +562,7 @@ export function stepCombatantWeapons(
   }
 
   // Attacks are blocked until the weapon is ready (post-swap / post-spawn).
-  const canAttack = c.attackCooldown <= 0 && c.weaponReadyTimer <= 0;
+  const canAttack = weaponAttackCooldown(c, combatExecutionForActor(state, c)) <= 0 && c.weaponReadyTimer <= 0;
 
   // Mixed frames commit the roster's requested action before objectives, but
   // advance skeletal melee afterward. Existing complete-step callers are unchanged.

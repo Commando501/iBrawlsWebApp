@@ -31,6 +31,14 @@ export const combatExecutionForActor = (state: SimState, c: SimCombatant): SimCo
   state.combatExecution === 'live-mixed-v1'
     ? isMixedPlayer(state, c) ? 'live-player-v1' : 'live-roster-v2' : state.combatExecution;
 
+/** Roster lunge completion readies the weapon; its remaining timer is AI backoff.
+ * Explicit action requests have already passed decision selection. Preserve that
+ * timer for decision consumers without inventing a mechanical weapon lockout. */
+export function weaponAttackCooldown(c: SimCombatant, execution: SimCombatExecution | undefined): number {
+  return execution === 'live-roster-v2' && !c.isLunging && c.weaponState === 'idle'
+    && c.attackKind === 'none' && c.lungeOutcome !== undefined ? 0 : Math.max(0, c.attackCooldown);
+}
+
 /**
  * Game mode the match is running. `grifball` = carry the ball to the enemy plate;
  * `combat` = deathmatch (1v1 / team / FFA), first team to the kill target wins. Both
@@ -84,7 +92,8 @@ export interface SimCombatant {
   playerSwordLungeRecovery?: { elapsed: number; duration: number };
   /** Seconds remaining before a weapon swap is permitted again. */
   swapLockoutTimer: number;
-  /** Seconds remaining before this combatant can attack again (cooldown). */
+  /** Attack recovery, or AI decision backoff after a v2 roster lunge.
+   * Use weaponAttackCooldown for mechanical readiness. */
   attackCooldown: number;
 
   // Movement mechanics

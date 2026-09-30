@@ -1,4 +1,4 @@
-import { combatExecutionForActor, isRosterExecution, type SimCombatant, type SimState, type SimCombatExecution } from './simState';
+import { combatExecutionForActor, isRosterExecution, weaponAttackCooldown, type SimCombatant, type SimState, type SimCombatExecution } from './simState';
 import type { UniversalSettings } from '../types';
 import { observeGrifballSpace } from '../game/aiGrifballSpace';
 import { createGrifballTacticalSnapshot } from '../game/grifballTacticalContract';
@@ -13,7 +13,7 @@ export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSett
   const timing = resolveHammerSlamTiming(settings);
   const windup = c.weapon === 'hammer' ? timing.windupTime + timing.attackTime
     : c.weapon === 'sword' ? settings.swordSlashSpeed : (settings.hammerMeleeSpeed ?? 0.24);
-  const lockout = Math.max(0, c.attackCooldown, c.weaponReadyTimer);
+  const lockout = Math.max(weaponAttackCooldown(c, execution), c.weaponReadyTimer, 0);
   observation.phase = c.weaponState === 'idle' ? 'ready' : c.weaponState;
   observation.attackIn = c.isLunging || c.weaponState === 'active' ? 0
     : c.weaponState === 'windup' ? Math.max(0, c.weaponTimer)
