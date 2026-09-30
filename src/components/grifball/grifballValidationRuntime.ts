@@ -1,5 +1,6 @@
 import { DeterministicTrace, LiveTimings, liveTimings, type BehaviorEvidence } from '../../game/grifballValidation/telemetry';
 import * as THREE from 'three';
+import { retainDecisionTrace, type DecisionTrace } from '../../game/grifballValidation/decisionTrace';
 import type { Combatant } from '../../types';
 import { createOfflineBotCombatant } from '../../game/roster';
 import { seededRandom, withSimulationRandom } from '../../game/simulationRandom';
@@ -56,6 +57,7 @@ export class GrifballValidationRuntime implements TrialHandle {
     goals: { blue: 0, red: 0 }, roleReleases: 0, staleRoleTicks: 0 };
   private pendingThrow = false;
   private deadAssignments = new Map<string, number>();
+  private decisions: DecisionTrace = { version: 1, intervalTicks: 120, droppedFrames: 0, frames: [] };
 
   constructor(private port: ValidationRuntimePort, readonly fixture: FrozenCase, readonly job: ValidationJob) {
     this.origin = cloneLabState(port.state);
@@ -170,6 +172,24 @@ export class GrifballValidationRuntime implements TrialHandle {
   private observe() {
     const s = this.port.state, next = frame(s, this.tickCount), previous = this.last;
     const assignments = s.aiMatchContext.grifballTeamPlan.assignments;
+    if (this.tickCount % this.decisions.intervalTicks === 0 || this.tickCount === this.job.simulationTicks ||
+      next.phase !== previous.phase || next.holder !== previous.holder || next.ballState !== previous.ballState ||
+      next.alive.join() !== previous.alive.join()) {
+      this.decisions.frames.push({ frame: next, revision: s.aiMatchContext.grifballTeamPlan.revision,
+        ball: [s.grifball.ball.pos.x, s.grifball.ball.pos.y, s.grifball.ball.pos.z],
+        actors: [...s.otherPlayers.values()].map(p => {
+          const a = assignments.get(p.id);
+          return { id: p.id, team: p.team!, position: [p.pos.x, p.pos.y, p.pos.z], velocity: [p.vel.x, p.vel.y, p.vel.z], hp: p.hp,
+            weapon: p.activeWeapon, weaponState: p.weaponState ?? null, aiState: p.aiState ?? null,
+            plannedTargetId: a?.tanking?.targetId ?? a?.defense?.targetId ?? null,
+            pressureTargetId: p.aiPressureTargetId ?? null, lungeTargetId: p.aiLastLungeTargetId ?? null,
+            role: a?.role ?? null, reason: a?.reason.slice(0, 500) ?? null,
+            destination: a ? [a.destination.x, a.destination.z] : null, route: a?.space?.route.status ?? null,
+            runner: a?.runner?.selected.action ?? null, defense: a?.defense?.mode ?? null, tanking: a?.tanking?.mode ?? null,
+            pickup: !!p.pickupRequested };
+        }) });
+      this.decisions = retainDecisionTrace(this.decisions);
+    }
     if (this.tickCount) {
       if (next.holder && next.holder !== previous.holder) {
         this.behavior.pickups++;
@@ -254,6 +274,7 @@ export class GrifballValidationRuntime implements TrialHandle {
       start: this.first ?? null, end: this.last ?? null, trace: [...this.trace], droppedTraceEntries: this.dropped,
       ...(['invalid-state', 'setup-error'].includes(reason) ? { failureState: this.failureState() } : {}),
       metrics: cloneLabState(this.tracker.teams), behavior: cloneLabState(this.behavior), timings: this.timings.finish(),
+      decisions: this.decisions,
       simulationCost: { samples: this.tickCount, meanMs: this.tickCount ? this.totalCost / this.tickCount : 0, maxMs: this.maxCost } });
     const result = this.result;
     void this.deterministic.finish().then(deterministic => {

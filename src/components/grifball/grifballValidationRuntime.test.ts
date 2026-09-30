@@ -15,6 +15,7 @@ import { runGrifballAIOrchestratorForState } from './aiOrchestratorBridge';
 import { updateGrifballTeamPlanForState } from './grifballTeamPlanRuntime';
 import type { GrifballThreeRefs } from './threeRefs';
 import { liveTimings } from '../../game/grifballValidation/telemetry';
+import { assertDecisionTrace } from '../../game/grifballValidation/decisionTrace';
 
 async function setup(roster: 'scripted-1v1' | 'scripted-3v4' | 'scripted-4v4' | 'scenario' = 'scripted-1v1', mirrored = false,
   tick?: (s: GrifballRuntimeState, dt: number) => void, seconds = 1) {
@@ -71,6 +72,32 @@ test('scenario replay uses the same seeded stream and resets tactical memory', a
   };
   const a = await run(), b = await run();
   assert.deepEqual(a.result.trace, b.result.trace); assert.deepEqual(a.result.metrics, b.result.metrics); assert.deepEqual(a.memory, b.memory);
+  assert.deepEqual(a.result.decisions, b.result.decisions);
+  assert.ok(a.result.decisions!.frames.at(-1)!.actors.some(actor => actor.role === 'retriever' && actor.reason && actor.destination));
+});
+
+test('decision diagnostics retain opening and recent event context without live references', async () => {
+  const { runtime, state } = await setup('scripted-1v1', false, s => {
+    const [bot, rival] = [...s.otherPlayers.values()];
+    bot.hp = bot.hp > 0 ? 0 : bot.maxHp;
+    bot.pos.x += .01;
+    bot.aiPressureTargetId = rival.id;
+    bot.aiState = 'PRESSURING';
+  }, 4);
+  for (let i = 0; i < 240; i++) runtime.step();
+  const result = await runtime.done, trace = result.decisions!;
+  assertDecisionTrace(trace, result.end!.tick);
+  assert.equal(trace.frames.length, 64);
+  assert.equal(trace.droppedFrames, 177);
+  assert.deepEqual(trace.frames.slice(0, 8).map(s => s.frame.tick), [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(trace.frames.at(-1)!.frame.tick, 240);
+  assert.equal(trace.frames[8].frame.tick, 185);
+  assert.equal(trace.frames.at(-1)!.actors[0].aiState, 'PRESSURING');
+  assert.equal(trace.frames.at(-1)!.actors[0].pressureTargetId, [...state.otherPlayers.keys()][1]);
+  const captured = JSON.stringify(trace);
+  [...state.otherPlayers.values()][0].pos.x = 999;
+  runtime.dispose();
+  assert.equal(JSON.stringify(trace), captured);
 });
 
 test('simulation cap remains unfinished and no ticks occur after stopping', async () => {

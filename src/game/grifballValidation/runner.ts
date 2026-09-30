@@ -1,5 +1,6 @@
 import { correctnessGate, reproducibilityGate } from './gates';
 import type { BehaviorEvidence, DeterminismEvidence, TimingEvidence } from './telemetry';
+import type { DecisionTrace } from './decisionTrace';
 import type { GrifballPhase } from '../grifballMatch';
 import type { TeamEvaluationMetrics } from '../grifballEvaluation';
 import { freeze } from './plan';
@@ -30,6 +31,7 @@ export interface TrialResult {
   behavior?: BehaviorEvidence;
   deterministic?: DeterminismEvidence;
   timings?: TimingEvidence;
+  decisions?: DecisionTrace;
   metrics: Record<'blue' | 'red', TeamEvaluationMetrics> | null;
   simulationCost: { samples: number; meanMs: number; maxMs: number };
 }

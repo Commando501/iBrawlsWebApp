@@ -6,6 +6,7 @@ import { appendLabResult, checkpointLabel, importLabRun, labRunReport, newLabRun
 import { trialCheck, type TrialResult } from './runner';
 import { LiveTimings } from './telemetry';
 import { RESERVED_VALIDATION_MAPS } from './maps';
+import type { DecisionTrace } from './decisionTrace';
 const runtime: LabRuntimeIdentity = { kind: 'lab-browser', buildId: null, userAgent: 'test-browser', fixedHz: 60, model: 'v2-medium' };
 async function fixture() {
   const manifest = createSuiteManifest('quick'); manifest.cases = manifest.cases.slice(0, 1);
@@ -18,6 +19,37 @@ function result(id: string, termination: TrialResult['termination'] = 'scenario-
   return { jobId: id, termination, check: trialCheck(id, termination, 'observed'), start: frame, end: frame,
     trace: Array.from({ length: 200 }, () => ({ ...frame })), droppedTraceEntries: 0, metrics: null, simulationCost: { samples: 60, meanMs: 1, maxMs: 2 } };
 }
+
+function decisions(): DecisionTrace {
+  const frame = result('fixture').end!;
+  return { version: 1, intervalTicks: 120, droppedFrames: 0,
+    frames: Array.from({ length: 61 }, (_, tick) => ({ frame: { ...frame, tick }, revision: tick,
+      ball: [0, .35, 0], actors: [{ id: 'bot', team: 'blue', position: [0, 0, 0], velocity: [0, 0, 0], hp: 1,
+        weapon: 'hammer', weaponState: 'ready', aiState: 'APPROACHING', plannedTargetId: null, pressureTargetId: null, lungeTargetId: null, role: 'retriever',
+        reason: 'reach ball', destination: [1, 0], route: 'direct', runner: null, defense: null, tanking: null, pickup: true }] })) };
+}
+
+test('decision diagnostics import with shape checks and share a bounded report budget', async () => {
+  let run = await fixture();
+  const trial = { ...result(run.plan.jobs[0].id), decisions: decisions() };
+  run = appendLabResult(run, trial);
+  assert.deepEqual((await importLabRun(JSON.stringify(run))).results[0].decisions, trial.decisions);
+  for (const change of [
+    (d: any) => { d.version = 2; }, (d: any) => { d.droppedFrames = -1; },
+    (d: any) => { d.frames[1].frame.tick = 0; }, (d: any) => { d.frames[0].frame.phase = 'invalid'; },
+    (d: any) => { d.frames[60].frame.tick = 61; }, (d: any) => { d.frames[0].actors[0].position = [0, null, 0]; },
+    (d: any) => { d.frames[0].actors[0].reason = {}; }, (d: any) => { d.frames[0].actors.push(d.frames[0].actors[0]); },
+  ]) {
+    const altered = structuredClone(run); change(altered.results[0].decisions);
+    await assert.rejects(importLabRun(JSON.stringify(altered)), /Malformed (decision trace|trial frame)/);
+  }
+  const plan = await createSuitePlan(createSuiteManifest('quick'), UNKNOWN_CODE);
+  run = newLabRun(plan, runtime);
+  for (const job of plan.jobs) run = appendLabResult(run, { ...result(job.id), decisions: decisions() });
+  assert.equal(run.results.reduce((sum, r) => sum + r.decisions!.frames.length, 0), 128);
+  for (const item of run.results) assert.equal(item.decisions!.frames.length + item.decisions!.droppedFrames, 61);
+  assert.ok(reportBytes(run) < 8 * 1024 * 1024);
+});
 test('report export/import recomputes verdicts, labels references and cannot certify acceptance', async () => {
   let run = await fixture();
   for (const job of run.plan.jobs) run = appendLabResult(run, result(job.id));

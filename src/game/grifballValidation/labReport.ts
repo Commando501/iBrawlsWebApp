@@ -1,4 +1,5 @@
 import { COST_CHANNELS } from './telemetry';
+import { assertDecisionTrace, retainDecisionTrace } from './decisionTrace';
 import { correctnessGate, reproducibilityGate } from './gates';
 import { qualityGate } from './qualityGate';
 import { performanceGate } from './performanceGate';
@@ -34,9 +35,12 @@ export function newLabRun(plan: SuitePlan, runtime: LabRuntimeIdentity, selected
 /** Keep endpoints/metrics and a recent, bounded trace. Full CLI artifacts remain on disk. */
 export function appendLabResult(run: LabRun, result: TrialResult): LabRun {
   let budget = 1024;
+  let decisionBudget = 128;
   const results = [...run.results.filter(r => r.jobId !== result.jobId), result].reverse().map(r => {
     const count = Math.min(64, budget, r.trace.length); budget -= count;
-    return { ...r, trace: count ? r.trace.slice(-count) : [], droppedTraceEntries: r.droppedTraceEntries + r.trace.length - count };
+    const decisions = r.decisions ? retainDecisionTrace(r.decisions, Math.min(64, decisionBudget)) : undefined;
+    decisionBudget -= decisions?.frames.length ?? 0;
+    return { ...r, ...(decisions ? { decisions } : {}), trace: count ? r.trace.slice(-count) : [], droppedTraceEntries: r.droppedTraceEntries + r.trace.length - count };
   }).reverse();
   return { ...run, results, currentJobId: null };
 }
@@ -98,6 +102,10 @@ export async function importLabRun(text: string): Promise<LabRun> {
     // Keep JSON diagnostics inert. Shape and finite numbers are checked before they can reach rendering.
     canonicalJSON(r);
     const copy = structuredClone(r);
+    if (copy.decisions !== undefined) {
+      assertDecisionTrace(copy.decisions, copy.end?.tick ?? 0);
+      copy.decisions.frames.forEach(sample => assertFrame(sample.frame));
+    }
     // Imported optional observations must satisfy the same bounded scalar contract before gate evaluation.
     if (copy.behavior) {
       const b = copy.behavior;
