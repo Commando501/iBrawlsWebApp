@@ -6,8 +6,35 @@ import { observeGrifballSpace } from './aiGrifballSpace';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan, resetGrifballTeamPlan, type GrifballTacticalPlayer, type GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import { buildGrifballSpaceGeometry, isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { defaultGrifballTactics, validateGrifballTactics, TACTICS_FIELDS } from './grifballTacticsConfig';
+import { createSnapshotRouters, planGrifballRunner, tickRunnerMemory } from './aiGrifballRunner';
 
 const p = (id: string, team: string, x: number, z: number): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true, space: observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, id === 'runner' ? 'ball' : 'hammer', 'ready') });
+
+for (const team of ['blue', 'red'] as const)
+  for (const scenario of ['reachable', 'weapon-range-only', 'blocked', 'recovering', 'spent-budget', 'human', 'already-close'] as const)
+    test(`runner waits for a reachable ready escort within remaining budget: ${team}/${scenario}`, () => {
+      const s = scene(), sign = team === 'blue' ? 1 : -1;
+      const allyDistance = scenario === 'weapon-range-only' ? 12 : scenario === 'already-close' ? 1.5 : 9;
+      s.players = [p('runner', team, 0, 0), p('ally', team, -allyDistance * sign, 0), p('enemy', team === 'blue' ? 'red' : 'blue', 6 * sign, 0)];
+      if (scenario !== 'weapon-range-only') Object.assign(s.players[1].space!, { reach: 2, speed: 5, attackIn: .4 });
+      Object.assign(s.players[2].space!, { reach: 3, speed: 3, attackIn: .4 });
+      if (scenario === 'human') s.players[1].scripted = false;
+      if (scenario === 'recovering') Object.assign(s.players[1].space!, { phase: 'recovering', attackIn: 5 });
+      if (scenario === 'blocked') s.geometry = buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52,
+        arenaHalfExtents: { x: 52, z: 23 }, objects: [{ type: 'box', position: { x: -2.5 * sign, y: 2, z: 0 },
+          scale: { x: 1, y: 4, z: 46 }, isCollidable: true }] } as CustomMapData, 52);
+      const tuning = { ...defaultGrifballTactics().defaults, runnerMaxWait: 2, runnerCutWidth: 1, runnerRiskWeight: 20 };
+      const memory = tickRunnerMemory(undefined, s.players[0], s.goals[team === 'blue' ? 'red' : 'blue']!, 0);
+      if (scenario === 'spent-budget') memory.waitUsed = tuning.runnerMaxWait - .25;
+      const plan = planGrifballRunner(s, s.players[0], tuning, memory, createSnapshotRouters(s));
+      if (scenario === 'weapon-range-only') {
+        const wait = plan.candidates.find(c => c.action === 'wait')!;
+        assert.ok(allyDistance / s.players[1].space!.speed > tuning.runnerMaxWait, 'body cannot rendezvous in time');
+        assert.ok(wait.supportETA <= tuning.runnerMaxWait, 'weapon can cover the runner in time');
+      }
+      if (scenario === 'reachable') assert.equal(plan.selected.action, 'wait');
+      else assert.notEqual(plan.selected.action, 'wait', scenario);
+    });
 function scene(): GrifballTacticalSnapshot {
   return { round: 1, playing: true, holderId: 'runner', ball: { x: 0, z: 0 }, spacing: 4,
     goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } }, tactics: { ...defaultGrifballTactics(), teams: { blue: { tankingEnabled: false }, red: { tankingEnabled: false } } },

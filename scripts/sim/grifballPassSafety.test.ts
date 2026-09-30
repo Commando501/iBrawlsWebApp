@@ -47,12 +47,20 @@ test('charge and release cannot change receiver or speed without a matching sele
   }
 });
 
-test('closing pressure can cancel and finish a full match without a later pass', () => {
+test('closing pressure cancels before a full match finishes, with later safe passes allowed', () => {
   assert.equal(closing.failureCount, 0, JSON.stringify(closing.failures));
-  assert.equal(closing.passes.length, 0);
   assert.ok(closing.cancellations.some(c => c.carrierId === 'carrier' && c.elapsed > 0));
   assert.equal(closing.frames.at(-1)!.phase, 'matchEnd');
   assert.equal(closing.goals.length, 2);
+});
+
+test('cancellation validator does not require a subsequent release', () => {
+  // Validator-only control: remove later release evidence without claiming this
+  // edited history is an independently simulated complete match.
+  const trace = structuredClone(closing);
+  trace.passes = [];
+  validatePassMatchTrace(trace, closingSpec);
+  assert.equal(trace.failureCount, 0, JSON.stringify(trace.failures));
 });
 
 test('closing-pressure evidence must contain an actual cancellation', () => {

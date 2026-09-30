@@ -109,7 +109,14 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const lowestRisk = Math.min(...moving.map(c => c.risk));
   for (const c of candidates) {
     if (c.action === 'wait') {
-      const coverageComing = allies.some(p => p.scripted && fieldDistance(p.pos, carrier.pos) > 2 && fieldDistance(p.pos, carrier.pos) / Math.max(0.1, p.space?.speed ?? 0.1) <= tuning.runnerMaxWait);
+      // A rendezvous needs an escort that can actually arrive and fight before
+      // patience runs out; a nearby body behind a wall or in recovery cannot help.
+      const coverageComing = allies.some(p => {
+        if (!p.scripted || fieldDistance(p.pos, carrier.pos) <= 2) return false;
+        const routeLength = routers.get(p.id)!(carrier.pos, true).length;
+        const arrival = routeLength / Math.max(0.1, p.space?.speed ?? 0.1);
+        return Math.max(arrival, estimateSpaceAttackTime(p, carrier.pos, routeLength)) <= tuning.runnerMaxWait - memory.waitUsed;
+      });
       // Waiting is a short coverage rendezvous, never the default when alone or fully covered.
       c.score = !forcedProgress && memory.waitUsed < tuning.runnerMaxWait && coverageComing && lowestRisk >= 0.75 && c.risk < 1 ? 1 - c.risk * tuning.runnerRiskWeight : -Infinity;
     }
