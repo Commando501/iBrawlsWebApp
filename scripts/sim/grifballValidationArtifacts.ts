@@ -26,6 +26,7 @@ export function atomicJSON(path: string, value: unknown) { atomicText(path, JSON
 /** Publish full parity evidence before its small completion receipt. The CLI's
  * Node test process owns this work so cancellation never waits for synchronous parity. */
 export function writeParityEvidence(directory: string, value: GateEvaluation) {
+  mkdirSync(join(directory, 'gates'), { recursive: true });
   const path = join(directory, 'gates', 'execution-parity.json');
   atomicText(path, parityJSONChunks(value, value.details as Record<string, unknown>));
   atomicJSON(join(directory, 'execution-parity-check.json'), value.check);

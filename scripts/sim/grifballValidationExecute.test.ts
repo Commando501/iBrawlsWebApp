@@ -164,6 +164,43 @@ test('CLI selects smoke, explicit parity, and complete repository scope without 
   assert.throws(() => validationTestCommand(createSuiteManifest('quick'), {}), /Expected a Node/);
 });
 
+test('standalone parity evidence creates its output tree without the CLI artifact manager', t => {
+  const directory = join(temporary(t), 'standalone', 'nested');
+  const check = { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
+    summary: 'Known coverage gaps', evidence: ['gates/execution-parity.json'] };
+  const evidence = { check, details: { traces: [{ differenceCount: 0 }], gaps: ['uncovered'] } };
+  assert.equal(existsSync(directory), false);
+  writeParityEvidence(directory, evidence);
+  assert.deepEqual(readJSON(join(directory, 'gates/execution-parity.json')), evidence);
+  assert.deepEqual(readJSON(join(directory, 'execution-parity-check.json')), check);
+});
+
+test('standalone parity failures retain prior evidence and never publish an incomplete receipt', t => {
+  const directory = join(temporary(t), 'standalone');
+  const check = { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
+    summary: 'Known coverage gaps', evidence: ['gates/execution-parity.json'] };
+  const interrupted = { check, details: { traces: [{ toJSON() { throw new Error('Interrupted serialization'); } }] } };
+  assert.throws(() => writeParityEvidence(directory, interrupted), /Interrupted serialization/);
+  const receipt = join(directory, 'execution-parity-check.json'), full = join(directory, 'gates/execution-parity.json');
+  assert.equal(existsSync(receipt), false);
+  assert.equal(existsSync(full), false);
+  const evidence = { check, details: { traces: [{ differenceCount: 0 }] } };
+  writeParityEvidence(directory, evidence);
+  assert.throws(() => writeParityEvidence(directory, interrupted), /Interrupted serialization/);
+  assert.deepEqual(readJSON(full), evidence);
+  assert.deepEqual(readJSON(receipt), check);
+});
+
+test('standalone parity refuses an output directory occupied by a file', t => {
+  const directory = temporary(t), path = join(directory, 'gates');
+  writeFileSync(path, 'keep existing data');
+  const check = { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
+    summary: 'Known coverage gaps', evidence: ['gates/execution-parity.json'] };
+  assert.throws(() => writeParityEvidence(directory, { check, details: { traces: [] } }));
+  assert.equal(readFileSync(path, 'utf8'), 'keep existing data');
+  assert.equal(existsSync(join(directory, 'execution-parity-check.json')), false);
+});
+
 test('parity completion receipt is published only after durable full evidence', async t => {
   const { plan } = await fixture(), out = new RunArtifacts(join(temporary(t), 'run'), plan, null);
   const check = { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
