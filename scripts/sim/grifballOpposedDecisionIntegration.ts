@@ -17,7 +17,7 @@ import { updateGrifballTeamPlanForState } from '../../src/components/grifball/gr
 import { updateGrifballObjectiveForState, setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
 import { createOfflineBotCombatant } from '../../src/game/roster';
-import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
+import { defaultGrifballTactics, validateGrifballTactics, type TeamTactics } from '../../src/game/grifballTacticsConfig';
 import { isSpaceSegmentOpen } from '../../src/game/grifballSpaceGeometry';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
 import { DEFAULT_ADMIN_SETTINGS } from '../../src/settings/gameplaySettings';
@@ -34,6 +34,7 @@ export interface OpposedDecisionCase {
   mode: 'punch-first' | 'hammer-first' | 'contested';
   team: 'blue' | 'red'; reverse: boolean; main: boolean; seed?: number;
 }
+export interface RosterContestOptions { teamSize: 3 | 4; tactics: Partial<TeamTactics> }
 export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
   (['punch-first', 'hammer-first', 'contested'] as const).flatMap(mode =>
     (['blue', 'red'] as const).flatMap(team => [false, true].flatMap(reverse =>
@@ -43,10 +44,12 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }, rosterOptions?: RosterContestOptions) {
+  const rosterContest = continuation === 'roster-contest';
+  if (rosterContest && (!rosterOptions || ![3, 4].includes(rosterOptions.teamSize))) throw new Error('Roster contest requires a three- or four-player team');
   const mapPassMatch = continuation === 'map-pass-match';
   const passMatch = continuation === 'pass-match' || mapPassMatch;
-  const passing = continuation === 'pass-contest' || passMatch;
+  const passing = continuation === 'pass-contest' || passMatch || rosterContest;
   if (passing && (!passOpening || spec.mode !== 'contested')) throw new Error('Pass contest requires four-actor opening positions');
   const mapMatch = continuation === 'map-match';
   const mapped = continuation === 'map-contest' || mapMatch || mapPassMatch;
@@ -68,6 +71,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const mapBefore = JSON.stringify(map);
   state.arenaRadius = map.arenaRadius; state.isObserverMode = true; state.grifball.phase = 'playing';
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = passing && passOpening?.passingEnabled !== false; state.otherPlayers.clear();
+  if (rosterContest) {
+    Object.assign(state.grifballTactics.defaults, rosterOptions!.tactics);
+    state.grifballTactics = validateGrifballTactics(state.grifballTactics);
+  }
+  const tacticsBefore = JSON.stringify(state.grifballTactics);
   const carrierId = spec.main ? 'main_ai' : 'carrier';
   const defenderId = 'defender';
   if (revival && !mapped) map.teamSpawns = { blue: [{ x: -12, y: 0, z: 3 }], red: [{ x: 12, y: 0, z: -3 }] };
@@ -80,6 +88,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       { id: 'cover', x: passing ? passOpening!.cover.x : 8, z: passing ? passOpening!.cover.z : -3, team: otherTeam },
     ] : []),
   ];
+  if (rosterContest) for (let slot = 1; slot <= rosterOptions!.teamSize - 2; slot++) {
+    seeds.push({ id: `support_${slot}`, x: -24, z: slot === 1 ? -9 : 9, team: spec.team },
+      { id: `rival_${slot}`, x: slot === 1 ? -34 : -40, z: slot === 1 ? -9 : 3, team: otherTeam });
+  }
   for (const s of spec.reverse ? [...seeds].reverse() : seeds) {
     const c = createOfflineBotCombatant({ id: s.id, playerName: s.id, team: s.team,
       spawnPos: new THREE.Vector3(s.x * sign, 0, s.z * sign), yaw: -sign * Math.PI / 2,
@@ -170,6 +182,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const random = seededRandom(spec.seed ?? 17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
+  const tacticalSamples: { tick: number; holderId: string | null; assignments: { id: string; team: string; role: string; slot: number; destination: { x: number; z: number }; tanking: { mode: string; targetId: string | null; partnerId: string | null; recoveryId: string | null; doubleCommit: boolean } | null; escort: string | null }[] }[] = [];
   const mainJumpImpacts: { tick: number; launched: boolean; budget: number }[] = [];
   const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
@@ -179,7 +192,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -235,6 +248,29 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
             const blocked = assignment.pass.candidates.filter(c => c.reason === 'Throw crosses blocked space');
             passGeometry.blockedCandidateSamples += blocked.length;
             for (const c of blocked) if (passGeometry.blockedExamples.length < 8) passGeometry.blockedExamples.push({ tick, carrierId: assignment.botId, receiverId: c.receiverId, speed: c.speed, path: c.path });
+          }
+          if (rosterContest) {
+            const assignments = [...plan.assignments.values()];
+            check('every living bot receives one assignment', JSON.stringify([...plan.assignments.keys()].sort()), JSON.stringify([...living].sort()));
+            for (const a of assignments) {
+              const actor = state.otherPlayers.get(a.botId)!;
+              check('assignment belongs to actor team', a.team, actor.team);
+              check('assignment destination finite', Number.isFinite(a.destination.x) && Number.isFinite(a.destination.z), true);
+              if (a.tanking?.targetId) check('tanking target is a living opponent', living.includes(a.tanking.targetId) && state.otherPlayers.get(a.tanking.targetId)?.team !== a.team, true);
+              for (const id of [a.tanking?.partnerId, a.tanking?.recoveryId]) if (id) check('tanking support is a living teammate', living.includes(id) && state.otherPlayers.get(id)?.team === a.team, true);
+            }
+            for (const a of assignments) if (a.tanking?.partnerId) check('tanking partner is another actor', a.tanking.partnerId !== a.botId, true);
+            const holder = state.grifball.ball.holderId;
+            check('one runner owns held possession', JSON.stringify(assignments.filter(a => a.role === 'runner').map(a => a.botId)), JSON.stringify(holder ? [holder] : []));
+            for (const team of ['blue', 'red']) {
+              const assigned = assignments.filter(a => a.team === team), slots = assigned.filter(a => a.slot >= 0).map(a => a.slot);
+              check('team support slots unique', new Set(slots).size, slots.length);
+              check('one retriever per available team', assigned.filter(a => a.role === 'retriever').length, !holder && assigned.length ? 1 : 0);
+            }
+            if (plan.revision !== revision) tacticalSamples.push({ tick, holderId: holder, assignments: assignments.map(a => ({
+              id: a.botId, team: a.team, role: a.role, slot: a.slot, destination: { ...a.destination }, escort: a.escort?.kind ?? null,
+              tanking: a.tanking ? { mode: a.tanking.mode, targetId: a.tanking.targetId, partnerId: a.tanking.partnerId, recoveryId: a.tanking.recoveryId, doubleCommit: a.tanking.doubleCommit } : null,
+            })) });
           }
           // Verify revival at the planner boundary, before later combat can
           // invalidate the whole plan by killing the current carrier.
@@ -509,9 +545,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       }
     }
   }
+  if (rosterContest) check('tactical configuration preserved', JSON.stringify(state.grifballTactics), tacticsBefore);
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    boundary: rosterContest ? 'live-roster-contest' as const : mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    failureCount, failures, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
