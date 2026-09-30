@@ -30,7 +30,7 @@ export const FRAME_OBJECTIVE_CASES: FrameObjectiveCase[] = [false, true].flatMap
 export interface ChargeCombatCase { releaseAt: number | null; shield: boolean; moving: boolean; recovery?: 'hold' | 'repress' }
 export interface CarrierRecoveryCase { motion: 'stationary' | 'cross' | 'retreat'; escortHp: 1 | 3; attackAt: 1 | 12 }
 export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; pickup: 'tie' | 'nearer-escort'; recovery?: CarrierRecoveryCase }
-export interface RunnerCombatCase { motion?: 'retreat' | 'cross' | 'approach'; mainAttacker?: boolean; attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
+export interface RunnerCombatCase { secondAttack?: 'slash' | 'lunge'; motion?: 'retreat' | 'cross' | 'approach'; mainAttacker?: boolean; attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
 export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase, crowd?: CarrierCrowdCase, runnerCombat?: RunnerCombatCase) {
   if (runnerCombat && (spec.goal || charge || crowd)) throw new Error('Runner combat requires an off-goal runner');
   if (crowd && (charge || spec.goal)) throw new Error('Carrier crowd fixture requires an off-goal runner without pass input');
@@ -90,12 +90,21 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     Object.assign(sim.settings, state.settings);
     collectors[0][0].hp = collectors[0][0].maxHp = collectors[0][1].hp = collectors[0][1].maxHp = crowd.recovery.escortHp;
   }
+  if (runnerCombat?.secondAttack) {
+    if (!spec.player || runnerCombat.attack === 'none') throw new Error('Moving focus fire requires a local carrier and two attacks');
+    const [support, simSupport] = addParityActor(f, 'support', attackerTeam, attacker.pos.x, attacker.pos.z);
+    support.yaw = bot.yaw; simSupport.yaw = attacker.yaw;
+    support.activeWeapon = simSupport.weapon = 'sword';
+    attackers.push({ live: support, headless: simSupport, lunge: runnerCombat.secondAttack === 'lunge' });
+  }
   if (runnerCombat) {
     Object.assign(state.settings, { speedForward: 100, speedBackward: 100, grifballRunnerSpeedForward: runnerCombat.speed,
       grifballRunnerSpeedBackward: runnerCombat.speed, grifballRunnerSpeedSide: runnerCombat.speed, speedSide: 100, hammerMeleeSpeed: runnerCombat.punchSpeed });
     Object.assign(sim.settings, state.settings);
-    bot.hp = bot.maxHp = attacker.hp = attacker.maxHp = runnerCombat.enemyHp;
-    bot.invulnerabilityTimer = attacker.invulnerabilityTimer = runnerCombat.shield ? 10 : 0;
+    for (const { live: a, headless: b } of attackers) {
+      a.hp = a.maxHp = b.hp = b.maxHp = runnerCombat.enemyHp;
+      a.invulnerabilityTimer = b.invulnerabilityTimer = runnerCombat.shield ? 10 : 0;
+    }
   }
   const attackAt = runnerCombat ? 4 : crowd?.recovery?.attackAt ?? 1;
   // Lunge contact occurs in updateAI; a short slash impacts in skeletal animation on the authored attack tick.
@@ -251,7 +260,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     const liveCharge = { active: ballChargingRef.current, seconds: ballChargeTimerRef.current, display: state.grifballPassCharge };
     const simCharge = { active: !!player.passCharging, seconds: player.passChargeTimer,
       display: player.passCharging ? Math.min(1, player.passChargeTimer / (sim.settings.grifballChargeMax ?? 1.2)) : 0 };
-    const liveCrowd = crowd ? [...state.otherPlayers.values()].map(c => ({ id: c.id, hp: c.hp, maxHp: c.maxHp,
+    const liveCrowd = crowd || runnerCombat?.secondAttack ? [...state.otherPlayers.values()].map(c => ({ id: c.id, hp: c.hp, maxHp: c.maxHp,
       weapon: c.activeWeapon, pos: c.pos.toArray(), shield: c.invulnerabilityTimer, lunging: !!c.isLunging,
       kills: c.kills ?? 0, deaths: c.deaths ?? 0 })) : [];
     const simCrowd = liveCrowd.map(c => {
@@ -259,7 +268,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       return { id: b.id, hp: b.hp, maxHp: b.maxHp, weapon: b.weapon, pos: Object.values(b.pos), shield: b.invulnerabilityTimer,
         lunging: b.isLunging, kills: kills.get(b.id) ?? 0, deaths: deaths.get(b.id) ?? 0 };
     });
-    if (crowd) {
+    if (crowd || runnerCombat?.secondAttack) {
       compare('crowd', liveCrowd, simCrowd);
       record.compare(tick, 'crowd.runnerDeaths', spec.player ? state.playerDeaths : target.deaths ?? 0, deaths.get(runner.id) ?? 0);
     }
@@ -276,7 +285,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       compare('runner', { ...liveRunner, vel: live.hp > 0 ? liveRunner!.vel : [] }, { ...simRunner, vel: headless.hp > 0 ? simRunner!.vel : [] });
     }
     if (charge) compare('charge', liveCharge, simCharge);
-    compare('frame', live, headless); frames.push({ tick, live, headless, events, liveCharge, simCharge, ...(crowd ? { liveCrowd, simCrowd } : {}), ...(runnerCombat ? { liveRunner, simRunner } : {}) });
+    compare('frame', live, headless); frames.push({ tick, live, headless, events, liveCharge, simCharge, ...(crowd || runnerCombat?.secondAttack ? { liveCrowd, simCrowd } : {}), ...(runnerCombat ? { liveRunner, simRunner } : {}) });
   }
   if (runnerCombat) return { name: JSON.stringify({ ...spec, runnerCombat }), ticks, counters, ...record.result(), frames };
   if (crowd?.recovery) return { name: JSON.stringify({ ...spec, crowd }), ticks, ...record.result(), frames };
