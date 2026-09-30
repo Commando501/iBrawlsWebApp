@@ -17,7 +17,7 @@ export function runMatchDecisionTrace(spec: OpposedDecisionCase) {
 }
 
 /** Shared lifecycle acceptance for synthetic arenas and supplied maps. */
-export function validateCompleteMatchTrace<T extends ReturnType<typeof runOpposedDecisionTrace>>(trace: T): T {
+export function validateCompleteMatchTrace<T extends Omit<ReturnType<typeof runOpposedDecisionTrace>, 'scenario'>>(trace: T): T {
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) {
       trace.failureCount++;

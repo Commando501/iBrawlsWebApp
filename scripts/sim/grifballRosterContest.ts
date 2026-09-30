@@ -1,6 +1,7 @@
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { PASS_CONTEST_OPENINGS } from './grifballPassContest';
 import type { TeamTactics } from '../../src/game/grifballTacticsConfig';
+import type { CustomMapData } from '../../src/types';
 
 export const ROSTER_TACTICS = {
   balanced: {},
@@ -18,9 +19,9 @@ export const ROSTER_CONTEST_CASES: RosterContestCase[] = ([3, 4] as const).flatM
     .flatMap(team => [false, true].flatMap(reverse => [false, true].map(main => ({ teamSize, profile, team, reverse, main }))))));
 
 /** Bounded autonomous 3v3/4v4 contests with authored starts and tactical profiles. */
-export function runRosterContestTrace(spec: RosterContestCase) {
+export function runRosterContestTrace(spec: RosterContestCase, map?: CustomMapData) {
   const trace = runOpposedDecisionTrace({ mode: 'contested', team: spec.team, reverse: spec.reverse, main: spec.main, seed: 17 },
-    'roster-contest', undefined, PASS_CONTEST_OPENINGS.clear, { teamSize: spec.teamSize, tactics: ROSTER_TACTICS[spec.profile] });
+    map ? 'map-roster-match' : 'roster-contest', map, PASS_CONTEST_OPENINGS.clear, { teamSize: spec.teamSize, tactics: ROSTER_TACTICS[spec.profile] });
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) { trace.failureCount++; if (trace.failures.length < 64) trace.failures.push({ tick: trace.ticks, field, actual, expected }); }
   };

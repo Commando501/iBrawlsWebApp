@@ -46,15 +46,16 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' | 'tank-contest' | 'earned-tank-contest' | 'pass-recovery' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean; releaseSpeed?: number }, rosterOptions?: RosterContestOptions) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' | 'tank-contest' | 'earned-tank-contest' | 'pass-recovery' | 'map-roster-match' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean; releaseSpeed?: number }, rosterOptions?: RosterContestOptions) {
+  const rosterMatch = continuation === 'map-roster-match';
   const passRecovery = continuation === 'pass-recovery';
   const earnedTank = continuation === 'earned-tank-contest';
   const tankContest = continuation === 'tank-contest' || earnedTank;
-  const rosterContest = continuation === 'roster-contest' || tankContest;
+  const rosterContest = continuation === 'roster-contest' || tankContest || rosterMatch;
   if (tankContest && !earnedTank && !rosterOptions?.tankOpening) throw new Error('Tank contest requires an opening');
   if (earnedTank && !rosterOptions?.earnedTankOpening) throw new Error('Earned tank contest requires an opening');
   if (rosterContest && (!rosterOptions || ![3, 4].includes(rosterOptions.teamSize))) throw new Error('Roster contest requires a three- or four-player team');
-  const mapPassMatch = continuation === 'map-pass-match';
+  const mapPassMatch = continuation === 'map-pass-match' || rosterMatch;
   const passMatch = continuation === 'pass-match' || mapPassMatch;
   const passing = continuation === 'pass-contest' || passMatch || rosterContest || passRecovery;
   if (passing && (!passOpening || spec.mode !== 'contested')) throw new Error('Pass contest requires four-actor opening positions');
@@ -66,7 +67,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
       ...(mobility ? { maxHP: 3 } : {}),
       ...(match ? { grifballGoalTarget: 2, grifballRoundResetDelay: .19, grifballCountdownDuration: .09 } : {}),
-      ...(!earnedTank && !passRecovery ? { hammerMeleeSpeed: spec.mode === 'punch-first' ? .04 : .5,
+      ...(!earnedTank && !passRecovery && !rosterMatch ? { hammerMeleeSpeed: spec.mode === 'punch-first' ? .04 : .5,
       hammerSlamWindupTime: spec.mode === 'punch-first' ? .5 : .08,
       hammerSlamAttackTime: spec.mode === 'punch-first' ? .2 : .04,
       ...(tankContest ? { maxHP: 3, attackRange: 1.5, attackRadius: rosterOptions!.tankOpening === 'shared-blast' ? 4.5 : 1.5, hammerReloadTime: 1.2 } : {}) } : {}) },
@@ -156,7 +157,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   const releaseState = authoredPass ? { ball: structuredClone(state.grifball.ball), weapon: carrier.activeWeapon,
     hp: carrier.hp, maxHp: carrier.maxHp, flight: structuredClone(state.aiMatchContext.grifballTeamPlan.passFlight) } : null;
-  const combatSettings = earnedTank || passRecovery ? Object.fromEntries(['maxHP', 'attackRange', 'attackRadius', 'hammerMeleeSpeed',
+  const combatSettings = earnedTank || passRecovery || rosterMatch ? Object.fromEntries(['maxHP', 'attackRange', 'attackRadius', 'hammerMeleeSpeed',
     'hammerSlamWindupTime', 'hammerSlamAttackTime', 'hammerReloadTime', 'respawnInvulnerabilityDuration', 'hammerJumpPower',
     ...(passRecovery ? ['grifballPickupRadius', 'grifballRunnerHealth', 'grifballPassSpeedMin', 'grifballPassSpeedMax', 'grifballChargeMax'] : [])]
     .map(key => [key, state.settings[key as keyof typeof state.settings]])) : undefined;
@@ -259,7 +260,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = passRecovery ? 600 : tankContest ? 300 : rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = rosterMatch ? 108000 : passRecovery ? 600 : tankContest ? 300 : rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -322,7 +323,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           }
           if (rosterContest || passRecovery) {
             const assignments = [...plan.assignments.values()];
-            check('every living bot receives one assignment', JSON.stringify([...plan.assignments.keys()].sort()), JSON.stringify([...living].sort()));
+            check('active living roster assigned; inactive assignments clear', JSON.stringify([...plan.assignments.keys()].sort()), JSON.stringify(state.grifball.phase === 'playing' ? [...living].sort() : []));
             for (const a of assignments) {
               const actor = state.otherPlayers.get(a.botId)!;
               check('assignment belongs to actor team', a.team, actor.team);
@@ -543,7 +544,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     if ((mapMatch || passMatch) && (state.grifball.phase as string) === 'matchEnd') {
       terminalTick ||= tick;
       // Retain three seconds after the winning transition, including pending respawns.
-      if (tick >= terminalTick + 181) { ticks = tick; break; }
+      // Committed impacts may finish after match end. Larger-roster acceptance
+      // observes their full respawn delay as well as the terminal hold.
+      const observationEnd = rosterMatch ? Math.max(terminalTick, deaths.at(-1)?.tick ?? 0) + 181 : terminalTick + 181;
+      if (tick >= observationEnd) { ticks = tick; break; }
     }
   }
   tick = ticks;
@@ -623,6 +627,6 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
     boundary: passRecovery ? 'live-pass-recovery' as const : earnedTank ? 'live-earned-tank-contest' as const : tankContest ? 'live-tank-contest' as const : rosterContest ? 'live-roster-contest' as const : mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, ...(earnedTank || passRecovery ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
