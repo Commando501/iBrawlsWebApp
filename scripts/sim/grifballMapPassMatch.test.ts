@@ -2,7 +2,7 @@ import { isMapBodyClear } from './grifballMapCollisionOracle';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAP_PASS_MATCH_CASES, runMapPassMatchTrace } from './grifballMapPassMatch';
-import { postResetPassCoverage, type PostResetPassTrace } from './grifballPassMatch';
+import { PASS_MATCH_CASES, runPassMatch, postResetPassCoverage, type PostResetPassTrace } from './grifballPassMatch';
 
 const postResetTraces: PostResetPassTrace[] = [];
 for (const spec of MAP_PASS_MATCH_CASES) test(`complete map passing match ${spec.map.id}/${spec.team}/${spec.reverse}/${spec.main}`, () => {
@@ -20,8 +20,14 @@ for (const spec of MAP_PASS_MATCH_CASES) test(`complete map passing match ${spec
     passesAfterReset: trace.passesAfterReset, failureCount: trace.failureCount });
 });
 
-test('supplied-map matrix retains post-reset passing for both team orientations and initial carrier identities', () => {
-  assert.deepEqual(postResetPassCoverage(postResetTraces).missing, []);
+test('combined flat and supplied-map matrix retains post-reset passing for both teams and carrier identities', () => {
+  // Match the execution gate's fixed coverage population. Neither subset alone
+  // has to produce every tactical opportunity, but missing evidence still fails.
+  const flat = runPassMatch();
+  assert.equal(postResetTraces.length, MAP_PASS_MATCH_CASES.length);
+  assert.equal(flat.length, PASS_MATCH_CASES.length);
+  assert.ok(flat.every(t => t.failureCount === 0), JSON.stringify(flat.filter(t => t.failureCount).map(t => ({ name: t.name, failures: t.failures }))));
+  assert.deepEqual(postResetPassCoverage([...postResetTraces, ...flat]).missing, []);
 });
 test('supplied-map passing covers five maps, mirrored teams, orders and carrier identities', () => {
   assert.equal(MAP_PASS_MATCH_CASES.length, 40);
