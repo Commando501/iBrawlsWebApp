@@ -43,13 +43,14 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }) {
-  const passing = continuation === 'pass-contest';
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }) {
+  const passMatch = continuation === 'pass-match';
+  const passing = continuation === 'pass-contest' || passMatch;
   if (passing && (!passOpening || spec.mode !== 'contested')) throw new Error('Pass contest requires four-actor opening positions');
   const mapMatch = continuation === 'map-match';
   const mapped = continuation === 'map-contest' || mapMatch;
   if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
-  const match = continuation === 'match' || mapped, mobility = continuation === 'mobility', revival = continuation !== 'opening';
+  const match = continuation === 'match' || mapped || passMatch, mobility = continuation === 'mobility', revival = continuation !== 'opening';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
       ...(mobility ? { maxHP: 3 } : {}),
@@ -175,7 +176,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -416,7 +417,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       actors: [...state.otherPlayers.values()].map(c => ({ id: c.id, team: c.team, pos: c.pos.toArray(), vel: c.vel.toArray(),
         hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, jumpBudget: c.aiHammerJumpsInAir ?? 0, jumpPlanned: !!c.hammerJumpPlanned, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
     if (!passing && tick === 150) validateOpeningContest();
-    if (mapMatch && (state.grifball.phase as string) === 'matchEnd') {
+    if ((mapMatch || passMatch) && (state.grifball.phase as string) === 'matchEnd') {
       terminalTick ||= tick;
       // Retain three seconds after the winning transition, including pending respawns.
       if (tick >= terminalTick + 181) { ticks = tick; break; }
@@ -497,7 +498,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    boundary: passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
     failureCount, failures, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
