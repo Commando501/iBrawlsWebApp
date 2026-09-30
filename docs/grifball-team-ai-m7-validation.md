@@ -2216,3 +2216,18 @@ The saved production/validation trees from `output/m7-aligned-replay-serial-proo
 A fixed four-run follow-up used the ordinary `runBrowserJob` path, with no profiler or intervening builds: seeds 101 and 102, then the same two seeds again. All four gameplay hashes match the original run. Warm planner p95 values are **3.1/3.3/3.2/3.3 ms**, maxima **12.6/8.4/11.2/7.7 ms** (`output/m7-retained-performance-diagnostic/`). The diagnostic script initially used the wrong artifact filename when checking its first completed result; that result was preserved and compared successfully after correcting the lookup, then only the remaining three jobs ran.
 
 The same frozen implementation can therefore reproduce its gameplay at substantially lower measured cost than the recorded 5.6–7.1 ms runs. These observations do not establish the cause of that change, certify stable machine conditions, supersede the historical failed gate or prove a code optimization. No router change is justified by this comparison alone. The next acceptance attempt will validate the newly committed loose-ball implementation through the full original/replay CLI protocol, with all thresholds unchanged and no concurrent agent-owned workloads.
+
+## 2026-09-30 — current build passes calibrated obstacle performance
+
+`output/m7-loose-screen-serial-performance-proof/` passes the frozen v2 performance gate after the loose-ball behavior change. All **156 Quick checks**, TypeScript, three builds, startup, correctness and two exact null pairs pass. Every separately persisted performance replay matches its original gameplay hash and refresh ticks. Startup and arena screenshots were inspected. No other agent-owned workload ran during measurement. Source: `cb6c91d648e66829b3d75f7f3b87b6656214e56f`, dirty hash `a99fb47204b21d602e740c5d0b88ecc440968a9218c7ab3b54a86bf872ed8c3a`, including concurrent outline work.
+
+| Seed / variant | Original p95 | Replay p95 | Refreshes per pass | Largest window ratio |
+| --- | --- | --- | --- | --- |
+| 101 baseline | 3.3 ms | 3.0 ms | 205 | 1.2942 |
+| 101 candidate | 3.3 ms | 3.1 ms | 205 | 1.3311 |
+| 102 baseline | 3.1 ms | 2.9 ms | 216 | 1.6000 |
+| 102 candidate | 2.9 ms | 3.0 ms | 216 | 1.9775 |
+
+All eight absolute p95 values meet 4 ms, paired ratios meet 1.2 and aligned windows meet 3.0, with no invalid-evidence reasons or failures. Cold maxima are **20.0–27.0 ms**, warm maxima **7.2–20.8 ms**; no samples are discarded. Seed 101 now reaches match end, while seed 102 reaches the intentionally short 60-second cap. The overall CLI consequently reports **exit 2 / incomplete evidence** even though all requested gates pass. This bounded performance trial does not claim complete-match quality acceptance. The initial invocation used an unsupported option name and stopped during argument parsing; the documented `--protocol` invocation produced this run.
+
+This supplies passing current-build evidence for the calibrated eight-participant obstacle budget. Historical failures remain attributed to their original runs, and the source/workload change prevents attributing the lower cost solely to code or environment. Broader execution parity and held-out quality still prevent M7 acceptance. Next, rerun the fixed development quality matrix to assess the loose-ball change across both maps and all three opponent styles before selecting any further behavior change.
