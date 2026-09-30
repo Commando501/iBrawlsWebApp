@@ -30,6 +30,10 @@ test('CLI arguments reject typos, duplicates and missing values', () => {
   for (const args of [['--suite'], ['--suite', 'other'], ['--bogus'], ['--dry-run', '--dry-run'], ['--out', '--dry-run']])
     assert.throws(() => parseArgs(args));
   assert.deepEqual(parseArgs(['--suite', 'standard', '--dry-run']), { suite: 'standard', dryRun: true, help: false });
+  assert.equal(parseArgs(['--port', '0']).port, 0);
+  assert.equal(parseArgs(['--port', '3001']).port, 3001);
+  assert.equal(parseArgs([]).port, undefined);
+  for (const port of ['-1', '65536', '3.5', '1e3', 'NaN']) assert.throws(() => parseArgs(['--port', port]), /--port/);
 });
 
 test('CLI exports an exact not-run preview and a reusable manifest without overwriting evidence', t => {

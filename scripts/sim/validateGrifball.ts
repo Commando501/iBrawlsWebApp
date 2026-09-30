@@ -33,7 +33,7 @@ export function captureCodeIdentity(root: string): CodeIdentity {
   const workingTreeHash = createHash('sha256').update(canonicalJSON({ version: 1, commit, scope: CODE_SCOPE, changes })).digest('hex');
   return { commit, dirty: paths.length > 0, workingTreeHash, scope: [...CODE_SCOPE] };
 }
-export interface Options { suite?: SuiteProfile; manifest?: string; out?: string; writeManifest?: string; case?: string; resume?: string; protocol?: string; dryRun: boolean; help: boolean }
+export interface Options { suite?: SuiteProfile; manifest?: string; out?: string; writeManifest?: string; case?: string; resume?: string; protocol?: string; port?: number; dryRun: boolean; help: boolean }
 export function parseArgs(args: string[]): Options {
   const result: Options = { dryRun: false, help: false };
   const seen = new Set<string>();
@@ -43,12 +43,15 @@ export function parseArgs(args: string[]): Options {
     seen.add(arg);
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--help') result.help = true;
-    else if (['--suite', '--manifest', '--out', '--write-manifest', '--case', '--resume', '--protocol'].includes(arg)) {
+    else if (['--suite', '--manifest', '--out', '--write-manifest', '--case', '--resume', '--protocol', '--port'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`);
       if (arg === '--suite') {
         if (!PROFILES.includes(value as SuiteProfile)) throw new Error(`Unknown suite ${value}`);
         result.suite = value as SuiteProfile;
+      } else if (arg === '--port') {
+        if (!/^\d+$/.test(value) || Number(value) > 65535) throw new Error('--port must be an integer from 0 to 65535');
+        result.port = Number(value);
       } else if (arg === '--manifest') result.manifest = value;
       else if (arg === '--out') result.out = value;
       else if (arg === '--case') result.case = value;
@@ -73,8 +76,9 @@ export async function main(args: string[]): Promise<number> {
     console.log('Grifball validation suite (VS5 gates)\n' +
       'npm run validate:grifball -- --suite quick|standard --dry-run [--out file.json] [--write-manifest file.json]\n' +
       'npm run validate:grifball -- --manifest file.json --dry-run [--suite acceptance]\n' +
-      'npm run validate:grifball -- --suite quick [--out NEW-DIRECTORY] [--case CASE-ID] [--protocol FILE]\n' +
+      'npm run validate:grifball -- --suite quick [--out NEW-DIRECTORY] [--case CASE-ID] [--protocol FILE] [--port PORT]\n' +
       'npm run validate:grifball -- --resume OLD-DIRECTORY [--case CASE-ID] [--out NEW-DIRECTORY]\n' +
+      'Port defaults to 3000; --port 0 requests an isolated available port.\n' +
       'Exit: 0 required automated gates passed (or preview/help); 1 failed evidence; 2 incomplete; 3 invalid input/setup.');
     return 0;
   }

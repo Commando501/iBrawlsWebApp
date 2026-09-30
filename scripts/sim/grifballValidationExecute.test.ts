@@ -1,14 +1,15 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSuiteManifest } from '../../src/game/grifballValidation/profiles';
 import { createSuitePlan } from '../../src/game/grifballValidation/plan';
 import { trialCheck, type TrialResult } from '../../src/game/grifballValidation/runner';
-import { atomicJSON, jobFile, readJSON, RunArtifacts, type RunIdentity } from './grifballValidationArtifacts';
+import { atomicJSON, jobFile, readJSON, RunArtifacts, writeParityEvidence, type RunIdentity } from './grifballValidationArtifacts';
+import { nodeCheck, validationTestCommand } from './grifballValidationExecute';
 import { bounded, failedTrial, WatchdogError } from './grifballValidationBrowser';
 import { startValidationServer, IDENTITY_PATH } from './grifballValidationServer';
 
@@ -140,4 +141,67 @@ test('failed parity serialization cannot replace valid evidence or update its ve
   } }), /Injected trace serialization failure/);
   assert.equal(readFileSync(path, 'utf8'), before);
   assert.deepEqual(out.gates, [check]);
+});
+
+test('CLI selects smoke, explicit parity, and complete repository scope without weakening required checks', () => {
+  const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+  const quick = createSuiteManifest('quick');
+  const smoke = validationTestCommand(quick, scripts);
+  assert.equal(smoke.script, 'test:grifball-smoke');
+  assert.equal(smoke.parity, false);
+  assert.ok(smoke.args.includes('scripts/sim/grifballValidationExecute.test.ts'));
+  assert.ok(!smoke.args.includes('src/game/grifballValidation/gates.test.ts'), 'Quick must not run the full parity aggregate');
+  quick.requiredGates.push('execution-parity');
+  const explicit = validationTestCommand(quick, scripts);
+  assert.equal(explicit.script, 'test:grifball-validation');
+  assert.equal(explicit.parity, true);
+  assert.ok(explicit.args.includes('src/game/grifballValidation/gates.test.ts'));
+  const standard = validationTestCommand(createSuiteManifest('standard'), scripts);
+  assert.equal(standard.repository, true);
+  assert.equal(standard.parity, true);
+  assert.deepEqual(standard.args.slice(1), scripts.test.split(/\s+/).slice(1), 'Every repository check, including V3, remains selected');
+  assert.equal(standard.args[0], '--max-old-space-size=8192');
+  assert.throws(() => validationTestCommand(createSuiteManifest('quick'), {}), /Expected a Node/);
+});
+
+test('parity completion receipt is published only after durable full evidence', async t => {
+  const { plan } = await fixture(), out = new RunArtifacts(join(temporary(t), 'run'), plan, null);
+  const check = { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
+    summary: 'Known coverage gaps', evidence: ['gates/execution-parity.json'] };
+  assert.throws(() => writeParityEvidence(out.directory, { check, details: {
+    traces: [{ toJSON() { throw new Error('Interrupted serialization'); } }],
+  } }), /Interrupted serialization/);
+  assert.equal(existsSync(join(out.directory, 'execution-parity-check.json')), false);
+  assert.equal(existsSync(join(out.directory, 'gates/execution-parity.json')), false);
+  const evidence = { check, details: { traces: [{ differenceCount: 0 }], gaps: ['uncovered'] } };
+  writeParityEvidence(out.directory, evidence);
+  assert.deepEqual(readJSON(join(out.directory, 'execution-parity-check.json')), check);
+  assert.deepEqual(readJSON(join(out.directory, 'gates/execution-parity.json')), evidence);
+});
+
+test('cancellation interrupts a CPU-bound Node check and terminates its owned process', { timeout: 15000 }, async t => {
+  const path = join(temporary(t), 'busy.log'), abort = new AbortController();
+  const running = nodeCheck(process.cwd(), ['-e', 'console.log(process.pid); while (true) {}'], path, abort.signal);
+  // Attach the rejection handler before cancellation to avoid an unhandled rejection.
+  const rejected = assert.rejects(running, /cancelled/);
+  try {
+    const until = Date.now() + 10000;
+    while ((!existsSync(path) || !readFileSync(path, 'utf8').trim()) && Date.now() < until)
+      await new Promise(resolve => setTimeout(resolve, 25));
+    const pid = Number(readFileSync(path, 'utf8').trim());
+    assert.ok(Number.isInteger(pid) && pid > 0 && pid !== process.pid);
+    abort.abort();
+    await rejected;
+    assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  } finally { abort.abort(); await rejected; }
+});
+
+test('Node checks preserve exit failures, enforce a watchdog and reject pre-cancelled work', async t => {
+  const dir = temporary(t), signal = new AbortController().signal;
+  assert.equal(await nodeCheck(process.cwd(), ['-e', 'process.exit(7)'], join(dir, 'failed.log'), signal), 7);
+  await assert.rejects(nodeCheck(process.cwd(), ['-e', 'while (true) {}'], join(dir, 'timeout.log'), signal, process.env, 250), WatchdogError);
+  const abort = new AbortController(); abort.abort();
+  const path = join(dir, 'not-started.log');
+  await assert.rejects(nodeCheck(process.cwd(), ['-e', 'process.exit(0)'], path, abort.signal), /cancelled/);
+  assert.equal(existsSync(path), false);
 });

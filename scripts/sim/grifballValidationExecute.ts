@@ -2,7 +2,6 @@ import { cpus, totalmem, release } from 'node:os';
 import { correctnessGate, reproducibilityGate, createNullControlPlan, nullControlRequired, validateGateProtocol, gate } from '../../src/game/grifballValidation/gates';
 import { qualityGate } from '../../src/game/grifballValidation/qualityGate';
 import { performanceGate } from '../../src/game/grifballValidation/performanceGate';
-import { runExecutionParity } from './grifballExecutionParity';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync } from 'node:fs';
@@ -10,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { chromium, type Browser, type BrowserServer } from 'playwright';
 import { canonicalJSON } from '../../src/game/grifballValidation/plan';
-import type { CheckResult, SuitePlan } from '../../src/game/grifballValidation/types';
+import type { CheckResult, SuitePlan, SuiteManifest } from '../../src/game/grifballValidation/types';
 import { atomicJSON, digest, RunArtifacts } from './grifballValidationArtifacts';
 import { bounded, labControlsSmoke, productionStartup, runBrowserJob } from './grifballValidationBrowser';
 import { startValidationServer } from './grifballValidationServer';
@@ -29,12 +28,12 @@ export function hashTree(directory: string): string {
   };
   visit(directory, ''); return hash.digest('hex');
 }
-async function nodeCheck(root: string, args: string[], logPath: string, signal: AbortSignal, env: NodeJS.ProcessEnv = process.env) {
+export async function nodeCheck(root: string, args: string[], logPath: string, signal: AbortSignal, env: NodeJS.ProcessEnv = process.env, timeoutMs = 30 * 60 * 1000) {
   if (signal.aborted) throw new Error('Validation cancelled');
   const fd = openSync(logPath, 'wx');
   const child = spawn(process.execPath, args, { cwd: root, env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', fd, fd] });
   try {
-    const status = await bounded(new Promise<number>((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code ?? -1)); }), 30 * 60 * 1000, signal);
+    const status = await bounded(new Promise<number>((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code ?? -1)); }), timeoutMs, signal);
     return status;
   } finally {
     if (child.pid && child.exitCode === null && child.signalCode === null) {
@@ -45,6 +44,14 @@ async function nodeCheck(root: string, args: string[], logPath: string, signal: 
     }
     closeSync(fd);
   }
+}
+export function validationTestCommand(manifest: SuiteManifest, scripts: Record<string, string>) {
+  const repository = manifest.requiredGates.includes('repository-tests');
+  const parity = repository || manifest.requiredGates.includes('execution-parity');
+  const script = repository ? 'test' : parity ? 'test:grifball-validation' : 'test:grifball-smoke';
+  const args = (scripts[script] ?? '').split(/\s+/);
+  if (args.shift() !== 'node') throw new Error(`Expected a Node test command for ${script}`);
+  return { repository, parity, script, args: ['--max-old-space-size=8192', ...args] };
 }
 const check = (id: string, success: boolean, summary: string, evidence: string): CheckResult => ({
   id, state: 'completed', verdict: success ? 'pass' : 'fail', summary, evidence: [evidence],
@@ -81,13 +88,22 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
       atomicJSON(join(directory, `${name}.json`), { args, status, log });
       console.log(`${name}: exit ${status}`); return { status, log };
     };
-    const fullTests = plan.manifest.requiredGates.includes('repository-tests');
-    const testArgs = (fullTests ? pkg.scripts.test : pkg.scripts['test:grifball-validation']).split(/\s+/);
-    if (testArgs.shift() !== 'node') throw new Error('Expected a Node test command');
-    const tests = await command(fullTests ? 'repository-tests' : 'focused-tests', testArgs);
+    const selection = validationTestCommand(plan.manifest, pkg.scripts);
+    const fullTests = selection.repository;
+    atomicJSON(join(directory, 'node-check-scope.json'), selection);
+    const tests = await command(fullTests ? 'repository-tests' : 'focused-tests', selection.args,
+      { ...process.env, GRIFBALL_VALIDATION_PARITY_OUT: selection.parity ? directory : '' });
     testsPassed = tests.status === 0;
     if (fullTests) artifacts.gates.push(check('repository-tests', tests.status === 0, `Repository tests exited ${tests.status}; see complete output.`, tests.log));
     else if (tests.status !== 0) artifacts.gates.push(check('correctness', false, 'Focused Node checks failed; gameplay correctness cannot pass.', tests.log));
+    const parityReceipt = join(directory, 'execution-parity-check.json');
+    if (selection.parity && existsSync(parityReceipt) && existsSync(join(directory, 'gates', 'execution-parity.json'))) {
+      const parity = JSON.parse(readFileSync(parityReceipt, 'utf8')) as CheckResult;
+      if (parity.id !== 'execution-parity' || parity.state !== 'completed' || !['pass', 'fail', 'inconclusive'].includes(parity.verdict))
+        throw new Error('Invalid execution parity completion receipt');
+      artifacts.gates.push(parity);
+    } else artifacts.recordGate(gate('execution-parity', 'not-run', selection.parity
+      ? 'Node checks did not publish complete parity evidence.' : 'This profile does not request execution parity.', null));
     artifacts.checkpoint('checking');
     const types = await command('typecheck', ['--max-old-space-size=8192', 'node_modules/typescript/bin/tsc', '--noEmit']);
     artifacts.gates.push(check('typecheck', types.status === 0, `TypeScript exited ${types.status}.`, types.log));
@@ -122,13 +138,12 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
       node: process.version, browser: browser.version(), executableHash: artifacts.identity!.executableHash, launch };
     environmentHash = digest(environment);
     atomicJSON(join(directory, 'measurement-environment.json'), { environment, environmentHash, protocol: protocol?.performance ?? null });
-    artifacts.recordGate(runExecutionParity());
     if (options.resume) {
       const oldProtocol = join(resolve(options.resume), 'gate-protocol.json');
       if (!existsSync(oldProtocol) || canonicalJSON(JSON.parse(readFileSync(oldProtocol, 'utf8'))) !== canonicalJSON(protocol ?? null)) throw new Error('Resume gate protocol differs; use a fresh run');
       artifacts.resume(options.resume);
     }
-    server = await startValidationServer(artifacts.identity, production, validation);
+    server = await startValidationServer(artifacts.identity, production, validation, options.port);
     try {
       await productionStartup(browser, server.origin, directory, abort.signal);
       artifacts.gates.push(check('startup', true, 'Normal production document rendered with no validation hook or failed local assets.', 'screenshots/production-startup.png'));

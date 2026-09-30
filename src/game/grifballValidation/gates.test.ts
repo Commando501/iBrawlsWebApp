@@ -13,6 +13,7 @@ import { trialCheck, type TrialResult } from './runner';
 import { emptyTeamEvaluation } from '../grifballEvaluation';
 import { importLabRun, labRunReport } from './labReport';
 import { runExecutionParity, PARITY_TRACE_CASES } from '../../../scripts/sim/grifballExecutionParity';
+import { writeParityEvidence } from '../../../scripts/sim/grifballValidationArtifacts';
 import type { SuitePlan } from './types';
 const code = { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] };
 async function fixture(matches = false) {
@@ -121,7 +122,9 @@ test('CLI gate evidence imports as a separate reference and survives re-export w
 });
 test('corrected player traces agree while incomplete coverage and legacy differences remain explicit', async () => {
   const before = await fixture();
-  const report = runExecutionParity(); assert.equal(report.check.verdict, 'inconclusive');
+  const report = runExecutionParity();
+  if (process.env.GRIFBALL_VALIDATION_PARITY_OUT) writeParityEvidence(process.env.GRIFBALL_VALIDATION_PARITY_OUT, report);
+  assert.equal(report.check.verdict, 'inconclusive');
   const details = report.details as any;
   assert.deepEqual(await fixture(), before, 'parity must not mutate cached authored maps used by later plans');
   assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.ok(details.gaps.length);

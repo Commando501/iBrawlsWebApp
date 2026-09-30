@@ -23,6 +23,14 @@ function atomicText(path: string, value: string | Iterable<string>) {
 }
 export function atomicJSON(path: string, value: unknown) { atomicText(path, JSON.stringify(value, null, 2) + '\n'); }
 
+/** Publish full parity evidence before its small completion receipt. The CLI's
+ * Node test process owns this work so cancellation never waits for synchronous parity. */
+export function writeParityEvidence(directory: string, value: GateEvaluation) {
+  const path = join(directory, 'gates', 'execution-parity.json');
+  atomicText(path, parityJSONChunks(value, value.details as Record<string, unknown>));
+  atomicJSON(join(directory, 'execution-parity-check.json'), value.check);
+}
+
 /** Parity details are plain metadata plus arrays of bounded traces. Serialize each
  * trace separately so adding coverage cannot exceed V8's single-string limit.
  * Keep the existing JSON shape, all frames, and atomic publication semantics. */
