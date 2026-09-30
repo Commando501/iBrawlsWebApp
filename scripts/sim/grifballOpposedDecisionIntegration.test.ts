@@ -1,6 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, validateOpeningCombatCredit, validateOpeningPossession } from './grifballOpposedDecisionIntegration';
+import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, validateOpeningCombatCredit, validateOpeningPossession, validateMainJumpCommitments } from './grifballOpposedDecisionIntegration';
+
+test('late main jump retains a verifiable commitment without inventing an impact', () => {
+  const requests = [{ tick: 299, accepted: true }], dt = 1 / 60;
+  const frames = [299, 300].map((tick, index) => ({ tick, actors: [{ id: 'main_ai', hp: 1, weapon: 'hammer',
+    weaponState: 'swing_up', weaponTimer: (index + 1) * dt, jumpPlanned: true }] }));
+  const validate = (f = frames, impacts: { tick: number }[] = [], deaths: { tick: number; id: string }[] = []) =>
+    validateMainJumpCommitments(requests, impacts, deaths, f, .28, .12, dt);
+  assert.deepEqual(validate(), { failures: [], pending: [299] });
+  assert.deepEqual(validate(frames, [{ tick: 323 }]), { failures: [], pending: [299] }, 'future evidence cannot resolve an observed commitment');
+  assert.deepEqual(validate([...frames, { tick: 323, actors: [] }], [{ tick: 323 }]), { failures: [], pending: [] });
+  assert.deepEqual(validate(frames, [], [{ tick: 300, id: 'main_ai' }]), { failures: [], pending: [] });
+  for (const defect of ['clock', 'phase', 'weapon', 'plan', 'dead', 'missing-frame', 'overdue']) {
+    const f = structuredClone(frames), actor = f[1].actors[0];
+    if (defect === 'clock') actor.weaponTimer = dt;
+    if (defect === 'phase') actor.weaponState = 'ready';
+    if (defect === 'weapon') actor.weapon = 'sword';
+    if (defect === 'plan') actor.jumpPlanned = false;
+    if (defect === 'dead') actor.hp = 0;
+    if (defect === 'missing-frame') f.shift();
+    if (defect === 'overdue') f[1].tick = 325;
+    assert.ok(validate(f).failures.length, defect);
+  }
+});
 
 test('opening possession accounts for a second carrier death and pickup through every frame', () => {
   // Retained departing-carrier replay: carrier dies at 8, escort picks up at

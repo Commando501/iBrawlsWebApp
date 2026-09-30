@@ -30,6 +30,34 @@ import { triggerCombatantAttackAction, startAIHammerJumpForCombatant } from '../
 import { updateRosterCombatantVisualsForState } from '../../src/components/grifball/rosterVisualSync';
 import { applyBotMeleeImpactForState } from '../../src/components/grifball/botMeleeImpactRuntime';
 
+/** A recording can end during a committed windup; unfinished attacks are not impact witnesses. */
+export function validateMainJumpCommitments(requests: readonly { tick: number; accepted: boolean }[],
+  impacts: readonly { tick: number }[], deaths: readonly { tick: number; id: string }[],
+  frames: readonly { tick: number; actors: readonly { id: string; hp: number; weapon: string;
+    weaponState?: string; weaponTimer?: number; jumpPlanned: boolean }[] }[], windup: number, attack: number, dt: number) {
+  const failures: string[] = [], pending: number[] = [], end = frames.at(-1)?.tick ?? 0;
+  const budget = Math.ceil(windup / dt) + Math.ceil(attack / dt);
+  for (const request of requests.filter(r => r.accepted)) {
+    if (impacts.some(i => i.tick >= request.tick && i.tick <= Math.min(end, request.tick + budget)) ||
+      deaths.some(d => d.id === 'main_ai' && d.tick >= request.tick && d.tick <= Math.min(end, request.tick + budget))) continue;
+    if (end >= request.tick + budget) { failures.push(`jump at ${request.tick} has no impact or death within its budget`); continue; }
+    const observed = frames.filter(f => f.tick >= request.tick);
+    let phase = 'swing_up', elapsed = 0, valid = Number.isInteger(request.tick) && request.tick > 0 &&
+      observed.length === end - request.tick + 1 && observed.length > 0;
+    for (const [index, frame] of observed.entries()) {
+      elapsed += dt;
+      if (phase === 'swing_up' && elapsed >= windup) { phase = 'swing_down'; elapsed = 0; }
+      const actor = frame.actors.find(a => a.id === 'main_ai');
+      valid &&= frame.tick === request.tick + index && !!actor && actor.hp > 0 && actor.weapon === 'hammer' &&
+        actor.jumpPlanned && actor.weaponState === phase && typeof actor.weaponTimer === 'number' &&
+        Math.abs(actor.weaponTimer - elapsed) < 1e-8 && !(phase === 'swing_down' && elapsed >= attack);
+    }
+    if (valid) pending.push(request.tick);
+    else failures.push(`jump at ${request.tick} lost its commitment before the recording ended`);
+  }
+  return { failures, pending };
+}
+
 export interface OpposedDecisionCase {
   mode: 'punch-first' | 'hammer-first' | 'contested';
   team: 'blue' | 'red'; reverse: boolean; main: boolean; seed?: number;
@@ -572,16 +600,15 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('revived actor resumes tactical role', frames.some(f => f.tick > (first?.tick ?? ticks) &&
       f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever', 'cover'].includes(a.role))), true);
   }
+  let pendingMainJumpRequests: number[] = [];
   if (match || mobility || passing) {
     const main = state.otherPlayers.get('main_ai');
     check('main identity final kill accounting', state.enemyKills, main?.kills ?? 0);
     check('main identity final death accounting', state.enemyDeaths, main?.deaths ?? 0);
-    const jumpTicks = Math.ceil(state.settings.hammerSlamWindupTime / dt) + Math.ceil(state.settings.hammerSlamAttackTime / dt);
-    for (const request of mainJumpRequests.filter(r => r.accepted)) {
-      check('accepted main jump reaches impact or is interrupted by death',
-        mainJumpImpacts.some(j => j.tick >= request.tick && j.tick <= request.tick + jumpTicks) ||
-        deaths.some(d => d.id === 'main_ai' && d.tick >= request.tick && d.tick <= request.tick + jumpTicks), true);
-    }
+    const commitments = validateMainJumpCommitments(mainJumpRequests, mainJumpImpacts, deaths, frames,
+      state.settings.hammerSlamWindupTime, state.settings.hammerSlamAttackTime, dt);
+    pendingMainJumpRequests = commitments.pending;
+    for (const failure of commitments.failures) check(failure, false, true);
   }
   function validateOpeningContest() {
     check('runner attacks autonomously', attacks.some(a => a.id === carrierId), true);
@@ -633,7 +660,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
     boundary: passRecovery ? 'live-pass-recovery' as const : earnedTank ? 'live-earned-tank-contest' as const : tankContest ? 'live-tank-contest' as const : rosterContest ? 'live-roster-contest' as const : mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, pendingMainJumpRequests, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
 
