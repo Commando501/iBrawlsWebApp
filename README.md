@@ -103,6 +103,7 @@ Championship stadium, synthwave, rainy-streets, and winter-rink custom-map scene
 | Module | Role |
 |--------|------|
 | `aiCombatDecision.ts` | Tactical weapon choice; punish-window gates when opponents are dash- or swap-locked (mechanic-aware difficulties) |
+| `aiBehaviorTuning.ts` | Resolves finite behavior overrides against engine defaults using a reusable field mapping; reads current settings each call and returns an independent result so live edits and reset-to-default remain immediate |
 | `aiTuning.ts` | Hybrid tuning: derives spatial IQ, feint chance, and pressure aggression from the 7 base knobs, with optional Custom Matrix overrides; score-aware match multipliers for leads, deficits, close games, and match point |
 | `aiMatchContext.ts` | Per-match memory (player models, feint cooldowns, combo state, skill calibration, multi-bot coordinator) reset on match start |
 | `aiComboEngine.ts` | Mid-combat weapon combo strings (Mixup, Safe Finish, Bait & Smash, Double Tap); gated by weapon-swap IQ ≥ 70/90 and weapon prioritization |
