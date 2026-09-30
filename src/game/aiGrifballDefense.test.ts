@@ -20,6 +20,52 @@ function scene(): GrifballTacticalSnapshot {
 const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
 
+for (const mirror of [false, true]) for (const reverse of [false, true])
+  for (const cause of ['pressure', 'outnumbered', 'reinforcement', 'turnover'] as const)
+    test(`containment keeps a separate goal-side safety: ${mirror}/${reverse}/${cause}`, () => {
+      const s = scene(), team = mirror ? 'red' : 'blue';
+      s.tactics!.defaults.stylesEnabled = false;
+      // Long hostile reach made both roles choose the same goal-side point in
+      // the Stadium seed-102 opening trace (candidate, mirrored, tick 832).
+      s.players.find(a => a.id === 'escort')!.space!.lungeReach = 15;
+      if (cause === 'pressure') s.tactics!.defaults.defensePressure = .2;
+      if (cause === 'outnumbered' || cause === 'reinforcement') s.players.push(p('extra', 'red', 5));
+      if (cause === 'outnumbered') s.players.push(p('extra2', 'red', 6));
+      if (cause === 'reinforcement') s.respawns = [{ id: 'returning', team: 'blue', seconds: .5, pos: { x: -2, z: 0 }, speed: 5.2 }];
+      if (mirror) {
+        for (const actor of s.players) { actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1; }
+        for (const actor of s.respawns ?? []) { actor.team = 'red'; actor.pos.x *= -1; }
+      }
+      if (reverse) s.players.reverse();
+      const state = run(cause === 'turnover' ? { ...s, holderId: 'a' } : s);
+      if (cause === 'turnover') updateGrifballTeamPlan(state, s, .01);
+      const orders = [...state.assignments.values()].filter(a => a.team === team);
+      const safety = orders.find(a => a.defense?.mode === 'last-defender')!;
+      const contain = orders.find(a => a.defense?.mode === 'contain')!;
+      assert.ok(safety && contain);
+      const goal = s.goals[team]!;
+      assert.ok(fieldDistance(safety.destination, goal) < fieldDistance(contain.destination, goal), 'safety stays behind containment');
+      assert.ok(fieldDistance(safety.destination, contain.destination) >= s.tactics!.defaults.lateralSpacing - 1e-8, 'distinct defensive layers');
+      assert.ok(isSpacePointOpen(s.geometry!, safety.destination));
+      assert.equal(orders.filter(a => a.role === 'safety').length, 1);
+    });
+
+for (const scenario of ['lone', 'emergency', 'pressure', 'loose'] as const)
+  test(`containment spacing preserves existing ${scenario} coverage`, () => {
+    const s = scene();
+    s.tactics!.defaults.stylesEnabled = false;
+    s.tactics!.defaults.defensePressure = scenario === 'pressure' ? 1 : .2;
+    s.players.find(a => a.id === 'escort')!.space!.lungeReach = 15;
+    if (scenario === 'lone') s.players = s.players.filter(a => a.team !== 'blue' || a.id === 'b');
+    if (scenario === 'emergency') s.players.find(a => a.id === 'runner')!.pos.x = -43;
+    if (scenario === 'loose') s.holderId = null;
+    const safety = () => blue(run(s)).find(a => a.defense?.mode === 'last-defender')!.defense!.intercept;
+    const original = safety();
+    s.tactics!.defaults.lateralSpacing = 8;
+    assert.deepEqual(safety(), original, 'extra depth applies only with a separate containment defender');
+    if (scenario === 'emergency') assert.deepEqual(original, s.players.find(a => a.id === 'runner')!.pos);
+  });
+
 for (const mirror of [false, true]) for (const reverse of [false, true]) for (const motion of ['paused', 'blocked', 'visible'] as const)
   test(`carrier cuts follow time along a route: ${mirror}/${reverse}/${motion}`, () => {
     const s = scene(), sign = mirror ? -1 : 1, team = mirror ? 'red' : 'blue';

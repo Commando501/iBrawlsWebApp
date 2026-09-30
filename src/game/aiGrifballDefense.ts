@@ -67,7 +67,13 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   };
   const pressureMargin = tuning.defenseContainMargin * (1.5 - tuning.defensePressure * 0.5);
   const enemyReach = Math.max(0, ...enemies.filter(p => distance(p.pos, anchor) < 12).map(p => Math.max(p.space?.reach ?? 3, p.space?.lungeReach ?? 0)));
-  const safetyPoint = toward(projected, goal, Math.min(Math.max(tuning.defenseSafetyDepth, contain ? enemyReach + pressureMargin : 0), distance(projected, goal) * 0.85));
+  // Containment already stands outside hostile reach. Keep the last defender
+  // another spacing interval goal-side when room permits, rather than stacking
+  // both roles on that same standoff point. A lone defender needs no extra layer.
+  const containmentDepth = enemyReach + pressureMargin;
+  const safetyDepth = Math.max(tuning.defenseSafetyDepth,
+    contain ? containmentDepth + (carrier && defenders.length > 1 ? tuning.lateralSpacing : 0) : 0);
+  const safetyPoint = toward(projected, goal, Math.min(safetyDepth, distance(projected, goal) * 0.85));
   const ranked = [...defenders].sort((a, b) => {
     const cost = (a: GrifballAssignment) => routeLength(a.botId, safetyPoint) - (previous.get(a.botId)?.defense?.mode === 'last-defender' ? tuning.reassignmentAdvantage : 0);
     return cost(a) - cost(b) || a.botId.localeCompare(b.botId);
@@ -132,7 +138,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
       routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId);
   });
   const primary = rest.shift()!, intercept = interception(primary);
-  const containment = toward(projected, goal, enemyReach + pressureMargin);
+  const containment = toward(projected, goal, containmentDepth);
   assign(primary, contain ? 'contain' : 'intercept', emergency ? anchor : contain ? containment : intercept.point, carrier, intercept.time);
   primary.role = 'chaser';
   const marks = enemies.filter(p => p !== carrier).sort((a, b) => distance(a.pos, goal) - distance(b.pos, goal) || a.id.localeCompare(b.id));
