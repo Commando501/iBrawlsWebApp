@@ -1,0 +1,64 @@
+name: Grifball Quick validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/grifball-validation.yml'
+      - 'src/**'
+      - 'scripts/sim/**'
+      - 'public/**'
+      - 'server.ts'
+      - 'index.html'
+      - 'grifball-validation.html'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grifball-quick-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    name: Quick regression (not M7 acceptance)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: Check out tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.3'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install pinned Chromium and system dependencies
+        run: npm run validate:grifball:install -- --with-deps
+      - name: Run frozen Quick validation
+        shell: bash
+        run: |
+          mkdir -p output/grifball-validation
+          timeout --signal=INT --kill-after=15s 20m npm run validate:grifball -- --suite quick --port 0 --out output/grifball-validation/ci 2>&1 | tee output/grifball-validation/ci-console.log
+      - name: Retain reports and reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: grifball-quick-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/grifball-validation/ci/**
+            output/grifball-validation/ci-console.log
+            !output/grifball-validation/ci/production/**
+            !output/grifball-validation/ci/validation/**
+          if-no-files-found: warn
+          retention-days: 14
