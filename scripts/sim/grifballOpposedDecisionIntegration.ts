@@ -43,12 +43,13 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }) {
-  const passMatch = continuation === 'pass-match';
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }) {
+  const mapPassMatch = continuation === 'map-pass-match';
+  const passMatch = continuation === 'pass-match' || mapPassMatch;
   const passing = continuation === 'pass-contest' || passMatch;
   if (passing && (!passOpening || spec.mode !== 'contested')) throw new Error('Pass contest requires four-actor opening positions');
   const mapMatch = continuation === 'map-match';
-  const mapped = continuation === 'map-contest' || mapMatch;
+  const mapped = continuation === 'map-contest' || mapMatch || mapPassMatch;
   if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
   const match = continuation === 'match' || mapped || passMatch, mobility = continuation === 'mobility', revival = continuation !== 'opening';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
@@ -89,6 +90,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     const group = new THREE.Group(); group.userData.modelSystem = 'v2';
     refs.otherPlayerMeshes.set(c.id, { group, hammer: new THREE.Group(), sword: new THREE.Group(), rig: buildCombatantRigForModel(group) });
   }
+  if (mapPassMatch && [...state.otherPlayers.values()].some(c => !isMapBodyClear(map, c.pos))) throw new Error('Map pass fixture starts inside an obstacle');
   const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get(defenderId)!;
   const ballState = () => state.grifball.ball.state;
   state.grifball.ball.state = 'held'; state.grifball.ball.holderId = carrierId;
@@ -172,11 +174,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
+  const passGeometry = { evaluations: 0, blockedCandidateSamples: 0, blockedExamples: [] as { tick: number; carrierId: string; receiverId: string; speed: number; path: { x: number; y: number; z: number }[] }[] };
   const passes: { tick: number; carrierId: string; receiverId: string; speed: number; chargeSeconds: number }[] = [];
   const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -224,7 +227,15 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         },
         beforeUpdate: () => {
           living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
+          const revision = plan.revision;
           updateGrifballTeamPlanForState(state, delta, goal, map);
+          if (mapPassMatch && plan.revision !== revision) for (const assignment of plan.assignments.values()) {
+            if (!assignment.pass) continue;
+            passGeometry.evaluations++;
+            const blocked = assignment.pass.candidates.filter(c => c.reason === 'Throw crosses blocked space');
+            passGeometry.blockedCandidateSamples += blocked.length;
+            for (const c of blocked) if (passGeometry.blockedExamples.length < 8) passGeometry.blockedExamples.push({ tick, carrierId: assignment.botId, receiverId: c.receiverId, speed: c.speed, path: c.path });
+          }
           // Verify revival at the planner boundary, before later combat can
           // invalidate the whole plan by killing the current carrier.
           for (const r of revivals.filter(r => r.tick === tick)) {
@@ -267,6 +278,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
             check('charge stays below release threshold', !!choice && elapsed + 1e-9 < choice.chargeSeconds, true);
           }
           if (released) {
+            if (mapPassMatch) check('released prediction clears map footprints', !!selected && selected.path.every(p => isMapBodyClear(map, { ...p, y: 0 })), true);
             check('release starts from ready weapon', weaponBefore, 'ready');
             check('release has autonomous selection', !!choice, true);
             check('release reaches charge threshold', !!choice && elapsed + 1e-9 >= choice.chargeSeconds, true);
@@ -367,6 +379,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       cancellations.push({ tick, carrierId: chargeAtFrameStart.carrierId, receiverId: chargeAtFrameStart.receiverId, elapsed: chargeAtFrameStart.elapsed,
         reason: plan.assignments.get(chargeAtFrameStart.carrierId)?.pass?.reason ?? 'Ownership or combat availability changed' });
     }
+    if (mapPassMatch && ballState() === 'thrown') check('released pass stays clear of ground obstacles', isMapBodyClear(map, { ...state.grifball.ball.pos, y: 0 }), true);
     if (passing) {
       if (plan.passCharge) check('frame-end charge belongs to holder', plan.passCharge.carrierId, state.grifball.ball.holderId);
       for (const c of state.otherPlayers.values()) if (plan.passCharge?.carrierId !== c.id) check('no stale charge display: ' + c.id, c.grifballPassCharge ?? 0, 0);
@@ -498,7 +511,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    boundary: mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    failureCount, failures, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));

@@ -1,3 +1,4 @@
+import type { CustomMapData } from '../../src/types';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { validateCompleteMatchTrace } from './grifballMatchDecisionIntegration';
 import { PASS_CONTEST_OPENINGS, type PassContestCase } from './grifballPassContest';
@@ -12,10 +13,10 @@ export const PASS_MATCH_CASES: PassMatchCase[] = (['clear', 'closing-charge', 'd
 
 /** Continue passing contests through physical goals, resets and a two-goal win.
  * Initial positions and tuning are authored; all subsequent play is autonomous. */
-export function runPassMatchTrace(spec: PassMatchCase) {
+export function runPassMatchTrace(spec: PassMatchCase, map?: CustomMapData) {
   const trace = validateCompleteMatchTrace(runOpposedDecisionTrace(
     { mode: 'contested', team: spec.team, reverse: spec.reverse, main: spec.main, seed: spec.seed },
-    'pass-match', undefined, PASS_CONTEST_OPENINGS[spec.opening]));
+    map ? 'map-pass-match' : 'pass-match', map, PASS_CONTEST_OPENINGS[spec.opening]));
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) {
       trace.failureCount++;

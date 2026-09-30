@@ -127,6 +127,12 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.ok(details.gaps.length);
   assert.deepEqual(details.combatExecution, ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1']);
   assert.ok(details.traces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.mapPassMatchTraces.length, 40);
+  assert.ok(details.mapPassMatchTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-map-pass-match' && t.finalFrame.phase === 'matchEnd' && t.frameCount === t.ticks && t.ticks - t.terminalTick === 181 && t.passes.length > 0));
+  assert.equal(new Set(details.mapPassMatchTraces.map((t: any) => t.mapId)).size, 5);
+  for (const id of ['forerunner_canyon', 'synthwave_grid_arena', 'rainy_industrial_streets']) {
+    assert.ok(details.mapPassMatchTraces.filter((t: any) => t.mapId === id).every((t: any) => t.passGeometry.blockedCandidateSamples > 0));
+  }
   assert.equal(details.passMatchTraces.length, 48);
   assert.ok(details.passMatchTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-pass-match' && t.finalFrame.phase === 'matchEnd' && t.frameCount === t.ticks && t.ticks - t.terminalTick === 181));
   assert.equal(new Set(details.passMatchTraces.map((t: any) => t.scenario.seed)).size, 2);
@@ -179,7 +185,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v40');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v41');
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.motionTraces.length, 216);
