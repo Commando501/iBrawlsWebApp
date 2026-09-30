@@ -275,7 +275,8 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
   const sampledFamilies = Object.values(details).filter((value: any) => Array.isArray(value) && value[0]?.frameEvidence) as any[][];
-  assert.equal(sampledFamilies.length, 42);
+  // Includes grounded and airborne mid-flight carrier pickup families (v62/v63).
+  assert.equal(sampledFamilies.length, 44);
   for (const traces of sampledFamilies) for (const trace of traces) {
     assert.ok(trace.frameCount >= trace.frames.length);
     assert.ok(trace.frames.length <= 32);

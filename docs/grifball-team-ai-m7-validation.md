@@ -2145,3 +2145,13 @@ The new mode sums fixed consecutive windows of aligned warm planner refreshes an
 The focused gate/telemetry tests pass **21/21**. CLI preview/artifact/process-cleanup, replay, telemetry and Lab import integration checks pass **53/53** (`output/m7-aligned-replay-integration.log`); TypeScript passes (`output/m7-aligned-replay-types.log`). Existing v1 and quality/reproducibility gate checks pass **13/13**, with the full aggregate excluded (`output/m7-aligned-replay-existing-gates.log`). No historical timing result has been reinterpreted as accepted.
 
 The full v63 aggregate started from `bcbf003f` remains running separately. A fresh v2 calibration and controlled browser validation are the next step after that process terminates; this implementation alone does not certify performance or M7.
+
+## 2026-09-30 — v63 aggregate evidence and corrected family count
+
+The full aggregate completed in **1,413.01 seconds** (`output/m7-v63-aggregate.log`). Its report records **0/8,871 action/objective boundary traces differing**, **0/696 live decision integration traces failing**, and **0/92 live map mobility traces failing**. Required revival attacks, jumps and post-reset passes have no missing witness groups. Four declared coverage gaps keep execution parity inconclusive.
+
+The test command nevertheless exited 1: the retained-frame assertion still expected 42 trace families from v61, while the grounded and airborne carrier-pickup additions bring v63 to **44**. The assertion now explicitly includes those two families. This changes no execution behavior or acceptance tolerance. The queued performance run correctly declined to start after the failed command.
+
+All aggregate report assertions, including those after the stale count, pass when evaluated against the saved complete v63 report with the corrected expectation (`output/m7-v63-retained-assertions.json`). Report SHA-256: `aded9357c9e2792de5ed27c158aecf00a71c29eb4cce9616c90058e5be4f6209`. The cached-map mutation assertion passed during the original execution before the count failed; it was not rerun against serialized evidence. This is a verification of the completed execution evidence, not a claim that the original test command passed or that a fresh full aggregate was rerun.
+
+The next browser run uses frozen gate-protocol v2 calibration `m7-obstacle-8bot-aligned-replay-2026-09-30-v2`: eight-refresh windows, the existing 4 ms p95 budget, 1.2 paired p95 limit, 3.0 window noise limit and at least 100 warm refreshes. A separate development-only Stadium defense ablation is prepared for afterward (seeds 101/102, aggressive opponent, both sides); only focal defense enablement differs. Neither prepared run is yet acceptance evidence.
