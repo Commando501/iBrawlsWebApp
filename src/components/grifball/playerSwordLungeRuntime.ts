@@ -71,6 +71,8 @@ export function updatePlayerSwordLungeForState({
     finishPlayerSwordLungeRecoveryForState({ state, hit: false, recordLungeEnd: recordPlayerLungeEnd });
     return;
   }
+  // Lunge physics returns before normal movement, which owns this timer otherwise.
+  state.playerInvulnerabilityTimer = Math.max(0, state.playerInvulnerabilityTimer - dt);
   state.lungeTimer += dt;
   const lungeSpeed = state.settings.swordLungeSpeed ?? 24.0;
   state.playerVel.copy(state.lungeTargetDir).multiplyScalar(lungeSpeed);
@@ -111,7 +113,8 @@ export function updatePlayerSwordLungeForState({
 
     if (state.isMultiplayer) {
       const other = state.otherPlayers.get(closestTarget.id);
-      const reason = resolveSwordLungeTradeReasonForState({ state, target: closestTarget, mainAi: other });
+      const reason = state.playerInvulnerabilityTimer > 0 ? null
+        : resolveSwordLungeTradeReasonForState({ state, target: closestTarget, mainAi: other });
       const isOtherSwordActiveAttack = reason === 'sword_vs_sword';
       const isOtherHammerActiveAttack = reason === 'sword_lunge_vs_hammer';
 
@@ -180,7 +183,8 @@ export function updatePlayerSwordLungeForState({
       const other = closestTarget.id === MAIN_AI_ID ? mainAi ?? state.otherPlayers.get(MAIN_AI_ID)
         : state.otherPlayers.get(closestTarget.id);
       if (other) {
-        const reason = resolveSwordLungeTradeReasonForState({ state, target: closestTarget, mainAi: other });
+        const reason = state.playerInvulnerabilityTimer > 0 ? null
+          : resolveSwordLungeTradeReasonForState({ state, target: closestTarget, mainAi: other });
         if (reason) {
           if (mainAi && closestTarget.id === MAIN_AI_ID) executeTrade(reason);
           else executePlayerCombatantTradeForState({ state, combatant: other, reason, evaluatePlayerKillMedals,

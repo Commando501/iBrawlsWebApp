@@ -26,7 +26,7 @@ export const MIXED_LIFECYCLE_CASES: MixedLifecycleCase[] = KINDS.flatMap(kind =>
 
 /** Committed incoming roster flight followed through damage, revival and shield expiry.
  * The player proxy supplies a target snapshot only; live health is owned by runtime state. */
-export interface OpposedFlightCase { first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number }
+export interface OpposedFlightCase { first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
 export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: number, opposed?: OpposedFlightCase) {
   const f = lungeFixture(spec.main ? 'main_ai' : 'attacker', false);
   const { state, sim, bot, target, refs, map } = f;
@@ -91,6 +91,10 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     state.pSwordState = state.pWeaponState = 'ready'; state.pSwordTimer = state.pWeaponTimer = 0;
   }
   if (spec.kind.startsWith('shield')) state.playerInvulnerabilityTimer = player.invulnerabilityTimer = spec.kind === 'shield' ? 1 : .15;
+  if (opposed?.shields) {
+    state.playerInvulnerabilityTimer = player.invulnerabilityTimer = opposed.shields.player;
+    bot.invulnerabilityTimer = self.invulnerabilityTimer = opposed.shields.roster;
+  }
   if (spec.kind === 'dead' || spec.kind === 'double-respawn') {
     state.playerHP = player.hp = 0; player.alive = false;
     state.playerRespawnTimer = player.respawnTimer = spec.kind === 'dead' ? 3 : .025;
@@ -156,7 +160,7 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     for (let i = 0; i < 3; i++) record.compare(tick, `bot.pos.${i}`, liveBot.pos[i], simBot.pos[i], 1e-6);
     frames.push({ tick, live, headless, liveBot, simBot });
   }
-  if (opposed) {
+  if (opposed && !opposed.shields) {
     const { first, playerHp, botHp, trade, reload } = opposed;
     const playerDamage = trade || first === 'roster' || botHp > 1 ? 1 : 0;
     const botDamage = trade || first === 'player' || playerHp > 1 ? 1 : 0;
@@ -181,6 +185,8 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     return { name: `opposed/${first}/${playerHp}-${botHp}/${trade}/${spec.main}/${spec.mirror}/${spec.reverse}`,
       scenario: { ...spec, opposed }, ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   }
+  if (opposed?.shields) return { name: `shielded-opposed/${opposed.first}/${spec.main}/${spec.mirror}/${spec.reverse}`,
+    scenario: { ...spec, opposed }, ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   const hit = !['shield', 'friendly', 'dead', 'double-respawn'].includes(spec.kind);
   const expectedPlayerHp = hit ? player.maxHp - 1 : spec.kind === 'dead' ? 0 : player.maxHp;
   const contactTick = near ? 1 : spec.kind === 'shield-expiry' ? 10 : 9;

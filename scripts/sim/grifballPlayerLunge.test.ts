@@ -49,6 +49,35 @@ function fixture(identity: Identity, hp = 2) {
   return { ...f, events, network, start, step, finish, select };
 }
 
+for (const identity of [...identities, 'remote'] as const) for (const weapon of ['sword', 'hammer'] as const)
+  for (const shield of [1, 1 / 60]) test(`player flight shield/${identity}/${weapon}/${shield}: active protection and exact-frame expiry`, t => {
+    const f = fixture(identity === 'remote' ? 'regular' : identity), { state, target } = f;
+    target.pos.z = 1; target.activeWeapon = weapon; target.weaponState = 'swing_up';
+    state.playerInvulnerabilityTimer = shield;
+    state.settings.enableSwordTrade = state.settings.enableHammerSwordTrade = true;
+    const sent: unknown[] = [];
+    if (identity === 'remote') {
+      const previous = globalThis.WebSocket;
+      globalThis.WebSocket = { OPEN: 1 } as typeof WebSocket;
+      t.after(() => { globalThis.WebSocket = previous; });
+      state.isMultiplayer = true; target.controller = 'remote';
+      f.network.socket = { readyState: 1, send: (message: string) => sent.push(JSON.parse(message)) } as unknown as WebSocket;
+    }
+    f.start(); f.step();
+    const expires = shield === 1 / 60;
+    assert.equal(state.playerInvulnerabilityTimer, Math.max(0, shield - 1 / 60));
+    assert.equal(state.playerHP, expires ? 1 : 2, 'active shields prevent reciprocal damage; expiry enables trades');
+    assert.equal(target.hp, identity === 'remote' ? 2 : 1, 'ordinary hit still lands, remote damage awaits acknowledgement');
+    assert.equal(state.playerDeaths, 0); assert.equal(target.kills, 0);
+    assert.equal(sent.length, Number(identity === 'remote'));
+    assert.deepEqual(f.events.ends, [true]);
+    assert.equal(state.pSwordState, 'recovering');
+    const afterContact = state.playerInvulnerabilityTimer;
+    f.step();
+    assert.equal(state.playerInvulnerabilityTimer, afterContact, 'inactive flight does not own shield countdown');
+    assert.deepEqual(f.events.ends, [true]);
+  });
+
 for (const identity of identities) for (const hp of [1, 2]) for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
   test(`player flight/${identity}/hp=${hp}/yaw=${yaw}: contact, credit, recovery and revival`, () => {
     const f = fixture(identity, hp), { state, target, events } = f;

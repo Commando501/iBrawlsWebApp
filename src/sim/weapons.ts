@@ -407,9 +407,9 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     const recent = (time: number | undefined, window: number) =>
       time !== undefined && Number.isFinite(time) && now >= time && now - time <= window;
     const targetWasLunging = target.isLunging;
-    const trade = target.weapon === 'sword'
+    const trade = c.invulnerabilityTimer <= 0 && (target.weapon === 'sword'
       ? settings.enableSwordTrade && (targetWasLunging || primaryActive || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
-      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primaryActive || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350));
+      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primaryActive || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350)));
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
@@ -465,9 +465,9 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
     const now = state.combatTimeMs ?? state.tick * 1000 / 60;
     const recent = (time: number | undefined, window: number) =>
       time !== undefined && Number.isFinite(time) && now >= time && now - time <= window;
-    const trade = target.weapon === 'sword'
+    const trade = c.invulnerabilityTimer <= 0 && (target.weapon === 'sword'
       ? settings.enableSwordTrade && (target.isLunging || primary || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
-      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primary || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350));
+      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primary || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350)));
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);

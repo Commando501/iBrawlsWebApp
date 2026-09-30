@@ -118,7 +118,8 @@ export function resolveAISwordLungeFlightForCombatant({
     finishSwordLunge(cooldownMult, 'target_dead', target.id);
     return 'continue';
   } else if ((target.invulnerabilityTimer ?? 0) <= 0 && dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
-    const tradeReason = resolveSwordLungeTradeReasonForState({
+    // A shielded initiator can land a hit, but cannot take reciprocal trade damage.
+    const tradeReason = (self.invulnerabilityTimer ?? 0) > 0 ? null : resolveSwordLungeTradeReasonForState({
       state,
       target,
       mainAi: target.id === MAIN_AI_ID ? mainAi : undefined,
