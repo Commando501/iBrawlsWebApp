@@ -4,6 +4,7 @@ import type { CustomMapData } from '../types';
 import { defaultGrifballTactics } from './grifballTacticsConfig';
 import { buildGrifballSpaceGeometry } from './grifballSpaceGeometry';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer, type GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
+import type { GrifballAssignment } from './aiGrifballTeamPlan';
 
 const p = (id: string, team: string, x: number, z = 0): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true,
   space: { weapon: 'hammer', phase: 'ready', speed: 5.2, reach: 3, blastRadius: 2, attackIn: 0.3, lungeReach: 0, lungeSpeed: 0, mobileIn: 0 } });
@@ -15,6 +16,25 @@ function scene(): GrifballTacticalSnapshot {
 }
 const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
+
+for (const team of ['blue', 'red'] as const) for (const id of ['defender', 'main_ai'])
+  for (const scenario of ['own-reach', 'enemy-reach', 'distant-cut', 'engagement-limit', 'safety', 'blocked'] as const)
+    test(`defensive combat handoff uses the defender's reach: ${team}/${id}/${scenario}`, () => {
+      const sign = team === 'blue' ? 1 : -1;
+      const self = p(id, team, 0), enemy = p('carrier', team === 'blue' ? 'red' : 'blue', 5.5 * sign);
+      self.space!.reach = scenario === 'enemy-reach' ? 2 : 6;
+      enemy.space!.reach = scenario === 'enemy-reach' ? 6 : 2;
+      enemy.space!.weapon = 'ball';
+      const intercept = { x: (scenario === 'distant-cut' ? 10 : 5.5) * sign, z: 0 };
+      const a: GrifballAssignment = { botId: id, team, carrierId: enemy.id, role: 'chaser', slot: 0,
+        destination: intercept, anchor: { ...enemy.pos }, reason: 'Authored cut', tuning: { ...defaultGrifballTactics().defaults },
+        defense: { mode: scenario === 'safety' ? 'last-defender' : 'intercept', targetId: enemy.id, intercept,
+          arrivalETA: .4, carrierETA: .5, advantage: 0, reinforcementIn: Infinity, emergency: false, transitioning: false } };
+      if (scenario === 'engagement-limit') a.tuning!.engagementDistance = 4;
+      if (scenario === 'blocked') a.geometry = { key: 'blocked-cut', shape: 'rectangular', x: 52, z: 23,
+        blockers: [{ kind: 'box', x: 3 * sign, z: 0, hx: .5, hz: 10 }] };
+      assert.equal(selectGrifballAssignmentThreat(a, self.pos, [self, enemy]), scenario === 'own-reach' ? enemy.id : null);
+    });
 
 for (const mirror of [false, true]) for (const reverse of [false, true]) for (const frontId of ['front', 'main_ai'])
   test(`the only reachable interceptor is not reserved as safety: ${mirror}/${reverse}/${frontId}`, () => {

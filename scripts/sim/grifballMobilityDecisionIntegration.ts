@@ -1,6 +1,8 @@
 import { runOpposedDecisionTrace, type OpposedDecisionCase } from './grifballOpposedDecisionIntegration';
 
-export const MOBILITY_DECISION_CASES: OpposedDecisionCase[] = [1, 5].flatMap(seed => (['blue', 'red'] as const)
+// Fixed contiguous development matrix, including both original seeds. Keep all
+// outcomes; absence of a flight in one seed is not a physics failure.
+export const MOBILITY_DECISION_CASES: OpposedDecisionCase[] = Array.from({ length: 8 }, (_, i) => i + 1).flatMap(seed => (['blue', 'red'] as const)
   .flatMap(team => [false, true].map(reverse => ({ mode: 'contested' as const, team, reverse, main: true, seed }))));
 
 /** Wounded opening contest with three-HP respawns. Every subsequent jump request,
@@ -19,6 +21,7 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
   };
   const mainAt = (tick: number) => trace.frames[tick - 1].actors.find(a => a.id === 'main_ai')!;
   const flights: { launch: number; landing: number; apex: number }[] = [];
+  const interruptedFlights: { launch: number; death: number; revival: number | null }[] = [];
   for (const jump of trace.mainJumpImpacts) {
     const start = mainAt(jump.tick);
     // At 60 Hz, .08s windup + .04s strike takes eight updates, including
@@ -28,15 +31,40 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
     check(jump.tick, 'configured launch impulse', start.vel[1], 13.7);
     check(jump.tick, 'launch consumes one air jump', start.jumpBudget, 1);
     check(jump.tick, 'launch clears its plan', start.jumpPlanned, false);
-    let y = start.pos[1], vy = 13.7, apex = y, landing = 0;
+    let y = start.pos[1], vy = 13.7, apex = y, landing = 0, interrupted = 0;
     for (let tick = jump.tick + 1; tick <= Math.min(trace.ticks, jump.tick + 120); tick++) {
       // Independent semi-implicit ballistic oracle: one 18m/s² gravity step.
       vy -= 18 / 60;
       y += vy / 60;
       const actor = mainAt(tick);
-      check(tick, 'jump survives until landing', actor.hp > 0, true);
       check(tick, 'single vertical integration', Math.abs(actor.pos[1] - Math.max(0, y)) < 1e-8, true);
       check(tick, 'vertical velocity follows gravity', Math.abs(actor.vel[1] - (y <= 0 ? 0 : vy)) < 1e-8, true);
+      // Damage follows movement in the live frame. Validate the death frame's
+      // trajectory, then require a real lethal impact and frozen dead actor.
+      // A corpse is not expected to keep flying or to replenish its jump budget.
+      if (actor.hp <= 0) {
+        interrupted = tick;
+        check(tick, 'interrupted flight has a recorded lethal impact', trace.deaths.some(d => d.id === 'main_ai' && d.tick === tick) &&
+          trace.impacts.some(i => i.tick === tick && i.victims.includes('main_ai')), true);
+        const revival = trace.revivals.find(r => r.id === 'main_ai' && r.tick > tick);
+        check(tick, 'interrupted flight revives after the full delay or remains beyond the trace',
+          tick + 181 <= trace.ticks ? revival?.tick === tick + 181 : !revival, true);
+        check(tick, 'interrupted flight cannot attack while dead', !trace.attacks.some(a =>
+          a.id === 'main_ai' && a.tick > tick && a.tick < (revival?.tick ?? trace.ticks + 1)), true);
+        for (let deadTick = tick; deadTick < (revival?.tick ?? trace.ticks + 1); deadTick++) {
+          const dead = mainAt(deadTick);
+          check(deadTick, 'interrupted flight remains dead and still', dead.hp === 0 &&
+            dead.pos.every((n, i) => n === actor.pos[i]) && dead.vel.every((n, i) => n === actor.vel[i]), true);
+          check(deadTick, 'interrupted flight cancels weapon and plan', dead.weaponState === 'ready' && !dead.jumpPlanned, true);
+        }
+        if (revival) {
+          const restored = mainAt(revival.tick);
+          check(revival.tick, 'interrupted flight respawns grounded and ready', restored.hp === restored.maxHp &&
+            restored.pos[1] === 0 && restored.vel[1] === 0 && !restored.isJumping && !restored.jumpPlanned && restored.jumpBudget === 0, true);
+        }
+        interruptedFlights.push({ launch: jump.tick, death: tick, revival: revival?.tick ?? null });
+        break;
+      }
       if (y > 0) check(tick, 'jump plan stays consumed during flight', actor.jumpPlanned, false);
       if (y <= 0) {
         landing = tick;
@@ -48,7 +76,7 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
       check(tick, 'airborne flag preserved through ascent and descent', actor.isJumping, true);
       check(tick, 'no budget refill in flight', actor.jumpBudget, 1);
     }
-    check(jump.tick, 'flight completes within two seconds', landing > 0, true);
+    check(jump.tick, 'flight completes within two seconds or is interrupted by verified death', landing > 0 || interrupted > 0, true);
     if (landing) {
       const landed = mainAt(landing);
       check(landing, 'landing retains tactical assignment', trace.frames[landing - 1].assignments.some(a => a.id === 'main_ai'), true);
@@ -59,6 +87,6 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
       flights.push({ launch: jump.tick, landing, apex });
     }
   }
-  return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights };
+  return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights, interruptedFlights };
 }
 export const runMobilityDecisionIntegration = () => MOBILITY_DECISION_CASES.map(runMobilityDecisionTrace);

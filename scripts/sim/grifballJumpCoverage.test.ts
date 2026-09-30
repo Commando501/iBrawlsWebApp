@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { jumpCoverage, type JumpCoverageTrace } from './grifballJumpCoverage';
-import { runMobilityDecisionTrace, validateMobilityDecisionTrace } from './grifballMobilityDecisionIntegration';
+import { runMobilityDecisionIntegration, validateMobilityDecisionTrace } from './grifballMobilityDecisionIntegration';
 
 const matrix: JumpCoverageTrace[] = (['blue', 'red'] as const).flatMap(team => [false, true].map(reverse => ({
   name: `${team}/${reverse}`, scenario: { team, reverse, main: true }, failureCount: 0,
@@ -38,8 +38,13 @@ test('missing flights, incomplete landings, accepted jumps and non-dash rejectio
   assert.deepEqual(jumpCoverage(matrix.filter(t => t.scenario.team === 'blue'), 'match').missing, ['red/dash-rejection']);
 });
 
-const flight = runMobilityDecisionTrace({ mode: 'contested', team: 'blue', reverse: false, main: true, seed: 1 });
 test('flight evidence checks impulse, commitment, trajectory, landing budget and resumed movement', () => {
+  const traces = runMobilityDecisionIntegration();
+  assert.ok(traces.every(t => t.failureCount === 0), JSON.stringify(traces.filter(t => t.failureCount).map(t => ({ name: t.name, failures: t.failures }))));
+  assert.deepEqual(jumpCoverage(traces, 'mobility').missing, []);
+  // The full matrix is checked before selecting evidence for deliberate mutation.
+  // This is a validator control, not a separate passing gameplay run.
+  const flight = traces.find(t => t.flights.length)!;
   assert.equal(flight.failureCount, 0, JSON.stringify(flight.failures));
   assert.ok(flight.flights.length);
   const first = flight.flights[0];
@@ -55,6 +60,22 @@ test('flight evidence checks impulse, commitment, trajectory, landing budget and
       const landed = [...actor(first.landing).pos];
       for (let tick = first.landing + 1; tick <= first.landing + 30; tick++) actor(tick).pos = [...landed];
     }
+    assert.ok(validateMobilityDecisionTrace(changed).failureCount > 0, reason);
+  }
+  const interrupted = traces.find(t => t.interruptedFlights.length)!;
+  assert.ok(interrupted, 'matrix retains an observed airborne death');
+  const death = interrupted.interruptedFlights[0];
+  assert.ok(death.revival);
+  for (const reason of ['death-event', 'lethal-impact', 'revival-time', 'corpse-motion', 'dead-attack', 'weapon', 'respawn-budget']) {
+    const changed = structuredClone(interrupted);
+    const actor = (tick: number) => changed.frames[tick - 1].actors.find(a => a.id === 'main_ai')!;
+    if (reason === 'death-event') changed.deaths = changed.deaths.filter(d => d.id !== 'main_ai' || d.tick !== death.death);
+    if (reason === 'lethal-impact') changed.impacts = changed.impacts.filter(i => i.tick !== death.death);
+    if (reason === 'revival-time') changed.revivals.find(r => r.id === 'main_ai' && r.tick === death.revival)!.tick++;
+    if (reason === 'corpse-motion') actor(death.death + 1).pos[1] += 1;
+    if (reason === 'dead-attack') changed.attacks.push({ tick: death.death + 1, id: 'main_ai', weapon: 'hammer', melee: false, kind: 'swing' });
+    if (reason === 'weapon') actor(death.death).weaponState = 'windup';
+    if (reason === 'respawn-budget') actor(death.revival!).jumpBudget = 1;
     assert.ok(validateMobilityDecisionTrace(changed).failureCount > 0, reason);
   }
 });

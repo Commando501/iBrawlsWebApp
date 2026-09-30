@@ -563,10 +563,14 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('revived actor resumes useful movement', frames.some(f => f.tick > (first?.tick ?? ticks) &&
       f.actors.some(c => c.id === loser.id && c.hp > 0 && Math.hypot(c.pos[0] - first!.pos[0], c.pos[2] - first!.pos[2]) > 2)), true);
     if (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse) {
-      check('revived actor autonomously attacks again', attacks.some(a => a.id === loser.id && a.tick > (first?.tick ?? ticks)), true);
+      // A second carrier can die and rejoin combat while the original loser
+      // takes a support role. Require a real post-revival attack, not a fight
+      // by one prescribed identity regardless of its current assignment.
+      check('revived actor autonomously attacks again', attacks.some(a =>
+        revivals.some(r => r.id === a.id && r.tick < a.tick)), true);
     }
     check('revived actor resumes tactical role', frames.some(f => f.tick > (first?.tick ?? ticks) &&
-      f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever'].includes(a.role))), true);
+      f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever', 'cover'].includes(a.role))), true);
   }
   if (match || mobility || passing) {
     const main = state.otherPlayers.get('main_ai');
@@ -586,8 +590,9 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     const punchWins = spec.mode === 'punch-first';
     const winner = punchWins ? carrier : defender, loser = punchWins ? defender : carrier;
     check('loser health', loser.hp, 0);
-    if (mapped) check('opening winner credited', winner.kills >= 1, true);
-    else check('one credited kill', winner.kills, 1);
+    check('first impact credits exactly one kill', frames.find(f => f.tick === impacts[0]?.tick)?.actors.find(a => a.id === winner.id)?.kills, 1);
+    for (const failure of validateOpeningCombatCredit([...state.otherPlayers.values()], impacts, deaths))
+      check(failure, false, true);
     check('one recorded death', loser.deaths, 1);
     check('loser never kills', loser.kills, 0);
     check('winner survives', winner.deaths, 0);
@@ -598,8 +603,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('no post-death attack', attacks.some(a => a.id === loser.id && a.tick > impacts[0]?.tick), false);
     check('dead actor respawn clock advances once', Math.abs(loser.respawnTimer - (3 - (150 - (impacts[0]?.tick ?? 0)) / 60)) < 1e-9, true);
     check('dead actor weapon ready', loser.weaponState, 'ready');
-    check('main identity kill bookkeeping', state.enemyKills, winner.id === 'main_ai' ? 1 : 0);
-    check('main identity death bookkeeping', state.enemyDeaths, loser.id === 'main_ai' ? 1 : 0);
+    check('main identity kill bookkeeping', state.enemyKills, state.otherPlayers.get('main_ai')?.kills ?? 0);
+    check('main identity death bookkeeping', state.enemyDeaths, state.otherPlayers.get('main_ai')?.deaths ?? 0);
     check('expected pickup count', pickups.length, punchWins ? 0 : 1);
     check('same-frame death/drop', dropTick, punchWins ? 0 : impacts[0]?.tick);
     if (punchWins) {
@@ -609,19 +614,17 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
       check('expected recovery owner', pickups[0]?.id, recoveryId);
       check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 53 : 107);
-      if (mapped) check('recovered possession retained or released by another carrier death',
-        state.grifball.ball.holderId === recoveryId || carrierDeaths.some(d => d.id === recoveryId && d.tick > pickups[0]!.tick), true);
-      else check('recovered possession retained', state.grifball.ball.holderId, recoveryId);
+      check('recovered possession retained or released by another carrier death',
+        state.grifball.ball.holderId === recoveryId || state.grifball.ball.state === 'loose' &&
+          state.grifball.ball.holderId === null && carrierDeaths.some(d => d.id === recoveryId && d.tick > pickups[0]!.tick), true);
       if (spec.mode === 'contested') {
         const followups = impacts.filter(i => i.victims.includes('escort'));
-        if (mapped) {
-          check('opponent contests new runner', followups.length >= 1, true);
-          check('escort survival or lethal follow-up accounted for', state.otherPlayers.get('escort')!.hp > 0 ||
-            carrierDeaths.some(d => d.id === 'escort' && followups.some(i => i.tick === d.tick)), true);
-        } else {
-          check('opponent contests new runner', followups.length, 1);
-          check('escort survives follow-up', state.otherPlayers.get('escort')!.hp, 1);
-        }
+        // The fixed opening/match fixtures require a follow-up hit. Mobility
+        // seeds may evade it; hostile targeting remains mandatory below, and
+        // all observed impacts/deaths still undergo the same accounting.
+        if (!mobility) check('opponent contests new runner', followups.length >= 1, true);
+        check('escort survival or lethal follow-up accounted for', state.otherPlayers.get('escort')!.hp > 0 ||
+          carrierDeaths.some(d => d.id === 'escort' && followups.some(i => i.tick === d.tick)), true);
         check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
         check('new carrier targeted autonomously', targetLookups.some(t => t.id === defender.id && t.target === 'escort' && t.tick > (pickups[0]?.tick ?? 150)), true);
       }
@@ -634,3 +637,24 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
+
+/** Opening fights have no respawns or environmental deaths. Every recorded
+ * death must have exactly one lethal impact and its credit on that attacker. */
+export function validateOpeningCombatCredit(
+  actors: readonly { id: string; kills: number; deaths: number }[],
+  impacts: readonly { tick: number; id: string; victims: readonly string[] }[],
+  deaths: readonly { tick: number; id: string }[],
+) {
+  const failures: string[] = [];
+  const credits = new Map<string, number>();
+  for (const death of deaths) {
+    const owners = impacts.filter(i => i.tick === death.tick && i.victims.includes(death.id));
+    if (owners.length !== 1 || !actors.some(a => a.id === owners[0]?.id)) failures.push(`death has one known impact owner: ${death.id}/${death.tick}`);
+    else credits.set(owners[0].id, (credits.get(owners[0].id) ?? 0) + 1);
+  }
+  for (const actor of actors) {
+    if (actor.kills !== (credits.get(actor.id) ?? 0)) failures.push(`credited lethal impacts: ${actor.id}`);
+    if (actor.deaths !== deaths.filter(d => d.id === actor.id).length) failures.push(`recorded deaths: ${actor.id}`);
+  }
+  return failures;
+}

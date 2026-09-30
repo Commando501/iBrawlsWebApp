@@ -129,6 +129,9 @@ export function selectDefenseThreat(a: GrifballAssignment, self: FieldPoint, pla
   const emergency = order.emergency && target.id === a.carrierId;
   if (!emergency && ['contain', 'last-defender', 'recover'].includes(order.mode)) return null;
   // Intercept first; switching to a duel early would turn the cut into tail pursuit.
+  // The planner's arrival estimate uses the defender's weapon, so the handoff
+  // must use that same reach rather than borrowing the target's weapon range.
+  const reach = players.find(p => p.id === a.botId)?.space?.reach ?? 3;
   return distance(self, target.pos) <= (a.tuning?.engagementDistance ?? 6) &&
-    (emergency || distance(self, order.intercept) <= Math.max(1, target.space?.reach ?? 3)) ? target.id : null;
+    (emergency || distance(self, order.intercept) <= Math.max(1, reach)) ? target.id : null;
 }
