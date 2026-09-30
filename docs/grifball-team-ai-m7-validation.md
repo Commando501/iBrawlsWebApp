@@ -2241,3 +2241,16 @@ Before the fix, **54/57 checks failed** on heading mismatches (`output/m7-turnin
 The new family and player-view checks pass **123/123**; the broader flight, carrier, lifecycle, player-view and simulator-step selection passes **1,270/1,270** (`output/m7-turning-flight-tests.log`, `output/m7-turning-flight-integration-run.log`). TypeScript passes, and targeted gate checks pass **13/13** with the full aggregate excluded (`output/m7-turning-flight-types.log`, `output/m7-turning-flight-gates.log`). An initial integration command named a nonexistent physics test and stopped before executing tests; the corrected command produced the recorded result.
 
 The family is registered in standard test commands and execution protocol v64, including failure totals, retained evidence and aggregate count assertions. The complete v64 aggregate is still pending. The separately running development quality matrix serves the previously frozen `b1ce75a5` build and cannot certify these later simulator changes. This closes the bounded mouse-turn boundary; autonomous steering, broader geometry/crowds, full mixed execution and held-out quality remain open.
+
+## 2026-09-30 — loose-ball screening development quality matrix
+
+`output/m7-loose-screen-quality-proof/` completes all **48/48 main matches**, with no time caps, plus **24 exact null-control pairs**. The 156 Quick checks, TypeScript, three builds, startup and correctness pass. Startup, Canyon and Stadium screenshots were inspected. Source remains the frozen `b1ce75a5b16b617e0a810cd60eeadd13b17b8174` build, dirty hash `3af1970a57e595c70b29a74b2ccc9d68dfd2088874a1a3a4c7d0f3c2475ebf65`, including concurrent outline changes. The later player-view and target-loss changes are outside this run.
+
+The fixed development matrix compares tactics disabled against full tactics on Canyon and Stadium, seeds 101/102, both sides and balanced/patient/aggressive opponents. Its pooled candidate-minus-baseline goal-margin estimate is **−0.9167**, with seed-cluster 95% interval **[−1.9755, +0.1422]**; the two seed deltas are −0.8333 and −1.0. The preceding containment pilot estimate was −0.125 on the same development matrix. These exploratory results do not establish a causal effect of the loose-ball change by itself.
+
+| Map | Balanced | Patient | Aggressive |
+| --- | --- | --- | --- |
+| Canyon | −0.75 | +1.25 | −0.25 |
+| Stadium | −3.75 | +0.25 | −2.25 |
+
+Values are mean paired goal-margin differences. Stadium/balanced is flagged as a regression, with interval [−6.9265, −0.5735]: baseline wins all four selected matches while candidate loses all four 0–2. All six strata remain unaccepted. The quality gate reports **inconclusive** because inputs overlap the declared tuning ledger and several supporting metrics lack possession opportunities; the overall report is also inconclusive. This is not a quality pass, and no performance gate was requested. The negative results remain retained. Broader parity and held-out quality are still open; Stadium/balanced possession and coverage behavior is the next gameplay diagnostic after completing the target-loss regression fix.
