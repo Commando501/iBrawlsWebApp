@@ -1,3 +1,4 @@
+import { compactExecutionTraces } from './grifballParityEvidence';
 import { runFocusFireParity } from './grifballFocusFireParity';
 import { runPlayerRunnerParity } from './grifballPlayerRunnerParity';
 import { runAirborneFlightParity } from './grifballAirborneFlightParity';
@@ -219,42 +220,42 @@ export const PARITY_TRACE_CASES: { name: string; actionTrace: string; options?: 
 ];
 
 export function runExecutionParity() {
-  const traces = PARITY_TRACE_CASES.map(c => ({ ...runExecutionParityTrace(c.actionTrace, c.options), name: c.name }));
-  const botTraces = runBotExecutionParity();
-  const lungeTraces = runLungeParity();
-  const geometryTraces = runGeometryParity();
-  const motionTraces = runMotionParity();
-  const movingContactTraces = runMovingContactParity();
-  const multiActorTraces = runMultiActorParity();
-  const spawnTraces = runSpawnParity();
-  const mixedContactTraces = runMixedContactParity();
-  const playerLungeTraces = runPlayerLungeParity();
-  const mixedLifecycleTraces = runMixedLifecycleParity();
-  const opposedFlightTraces = runOpposedFlightParity();
-  const shieldedFlightTraces = runShieldedFlightParity();
-  const airborneFlightTraces = runAirborneFlightParity();
-  const objectiveTraces = runObjectiveParity();
-  const frameObjectiveTraces = runFrameObjectiveParity();
-  const passInputTraces = runPassInputParity();
-  const chargeCombatTraces = runChargeCombatParity();
-  const carrierCrowdTraces = runCarrierCrowdParity();
-  const carrierRecoveryTraces = runCarrierRecoveryParity();
-  const runnerCombatTraces = runRunnerCombatParity();
-  const playerRunnerTraces = runPlayerRunnerParity();
-  const focusFireTraces = runFocusFireParity();
-  const roundFrameTraces = runRoundFrameParity();
-  const roundCombatTraces = runRoundCombatParity();
-  const roundFlightTraces = runRoundFlightParity();
-  const roundPlayerFlightTraces = runRoundPlayerFlightParity();
+  const traces = compactExecutionTraces(PARITY_TRACE_CASES.map(c => ({ ...runExecutionParityTrace(c.actionTrace, c.options), name: c.name })));
+  const botTraces = compactExecutionTraces(runBotExecutionParity());
+  const lungeTraces = compactExecutionTraces(runLungeParity());
+  const geometryTraces = compactExecutionTraces(runGeometryParity());
+  const motionTraces = compactExecutionTraces(runMotionParity());
+  const movingContactTraces = compactExecutionTraces(runMovingContactParity());
+  const multiActorTraces = compactExecutionTraces(runMultiActorParity());
+  const spawnTraces = compactExecutionTraces(runSpawnParity());
+  const mixedContactTraces = compactExecutionTraces(runMixedContactParity());
+  const playerLungeTraces = compactExecutionTraces(runPlayerLungeParity());
+  const mixedLifecycleTraces = compactExecutionTraces(runMixedLifecycleParity());
+  const opposedFlightTraces = compactExecutionTraces(runOpposedFlightParity());
+  const shieldedFlightTraces = compactExecutionTraces(runShieldedFlightParity());
+  const airborneFlightTraces = compactExecutionTraces(runAirborneFlightParity());
+  const objectiveTraces = compactExecutionTraces(runObjectiveParity());
+  const frameObjectiveTraces = compactExecutionTraces(runFrameObjectiveParity());
+  const passInputTraces = compactExecutionTraces(runPassInputParity());
+  const chargeCombatTraces = compactExecutionTraces(runChargeCombatParity());
+  const carrierCrowdTraces = compactExecutionTraces(runCarrierCrowdParity());
+  const carrierRecoveryTraces = compactExecutionTraces(runCarrierRecoveryParity());
+  const runnerCombatTraces = compactExecutionTraces(runRunnerCombatParity());
+  const playerRunnerTraces = compactExecutionTraces(runPlayerRunnerParity());
+  const focusFireTraces = compactExecutionTraces(runFocusFireParity());
+  const roundFrameTraces = compactExecutionTraces(runRoundFrameParity());
+  const roundCombatTraces = compactExecutionTraces(runRoundCombatParity());
+  const roundFlightTraces = compactExecutionTraces(runRoundFlightParity());
+  const roundPlayerFlightTraces = compactExecutionTraces(runRoundPlayerFlightParity());
   const failures = [...traces, ...botTraces, ...lungeTraces, ...geometryTraces, ...motionTraces, ...movingContactTraces, ...multiActorTraces, ...spawnTraces, ...mixedContactTraces, ...playerLungeTraces, ...mixedLifecycleTraces, ...opposedFlightTraces, ...shieldedFlightTraces, ...airborneFlightTraces, ...objectiveTraces, ...frameObjectiveTraces, ...passInputTraces, ...chargeCombatTraces, ...carrierCrowdTraces, ...carrierRecoveryTraces, ...runnerCombatTraces, ...playerRunnerTraces, ...focusFireTraces, ...roundFrameTraces, ...roundCombatTraces, ...roundFlightTraces, ...roundPlayerFlightTraces].filter(t => t.differenceCount);
-  const decisionIntegrationTraces = runDecisionIntegration();
-  const passDecisionTraces = runPassDecisionIntegration();
-  const mobilityDecisionTraces = runMobilityDecisionIntegration();
-  const mapMobilityTraces = runMapMobility();
-  const mapRoutingTraces = runMapRouting();
-  const mapContestTraces = runMapContest();
+  const decisionIntegrationTraces = compactExecutionTraces(runDecisionIntegration());
+  const passDecisionTraces = compactExecutionTraces(runPassDecisionIntegration());
+  const mobilityDecisionTraces = compactExecutionTraces(runMobilityDecisionIntegration());
+  const mapMobilityTraces = compactExecutionTraces(runMapMobility());
+  const mapRoutingTraces = compactExecutionTraces(runMapRouting());
+  const mapContestTraces = compactExecutionTraces(runMapContest());
   const mapMatchTraces = runMapMatch();
-  const passContestTraces = runPassContest();
+  const passContestTraces = compactExecutionTraces(runPassContest());
   const passRecoveryTraces = runPassRecovery();
   const passMatchTraces = runPassMatch();
   const mapPassMatchTraces = runMapPassMatch();
@@ -263,18 +264,19 @@ export function runExecutionParity() {
   const tankContestTraces = runTankContest();
   const earnedTankTraces = runEarnedTankContest();
   const mapMobilityFailures = mapMobilityTraces.filter(t => t.failureCount);
-  const matchDecisionTraces = runMatchDecisionIntegration();
-  const roundDecisionTraces = runRoundDecisionIntegration();
-  const revivalDecisionTraces = runRevivalDecisionIntegration();
-  const opposedDecisionTraces = runOpposedDecisionIntegration();
-  const pressureDecisionTraces = runPressureDecisionIntegration();
+  const matchDecisionTraces = compactExecutionTraces(runMatchDecisionIntegration());
+  const roundDecisionTraces = compactExecutionTraces(runRoundDecisionIntegration());
+  const revivalDecisionTraces = compactExecutionTraces(runRevivalDecisionIntegration());
+  const opposedDecisionTraces = compactExecutionTraces(runOpposedDecisionIntegration());
+  const pressureDecisionTraces = compactExecutionTraces(runPressureDecisionIntegration());
   const decisionFailures = [...decisionIntegrationTraces, ...passDecisionTraces, ...pressureDecisionTraces, ...opposedDecisionTraces, ...revivalDecisionTraces, ...roundDecisionTraces, ...matchDecisionTraces, ...mobilityDecisionTraces, ...mapRoutingTraces, ...mapContestTraces, ...mapMatchTraces, ...passContestTraces, ...passMatchTraces, ...mapPassMatchTraces, ...rosterContestTraces, ...tankContestTraces, ...earnedTankTraces, ...passRecoveryTraces, ...rosterMatchTraces].filter(t => t.failureCount);
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
   return gate('execution-parity', failures.length || decisionFailures.length || mapMobilityFailures.length ? 'fail' : 'inconclusive',
     `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length + motionTraces.length + movingContactTraces.length + multiActorTraces.length + spawnTraces.length + mixedContactTraces.length + playerLungeTraces.length + mixedLifecycleTraces.length + opposedFlightTraces.length + shieldedFlightTraces.length + airborneFlightTraces.length + objectiveTraces.length + frameObjectiveTraces.length + passInputTraces.length + chargeCombatTraces.length + carrierCrowdTraces.length + carrierRecoveryTraces.length + runnerCombatTraces.length + playerRunnerTraces.length + focusFireTraces.length + roundFrameTraces.length + roundCombatTraces.length + roundFlightTraces.length + roundPlayerFlightTraces.length} action/objective boundary traces differ. ${decisionFailures.length}/${decisionIntegrationTraces.length + passDecisionTraces.length + pressureDecisionTraces.length + opposedDecisionTraces.length + revivalDecisionTraces.length + roundDecisionTraces.length + matchDecisionTraces.length + mobilityDecisionTraces.length + mapRoutingTraces.length + mapContestTraces.length + mapMatchTraces.length + passContestTraces.length + passMatchTraces.length + mapPassMatchTraces.length + rosterContestTraces.length + tankContestTraces.length + earnedTankTraces.length + passRecoveryTraces.length + rosterMatchTraces.length} live decision integration traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} live map mobility traces fail. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
-    { protocol: 'live-functions-vs-headless-step-v50', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    { protocol: 'live-functions-vs-headless-step-v51', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+      evidenceRetention: 'All trace validation precedes sampling. Full-history families retain at most 32 ordered frame samples, prioritizing first/last and failure context; frameCount records the complete validated history and frameEvidence holds its SHA-256 fingerprint with explicit special-number/undefined encoding. Direct trace runners still return full histories. Existing compact match families retain their event/final-frame contracts. This changes report retention, not gameplay, tolerances or gate requirements.',
       focusFireScope: "152 paired moving local-carrier focus-fire encounters / 18240 frames. Main and ordinary attackers commit slash/slash, slash/lunge, lunge/slash or lunge/lunge from the same origin. Retreat/cross/approach, one/two/three runner HP, both teams/orders; no-counter, shielded-enemy, surviving-enemy and long-punch controls. Independent contact-phase ordering, health, sole death credit, possession, movement and punch sphere checks. Six JSON continuations and three exact repeats. Grounded authored inputs, two seconds before revival; no autonomous spacing, obstacle interaction or quality claim.",
       playerRunnerScope: '864 paired moving local-carrier fights / 103680 frames. Retreat, cross and approach with persistent input, 100/130 percent speed, one/two runner HP, short/long punch timings, no incoming attack/slash/lunge, protected enemy and no-counter controls, ordinary/main attackers, mirrored teams and reversed roster storage. Real pointer primary input, movement, weapon/impact and frame/objective owners. Independent sphere/position/contact/health/ownership/credit checks, six JSON continuations and three exact repeats. Stops before respawn; no autonomous local intent, general pitch/crouch/model variants, obstacle collisions, multi-attacker movement, performance or quality certification.',
       airborneFlightScope: '512 paired opposing flights / 153600 frames. Eight rising/falling/overhead/angled starts, two contact geometries, matched one/two HP, trades on/off, main/ordinary roster identity, mirrored teams and reversed simulator storage. Authored production commitments, independent sampled contact and discrete ballistic oracle, per-frame health/credit, flight end, survivor drift/reload, revival and player readiness. Sixteen JSON continuations and eight exact repeats in tests. Local flight grounds the player; roster flight keeps committed vertical momentum until finish. No autonomous attack selection, moving/carrier multi-actor fights, obstacles, multiplayer authority or quality certification.',
