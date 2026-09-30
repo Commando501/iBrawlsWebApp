@@ -1,4 +1,5 @@
 import { canonicalJSON, createSuitePlan } from './plan';
+import { validLocalPlayerEvidence } from './localPlayerInput';
 import type { TrialResult } from './runner';
 import type { CheckResult, Gate, SuitePlan, Verdict } from './types';
 export interface GateEvaluation { check: CheckResult; details: unknown }
@@ -23,10 +24,19 @@ export function correctnessGate(plan: SuitePlan, results: readonly TrialResult[]
   if (!results.length) return gate('correctness', 'not-run', 'No live trials have run.', null);
   const indexed = indexResults(plan, results), failures: string[] = [], missing: string[] = [];
   for (const job of plan.jobs) {
-    const r = indexed.get(job.id), scenario = plan.cases.find(c => c.specification.id === job.caseId)!.specification.scenario;
+    const r = indexed.get(job.id), fixture = plan.cases.find(c => c.specification.id === job.caseId)!;
+    const scenario = fixture.specification.scenario;
     if (r?.check.verdict === 'fail') { failures.push(`${job.id}: ${r.check.summary}`); continue; }
     if (!finished(r) || !r!.behavior || !r!.end || r!.behavior.ticks !== r!.end.tick) { missing.push(job.id); continue; }
     const b = r!.behavior!;
+    if (fixture.observer === 'local-input') {
+      const e = r!.localPlayer;
+      if (e === undefined) missing.push(`${job.id}: local player observation missing`);
+      else if (!validLocalPlayerEvidence(e, job.simulationTicks) || e.inputTicks !== r!.end!.tick ||
+        !r!.start?.alive.includes('player') || e.possessions > b.pickups || e.respawns > b.respawns ||
+        e.respawns > e.deaths || e.goals > b.goals[job.focalTeam])
+        failures.push(`${job.id}: incoherent local player observation`);
+    } else if (r!.localPlayer !== undefined) failures.push(`${job.id}: local observation outside owned roster`);
     if (b.staleRoleTicks) failures.push(`${job.id}: dead actor retained a role for more than 60 ticks`);
     if (scenario === 'pickup' && !b.pickups) failures.push(`${job.id}: no pickup`);
     if (scenario === 'goal' && !b.goals[job.focalTeam]) failures.push(`${job.id}: focal runner did not score`);
@@ -35,7 +45,7 @@ export function correctnessGate(plan: SuitePlan, results: readonly TrialResult[]
   }
   return gate('correctness', failures.length ? 'fail' : missing.length ? 'inconclusive' : 'pass',
     `${failures.length} behavior/invariant failures; ${missing.length} jobs without complete observation.`,
-    { protocol: 'live-invariants-and-expectations-v1', scope: 'All-tick ownership, finite state, legal score/lifecycle, dead-role release; pickup, goal, pass recovery and reinforcement scenario expectations.', failures, missing });
+    { protocol: 'live-invariants-and-expectations-v2', scope: 'All-tick ownership, finite state, legal score/lifecycle, dead-role release; pickup, goal, pass recovery and reinforcement scenario expectations; coherent local observations for mixed matches.', failures, missing });
 }
 /** Exact same-runtime comparison. Timings and bounded UI trace truncation are excluded. */
 export function reproducibilityGate(plan: SuitePlan, results: readonly TrialResult[], pinnedRuntime: boolean): GateEvaluation {
@@ -48,9 +58,16 @@ export function reproducibilityGate(plan: SuitePlan, results: readonly TrialResu
     if (x?.check.verdict === 'fail' || y?.check.verdict === 'fail') { failures.push(`${a.id}: failed control trial`); continue; }
     if (!finished(x) || !finished(y) || !x!.deterministic?.hash || !y!.deterministic?.hash ||
       x!.deterministic.ticks !== (x!.end?.tick ?? -2) + 1 || y!.deterministic.ticks !== (y!.end?.tick ?? -2) + 1) { missing.push(a.id); continue; }
+    if (plan.cases.find(c => c.specification.id === a.caseId)!.observer === 'local-input') {
+      if (x!.localPlayer === undefined || y!.localPlayer === undefined) { missing.push(`${a.id}: local player observation missing`); continue; }
+      if ([x!, y!].some(r => !validLocalPlayerEvidence(r.localPlayer, a.simulationTicks) || r.localPlayer!.inputTicks !== r.end!.tick)) {
+        failures.push(`${a.id}: malformed local player observation`); continue;
+      }
+    }
     pairs++;
     const value = (r: TrialResult) => ({ termination: r.termination, start: r.start, end: r.end,
-      deterministic: r.deterministic, behavior: r.behavior, metrics: r.metrics });
+      deterministic: r.deterministic, behavior: r.behavior, metrics: r.metrics,
+      ...(r.localPlayer !== undefined ? { localPlayer: r.localPlayer } : {}) });
     if (canonicalJSON(value(x!)) !== canonicalJSON(value(y!))) failures.push(a.id);
   }
   return gate('reproducibility', failures.length ? 'fail' : missing.length || !pinnedRuntime ? 'inconclusive' : 'pass',
