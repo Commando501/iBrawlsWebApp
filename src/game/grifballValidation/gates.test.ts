@@ -251,7 +251,8 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v52');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v53');
+  assert.deepEqual(details.postResetPassCoverage.missing, []);
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.motionTraces.length, 216);

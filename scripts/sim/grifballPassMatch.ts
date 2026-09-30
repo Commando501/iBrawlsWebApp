@@ -1,7 +1,7 @@
 import type { CustomMapData } from '../../src/types';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { validateCompleteMatchTrace } from './grifballMatchDecisionIntegration';
-import { PASS_CONTEST_OPENINGS, type PassContestCase } from './grifballPassContest';
+import { PASS_CONTEST_OPENINGS, validatePassSelections, type PassContestCase } from './grifballPassContest';
 
 export interface PassMatchCase extends Omit<PassContestCase, 'opening'> {
   opening: 'clear' | 'closing-charge' | 'disabled';
@@ -17,6 +17,11 @@ export function runPassMatchTrace(spec: PassMatchCase, map?: CustomMapData) {
   const trace = validateCompleteMatchTrace(runOpposedDecisionTrace(
     { mode: 'contested', team: spec.team, reverse: spec.reverse, main: spec.main, seed: spec.seed },
     map ? 'map-pass-match' : 'pass-match', map, PASS_CONTEST_OPENINGS[spec.opening]));
+  return validatePassMatchTrace(trace, spec);
+}
+
+export function validatePassMatchTrace(trace: Omit<ReturnType<typeof runOpposedDecisionTrace>, 'scenario'>, spec: PassMatchCase) {
+  validatePassSelections(trace);
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) {
       trace.failureCount++;
@@ -27,13 +32,24 @@ export function runPassMatchTrace(spec: PassMatchCase, map?: CustomMapData) {
   if (spec.opening === 'disabled') {
     check('disabled passing never releases across rounds', trace.passes.length, 0);
     check('disabled passing never charges across rounds', trace.frames.some(f => f.pass?.charge), false);
-  } else {
+  } else if (spec.opening === 'clear') {
     check('initial carrier passes autonomously', first?.carrierId, carrierId);
     check('initial intended teammate', first?.receiverId, 'escort');
     check('initial pass reaches teammate', trace.pickups.find(p => p.tick > (first?.tick ?? Infinity))?.id, 'escort');
-    if (spec.opening === 'clear') {
-      check('clear opening release timing', first?.tick, 36);
-    } else check('closing pressure cancels before release', trace.cancellations.some(c => c.carrierId === carrierId && c.elapsed > 0 && c.tick < (first?.tick ?? 0)), true);
+    check('clear opening release timing', first?.tick, 36);
+  } else {
+    // Withholding after a cancellation is valid when no new safe opportunity
+    // appears. A later pass is not necessary to prove the earlier cancellation.
+    const cancellation = trace.cancellations.find(c => c.carrierId === carrierId && c.elapsed > 0 && c.tick < (first?.tick ?? Infinity));
+    check('closing pressure cancels a real charge', !!cancellation, true);
+    if (cancellation) {
+      const before = trace.frames[cancellation.tick - 2]?.pass?.charge;
+      const after = trace.frames[cancellation.tick - 1]?.pass?.charge;
+      check('cancelled charge was held by the original carrier', before?.carrierId, carrierId);
+      check('cancellation records elapsed charge', before?.elapsed, cancellation.elapsed);
+      check('cancellation clears charge', after, null);
+      check('cancellation does not release', trace.passes.some(p => p.tick === cancellation.tick && p.carrierId === carrierId), false);
+    }
   }
   const end = trace.frames.at(-1)!;
   check('hostile targeting throughout match', trace.targetLookups.every(t => end.actors.find(a => a.id === t.id)!.team !== end.actors.find(a => a.id === t.target)!.team), true);
@@ -54,3 +70,18 @@ export const runPassMatch = () => PASS_MATCH_CASES.map(spec => {
   return { ...trace, frameCount: frames.length, targetLookupCount: targetLookups.length,
     terminalTick: frames.find(f => f.phase === 'matchEnd')?.tick ?? null, finalFrame: frames.at(-1)! };
 });
+
+export interface PostResetPassTrace {
+  name: string;
+  scenario: { team: 'blue' | 'red'; main: boolean };
+  passesAfterReset: number;
+  failureCount: number;
+}
+
+/** Coverage belongs to the complete fixed matrix, not a prescribed tactical outcome per seed. */
+export function postResetPassCoverage(traces: readonly PostResetPassTrace[]) {
+  const required = ['blue/false', 'blue/true', 'red/false', 'red/true'];
+  const witnesses = traces.filter(t => t.failureCount === 0 && t.passesAfterReset > 0)
+    .map(t => ({ group: `${t.scenario.team}/${t.scenario.main}`, trace: t.name, passes: t.passesAfterReset }));
+  return { witnesses, missing: required.filter(group => !witnesses.some(w => w.group === group)) };
+}

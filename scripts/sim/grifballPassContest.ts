@@ -19,6 +19,12 @@ export const PASS_CONTEST_CASES: PassContestCase[] = (Object.keys(PASS_CONTEST_O
 export function runPassContestTrace(spec: PassContestCase) {
   const trace = runOpposedDecisionTrace({ mode: 'contested', team: spec.team, reverse: spec.reverse, main: spec.main },
     'pass-contest', undefined, PASS_CONTEST_OPENINGS[spec.opening]);
+  return validatePassContestTrace(trace, spec);
+}
+
+/** Recheck retained evidence independently of its original verdict. */
+export function validatePassContestTrace(trace: Omit<ReturnType<typeof runOpposedDecisionTrace>, 'scenario'>, spec: PassContestCase) {
+  validatePassSelections(trace);
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) { trace.failureCount++; if (trace.failures.length < 64) trace.failures.push({ tick: trace.ticks, field, actual, expected }); }
   };
@@ -40,10 +46,12 @@ export function runPassContestTrace(spec: PassContestCase) {
     check('disabled module never releases', trace.passes.length, 0);
     check('disabled module never charges', trace.frames.some(f => f.pass?.charge), false);
   } else if (spec.opening === 'blocked-lane') {
-    const loss = trace.carrierDeaths.find(d => d.id === carrierId);
-    check('unsafe opening lane never releases before loss', trace.passes.filter(p => p.tick < (loss?.tick ?? trace.ticks)).length, 0);
-    check('unsafe opening becomes a carrier contest', trace.carrierDeaths.some(d => d.id === carrierId), true);
-    check('opponents recover lost possession', trace.pickups.some(p => teamOf(p.id) !== spec.team), true);
+    const opening = trace.frames[0];
+    check('unsafe opening rejects its pass selection', opening.pass?.selections.find(p => p.id === carrierId)?.selected, null);
+    check('unsafe opening does not charge', opening.pass?.charge, null);
+    check('unsafe opening does not release', trace.passes.some(p => p.tick <= opening.tick && p.carrierId === carrierId), false);
+    // The defender can move or die. Later safe releases must remain legal;
+    // neither a carrier death nor an opposing pickup is required for pass safety.
   } else {
     const first = trace.passes[0];
     check('original carrier releases autonomously', first?.carrierId, carrierId);
@@ -61,5 +69,32 @@ export function runPassContestTrace(spec: PassContestCase) {
     }
   }
   return { ...trace, name: spec.opening + '/' + trace.name, scenario: spec };
+}
+
+type PassTrace = Pick<ReturnType<typeof runOpposedDecisionTrace>, 'ticks' | 'frames' | 'passes' | 'failureCount' | 'failures'>;
+
+/** Every charge/release needs the contemporaneous selection, not the opening's decision. */
+export function validatePassSelections<T extends PassTrace>(trace: T): T {
+  const check = (tick: number, field: string, actual: unknown, expected: unknown) => {
+    if (actual !== expected) {
+      trace.failureCount++;
+      if (trace.failures.length < 64) trace.failures.push({ tick, field, actual, expected });
+    }
+  };
+  for (const frame of trace.frames) {
+    const charge = frame.pass?.charge;
+    if (!charge) continue;
+    const selected = frame.pass?.selections.find(p => p.id === charge.carrierId)?.selected;
+    check(frame.tick, 'charge retains its selected receiver', selected?.receiverId, charge.receiverId);
+    check(frame.tick, 'charge retains its selected speed', selected?.speed, charge.speed);
+  }
+  for (const pass of trace.passes) {
+    const frame = trace.frames[pass.tick - 1];
+    const selected = frame?.pass?.selections.find(p => p.id === pass.carrierId)?.selected;
+    check(pass.tick, 'release has matching frame evidence', frame?.tick, pass.tick);
+    check(pass.tick, 'release retains its selected receiver', selected?.receiverId, pass.receiverId);
+    check(pass.tick, 'release retains its selected speed', selected?.speed, pass.speed);
+  }
+  return trace;
 }
 export const runPassContest = () => PASS_CONTEST_CASES.map(runPassContestTrace);

@@ -7,8 +7,6 @@ for (const spec of PASS_MATCH_CASES) test(`passing match ${spec.opening}/${spec.
   assert.equal(trace.failureCount, 0, JSON.stringify(trace.failures));
   assert.equal(trace.frames.at(-1)!.phase, 'matchEnd');
   assert.equal(trace.ticks - trace.frames.find(f => f.phase === 'matchEnd')!.tick, 181);
-  // These fixed examples explicitly exercise passing again after a reset.
-  if (spec.opening === 'clear' && spec.seed === 17 && spec.main && !spec.reverse) assert.ok(trace.passesAfterReset > 0);
 });
 
 test('complete passing matches cover both seeds, teams, actor orders and carrier identities', () => {

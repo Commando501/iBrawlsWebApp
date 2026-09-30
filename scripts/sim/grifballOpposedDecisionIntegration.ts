@@ -384,11 +384,13 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           const released = wasHeld && ballState() === 'thrown';
           const elapsed = (chargeBefore && choice && chargeBefore.carrierId === oldHolder && chargeBefore.receiverId === choice.receiverId && chargeBefore.speed === choice.speed ? chargeBefore.elapsed : 0) + delta;
           if (plan.passCharge) {
+            check('charge selects a viable pass', selected?.viable, true);
             check('pass charge advances once', Math.abs(plan.passCharge.elapsed - elapsed) < 1e-9, true);
             check('charge belongs to living holder', plan.passCharge.carrierId === state.grifball.ball.holderId && !!scorer && scorer.hp > 0, true);
             check('charge stays below release threshold', !!choice && elapsed + 1e-9 < choice.chargeSeconds, true);
           }
           if (released) {
+            check('release selects a viable pass', selected?.viable, true);
             if (mapPassMatch) check('released prediction clears map footprints', !!selected && selected.path.every(p => isMapBodyClear(map, { ...p, y: 0 })), true);
             check('release starts from ready weapon', weaponBefore, 'ready');
             check('release has autonomous selection', !!choice, true);
