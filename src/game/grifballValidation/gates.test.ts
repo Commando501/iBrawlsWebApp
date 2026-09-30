@@ -251,7 +251,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v54');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v55');
   assert.deepEqual(details.jumpWitnesses.mobility.missing, []);
   assert.deepEqual(details.jumpWitnesses.match.missing, []);
   assert.deepEqual(details.postResetPassCoverage.missing, []);
@@ -263,6 +263,8 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.movingContactTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.multiActorTraces.length, 192);
   assert.ok(details.multiActorTraces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.mixedSpawnTraces.length, 156);
+  assert.ok(details.mixedSpawnTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.spawnTraces.length, 156);
   assert.ok(details.spawnTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.mixedContactTraces.length, 324);
@@ -272,7 +274,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
   const sampledFamilies = Object.values(details).filter((value: any) => Array.isArray(value) && value[0]?.frameEvidence) as any[][];
-  assert.equal(sampledFamilies.length, 39);
+  assert.equal(sampledFamilies.length, 40);
   for (const traces of sampledFamilies) for (const trace of traces) {
     assert.ok(trace.frameCount >= trace.frames.length);
     assert.ok(trace.frames.length <= 32);
