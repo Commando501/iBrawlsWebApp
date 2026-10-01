@@ -7,29 +7,30 @@ import { resolveAILungeEvasionForCombatant } from '../../src/components/grifball
 import { resolvePreGroundMovementRecoveryForCombatant } from '../../src/components/grifball/aiAirborneRecoveryRuntime';
 import { resolveAIDashMovementForCombatant } from '../../src/components/grifball/aiDashMovementRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
-import { swapCombatantWeaponAction } from '../../src/components/grifball/combatantActions';
+import { startAIHammerJumpForCombatant, swapCombatantWeaponAction } from '../../src/components/grifball/combatantActions';
 import { resolveAILungeEvasionDecision, type AILungeEvasionFrame } from '../../src/game/aiLungeEvasionDecision';
-import { resolveAIBulltrueCounterDecision } from '../../src/game/aiBulltrueCounterDecision';
-import { startAISpatialDodgeMotion, finishAIHorizontalMotion } from '../../src/game/aiDashMotion';
+import { resolveSimGrifballEvasionInput } from '../../src/sim/grifballEvasionInput';
+import { finishAIHorizontalMotion } from '../../src/game/aiDashMotion';
 import { resolveBehaviorTuning } from '../../src/game/aiBehaviorTuning';
 import { withSimulationRandom } from '../../src/game/simulationRandom';
-import { createScriptedAIEmergencyHopCommand, createScriptedAISpatialDodgeCommand, type ScriptedAIMobilityCommand } from '../../src/sim/scriptedAIMobility';
+import { type ScriptedAIMobilityCommand } from '../../src/sim/scriptedAIMobility';
+import { triggerEnemyHammerSwingForCombatant } from '../../src/components/grifball/enemyWeaponActions';
 import type { ScriptedCombatCommand } from '../../src/sim/scriptedCombatInput';
 import { stepSimulation } from '../../src/sim/step';
 import { idleAction } from '../../src/sim/actions';
 
-const noop = () => {}, unsupported = () => assert.fail('hammer jumps are not part of this counter fixture');
+const noop = () => {};
 const vec = (v: { x: number; y: number; z: number }) => new THREE.Vector3(v.x, v.y, v.z);
-const cases = ['hammer', 'sword', 'air-counter', 'air-falling-counter', 'hop-counter', 'air-hop-counter', 'dash-counter', 'moving-counter', 'revert-hop-counter', 'swap-counter'] as const;
+const cases = ['hammer', 'sword', 'air-counter', 'air-falling-counter', 'hop-counter', 'air-hop-counter', 'dash-counter', 'moving-counter', 'revert-hop-counter', 'swap-counter', 'hammer-jump', 'jump-rejected-counter'] as const;
 for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const dt of [1 / 60, 1 / 30]) for (const kind of cases)
   test(`evasion counter execution ${id}/${sign}/${dt}/${kind}`, () => {
     const f = attachLungeRuntime(createBotParityFixture(id, true, { swordLungeSpeed: 24, attackRadius: 2, aiTuneHammerWindupSeconds: .32,
-      weaponReadyTime: 0, weaponSwapLockout: 0, enableSwordTrade: false, enableHammerSwordTrade: false }));
+      hammerJumpAirLimit: kind === 'jump-rejected-counter' ? 0 : 1, weaponReadyTime: 0, weaponSwapLockout: 0, enableSwordTrade: false, enableHammerSwordTrade: false }));
     const { bot, target, sim, state, map } = f, [self, rival] = sim.combatants;
     sim.combatExecution = 'live-mixed-v1'; sim.localPlayerId = 'player'; sim.match.phase = 'playing';
     self.id = id; rival.id = target.id; self.controller = rival.controller = 'ai';
     const airVelocity = kind === 'air-falling-counter' ? -3 : 3;
-    const airborne = kind.startsWith('air'), timed = kind.includes('hop') || kind === 'dash-counter';
+    const airborne = kind.startsWith('air'), timed = kind.includes('hop') || kind === 'dash-counter' || kind === 'hammer-jump' || kind === 'jump-rejected-counter';
     const weapon = kind === 'sword' ? 'sword' : 'hammer';
     bot.activeWeapon = self.weapon = kind.startsWith('revert') || kind.startsWith('swap') ? 'sword' : weapon;
     target.activeWeapon = rival.weapon = 'sword'; bot.hp = bot.maxHp = self.hp = self.maxHp = rival.hp = rival.maxHp = 20;
@@ -53,8 +54,8 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
     let liveRemaining = self.dashRemaining, liveCooldown = self.dashCooldownTimer;
     const liveDirection = vec(self.dashDir); let liveDecision: ReturnType<typeof resolveAILungeEvasionDecision>;
     let liveDraws = 0, simDraws = 0, replayDraws = 0, selectedCommands: ScriptedCombatCommand[] = [];
-    for (let tick = 1; tick <= 120; tick++) {
-      withSimulationRandom(() => { liveDraws++; return kind === 'dash-counter' ? .01 : .99; }, tick * dt, () => {
+    for (let tick = 1; tick <= (kind === 'hammer-jump' ? 180 : 120); tick++) {
+      withSimulationRandom(() => { liveDraws++; return ['dash-counter', 'hammer-jump', 'jump-rejected-counter'].includes(kind) ? .01 : .99; }, tick * dt, () => {
         f.weaponFrame(dt); f.gravityPrelude(bot, dt); liveCooldown = Math.max(0, liveCooldown - dt);
         if (tick === 1) {
           if (kind.startsWith('revert') || kind.startsWith('swap')) {
@@ -70,7 +71,9 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
             dt, difficulty: 'normal', defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0, activeWeapon: weapon, canStartWeaponAction: true,
             cooldownMultiplier: .75, calibrationEnabled: false, bulltrueCounter: timed ? null : weapon,
             getTargetPlayerModel: () => null, mainAI: state.otherPlayers.get('main_ai'), triggerCombatantAttack: () => f.attack(),
-            startAIHammerJump: unsupported, spawnVoxelShockwaveParticles: unsupported, recordCombatantObservation: noop, playDash: noop, playJump: noop,
+            startAIHammerJump: (jumpSelf, _pos, vel, heading, jumpType) => startAIHammerJumpForCombatant({ self: jumpSelf,
+              settings: state.settings, vel, horizontalHeading: heading, jumpType,
+              onMainAIHammerSwing: () => triggerEnemyHammerSwingForCombatant(jumpSelf), playSwing: noop, playJump: noop }), spawnVoxelShockwaveParticles: noop, recordCombatantObservation: noop, playDash: noop, playJump: noop,
             tuning: resolveBehaviorTuning(state.settings) });
           liveRemaining = frame.dashRemaining; liveCooldown = frame.dashCooldownTimer;
         }
@@ -100,38 +103,39 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
               if (kind.startsWith('revert')) commands.push({ kind: 'revert-weapon-feint' });
               if (kind.startsWith('swap')) commands.push({ kind: 'swap', weapon: 'hammer' });
               const distance = frame.pos.distanceTo(vec(enemy.pos));
-              const attack = (active: 'hammer' | 'sword') => commands.push({ kind: 'melee', weapon: active, swipe: false });
-              const result = resolveAILungeEvasionDecision({ settings: own.settings, frame, targetWeapon: enemy.weapon,
-                distanceToTarget: distance, combatDistanceToTarget: distance, targetIsLunging: enemy.isLunging, difficulty: 'normal',
-                defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0, activeWeapon: weapon, canStartWeaponAction: true,
-                playerModel: null, tuning: resolveBehaviorTuning(own.settings), random, resolveIncomingDirection: () => enemy.lungeDir,
-                startSpatialDodge: (x, z) => { mobility = createScriptedAISpatialDodgeCommand(actor, own.map.arenaRadius, { x, z }, null, random);
-                  startAISpatialDodgeMotion(own.settings, frame, mobility.direction); return true; },
-                startEmergencyHop: (x, z) => { mobility = createScriptedAIEmergencyHopCommand(actor, own.map.arenaRadius, { x, z }, null, random); return true; },
-                startHammerJump: unsupported, triggerHammerAttack: () => attack('hammer'),
-                tryBulltrueCounter: () => resolveAIBulltrueCounterDecision({ settings: own.settings, frame: { activeWeapon: weapon,
-                  aiState: frame.aiState, timer: frame.timer, weaponState: frame.weaponState }, bulltrueCounter: timed ? null : weapon,
-                  canStartWeaponAction: true, cooldownMultiplier: .75, triggerCombatantAttack: attack }) });
+              const evasion = resolveSimGrifballEvasionInput(own, id, { [id]: 'normal' }, {
+                [id]: { aiState: 'APPROACHING', timer: 0, cooldownMultiplier: .75 },
+                [enemy.id]: { aiState: 'LUNGING', timer: 0, cooldownMultiplier: 1 },
+              }, { motionPhase: 'after-engagement-gravity', observation: { targetId: enemy.id, distanceToTarget: distance,
+                combatDistanceToTarget: distance, toTarget: { x: enemy.pos.x - actor.pos.x, z: enemy.pos.z - actor.pos.z }, resolvedAiReach: 3 },
+                weaponFrame: { activeWeapon: weapon, weaponState: 'ready', canStartWeaponAction: true,
+                  readinessRemaining: 0, observedSwapLockout: 0, currentSwapLockout: 0 },
+                pendingPostEvasionCharge: false, bulltrueCounter: timed ? null : weapon,
+                defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0, random }, dt)!;
+              const result = evasion.frame; commands.push(...evasion.commands); mobility = evasion.mobility;
+              frame.dashRemaining = result.dashRemaining;
               assert.deepEqual(result, liveDecision!); selectedCommands = commands; memory.aiState = result.aiState;
             }
             return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw }, ...(mobility ? { mobility } : {}),
-              ...(commands.length ? { commands, commandVersion: 'scripted-combat-v3' } : {}),
+              ...(commands.length ? { commands, commandVersion: 'scripted-combat-v5' } : {}),
               ...(frame.dashRemaining > 0 ? { dash: { version: 'scripted-ai-dash-v1', aiState: memory.aiState, pendingPostEvasionCharge: false,
                 target: { targetWeaponState: 'ready', attackDistanceToTarget: frame.pos.distanceTo(vec(enemy.pos)), resolvedAiReach: 3,
                   targetProtected: false, spatialIQ: 80, weaponReady: false } } } : {}) };
           } } });
-      const events = advance(sim, simMemory, () => { simDraws++; return kind === 'dash-counter' ? .01 : .99; });
-      const replayEvents = advance(restored, replayMemory, () => { replayDraws++; return kind === 'dash-counter' ? .01 : .99; });
+      const events = advance(sim, simMemory, () => { simDraws++; return ['dash-counter', 'hammer-jump', 'jump-rejected-counter'].includes(kind) ? .01 : .99; });
+      const replayEvents = advance(restored, replayMemory, () => { replayDraws++; return ['dash-counter', 'hammer-jump', 'jump-rejected-counter'].includes(kind) ? .01 : .99; });
       assert.deepEqual(restored, sim); assert.deepEqual(replayMemory, simMemory); assert.deepEqual(replayEvents, events); assert.equal(simDraws, liveDraws); assert.equal(replayDraws, simDraws);
       assert.equal(self.hp, bot.hp, `own damage ${tick}`); assert.equal(rival.hp, target.hp, `target damage ${tick}`); assert.equal(self.weapon, bot.activeWeapon);
+      assert.equal(!!self.hammerJumpPlanned, !!bot.hammerJumpPlanned);
+      assert.equal(self.hammerJumpsInAir, bot.aiHammerJumpsInAir ?? 0);
       assert.equal(self.dashRemaining, liveRemaining); assert.equal(self.dashCooldownTimer, liveCooldown);
       for (const axis of ['x', 'y', 'z'] as const) {
         assert.ok(Math.abs(self.pos[axis] - bot.pos[axis]) < 1e-7, `position ${tick}/${axis}: ${self.pos[axis]} vs ${bot.pos[axis]}`);
         assert.ok(Math.abs(self.vel[axis] - bot.vel[axis]) < 1e-7, `velocity ${tick}/${axis}`);
       }
       if (tick === 1) {
-        assert.equal(selectedCommands.at(-1)?.kind, 'melee'); assert.equal(self.weaponState, 'windup', 'moving/airborne counter actually commits');
-        assert.equal(self.lastHammerAttackTimeMs ?? self.lastSwordAttackTimeMs, dt * 1000);
+        assert.equal(selectedCommands.at(-1)?.kind, kind === 'hammer-jump' ? 'hammer-jump' : 'melee'); assert.equal(self.weaponState, 'windup', 'moving/airborne counter actually commits');
+        assert.equal(self.lastHammerAttackTimeMs ?? self.lastSwordAttackTimeMs, kind === 'hammer-jump' && id !== 'main_ai' ? undefined : dt * 1000);
         if (kind.includes('hop')) assert.equal(events.actorDecisionFrame!.decisions[0].mobility, 'emergency-hop');
         if (kind === 'dash-counter') assert.equal(events.actorDecisionFrame!.decisions[0].mobility, 'spatial-dodge');
       }

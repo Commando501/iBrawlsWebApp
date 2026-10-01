@@ -7,16 +7,14 @@ import { resolveAILungeEvasionForCombatant } from '../../src/components/grifball
 import { resolvePreGroundMovementRecoveryForCombatant } from '../../src/components/grifball/aiAirborneRecoveryRuntime';
 import { resolveAIDashMovementForCombatant } from '../../src/components/grifball/aiDashMovementRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
-import { resolveAILungeEvasionDecision, type AILungeEvasionFrame } from '../../src/game/aiLungeEvasionDecision';
-import { startAISpatialDodgeMotion, finishAIHorizontalMotion } from '../../src/game/aiDashMotion';
-import { resolveTargetLungeDirection, shouldCommitChargeAfterEvasion } from '../../src/game/aiSpatialStrategy';
+import { type AILungeEvasionFrame } from '../../src/game/aiLungeEvasionDecision';
+import { finishAIHorizontalMotion } from '../../src/game/aiDashMotion';
 import { resolveBehaviorTuning } from '../../src/game/aiBehaviorTuning';
 import { withSimulationRandom } from '../../src/game/simulationRandom';
-import { createScriptedAIEmergencyHopCommand, createScriptedAISpatialDodgeCommand,
-  type ScriptedAIMobilityCommand, type ScriptedAIDashFeedback } from '../../src/sim/scriptedAIMobility';
+import { type ScriptedAIDashFeedback } from '../../src/sim/scriptedAIMobility';
 import { stepSimulation } from '../../src/sim/step';
 import { idleAction } from '../../src/sim/actions';
-import { observeSimTacticalWeaponTarget } from '../../src/sim/grifballTacticalWeaponChoice';
+import { resolveSimGrifballEvasionInput } from '../../src/sim/grifballEvasionInput';
 
 const vec = (v: { x: number; y: number; z: number }) => new THREE.Vector3(v.x, v.y, v.z);
 const unsupported = () => assert.fail('authored dash/hop sequence selected a weapon action');
@@ -90,31 +88,22 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
               resolve: ({ state: own }) => {
                 const actor = own.combatants.find(c => c.id === id)!, enemy = own.combatants.find(c => c.id === rival.id)!;
                 assert.equal(actor.isSprinting, false, 'engagement clears prior sprint state before policy');
-                const localFrame: AILungeEvasionFrame = { ...memory, pos: vec(actor.pos), vel: vec(actor.vel), dashDir: vec(actor.dashDir),
-                  timer: 0, dashRemaining: actor.dashRemaining, dashCooldownTimer: actor.dashCooldownTimer, weaponState: 'ready' };
-                let mobility: ScriptedAIMobilityCommand | undefined;
-                const ownDistance = localFrame.pos.distanceTo(vec(enemy.pos));
-                const ownObservation = { targetWeaponState: observeSimTacticalWeaponTarget(own, enemy).weaponState, attackDistanceToTarget: ownDistance,
-                  resolvedAiReach: 3, targetProtected: enemy.invulnerabilityTimer > 0, spatialIQ: 80, weaponReady: true };
-                const result = resolveAILungeEvasionDecision({ settings: own.settings, frame: localFrame, targetWeapon: enemy.weapon,
-                  distanceToTarget: ownDistance, combatDistanceToTarget: ownDistance, targetIsLunging: enemy.isLunging,
-                  difficulty: 'normal', defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0, activeWeapon: 'sword',
-                  canStartWeaponAction: false, playerModel: null, tuning: resolveBehaviorTuning(own.settings), random,
-                  resolveIncomingDirection: () => resolveTargetLungeDirection({ targetId: enemy.id,
-                    toTargetX: enemy.pos.x - actor.pos.x, toTargetZ: enemy.pos.z - actor.pos.z, targetVelX: enemy.vel.x, targetVelZ: enemy.vel.z,
-                    botIsLunging: enemy.isLunging, botLungeDirX: enemy.lungeDir.x, botLungeDirZ: enemy.lungeDir.z }),
-                  startSpatialDodge: (x, z, track = true) => {
-                    mobility = createScriptedAISpatialDodgeCommand(actor, own.map.arenaRadius, { x, z }, null, random);
-                    startAISpatialDodgeMotion(own.settings, localFrame, mobility.direction);
-                    if (track) localFrame.pendingPostEvasionCharge = shouldCommitChargeAfterEvasion({ ...ownObservation, weaponReady: true });
-                    return true;
-                  }, startHammerJump: unsupported, triggerHammerAttack: unsupported,
-                  tryBulltrueCounter: () => ({ started: false, aiState: memory.aiState, timer: 0, weaponState: 'ready' }),
-                  startEmergencyHop: (x, z) => { mobility = createScriptedAIEmergencyHopCommand(actor, own.map.arenaRadius, { x, z }, null, random); return true; } });
+                const ownDistance = vec(actor.pos).distanceTo(vec(enemy.pos));
+                const evasion = resolveSimGrifballEvasionInput(own, id, { [id]: 'normal' }, {
+                  [id]: { aiState: memory.aiState, timer: 0, cooldownMultiplier: 1 },
+                  [enemy.id]: { aiState: undefined, timer: 0, cooldownMultiplier: 1 },
+                }, { motionPhase: 'after-engagement-gravity', observation: { targetId: enemy.id, distanceToTarget: ownDistance,
+                  combatDistanceToTarget: ownDistance, toTarget: { x: enemy.pos.x - actor.pos.x, z: enemy.pos.z - actor.pos.z }, resolvedAiReach: 3 },
+                  weaponFrame: { activeWeapon: 'sword', weaponState: 'ready', canStartWeaponAction: false,
+                    readinessRemaining: 0, observedSwapLockout: 0, currentSwapLockout: 0 },
+                  pendingPostEvasionCharge: memory.pendingPostEvasionCharge, bulltrueCounter: null,
+                  defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0, random }, dt)!;
+                const result = evasion.frame;
+                assert.deepEqual(evasion.commands, []);
                 assert.equal(result.isEvadingLunge, live.isEvadingLunge);
                 memory.aiState = result.aiState; memory.pendingPostEvasionCharge = result.pendingPostEvasionCharge;
-                return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw }, ...(mobility ? { mobility } : {}),
-                  ...(localFrame.dashRemaining > 0 ? { dash: { version: 'scripted-ai-dash-v1', ...memory, target: ownObservation } } : {}) };
+                return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw },
+                  ...(evasion.mobility ? { mobility: evasion.mobility } : {}), ...(evasion.dash ? { dash: evasion.dash } : {}) };
               } } });
           const feedback = events.actorDecisionFrame!.decisions[0].dash;
           assert.deepEqual(feedback, liveFeedback, `dash feedback ${tick}`);

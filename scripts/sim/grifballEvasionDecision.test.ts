@@ -6,6 +6,7 @@ import { resolveAILungeEvasionForCombatant } from '../../src/components/grifball
 import { triggerEnemyHammerSwingForCombatant } from '../../src/components/grifball/enemyWeaponActions';
 import { startAIHammerJumpForCombatant } from '../../src/components/grifball/combatantActions';
 import { resolveBehaviorTuning } from '../../src/game/aiBehaviorTuning';
+import { resolveSimGrifballEvasionInput } from '../../src/sim/grifballEvasionInput';
 import { withSimulationRandom } from '../../src/game/simulationRandom';
 
 const cases = ['counter-hammer', 'counter-sword', 'dash', 'bait', 'bait-decline', 'hop', 'hammer-jump',
@@ -26,6 +27,13 @@ for (const id of ['main_ai', 'ordinary']) for (const mirror of [false, true]) fo
         pendingPostEvasionCharge: true, weaponState: 'ready' as const };
       const events: string[] = []; let draws = 0;
       const random = () => { draws++; return ['bait-decline', 'hop-and-counter'].includes(kind) ? .99 : .01; };
+      const own = structuredClone(f.sim), [actor, enemy] = own.combatants;
+      own.combatExecution = 'live-mixed-v1'; own.localPlayerId = 'player'; own.match.phase = 'playing';
+      Object.assign(actor, { id, controller: 'ai', weapon: bot.activeWeapon, pos: { ...bot.pos }, vel: { ...bot.vel },
+        isJumping: !!bot.isJumping, hammerJumpsInAir: bot.aiHammerJumpsInAir ?? 0, dashCooldownTimer: frame.dashCooldownTimer,
+        weaponReadyTimer: 0, swapLockoutTimer: 0 });
+      Object.assign(enemy, { id: target.id, controller: 'ai', weapon: 'sword', pos: { ...target.pos }, vel: { ...target.vel },
+        isLunging: !!target.isLunging, lungeDir: { ...target.lungeTargetDir }, weaponState: 'idle', attackKind: 'none', invulnerabilityTimer: 0 });
       const result = withSimulationRandom(explicit ? () => assert.fail('explicit policy leaked into global RNG') : random, 0, () =>
         resolveAILungeEvasionForCombatant({ state, self: bot, frame, botId: id,
           target: { ...target, weaponState: 'ready', isLunging: !!target.isLunging, isCrouching: false },
@@ -43,6 +51,27 @@ for (const id of ['main_ai', 'ordinary']) for (const mirror of [false, true]) fo
           }, spawnVoxelShockwaveParticles: () => events.push('particles'),
           recordCombatantObservation: () => events.push('observation'), playDash: () => events.push('dash'), playJump: () => events.push('hop'),
           tuning: resolveBehaviorTuning(state.settings), ...(explicit ? { random } : {}) }));
+      let adapterDraws = 0;
+      const before = structuredClone(own), memories = { [id]: { aiState: 'APPROACHING' as const, timer: .2, cooldownMultiplier: .75 },
+        [enemy.id]: { aiState: 'APPROACHING' as const, timer: 0, cooldownMultiplier: 1 } };
+      const adapted = withSimulationRandom(() => assert.fail('adapter leaked global RNG'), 0, () => resolveSimGrifballEvasionInput(own, id,
+        { [id]: kind === 'easy' ? 'easy' : 'normal' }, memories, {
+          motionPhase: 'after-engagement-gravity', observation: { targetId: enemy.id, distanceToTarget: distance, combatDistanceToTarget: distance,
+            toTarget: { x: enemy.pos.x - actor.pos.x, z: enemy.pos.z - actor.pos.z }, resolvedAiReach: 3 },
+          weaponFrame: { activeWeapon: actor.weapon as 'hammer' | 'sword', weaponState: 'ready', canStartWeaponAction: kind !== 'unready-hop',
+            readinessRemaining: 0, observedSwapLockout: 0, currentSwapLockout: 0 },
+          pendingPostEvasionCharge: true, bulltrueCounter: kind === 'counter-hammer' ? 'hammer' : kind === 'counter-sword' ? 'sword' : null,
+          defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0,
+          random: () => { adapterDraws++; return ['bait-decline', 'hop-and-counter'].includes(kind) ? .99 : .01; },
+        })!);
+      assert.deepEqual(own, before, 'adapter construction cannot mutate the simulation');
+      assert.deepEqual(adapted.frame, result); assert.equal(adapterDraws, draws);
+      assert.deepEqual(adapted.motion.pos, { ...bot.pos }); assert.deepEqual(adapted.motion.vel, { ...bot.vel });
+      assert.deepEqual(adapted.motion.dashDir, { ...frame.dashDir });
+      assert.equal(adapted.motion.isJumping, !!bot.isJumping); assert.equal(!!adapted.motion.hammerJumpPlanned, !!bot.hammerJumpPlanned);
+      assert.equal(adapted.motion.weaponState, bot.weaponState);
+      assert.equal(adapted.commands.some(c => c.kind === 'melee'), events.includes('attack'));
+      assert.equal(adapted.commands.some(c => c.kind === 'hammer-jump'), ['hammer-jump', 'jump-rejected'].includes(kind));
       return { result, draws, events, pose: { pos: bot.pos.toArray(), vel: bot.vel.toArray(), dir: frame.dashDir.toArray(),
         jumping: !!bot.isJumping, planned: !!bot.hammerJumpPlanned, weapon: bot.weaponState } };
     };
