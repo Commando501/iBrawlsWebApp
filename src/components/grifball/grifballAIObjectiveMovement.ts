@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
   getGrifballRunnerSteering,
-  getGrifballSpacingOffset,
 } from '../../game/aiGrifballRoles';
+import { computeSpacedGroundMovement, resolveGrifballSupportSteering } from '../../game/aiGrifballObjectiveSteering';
 import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { getGrifballSpaceWaypoint } from '../../game/aiGrifballSpace';
 import { isSpaceSegmentOpen } from '../../game/grifballSpaceGeometry';
@@ -58,22 +58,15 @@ const applySpacedGroundMove = ({
   speed: number;
   dt: number;
 }): void => {
-  const dx = targetX - frame.pos.x;
-  const dz = targetZ - frame.pos.z;
-  const distance = Math.hypot(dx, dz);
-  const arrival = Math.min(1, distance / arrivalRadius);
-  const steerX = (distance > 0.01 ? dx / distance * arrival : 0) + spacing.x;
-  const steerZ = (distance > 0.01 ? dz / distance * arrival : 0) + spacing.z;
-  const steerLen = Math.hypot(steerX, steerZ);
-  if (steerLen < 0.01) {
+  const movement = computeSpacedGroundMovement({ pos: frame.pos, target: { x: targetX, z: targetZ }, spacing, arrivalRadius, speed, dt });
+  if (!movement.heading) {
     frame.vel.x = 0;
     frame.vel.z = 0;
     return;
   }
-  const moveSpeed = Math.min(speed * Math.min(1, steerLen), (distance + Math.hypot(spacing.x, spacing.z)) / Math.max(dt, 0.001));
-  const yaw = frame.yaw;
-  applyGroundDirection(frame, steerX / steerLen, steerZ / steerLen, moveSpeed, dt);
-  if (frame.weaponState !== 'ready') frame.yaw = yaw;
+  frame.vel.set(movement.velocity.x, 0, movement.velocity.z);
+  frame.pos.x += frame.vel.x * dt; frame.pos.z += frame.vel.z * dt;
+  if (frame.weaponState === 'ready') frame.yaw = getYawForHeading(movement.heading.x, movement.heading.z);
 };
 
 const settleAsApproaching = (
@@ -128,6 +121,20 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   const heldByMe = ball.state === 'held' && ball.holderId === botId;
   const heldByAnyone = ball.state === 'held' && !!ball.holderId;
   const assignment = state.aiMatchContext.grifballTeamPlan.assignments.get(botId);
+  if (!heldByMe && assignment && assignment.role !== 'runner') {
+    const movement = resolveGrifballSupportSteering({ assignment, pos: frame.pos, allies: alliesList,
+      players: state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [], ball: ball.pos, heldByAnyone,
+      separation: state.settings.grifballEscortSpacing ?? 4, speed: 5.2 * (state.settings.speedForward / 100), dt });
+    if (!movement) return false;
+    frame.pickupRequested = movement.pickupRequested;
+    frame.vel.set(movement.velocity.x, 0, movement.velocity.z);
+    frame.pos.x += frame.vel.x * dt; frame.pos.z += frame.vel.z * dt;
+    if (movement.heading && frame.weaponState === 'ready') frame.yaw = getYawForHeading(movement.heading.x, movement.heading.z);
+    settleAsApproaching(frame, true, dt);
+    self.isLunging = false;
+    constrainCombatantToArena(frame.pos, frame.vel);
+    return true;
+  }
   const geometry = assignment?.geometry;
   const space = assignment?.space;
   const waypoint = geometry && space ? getGrifballSpaceWaypoint(geometry, frame.pos, space) : null;
@@ -234,33 +241,6 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     validateMove();
     // Preserve the attack facing during recovery while resuming the route.
     if (frame.weaponState !== 'ready') frame.yaw = attackYaw;
-    settleAsApproaching(frame, true, dt);
-    self.isLunging = false;
-    constrainCombatantToArena(frame.pos, frame.vel);
-    return true;
-  }
-
-  if (assignment && assignment.role !== 'runner') {
-    const players = state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [];
-    if (selectGrifballAssignmentThreat(assignment, frame.pos, players)) return false;
-    frame.pickupRequested = !heldByAnyone && (assignment.role === 'retriever' || !!assignment.receive);
-    const spacing = getGrifballSpacingOffset(
-      { x: frame.pos.x, z: frame.pos.z },
-      // A retriever must be able to enter the pickup even beside a teammate.
-      assignment.role === 'retriever' || assignment.receive ? [] : alliesList,
-      assignment.tuning?.spacingEnabled === false ? 4 : (assignment.tuning?.separation ?? state.settings.grifballEscortSpacing ?? 4.0)
-    );
-    applySpacedGroundMove({
-      frame,
-      targetX: waypoint?.x ?? (frame.pickupRequested && !assignment.receive ? ball.pos.x : assignment.destination.x),
-      targetZ: waypoint?.z ?? (frame.pickupRequested && !assignment.receive ? ball.pos.z : assignment.destination.z),
-      spacing,
-      arrivalRadius: space?.route.status === 'routed' ? 0.25 : assignment.tuning?.spacingEnabled === false ? 1.5 : (assignment.tuning?.arrivalRadius ?? 1.5),
-      speed: 5.2 * (state.settings.speedForward / 100),
-      dt,
-    });
-    validateMove();
-
     settleAsApproaching(frame, true, dt);
     self.isLunging = false;
     constrainCombatantToArena(frame.pos, frame.vel);

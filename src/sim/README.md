@@ -38,6 +38,7 @@ engine: zero changes to the live runtime.
 | `rng.ts` | Seeded mulberry32 PRNG. **The only randomness source** — no `Math.random` may ever appear under `src/sim/`. Serializable single-uint32 state. |
 | `actions.ts` | `ActionInput` per combatant — the seam that replaces keyboard/gamepad/mobile input. |
 | `scriptedObjectiveInput.ts` | Opt-in `scripted-objective-v1` grounded world steering, with explicit scripted ownership; separate from player/RL controls. |
+| `grifballSupportInput.ts` | Converts one actor's own team-plan assignment into grounded retrieval/support input; returns `null` when another controller is required. |
 | `simState.ts` | `SimState` + `SimCombatant`: a plain-`Vec3`, fully serializable mirror of the live combatant, stripped of React/THREE. |
 | `factory.ts` | `createMatch({ seed, teamSizes, settings, map })` — reuses `DEFAULT_ADMIN_SETTINGS`, the Championship Stadium arena, and the pure objective modules. |
 | `physics.ts` | Port of the movement core (turn, walk/run/crouch, dash, jump/gravity, lunge flight) + reused arena/obstacle constraint. |
@@ -105,6 +106,8 @@ selection, combat movement and airborne controls are not provided by this option
 - Rendering-only concerns (camera, VFX, audio, nameplates, replay) are dropped.
 
 ## Running
+
+For opt-in support planning, refresh a caller-owned `GrifballTeamPlanState` once per frame with `createSimGrifballTacticalSnapshot` and `updateGrifballTeamPlan`, then call `resolveSimGrifballSupportInput` for the actor. Supply its returned action and `scriptedObjective` to `stepSimulation` using the same settings and timestep. Observation, planning and command generation do not mutate simulator physics. The caller owns planning memory and controller handoffs; `null` is not an autonomous idle policy. Current paired validation covers one controlled ground actor with passive participants, including retrieval, pickup handoff and escort detours. Sequential multi-actor decisions, respawn scheduling and carrier/combat controllers are not yet integrated. Existing RL actions and simulator defaults are unchanged.
 
 ```bash
 # Sim unit + determinism + golden-rules tests (also part of `npm test`):
