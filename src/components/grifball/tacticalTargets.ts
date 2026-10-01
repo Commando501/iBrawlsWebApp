@@ -88,7 +88,11 @@ export const buildPotentialTacticalTargets = (
         maxHp: other.maxHp,
         invulnerabilityTimer: other.invulnerabilityTimer || 0,
         activeWeapon: ballAsHammer(other.activeWeapon),
-        weaponState: other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : (other.weaponState || 'ready'),
+        // Decision backoff starts when an attack is committed, before its
+        // windup/impact. Keep that mechanical phase visible to opponents.
+        weaponState: other.weaponState && other.weaponState !== 'ready'
+          ? other.weaponState
+          : other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : 'ready',
         isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
         dashCooldownRemaining: other.aiDashCooldownTimer || 0,
         swapLockoutRemaining: other.swapLockoutTimer || 0,
