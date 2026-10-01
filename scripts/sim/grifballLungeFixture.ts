@@ -22,7 +22,8 @@ export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target')
 }
 
 /** Attach the production flight/finish callbacks without creating or committing actors. */
-export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>) {
+export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>,
+  feedback: Partial<Pick<Parameters<typeof finishAISwordLungeFrameForCombatant>[0], 'tryEnterPressureState' | 'tryStartComboOnHit'>> = {}) {
   const { bot, target, state, refs, map } = f;
   const outcomes: string[] = [], deaths: DeathEvent[] = [];
   const recordDeathEvent = (attacker: string, victim: string): DeathEvent => {
@@ -44,13 +45,13 @@ export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>)
         const result = finishAISwordLungeFrameForCombatant({ state, self: bot, botId: bot.id, pos: bot.pos, vel: bot.vel,
           aiState: bot.aiState, timer: bot.aiTimer ?? 0, weaponState: bot.weaponState, cooldownMultiplier, outcome, targetId, damageAlreadyRecorded,
           recordCombatantObservation: (id, observe) => recordCombatantModelObservation(state, id, observe),
-          recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop });
+          recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop, ...feedback });
         bot.aiState = result.aiState; bot.aiTimer = result.timer;
       },
       finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
         state, self: other, botId: other.id, targetId: attackerId,
         recordCombatantObservation: (id, observe) => recordCombatantModelObservation(state, id, observe),
-        recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop,
+        recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop, ...feedback,
       }),
       executeCustomBotTrade: (attackerBot, tradeTarget, reason) => executeCustomBotTradeForState({ state, attackerBot,
         target: tradeTarget, reason, rosterCombatant: id => state.otherPlayers.get(id), evaluatePlayerKillMedals: () => [],

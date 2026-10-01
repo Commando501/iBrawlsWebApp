@@ -52,13 +52,8 @@ const getCombatantTargetVitals = (
     };
   }
 
-  if (targetId === 'main_ai') {
-    return {
-      hp: state.aiHP ?? 0,
-      invulnerabilityTimer: state.aiInvulnerabilityTimer ?? 0,
-    };
-  }
-
+  // main_ai is a roster combatant too. Legacy aliases are not updated by
+  // damage/trades and must not decide whether this target survived contact.
   const target = state.otherPlayers.get(targetId);
   return {
     hp: target?.hp ?? 0,
