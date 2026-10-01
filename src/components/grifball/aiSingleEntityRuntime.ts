@@ -36,6 +36,7 @@ import { resolveAIAirborneHammerOpportunityForCombatant } from './aiAirborneHamm
 import { resolvePreGroundMovementRecoveryForCombatant } from './aiAirborneRecoveryRuntime';
 import { syncAICombatantFrameToState, syncAICombatantPoseAndState } from './aiCombatantFrameSync';
 import { resolveAIEngagementPreparation } from '../../game/aiEngagementPreparation';
+import { selectAIEngagementTarget } from '../../game/aiEngagementTarget';
 import { resolveAICombatTuningPreludeForCombatant } from './aiCombatTuningPreludeRuntime';
 import { resolveAIComboOrchestrationForCombatant } from './aiComboOrchestrationRuntime';
 import { shouldBlockCoordinatedAttackForFrame } from './aiCoordinationRuntime';
@@ -644,16 +645,11 @@ export function createAISingleEntityUpdaterForState({
         : null;
       self.pickupRequested = false;
       const finishingMovement = self.isLunging || dashRemaining > 0 || slideActive;
-      let target = teamAssignment && !finishingMovement
-        ? (assignmentThreat ? getTacticalTargetById(botId, assignmentThreat) : null)
-        : getBestTacticalTarget(botId, pos, difficulty);
       const pressureTargetId = self.aiPressureTargetId;
-      if (state === 'PRESSURING' && pressureTargetId && !teamAssignment) {
-        const lockedTarget = getTacticalTargetById(botId, pressureTargetId);
-        if (lockedTarget) {
-          target = lockedTarget;
-        }
-      }
+      const target = selectAIEngagementTarget({ hasAssignment: !!teamAssignment, assignmentThreat, finishingMovement,
+        aiState: state, pressureTargetId,
+        getById: id => getTacticalTargetById(botId, id),
+        getBest: () => getBestTacticalTarget(botId, pos, difficulty) });
   
       if (!target) {
         const noTargetFrame = createGrifballAIObjectiveFrameFromLocals({

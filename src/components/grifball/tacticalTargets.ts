@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import { getCoordinatedTargetBonus } from '../../game/aiBotCoordinator';
-import { getTargetEdgeSelectionBonus } from '../../game/aiSpatialStrategy';
+import { selectBestTacticalTarget } from '../../game/aiTacticalTargetSelection';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type AIResolvedKnobs, type DerivedAIParams } from '../../game/aiTuning';
@@ -141,92 +140,10 @@ export const getBestTacticalTargetFromState = ({
   const s = state;
   const tuning = resolveBehaviorTuning(s.settings);
   const playstyleVal = resolveBotKnobs(botId).aiPlaystyle;
-  const playstyleFactor = playstyleVal / 100;
-  const recoveringTargetBonus = (1.0 - Math.abs(playstyleFactor - 0.5) * 2.0) * 200.0;
   const targetSelectionSpatialIQ = resolveBotDerived(botId).spatialIQ;
-
-  let bestTarget: TacticalTargetCandidate | null = null;
-  let bestScore = -Infinity;
-
   const potentialTargets = buildPotentialTacticalTargets(s, botId, rosterAI);
-
-  potentialTargets.forEach((target) => {
-    const dist = botPos.distanceTo(target.pos);
-    let score = 1000;
-
-    if (difficulty === 'easy') {
-      score -= dist * 20;
-      if ((target.invulnerabilityTimer ?? 0) > 0) {
-        score -= 300;
-      }
-    } else if (difficulty === 'normal') {
-      score -= dist * 15;
-      score += (target.maxHp - target.hp) * 50;
-      if ((target.invulnerabilityTimer ?? 0) > 0) {
-        score -= 2000;
-      }
-      if (target.weaponState === 'recovering') {
-        score += 150 + Math.max(0, recoveringTargetBonus);
-      }
-    } else {
-      score -= dist * 10;
-      score += (target.maxHp - target.hp) * 150;
-
-      if ((target.invulnerabilityTimer ?? 0) > 0) {
-        score -= 99999;
-      }
-
-      if (target.weaponState === 'recovering') {
-        score += 350 + Math.max(0, recoveringTargetBonus);
-      } else if (target.weaponState === 'swing_up' || target.weaponState === 'swing_down') {
-        score += 100;
-      }
-
-      const myActiveWeapon = botId === MAIN_AI_ID ? mainAI?.activeWeapon : s.otherPlayers.get(botId)?.activeWeapon;
-      if (myActiveWeapon === 'sword') {
-        if (target.activeWeapon === 'hammer') {
-          score += 100;
-        }
-      }
-
-      let nearbyEnemiesCount = 0;
-      potentialTargets.forEach((otherT) => {
-        if (otherT.id !== target.id) {
-          if (target.pos.distanceTo(otherT.pos) < 6.0) {
-            nearbyEnemiesCount++;
-          }
-        }
-      });
-
-      if (myActiveWeapon === 'hammer') {
-        score += nearbyEnemiesCount * 80;
-      } else {
-        score -= nearbyEnemiesCount * 120;
-      }
-
-      score += getTargetEdgeSelectionBonus({
-        botX: botPos.x,
-        botZ: botPos.z,
-        targetX: target.pos.x,
-        targetZ: target.pos.z,
-        arenaRadius: s.arenaRadius,
-        spatialIQ: targetSelectionSpatialIQ,
-        edgeInset: tuning.arenaEdgeInset,
-      });
-
-      score += getCoordinatedTargetBonus({
-        coordinator: s.aiMatchContext.coordinator,
-        botId,
-        targetId: target.id,
-        difficulty,
-      });
-    }
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestTarget = target;
-    }
-  });
-
-  return bestTarget;
+  return selectBestTacticalTarget({ botId, botPos, difficulty,
+    myActiveWeapon: botId === MAIN_AI_ID ? mainAI?.activeWeapon : s.otherPlayers.get(botId)?.activeWeapon,
+    aiPlaystyle: playstyleVal, targetSelectionSpatialIQ, arenaRadius: s.arenaRadius,
+    edgeInset: tuning.arenaEdgeInset, coordinator: s.aiMatchContext.coordinator, potentialTargets });
 };
