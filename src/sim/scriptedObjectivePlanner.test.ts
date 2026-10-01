@@ -5,7 +5,7 @@ import { idleAction } from './actions';
 import { stepSimulation, SIM_DT } from './step';
 import { setSimCarrier } from './grifball';
 import { createGrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
-import { SCRIPTED_OBJECTIVE_PLANNER_VERSION, type ScriptedObjectivePlanner } from './scriptedObjectivePlanner';
+import { SCRIPTED_OBJECTIVE_PLANNER_VERSION, SCRIPTED_CARRIER_PUNCH_VERSION, type ScriptedObjectivePlanner } from './scriptedObjectivePlanner';
 
 function fixture() {
   const state = createMatch({ seed: 63, combatExecution: 'live-roster-v2', teamSizes: { blue: 1, red: 1 }, settings: { aiDifficulty: 'normal' } });
@@ -122,5 +122,78 @@ test('recorded ground commands reproduce the same independent simulator continua
       scriptedObjective: { version: 'scripted-objective-v1', scriptedBots: f.planner.scriptedBots,
         movement: Object.fromEntries(frame.decisions.map((d: any) => [d.id, d.movement])) } });
     assert.deepEqual(f.state, replay);
+  }
+});
+
+function punchFixture() {
+  const f = fixture(); setSimCarrier(f.actor, true, f.state.settings);
+  f.state.match.ball.state = 'held'; f.state.match.ball.holderId = f.actor.id;
+  f.other.pos = { x: -9, y: 0, z: 0 }; f.other.invulnerabilityTimer = 0;
+  f.planner.punchControl = { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { walker: 0 } };
+  return f;
+}
+
+for (const failure of ['version', 'owner', 'conflict', 'negative', 'nan', 'string', 'array'] as const)
+  test(`punch controller rejects ${failure} atomically`, () => {
+    const f = punchFixture(), control = f.planner.punchControl!;
+    if (failure === 'version') (control as { version: string }).version = 'unknown';
+    if (failure === 'owner') control.cooldowns = { missing: 0 };
+    if (failure === 'conflict') f.planner.weaponReady = { walker: true };
+    if (failure === 'negative') control.cooldowns.walker = -1;
+    if (failure === 'nan') control.cooldowns.walker = NaN;
+    if (failure === 'string') control.cooldowns.walker = '0' as unknown as number;
+    if (failure === 'array') control.cooldowns = [] as unknown as Record<string, number>;
+    const state = structuredClone(f.state), planner = structuredClone(f.planner);
+    assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner }));
+    assert.deepEqual(f.state, state); assert.deepEqual(f.planner, planner);
+  });
+
+test('AI reload is sampled before spending this frame; swap readiness is sampled after its tick', () => {
+  const f = punchFixture(); f.planner.punchControl!.cooldowns.walker = SIM_DT / 2;
+  f.actor.weaponReadyTimer = SIM_DT * 2;
+  const first = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+  assert.equal(first.plannerFrame!.decisions[0].action!.attackPrimary, false);
+  assert.equal(f.planner.punchControl!.cooldowns.walker, 0);
+  const second = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+  assert.equal(second.plannerFrame!.decisions[0].reason, 'punch');
+  assert.equal(f.actor.attackKind, 'punch'); assert.equal(f.actor.weaponReadyTimer, 0);
+  assert.equal(f.planner.punchControl!.cooldowns.walker, .5, 'a newly committed reload does not spend a tick');
+});
+
+test('inactive phases and unsupported combat handoffs leave the objective reload to its owner', () => {
+  const f = punchFixture(); f.planner.punchControl!.cooldowns.walker = .4;
+  f.state.match.phase = 'countdown'; f.state.match.phaseTimer = 1;
+  assert.equal(stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner }).plannerFrame!.decisions[0].kind, 'inactive');
+  assert.equal(f.planner.punchControl!.cooldowns.walker, .4);
+  f.state.match.phase = 'playing'; f.actor.isJumping = true;
+  assert.equal(stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner }).plannerFrame!.decisions[0].kind, 'handoff');
+  assert.equal(f.planner.punchControl!.cooldowns.walker, .4);
+});
+
+test('revival clears the old objective reload before the new life plans', () => {
+  const f = fixture(); f.planner.punchControl = { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { walker: 2 } };
+  f.actor.alive = false; f.actor.hp = 0; f.actor.respawnTimer = SIM_DT / 2;
+  const event = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+  assert.ok(f.actor.alive); assert.equal(event.plannerFrame!.decisions[0].kind, 'support');
+  assert.equal(f.planner.punchControl.cooldowns.walker, 0);
+});
+
+test('inherited punch control does not acquire carrier execution', () => {
+  const f = punchFixture(); f.planner.punchControl!.cooldowns = Object.create({ walker: 0 });
+  const event = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+  assert.deepEqual(event.plannerFrame!.decisions, [{ id: 'walker', kind: 'handoff', reason: 'carrier-readiness-missing' }]);
+  assert.equal(f.actor.weaponState, 'idle');
+});
+
+for (const checkpoint of [1, 22, 53]) test(`independent punch continuation restores AI and weapon clocks at tick ${checkpoint}`, () => {
+  const f = punchFixture(); f.other.hp = f.other.maxHp = 20;
+  for (let tick = 0; tick < checkpoint; tick++) stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+  const resumed = JSON.parse(JSON.stringify(f.state)), planner = structuredClone(f.planner);
+  planner.punchControl = JSON.parse(JSON.stringify(f.planner.punchControl));
+  // Team planning includes Maps, so only the versioned punch memory claims JSON serialization.
+  for (let tick = 0; tick < 100; tick++) {
+    const a = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+    const b = stepSimulation(resumed, {}, { settings: resumed.settings, scriptedPlanner: planner });
+    assert.deepEqual(a, b); assert.deepEqual(f.state, resumed); assert.deepEqual(f.planner, planner);
   }
 });

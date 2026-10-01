@@ -1,5 +1,6 @@
 import type { UniversalSettings } from '../types';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
+import { resolvePunchCooldown } from '../game/runnerBallSettings';
 import { updateGrifballTeamPlan, type GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import type { GrifballTacticsConfig } from '../game/grifballTacticsConfig';
 import type { SimState, SimCombatant } from './simState';
@@ -10,6 +11,14 @@ import { resolveSimGrifballCarrierInput } from './grifballCarrierInput';
 import { SCRIPTED_OBJECTIVE_INPUT_VERSION, validateScriptedObjectiveInput, type ObjectiveGroundIntent } from './scriptedObjectiveInput';
 
 export const SCRIPTED_OBJECTIVE_PLANNER_VERSION = 'scripted-objective-planner-v1' as const;
+export const SCRIPTED_CARRIER_PUNCH_VERSION = 'scripted-carrier-punch-v1' as const;
+export interface ScriptedCarrierPunchControl {
+  version: typeof SCRIPTED_CARRIER_PUNCH_VERSION;
+  /** Caller-owned AI reload seconds, separate from mechanical weapon recovery.
+   * Seed from this engine's COOLDOWN timer (otherwise zero). A combat handoff's
+   * owner must update this memory before returning control. JSON serializable. */
+  cooldowns: Record<string, number>;
+}
 export interface ScriptedObjectivePlanner {
   version: typeof SCRIPTED_OBJECTIVE_PLANNER_VERSION;
   scriptedBots: Readonly<Record<string, string>>;
@@ -19,6 +28,9 @@ export interface ScriptedObjectivePlanner {
   /** Explicit readiness from the caller's AI cooldown owner. Missing carrier
    * readiness delegates rather than disabling attacks silently. */
   weaponReady?: Readonly<Record<string, boolean>>;
+  /** Explicitly owns grounded objective reloads and punch commands for these IDs.
+   * Other carrier decisions retain the existing readiness/handoff contract. */
+  punchControl?: ScriptedCarrierPunchControl;
 }
 export interface ScriptedObjectiveDecision {
   id: string;
@@ -49,6 +61,15 @@ export function validateScriptedObjectivePlanner(state: SimState, planner: Scrip
   for (const [id, ready] of Object.entries(planner.weaponReady ?? {})) {
     if (!Object.hasOwn(planner.scriptedBots, id) || typeof ready !== 'boolean') throw new Error(`Invalid objective weapon readiness for ${id}`);
   }
+  if (planner.punchControl) {
+    if (planner.punchControl.version !== SCRIPTED_CARRIER_PUNCH_VERSION || !planner.punchControl.cooldowns ||
+      typeof planner.punchControl.cooldowns !== 'object' || Array.isArray(planner.punchControl.cooldowns))
+      throw new Error('Invalid scripted carrier punch control');
+    for (const [id, remaining] of Object.entries(planner.punchControl.cooldowns)) {
+      if (!Object.hasOwn(planner.scriptedBots, id) || Object.hasOwn(planner.weaponReady ?? {}, id) ||
+        !Number.isFinite(remaining) || remaining < 0) throw new Error(`Invalid or conflicting carrier cooldown owner for ${id}`);
+    }
+  }
 }
 
 /** Called once after local execution/roster respawns. Assignments use a frozen
@@ -62,6 +83,7 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
   }), dt);
   const frame: ScriptedObjectivePlannerFrame = { version: SCRIPTED_OBJECTIVE_PLANNER_VERSION, decisions: [] };
   const owns = (id: string) => Object.hasOwn(planner.scriptedBots, id);
+  const ownsPunch = (id: string) => Object.hasOwn(planner.punchControl?.cooldowns ?? {}, id);
   const resolve = (actor: SimCombatant) => {
     if (!owns(actor.id)) return null;
     const record = (decision: Omit<ScriptedObjectiveDecision, 'id'>) => { frame.decisions.push({ id: actor.id, ...decision }); };
@@ -69,16 +91,23 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
       record({ kind: 'inactive' }); return null;
     }
     const carrier = actor.hasBall || state.match.ball.state === 'held' && state.match.ball.holderId === actor.id;
-    if (carrier && !Object.hasOwn(planner.weaponReady ?? {}, actor.id)) {
+    const controlled = ownsPunch(actor.id);
+    if (carrier && !controlled && !Object.hasOwn(planner.weaponReady ?? {}, actor.id)) {
       record({ kind: 'handoff', reason: 'carrier-readiness-missing' }); return null;
     }
-    const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, planner.weaponReady![actor.id], dt) : null;
+    // Live swap readiness advances before objective selection; AI reload advances
+    // only after a handled non-punch decision. Do not spend either clock twice.
+    const ready = controlled ? planner.punchControl!.cooldowns[actor.id] <= 0 && Math.max(0, actor.weaponReadyTimer - dt) <= 0
+      : planner.weaponReady?.[actor.id] ?? false;
+    const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, ready, dt, controlled) : null;
     const input = carrier ? decision?.input : resolveSimGrifballSupportInput(view, planner.plan, actor.id, planner.scriptedBots, dt);
     if (!input) {
       record({ kind: 'handoff', reason: decision?.decision.kind ?? 'combat-or-unsupported-state' }); return null;
     }
+    if (controlled) planner.punchControl!.cooldowns[actor.id] = decision?.decision.kind === 'punch'
+      ? resolvePunchCooldown(settings) : Math.max(0, planner.punchControl!.cooldowns[actor.id] - dt);
     const movement = input.scriptedObjective.movement[actor.id];
-    record({ kind: carrier ? 'carrier' : 'support', action: { ...input.action }, movement: { ...movement } });
+    record({ kind: carrier ? 'carrier' : 'support', ...(decision ? { reason: decision.decision.kind } : {}), action: { ...input.action }, movement: { ...movement } });
     return { action: input.action, movement };
   };
   return { frame, owns, resolve };

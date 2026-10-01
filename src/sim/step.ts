@@ -110,7 +110,13 @@ export function stepSimulation(
   }
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.
-  if (rosterV2) tickRespawns(state, settings, dt, state.combatants.filter(c => c !== player));
+  if (rosterV2) {
+    const dead = options.scriptedPlanner?.punchControl
+      ? state.combatants.filter(c => c !== player && !c.alive) : [];
+    tickRespawns(state, settings, dt, state.combatants.filter(c => c !== player));
+    const cooldowns = options.scriptedPlanner?.punchControl?.cooldowns;
+    for (const c of dead) if (c.alive && cooldowns && Object.hasOwn(cooldowns, c.id)) cooldowns[c.id] = 0;
+  }
   const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions) : null;
 
   // Ordinary live AI returns before movement/intent in inactive Grifball phases.
