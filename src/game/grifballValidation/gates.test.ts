@@ -343,10 +343,10 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v79');
-  assert.equal(details.airborneViewTraces.length, 192);
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v80');
+  assert.equal(details.airborneViewTraces.length, 576);
   assert.ok(details.airborneViewTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 60));
-  assert.deepEqual(details.airborneViewWitnesses, {required:192,completed:192,errors:[]});
+  assert.deepEqual(details.airborneViewWitnesses, {required:576,completed:576,errors:[]});
   assert.equal(details.plannedMatchTraces.length, 8);
   assert.equal(details.plannedMatchTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 18144);
   assert.deepEqual(details.plannedMatchWitnesses, { required: 8, completed: 8, errors: [] });

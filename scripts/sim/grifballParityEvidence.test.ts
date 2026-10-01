@@ -38,6 +38,13 @@ test('v77 retains the sampled inventory while earned tank outcomes use their sep
   assert.deepEqual(validateSampledParityEvidence(current),[]);
 });
 
+test('v80 retains the view family with a larger weapon coverage contract', () => {
+  const current=sampledReport('live-functions-vs-headless-step-v80');
+  assert.equal(Object.keys(current).length-1,50);
+  assert.deepEqual(validateSampledParityEvidence(current),[]);
+  assert.deepEqual(SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v80'],SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v79']);
+});
+
 test('v79 requires the airborne view geometry family', () => {
   const current=sampledReport('live-functions-vs-headless-step-v79');
   assert.equal(Object.keys(current).length-1,50);
