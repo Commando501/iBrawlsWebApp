@@ -119,11 +119,11 @@ export function tickWeaponSwapFeintTimer(context: AIMatchContext, botId: string,
   return false;
 }
 
-export function getBotComboState(context: AIMatchContext, botId: string): BotComboState | undefined {
+export function getBotComboState(context: Pick<AIMatchContext, 'comboState'>, botId: string): BotComboState | undefined {
   return context.comboState.get(botId);
 }
 
-export function setBotComboState(context: AIMatchContext, botId: string, state: BotComboState | null): void {
+export function setBotComboState(context: Pick<AIMatchContext, 'comboState'>, botId: string, state: BotComboState | null): void {
   if (!state) {
     context.comboState.delete(botId);
   } else {
@@ -131,6 +131,6 @@ export function setBotComboState(context: AIMatchContext, botId: string, state: 
   }
 }
 
-export function clearBotComboState(context: AIMatchContext, botId: string): void {
+export function clearBotComboState(context: Pick<AIMatchContext, 'comboState'>, botId: string): void {
   context.comboState.delete(botId);
 }

@@ -65,7 +65,7 @@ for (const mirrored of [false, true]) test(`goal-side safety strikes before punc
 test('a ready interception reaches the existing strike owner before a new weapon setup', () => {
   for (const preserve of [false, true]) {
     const x = comboFixture(preserve), combo = resolveAIComboOrchestrationForCombatant(x.options);
-    const result = resolveAIGroundAttackOpportunityForCombatant({ ...x.options, frame: { ...x.frame, ...combo },
+    const result = resolveAIGroundAttackOpportunityForCombatant({ ...x.options, state: x.f.state, self: x.f.bot, frame: { ...x.frame, ...combo },
       activeWeapon: combo.activeWeapon, canStartWeaponAction: combo.canStartWeaponAction,
       enemyInKillRange: true, selfGrounded: true, slideActive: false, swordForbidden: false,
       comboActive: combo.comboActive, feintChance: 0, lungeDistanceToTarget: 2.75, aggressiveLungeMult: 1,

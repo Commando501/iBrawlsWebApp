@@ -25,6 +25,7 @@
 
 import { type UniversalSettings } from '../types';
 import { resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
+import type { ScriptedCombatCommand } from './scriptedCombatInput';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
@@ -526,8 +527,11 @@ export function stepCombatantWeapons(
   settings: UniversalSettings,
   dt: number,
   events: KillEvent[],
-  stage: 'complete' | 'intent' | 'animation' = 'complete'
+  stage: 'complete' | 'intent' | 'animation' = 'complete',
+  scriptedCommands?: readonly ScriptedCombatCommand[]
 ): void {
+  if (scriptedCommands && (!usesRosterLifecycle(state) || isMixedPlayer(state, c)))
+    throw new Error('Scripted combat commands require a roster actor in an explicit live roster profile');
   if (!c.alive) return;
   if (stage === 'animation' && c.isLunging) return;
   if (isMixedPlayer(state, c)) {
@@ -543,6 +547,36 @@ export function stepCombatantWeapons(
     if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
     if (c.weaponReadyTimer > 0) c.weaponReadyTimer = Math.max(0, c.weaponReadyTimer - dt);
     if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
+
+    if (scriptedCommands) {
+      // The AI owner already checked its decision cooldown. Preserve live swap
+      // ordering, including a recovery swap making the local decision ready;
+      // the old animation itself continues unless a subsequent attack replaces it.
+      let decisionReady = c.weaponState === 'idle';
+      for (const command of scriptedCommands) {
+        if (command.kind === 'swap') {
+          if (c.isLunging || c.weapon === 'ball' || c.weapon === command.weapon || c.swapLockoutTimer > 0 ||
+            c.weaponState === 'windup' || c.weaponState === 'active') continue;
+          c.weapon = command.weapon;
+          if (c.weaponState === 'recovering' && c.attackKind !== 'swipe') c.attackKind = c.weapon === 'sword' ? 'slash' : 'strike';
+          const timers = resolveAIWeaponSwapTimers(settings, c.swapLockoutTimer, c.weaponReadyTimer);
+          c.swapLockoutTimer = timers.lockout; c.weaponReadyTimer = timers.readiness;
+          decisionReady = true;
+        } else if (decisionReady && c.weaponReadyTimer <= 0 && c.dashRemaining <= 0) {
+          if (command.kind === 'lunge') {
+            const target = findCombatant(state, command.targetId);
+            if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || target.team === c.team || target.invulnerabilityTimer > 0) continue;
+            c.lungeTargetId = command.targetId; c.lungeAimDirection = { ...command.direction };
+            startLunge(c, settings, state); c.lastAttackTick = state.tick;
+            return; // Live combo commitment returns before advancing new flight.
+          }
+          if (c.weapon !== command.weapon) continue;
+          c.weaponState = 'idle';
+          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true);
+          decisionReady = false;
+        }
+      }
+    }
 
     // Weapon swap (hammer <-> sword): blocked while carrying the ball, mid-action, or on lockout.
     // A swap makes the new weapon un-ready for `weaponReadyTime` before it can fire.

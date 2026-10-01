@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { type Combatant } from '../../types';
 import { type TacticalTargetCandidate } from './combatGeometry';
 import {
   applyLungeAimBias,
@@ -8,7 +7,7 @@ import {
   type PlayerModelSnapshot,
 } from './playerModelObservations';
 
-export function tryStartAISwordLungeForCombatant({
+export function tryStartAISwordLungeForCombatant<TSelf>({
   self,
   target,
   pos,
@@ -20,7 +19,7 @@ export function tryStartAISwordLungeForCombatant({
   triggerCombatantLunge,
   recordCombatantObservation,
 }: {
-  self: Combatant;
+  self: TSelf;
   target: TacticalTargetCandidate;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
@@ -29,7 +28,7 @@ export function tryStartAISwordLungeForCombatant({
   botId: string;
   lungeDistanceToTarget: number;
   triggerCombatantLunge: (
-    self: Combatant,
+    self: TSelf,
     lungeDir: THREE.Vector3,
     pos: THREE.Vector3,
     vel: THREE.Vector3

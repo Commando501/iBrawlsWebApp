@@ -45,7 +45,7 @@ export interface AIComboOrchestrationResult {
   comboActive: boolean;
 }
 
-export function resolveAIComboOrchestrationForCombatant({
+export function resolveAIComboOrchestrationForCombatant<TSelf>({
   state,
   self,
   aiContext,
@@ -79,10 +79,11 @@ export function resolveAIComboOrchestrationForCombatant({
   triggerCombatantLunge,
   triggerCombatantAttack,
   recordCombatantObservation,
+  random,
 }: {
-  state: GrifballRuntimeState;
-  self: Combatant;
-  aiContext: AIMatchContext;
+  state: Pick<GrifballRuntimeState, 'settings'>;
+  self: TSelf;
+  aiContext: Pick<AIMatchContext, 'comboState'>;
   botId: string;
   target: TacticalTargetCandidate;
   frame: AIComboOrchestrationFrame;
@@ -112,13 +113,14 @@ export function resolveAIComboOrchestrationForCombatant({
   getTargetPlayerModel: (targetId: string) => PlayerModelSnapshot | null;
   applyTacticalWeapon: (tacticalWeapon: CombatantWeapon) => AITacticalWeaponApplyResult;
   triggerCombatantLunge: (
-    self: Combatant,
+    self: TSelf,
     lungeDir: THREE.Vector3,
     pos: THREE.Vector3,
     vel: THREE.Vector3
   ) => void;
-  triggerCombatantAttack: (self: Combatant, weapon: CombatantWeapon, melee?: boolean) => void;
+  triggerCombatantAttack: (self: TSelf, weapon: CombatantWeapon, melee?: boolean) => void;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
+  random?: () => number;
 }): AIComboOrchestrationResult {
   let currentActiveWeapon = activeWeapon;
   let currentCanStartWeaponAction = canStartWeaponAction;
@@ -194,6 +196,7 @@ export function resolveAIComboOrchestrationForCombatant({
       minLungeRange,
       maxLungeRange,
       targetRecovering: target.weaponState === 'recovering',
+      random,
     });
     if (openingCombo) {
       setBotComboState(aiContext, botId, createBotComboState(openingCombo, target.id));
@@ -256,6 +259,7 @@ export function resolveAIComboOrchestrationForCombatant({
         targetModelType: target.modelType,
         cooldownMultiplier,
         triggerCombatantAttack,
+        random,
       });
       currentTimer = meleeStrikeFrame.timer;
       currentWeaponState = meleeStrikeFrame.weaponState;

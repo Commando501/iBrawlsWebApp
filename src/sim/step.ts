@@ -22,6 +22,7 @@ import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, type KillE
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 import { validateScriptedObjectiveInput, type ScriptedObjectiveInput } from './scriptedObjectiveInput';
+import { validateScriptedCombatInput, type ScriptedCombatInput } from './scriptedCombatInput';
 import { beginScriptedObjectivePlanning, validateScriptedObjectivePlanner, type ScriptedObjectivePlanner, type ScriptedObjectivePlannerFrame } from './scriptedObjectivePlanner';
 
 /** Canonical fixed timestep. */
@@ -43,6 +44,8 @@ export interface StepOptions {
   /** Opt-in own-state decisions at each roster actor's turn. Mutually exclusive
    * with a precomputed scriptedObjective packet; legacy/RL defaults are unchanged. */
   scriptedPlanner?: ScriptedObjectivePlanner;
+  /** Ordered commands from an explicitly owned ground combat decision. */
+  scriptedCombat?: ScriptedCombatInput;
 }
 
 /**
@@ -56,8 +59,11 @@ export function stepSimulation(
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
+  if (options.scriptedCombat && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Scripted combat requires a positive finite timestep');
   if (options.scriptedObjective && options.scriptedPlanner) throw new Error('Choose either scripted objective inputs or a scripted planner');
   validateScriptedObjectivePlanner(state, options.scriptedPlanner, settings, dt);
+  if (options.scriptedCombat && options.scriptedPlanner) throw new Error('Scripted combat requires explicit movement ownership instead of the objective-only planner');
+  const scriptedCombat = validateScriptedCombatInput(state, options.scriptedCombat, actionsById, settings);
   const scriptedMovement = validateScriptedObjectiveInput(state, options.scriptedObjective, actionsById, settings)
     ?? (options.scriptedPlanner ? Object.create(null) : undefined);
   const resolvedActions = options.scriptedPlanner ? { ...actionsById } : actionsById;
@@ -148,7 +154,7 @@ export function stepSimulation(
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
     if (c === player || flightAdvanced?.has(c.id)) continue;
-    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete');
+    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete', scriptedCombat?.[c.id]);
     // Mixed execution advances paused animations below. The roster-only profile
     // has one combined weapon phase: suppress new input, not committed clocks.
     else if (!mixedObjectiveFrame && planner?.owns(c.id))
