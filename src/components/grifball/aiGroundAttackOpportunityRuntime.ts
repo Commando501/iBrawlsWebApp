@@ -7,7 +7,7 @@ import {
 import { type AIBehaviorState, type Combatant, type WeaponState } from '../../types';
 import { resolveAIPressureLungeChance } from './aiPressureStateRuntime';
 import { tryStartAISwordLungeForCombatant } from './aiSwordLungeStartRuntime';
-import { resolveScaledAIWeaponReloadTime } from './aiWeaponTimingRuntime';
+import { resolveAIGroundAttackCommitment } from '../../game/aiGroundAttackCommitment';
 import { type CombatantWeapon } from './combatantActions';
 import { type TacticalTargetCandidate } from './combatGeometry';
 import { type PlayerModelObserver, type PlayerModelSnapshot } from './playerModelObservations';
@@ -136,19 +136,16 @@ export function resolveAIGroundAttackOpportunityForCombatant({
   let currentActiveWeapon = activeWeapon;
   let currentCanStartWeaponAction = canStartWeaponAction;
 
-  if (
-    enemyInKillRange &&
-    selfGrounded &&
-    currentCanStartWeaponAction &&
-    frame.weaponState === 'ready' &&
-    !slideActive
-  ) {
-    frame.vel.x = 0;
-    frame.vel.z = 0;
-    frame.aiState = 'COOLDOWN';
-    frame.timer = resolveScaledAIWeaponReloadTime(state.settings, currentActiveWeapon, cooldownMultiplier);
-    triggerCombatantAttack(self, currentActiveWeapon as CombatantWeapon);
-    frame.weaponState = 'swing_up';
+  const commitment = resolveAIGroundAttackCommitment({ enemyInKillRange, selfGrounded,
+    canStartWeaponAction: currentCanStartWeaponAction, weaponReady: frame.weaponState === 'ready',
+    slideActive, activeWeapon: currentActiveWeapon, settings: state.settings, cooldownMultiplier });
+  if (commitment) {
+    frame.vel.x = commitment.movement.x;
+    frame.vel.z = commitment.movement.z;
+    frame.aiState = commitment.aiState;
+    frame.timer = commitment.timer;
+    triggerCombatantAttack(self, commitment.weapon as CombatantWeapon);
+    frame.weaponState = commitment.weaponState;
     constrainCombatantToArena(frame.pos, frame.vel);
     return {
       mode: 'sync_return',
