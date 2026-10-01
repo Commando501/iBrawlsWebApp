@@ -2,6 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { REVIVAL_DECISION_CASES, runRevivalDecisionTrace, revivalAttackCoverage } from './grifballRevivalDecisionIntegration';
 import { validateRevivalActivity, verifiedRevivalAttacks } from './grifballRevivalActivity';
+import { MOBILITY_DECISION_CASES } from './grifballMobilityDecisionIntegration';
+import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
+
+let dashWitness: ReturnType<typeof runOpposedDecisionTrace> | undefined;
+function defensiveRevivalWitness() {
+  if (dashWitness) return dashWitness;
+  let selected: typeof dashWitness;
+  // Retain every original mobility case. The longer recordings supply test
+  // evidence; they do not replace the separate 600-frame revival requirement.
+  for (const spec of MOBILITY_DECISION_CASES) {
+    const trace = runOpposedDecisionTrace(spec, 'mobility');
+    assert.equal(trace.failureCount, 0, JSON.stringify({spec, failures:trace.failures}));
+    const activity = validateRevivalActivity(trace);
+    assert.equal(activity.failureCount, 0, JSON.stringify({spec, failures:activity.failures}));
+    const witness = activity.defensiveDashes[0];
+    if (!selected && witness) selected = {...trace, attacks:[],
+      dashSamples: trace.dashSamples!.filter(s => s.id === witness.id && s.tick === witness.tick)};
+  }
+  assert.ok(selected, 'the complete fixed mobility matrix must supply a defensive revival witness');
+  assert.equal(validateRevivalActivity(selected).failureCount, 0);
+  return dashWitness = selected;
+}
 
 for (const spec of REVIVAL_DECISION_CASES.filter(s => s.mode === 'hammer-first')) {
   test(`revived attack proof verifies living commitments ${JSON.stringify(spec)}`, () => {
@@ -88,18 +110,20 @@ test('revival matrix proves renewed attacks by both carrier identities, teams an
 });
 
 test('verified defensive activity cannot replace original-carrier attack matrix coverage', () => {
-  assert.ok(coverage.some(t => t.activity.defensiveDashes.length));
+  const source = defensiveRevivalWitness();
+  assert.equal(validateRevivalActivity(source).defensiveDashes.length, 1);
+  assert.equal(revivalAttackCoverage([source]).missing.length, 8);
   const missing = revivalAttackCoverage(coverage.map(t => ({ ...t, attacks: [] }))).missing;
   assert.equal(missing.length, 8);
 });
 
-test('revival activity requires a verified consumed defensive step by a living revived actor', () => {
-  const source = coverage.find(t => t.name === 'contested/red/forward/main');
-  assert.ok(source);
-  assert.deepEqual(source.activity.attacks, []);
-  assert.deepEqual(source.activity.defensiveDashes.map(({ tick, id, target }) => ({ tick, id, target })),
-    [{ tick: 352, id: 'main_ai', target: 'defender' }]);
-  assert.ok(Math.abs(source.activity.defensiveDashes[0].displacement - .4) < 1e-8);
+test('revival activity requires a verified consumed defensive step by a living revived actor', (t) => {
+  const source = defensiveRevivalWitness(), activity = validateRevivalActivity(source);
+  const witness = activity.defensiveDashes[0];
+  t.diagnostic(JSON.stringify({scenario:source.scenario, witness}));
+  assert.deepEqual(activity.attacks, []);
+  assert.equal(activity.defensiveDashes.length, 1);
+  assert.ok(Math.abs(witness.displacement - .4) < 1e-8);
   type Trace = typeof source;
   type Sample = NonNullable<Trace['dashSamples']>[number];
   const mutations: [string, (t: Trace, s: Sample) => void][] = [
@@ -111,20 +135,20 @@ test('revival activity requires a verified consumed defensive step by a living r
     ['self target', (_t, s) => { s.target = s.id; }],
     ['unknown actor', (_t, s) => { s.id = 'missing'; }],
     ['friendly target', (_t, s) => { s.target = 'escort'; }],
-    ['unrevived actor', t => { t.revivals = t.revivals.filter(r => r.id !== 'main_ai'); }],
-    ['before revival', t => { t.revivals.forEach(r => r.tick = 600); }],
+    ['unrevived actor', t => { t.revivals = t.revivals.filter(r => r.id !== witness.id); }],
+    ['before revival', t => { t.revivals.forEach(r => r.tick = t.ticks + 1); }],
     ['dead actor', (_t, s) => { s.before.hp = 0; }],
     ['dead afterward', (_t, s) => { s.after.hp = 0; }],
     ['no displacement', (_t, s) => { s.after.pos = [...s.before.pos]; }],
     ['wrong cooldown', (_t, s) => { s.after.cooldown = 0; }],
     ['wrong duration', (_t, s) => { s.after.remaining = .25; }],
-    ['wrong direction', (_t, s) => { s.after.direction.x = 0; }],
+    ['wrong direction', (_t, s) => { s.after.direction.x! += .1; }],
     ['airborne', (_t, s) => { s.before.jumping = true; }],
-    ['missing frame', t => { t.frames = t.frames.filter(f => f.tick !== 352); }],
-    ['false position', t => { t.frames.find(f => f.tick === 352)!.actors.find(a => a.id === 'main_ai')!.pos[0] += .1; }],
+    ['missing frame', t => { t.frames = t.frames.filter(f => f.tick !== witness.tick); }],
+    ['false position', t => { t.frames.find(f => f.tick === witness.tick)!.actors.find(a => a.id === witness.id)!.pos[0] += .1; }],
   ];
   for (const [label, mutate] of mutations) {
-    const changed = structuredClone(source), sample = changed.dashSamples!.find(s => s.id === 'main_ai' && s.tick === 352);
+    const changed = structuredClone(source), sample = changed.dashSamples!.find(s => s.id === witness.id && s.tick === witness.tick);
     assert.ok(sample); mutate(changed, sample);
     assert.ok(validateRevivalActivity(changed).failureCount > 0, label);
   }
