@@ -2313,3 +2313,15 @@ Reproducing that exact case on committed carrier-recovery source `a635fcaa` prod
 | Aggressive | +1.75 | 0 → 2 | +1.00 |
 
 Each row contains four paired games (two known seeds, both sides). The opposing effects do not justify changing the global default; the original value is retained. These are exploratory means on one development map, without a quality or calibrated performance gate. The safety-depth comparison and full development quality matrix remain pending. Separately, a four-case mirrored/order reproduction confirms that independent defender/escort sorting assigns both flank defenders across the carrier lane (`output/m7-mark-crossing-before.json`); a reachable-distance marking fix is under validation and is outside every frozen build reported in this entry.
+
+## 2026-09-30 — isolated last-defender depth comparison
+
+`output/m7-defense-safety-depth-proof/` completes **24/24** main matches and **12 exact null pairs**. All 156 Quick checks, TypeScript, three builds, startup and correctness pass; CLI exit **0**. Startup and arena screenshots were inspected. Source: `e5b261c45adab68fb85c02f91ade6d9c58626950`, dirty hash `11d505f5418d0c1d1698086b86234225e068f96e707b7a5ec75cd6f7fabe2f2a`, including concurrent outline work. The only paired setting change is focal-team `defenseSafetyDepth` **7 → 3 units**.
+
+| Opponent | Paired goal-margin change | Focal wins: baseline → shallower safety | Paired possession change |
+| --- | --- | --- | --- |
+| Balanced | +1.25 | 0 → 1 | +1.25 |
+| Patient | −2.00 | 4 → 1 | 0.00 |
+| Aggressive | +2.00 | 0 → 3 | +1.00 |
+
+Each row again has four paired development games. The shallower setting helps the two struggling styles but materially worsens the patient matchup. It is not promoted to the default. No quality or calibrated performance gate was requested, and one-map/two-seed exploratory results cannot establish generalization. The full development comparison, current carrier-recovery aggregate and separate marking-fix validation are still running against their respective frozen sources.
