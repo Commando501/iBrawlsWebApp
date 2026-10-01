@@ -7,6 +7,7 @@ import { createAutonomousValidationRuntime } from './grifballAutonomousRuntime';
 import { createBotParityFixture } from './grifballBotExecutionParity';
 import { resolveAIComboOrchestrationForCombatant } from '../../src/components/grifball/aiComboOrchestrationRuntime';
 import { resolveAIGroundAttackOpportunityForCombatant } from '../../src/components/grifball/aiGroundAttackOpportunityRuntime';
+import { setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 
 function comboFixture(preserveReadyStrike: boolean) {
   const f = createBotParityFixture('main_ai');
@@ -26,6 +27,40 @@ function comboFixture(preserveReadyStrike: boolean) {
     triggerCombatantAttack: () => { attacks++; }, recordCombatantObservation: noop };
   return { f, target, frame, options, applyTacticalWeapon, counts: () => ({ swaps, attacks }) };
 }
+
+for (const mirrored of [false, true]) test(`goal-side safety strikes before punch range and survives the carrier: ${mirrored}`, async t => {
+  const manifest = createSuiteManifest('quick');
+  manifest.cases = [{ id: 'safety-counter', mode: 'match', scenario: null, mapId: 'championship_stadium',
+    roster: 'scripted-4v4', difficulty: 'normal', seeds: [102], opponents: ['balanced'], mirrored: true,
+    fixedHz: 60, simulationSeconds: 10, watchdogSeconds: 60 }];
+  const plan = await createSuitePlan(manifest, { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] });
+  const job = plan.jobs.find(j => j.variant === 'candidate' && j.mirrored === mirrored)!;
+  const host = createAutonomousValidationRuntime(plan.cases[0], job), s = host.state, sign = mirrored ? -1 : 1;
+  const carrier = [...s.otherPlayers.values()].find(p => p.team === job.focalTeam)!;
+  const defender = [...s.otherPlayers.values()].find(p => p.team !== job.focalTeam)!;
+  for (const p of s.otherPlayers.values()) {
+    p.invulnerabilityTimer = p.aiTimer = p.swapCooldownTimer = p.swapLockoutTimer = 0; p.weaponState = 'ready';
+    if (p !== carrier && p !== defender) { p.hp = 0; p.respawnTimer = 100; }
+  }
+  s.grifball.phase = 'playing'; s.grifball.ball.state = 'held'; s.grifball.ball.holderId = carrier.id;
+  carrier.pos.set(30 * sign, 0, 0); defender.pos.set(35 * sign, 0, 0);
+  carrier.vel.set(0, 0, 0); defender.vel.set(0, 0, 0);
+  setGrifballCarrierForState({ state: s, id: carrier.id, carrying: true }); Object.assign(s.grifball.ball.pos, carrier.pos);
+  let firstStrike = 0, firstHitDistance = 0, elapsed = 0;
+  try {
+    for (let tick = 1; tick <= 180; tick++) {
+      host.runtime.step(); elapsed = tick;
+      if (!firstStrike && defender.weaponState === 'swing_up') firstStrike = tick;
+      if (!firstHitDistance && carrier.hp < 2) firstHitDistance = carrier.pos.distanceTo(defender.pos);
+      if (defender.hp <= 0 || carrier.hp <= 0 || s.grifball.phase !== 'playing') break;
+    }
+    assert.ok(firstStrike > 0 && firstStrike <= 3, 'the goal-side safety must take the existing opening');
+    assert.ok(firstHitDistance > 3.3, 'first hit lands before the carrier reaches its punch envelope');
+    assert.equal(carrier.hp, 0, 'the approaching carrier must be stopped');
+    assert.equal(defender.hp, 1, 'early defense avoids the previous fatal return punch');
+    t.diagnostic(JSON.stringify({ mirrored, firstStrike, firstHitDistance, elapsed }));
+  } finally { host.runtime.dispose(); }
+});
 
 test('a ready interception reaches the existing strike owner before a new weapon setup', () => {
   for (const preserve of [false, true]) {

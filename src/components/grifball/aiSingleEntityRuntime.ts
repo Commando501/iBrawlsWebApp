@@ -918,7 +918,7 @@ export function createAISingleEntityUpdaterForState({
   
       const carrierInterception = s.settings.gameMode === 'grifball' && !!s.grifball.ball.holderId &&
         teamAssignment?.tuning?.enabled === true && teamAssignment.defense?.targetId === s.grifball.ball.holderId &&
-        (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.emergency);
+        (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.mode === 'last-defender' || teamAssignment.defense.emergency);
       const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
         if (tacticalWeapon === activeWeapon) return;
         // A new weapon choice must not erase the strike we committed to stop the runner.

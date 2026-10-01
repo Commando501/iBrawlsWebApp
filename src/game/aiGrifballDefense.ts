@@ -220,14 +220,25 @@ export function selectDefenseThreat(a: GrifballAssignment, self: FieldPoint, pla
   if (immediate.length) return immediate[0].id;
   const target = enemies.find(p => p.id === order.targetId);
   if (!target) return null;
+  const defender = players.find(p => p.id === a.botId);
+  const reach = defender?.space?.reach ?? 3;
+  const inEngagementRange = distance(self, target.pos) <= (a.tuning?.engagementDistance ?? 6);
+  // A closing carrier can enter the safety's current strike reach well before
+  // the projected goal-side destination. Counter from that position instead of
+  // withdrawing until the runner can punch. Do not release a tail chase, a
+  // stationary/retreating target, or a defender still recovering/airborne.
+  const dx = self.x - target.pos.x, dz = self.z - target.pos.z;
+  if (order.mode === 'last-defender' && target.id === a.carrierId && target.space?.weapon === 'ball' &&
+    defender?.space?.phase === 'ready' && defender.space.mobileIn <= 0 && inEngagementRange && distance(self, target.pos) <= reach &&
+    dx * target.vel.x + dz * target.vel.z > 0 &&
+    dx * (order.intercept.x - target.pos.x) + dz * (order.intercept.z - target.pos.z) > 0) return target.id;
   const emergency = order.emergency && target.id === a.carrierId;
   if (!emergency && ['contain', 'last-defender', 'recover'].includes(order.mode)) return null;
   // Intercept first; switching to a duel early would turn the cut into tail pursuit.
   // Own reach is a bound, not permission to abandon the cut from farther away.
   // Preserve the target-threat approach distance as well: a long-range hammer
   // must still establish its interception before switching to pursuit.
-  const reach = players.find(p => p.id === a.botId)?.space?.reach ?? 3;
   const handoffDistance = Math.max(1, Math.min(reach, target.space?.reach ?? 3));
-  return distance(self, target.pos) <= (a.tuning?.engagementDistance ?? 6) &&
+  return inEngagementRange &&
     (emergency || distance(self, order.intercept) <= handoffDistance) ? target.id : null;
 }

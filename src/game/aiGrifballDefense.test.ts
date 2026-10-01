@@ -280,6 +280,34 @@ test('carrier motion observations reset across ownership, rounds, disabled defen
 });
 
 for (const team of ['blue', 'red'] as const) for (const id of ['defender', 'main_ai'])
+  test(`goal-side safety can counter an approaching carrier within its own reach: ${team}/${id}`, () => {
+    const sign = team === 'blue' ? 1 : -1, self = p(id, team, 0);
+    self.space!.reach = 6;
+    const carrier = p('carrier', team === 'blue' ? 'red' : 'blue', 5 * sign);
+    carrier.space!.weapon = 'ball'; carrier.space!.reach = 3.3; carrier.vel.x = -7.54 * sign;
+    const intercept = { x: -10 * sign, z: 0 };
+    const order: GrifballAssignment = { botId: id, team, carrierId: carrier.id, role: 'safety', slot: 0,
+      destination: intercept, anchor: { ...carrier.pos }, reason: 'Guard the goal side', tuning: { ...defaultGrifballTactics().defaults },
+      defense: { mode: 'last-defender', targetId: carrier.id, intercept, arrivalETA: .4, carrierETA: 1,
+        advantage: -1, reinforcementIn: Infinity, emergency: false, transitioning: false } };
+    assert.equal(selectGrifballAssignmentThreat(order, self.pos, [self, carrier]), carrier.id);
+    for (const boundary of ['away', 'stationary', 'outside-reach', 'engagement-limit', 'behind', 'airborne', 'recovering', 'not-carrier', 'blocked']) {
+      const a = structuredClone(order), defender = structuredClone(self), enemy = structuredClone(carrier);
+      if (boundary === 'away') enemy.vel.x *= -1;
+      if (boundary === 'stationary') enemy.vel.x = 0;
+      if (boundary === 'outside-reach') defender.space!.reach = 4;
+      if (boundary === 'engagement-limit') a.tuning!.engagementDistance = 4;
+      if (boundary === 'behind') { defender.pos.x = 10 * sign; a.defense!.intercept = { x: -10 * sign, z: 0 }; }
+      if (boundary === 'airborne') defender.space!.mobileIn = .2;
+      if (boundary === 'recovering') defender.space!.phase = 'recovering';
+      if (boundary === 'not-carrier') a.carrierId = 'other';
+      if (boundary === 'blocked') a.geometry = { key: 'blocked-safety', shape: 'rectangular', x: 52, z: 23,
+        blockers: [{ kind: 'box', x: 2 * sign, z: 0, hx: .5, hz: 10 }] };
+      assert.equal(selectGrifballAssignmentThreat(a, defender.pos, [defender, enemy]), null, boundary);
+    }
+  });
+
+for (const team of ['blue', 'red'] as const) for (const id of ['defender', 'main_ai'])
   for (const scenario of ['own-reach', 'enemy-reach', 'approaching-cut', 'distant-cut', 'engagement-limit', 'safety', 'blocked'] as const)
     test(`defensive combat handoff respects reach and establishes the cut: ${team}/${id}/${scenario}`, () => {
       const sign = team === 'blue' ? 1 : -1;
