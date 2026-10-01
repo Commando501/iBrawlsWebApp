@@ -80,7 +80,7 @@ export function validateScriptedObjectivePlanner(state: SimState, planner: Scrip
 /** Called once after local execution/roster respawns. Assignments use a frozen
  * observation, but each resolve reads current positions at that actor's turn. */
 export function beginScriptedObjectivePlanning(state: SimState, planner: ScriptedObjectivePlanner,
-  settings: UniversalSettings, dt: number, actions: ActionsById) {
+  settings: UniversalSettings, dt: number, actions: ActionsById, swapTimersAdvanced: ReadonlySet<string> = new Set()) {
   const view = settings === state.settings ? state : { ...state, settings };
   updateGrifballTeamPlan(planner.plan, createSimGrifballTacticalSnapshot(view, {
     scriptedBots: planner.scriptedBots, tactics: planner.tactics,
@@ -102,7 +102,8 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
     }
     // Live swap readiness advances before objective selection; AI reload advances
     // only after a handled non-punch decision. Do not spend either clock twice.
-    const ready = controlled ? planner.punchControl!.cooldowns[actor.id] <= 0 && Math.max(0, actor.weaponReadyTimer - dt) <= 0
+    const swapTick = swapTimersAdvanced.has(actor.id) ? 0 : dt;
+    const ready = controlled ? planner.punchControl!.cooldowns[actor.id] <= 0 && Math.max(0, actor.weaponReadyTimer - swapTick) <= 0
       : planner.weaponReady?.[actor.id] ?? false;
     const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, ready, dt,
       { punch: controlled, pass: controlled && planner.passControl === SCRIPTED_PASS_VERSION }) : null;

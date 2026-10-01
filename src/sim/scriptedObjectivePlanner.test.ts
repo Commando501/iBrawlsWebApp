@@ -197,3 +197,20 @@ for (const checkpoint of [1, 22, 53]) test(`independent punch continuation resto
     assert.deepEqual(a, b); assert.deepEqual(f.state, resumed); assert.deepEqual(f.planner, planner);
   }
 });
+
+for (const id of ['main_ai', 'ordinary']) for (const remaining of [1, 1.5, 2])
+  test(`mixed carrier ${id} samples readiness once with ${remaining} ticks left`, () => {
+    const f = punchFixture(); f.actor.id = id; f.other.id = 'local-player'; f.state.match.ball.holderId = id;
+    f.state.combatExecution = 'live-mixed-v1'; f.state.localPlayerId = f.other.id;
+    f.planner.scriptedBots = { [id]: 'normal' }; f.planner.punchControl!.cooldowns = { [id]: 0 };
+    f.actor.weaponReadyTimer = SIM_DT * remaining;
+    const first = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+    assert.equal(first.plannerFrame!.decisions[0].reason === 'punch', remaining === 1);
+    assert.ok(Math.abs(f.actor.weaponReadyTimer - SIM_DT * (remaining - 1)) < 1e-9);
+    if (remaining > 1) {
+      assert.equal(f.planner.punchControl!.cooldowns[id], 0, 'waiting did not spend a punch');
+      const second = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });
+      assert.equal(second.plannerFrame!.decisions[0].reason, 'punch');
+      assert.equal(f.actor.weaponReadyTimer, 0);
+    }
+  });

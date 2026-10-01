@@ -14,9 +14,9 @@ for (const spec of ROUND_FLIGHT_CASES.filter(c => c.round.reverse && c.round.mir
     assert.equal(trace.differenceCount, 0, JSON.stringify(trace.differences.slice(0, 8)));
   });
 
-for (const phase of ['countdown', 'scored', 'matchEnd'] as const) test(`ordinary mixed AI freezes intent but advances shields and committed melee in ${phase}`, () => {
+for (const id of ['main_ai', 'ordinary']) for (const phase of ['countdown', 'scored', 'matchEnd'] as const) test(`${id} mixed AI freezes intent but advances shields and committed melee in ${phase}`, () => {
   const sim = createMatch({ seed: 811, combatExecution: 'live-mixed-v1', teamSizes: { blue: 1, red: 1 }, settings: { swordSlashSpeed: .15 } });
-  const [player, bot] = sim.combatants; sim.localPlayerId = player.id;
+  const [player, bot] = sim.combatants; sim.localPlayerId = player.id; bot.id = id;
   sim.match.phase = phase; sim.match.phaseTimer = 0;
   bot.pauseDuringInactiveGrifball = true; bot.invulnerabilityTimer = .5; bot.weapon = 'sword';
   bot.weaponState = 'windup'; bot.attackKind = 'slash'; bot.weaponPhaseElapsed = 0;
@@ -27,7 +27,9 @@ for (const phase of ['countdown', 'scored', 'matchEnd'] as const) test(`ordinary
   assert.deepEqual(bot.pos, pos); assert.deepEqual(bot.vel, { x: 0, y: 0, z: 0 }); assert.equal(bot.yaw, yaw);
   assert.equal(bot.weapon, 'sword'); assert.equal(bot.isLunging, false); assert.equal(bot.weaponState, 'windup');
   assert.equal(bot.weaponPhaseElapsed, 1 / 60); assert.equal(bot.invulnerabilityTimer, .5 - 1 / 60);
-  for (const timer of ['attackCooldown', 'swapLockoutTimer', 'weaponReadyTimer', 'dashCooldownTimer'] as const) assert.equal(bot[timer], .5);
+  for (const timer of ['attackCooldown', 'dashCooldownTimer'] as const) assert.equal(bot[timer], .5);
+  // Main AI has a global weapon-frame clock even when its AI turn is paused.
+  for (const timer of ['swapLockoutTimer', 'weaponReadyTimer'] as const) assert.equal(bot[timer], id === 'main_ai' ? .5 - 1 / 60 : .5);
 });
 
 test('ordinary AI resumes on the frame after countdown completes', () => {

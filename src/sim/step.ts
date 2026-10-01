@@ -20,7 +20,7 @@ import { type SimState } from './simState';
 import { type ActionsById, idleAction } from './actions';
 import { createRng, type Rng } from './rng';
 import { stepCombatantMovement } from './physics';
-import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, type KillEvent } from './weapons';
+import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, tickWeaponSwapTimers, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 import { validateScriptedObjectiveInput, type ScriptedObjectiveInput } from './scriptedObjectiveInput';
@@ -120,6 +120,7 @@ export function stepSimulation(
       ? (state.tick + 1) * SIM_DT * 1000 : previousTimeMs + dt * 1000;
   }
   const flightAdvanced = rosterV2 ? new Set<string>() : null;
+  const swapTimersAdvanced = new Set<string>();
   // Local physics/contact and weapon animation precede roster respawn and AI.
   if (player) {
     const wasDead = !player.alive;
@@ -128,6 +129,10 @@ export function stepSimulation(
       stepCombatantMovement(state, player, act(player.id), settings, dt);
       if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills);
     }
+    // The live weapon-frame owner ticks main AI before local weapon animation
+    // and roster revival/decisions, including while dead or phase-paused.
+    const mainAI = mixedObjectiveFrame ? state.combatants.find(c => c !== player && c.id === 'main_ai') : undefined;
+    if (mainAI) { tickWeaponSwapTimers(mainAI, dt); swapTimersAdvanced.add(mainAI.id); }
     if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills);
     else { delete player.playerSwordLungeRecovery; player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
   }
@@ -140,7 +145,7 @@ export function stepSimulation(
     const cooldowns = options.scriptedPlanner?.punchControl?.cooldowns;
     for (const c of dead) if (c.alive && cooldowns && Object.hasOwn(cooldowns, c.id)) cooldowns[c.id] = 0;
   }
-  const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions) : null;
+  const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions, swapTimersAdvanced) : null;
 
   // Ordinary live AI returns before movement/intent in inactive Grifball phases.
   // Capture the pre-objective phase: countdown completion resumes AI on the next frame.
@@ -162,13 +167,13 @@ export function stepSimulation(
     }
     stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id]);
     if (rosterV2 && c.alive && c.isLunging) {
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback);
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);
     } else if (mixedObjectiveFrame) {
       // Live AI commits at its own roster turn. A later actor's flight (or
       // planner observation) must see this attack/swap immediately, while
       // skeletal melee damage still waits for the post-objective animation pass.
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback);
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
     }
   }
 

@@ -525,10 +525,17 @@ function advancePlayerLungeRecovery(c: SimCombatant, settings: UniversalSettings
   c.weaponState = c.weaponTimer === 0 ? 'idle' : 'recovering';
 }
 
+/** Mechanical swap clocks; the mixed main-AI frame owns these before roster turns. */
+export function tickWeaponSwapTimers(c: SimCombatant, dt: number): void {
+  if (c.swapLockoutTimer > 0) c.swapLockoutTimer = Math.max(0, c.swapLockoutTimer - dt);
+  if (c.weaponReadyTimer > 0) c.weaponReadyTimer = Math.max(0, c.weaponReadyTimer - dt);
+}
+
 /**
  * Advance one combatant's weapon FSM by `dt` and resolve any hits this tick.
  * Movement (including the lunge flight integration) is owned by physics; this only
- * mutates weapon state/timers and applies damage.
+ * mutates weapon state/timers and applies damage. A frame owner that already
+ * advanced swap clocks must set swapTimersAdvanced to avoid spending them twice.
  */
 export function stepCombatantWeapons(
   state: SimState,
@@ -540,7 +547,8 @@ export function stepCombatantWeapons(
   stage: 'complete' | 'intent' | 'animation' = 'complete',
   scriptedCommands?: readonly ScriptedCombatCommand[],
   feedback?: RosterMeleeHitFeedback,
-  lungeFeedback?: RosterLungeFeedback
+  lungeFeedback?: RosterLungeFeedback,
+  swapTimersAdvanced = false
 ): void {
   if (scriptedCommands && (!usesRosterLifecycle(state) || isMixedPlayer(state, c)))
     throw new Error('Scripted combat commands require a roster actor in an explicit live roster profile');
@@ -555,9 +563,8 @@ export function stepCombatantWeapons(
   }
 
   if (stage !== 'animation') {
-    if (c.swapLockoutTimer > 0) c.swapLockoutTimer = Math.max(0, c.swapLockoutTimer - dt);
+    if (!swapTimersAdvanced) tickWeaponSwapTimers(c, dt);
     if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
-    if (c.weaponReadyTimer > 0) c.weaponReadyTimer = Math.max(0, c.weaponReadyTimer - dt);
     if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
 
     if (scriptedCommands) {
