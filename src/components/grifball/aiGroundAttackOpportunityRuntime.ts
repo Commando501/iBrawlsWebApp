@@ -48,7 +48,7 @@ export interface AIGroundAttackOpportunityTuning {
   lungeFakeoutForwardTimer: number;
 }
 
-export function resolveAIGroundAttackOpportunityForCombatant({
+export function resolveAIGroundAttackOpportunityForCombatant<TSelf>({
   state,
   self,
   frame,
@@ -87,9 +87,10 @@ export function resolveAIGroundAttackOpportunityForCombatant({
   getTargetPlayerModel,
   triggerCombatantLunge,
   recordCombatantObservation,
+  random = simulationRandom,
 }: {
-  state: GrifballRuntimeState;
-  self: Combatant;
+  state: Pick<GrifballRuntimeState, 'settings'>;
+  self: TSelf;
   frame: AIGroundAttackOpportunityFrame;
   botId: string;
   target: TacticalTargetCandidate;
@@ -118,19 +119,20 @@ export function resolveAIGroundAttackOpportunityForCombatant({
   playstyleFactor: number;
   tuning: AIGroundAttackOpportunityTuning;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
-  triggerCombatantAttack: (self: Combatant, weapon: CombatantWeapon) => void;
+  triggerCombatantAttack: (self: TSelf, weapon: CombatantWeapon) => void;
   applyTacticalWeapon: (tacticalWeapon: CombatantWeapon) => AITacticalWeaponApplyResult;
   startWeaponSwapFeintTimer: () => void;
   commitFeint: () => void;
   tryFeintRoll: (rollScale?: number) => boolean;
   getTargetPlayerModel: (targetId: string) => PlayerModelSnapshot | null;
   triggerCombatantLunge: (
-    self: Combatant,
+    self: TSelf,
     lungeDir: THREE.Vector3,
     pos: THREE.Vector3,
     vel: THREE.Vector3
   ) => void;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
+  random?: () => number;
 }): AIGroundAttackOpportunityResult {
   let feintLungeFakeout = false;
   let currentActiveWeapon = activeWeapon;
@@ -208,7 +210,7 @@ export function resolveAIGroundAttackOpportunityForCombatant({
       targetProtected,
       playstyleFactor,
     });
-    if (simulationRandom() < lungeChance) {
+    if (random() < lungeChance) {
       const lungeFakeoutEligible = canAttemptLungeFakeout({
         activeWeapon: currentActiveWeapon,
         weaponReady: frame.weaponState === 'ready',

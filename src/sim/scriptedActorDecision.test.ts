@@ -172,3 +172,17 @@ test('empty and inherited decision ownership preserve ordinary execution', () =>
     assert.deepEqual(f.state, plain); assert.deepEqual(event.actorDecisionFrame!.decisions, []);
   }
 });
+
+for (const blocked of [false, true]) test(`scheduled lunge commit precedes walking; blocked=${blocked}`, () => {
+  const f = fixture(); f.first.weapon = 'sword'; f.first.team = 'blue'; f.second.team = 'red';
+  f.first.vel = { x: 1, y: 0, z: 2 }; f.second.pos = { x: 0, y: 0, z: 8 };
+  f.first.weaponReadyTimer = blocked ? 1 : 0;
+  f.owner.scriptedBots = { ordinary: 'normal' };
+  f.owner.resolve = () => ({ kind: 'handled', action: { ...idleAction(), moveX: 1, aim: Math.PI / 2 },
+    commands: [{ kind: 'lunge', targetId: f.second.id, direction: { x: 0, y: 0, z: 1 } }] });
+  const before = structuredClone(f.first.pos);
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  assert.equal(f.first.isLunging, !blocked); assert.equal(f.first.yaw, Math.PI / 2);
+  if (blocked) assert.notDeepEqual(f.first.pos, before, 'rejected lunge still executes supplied movement');
+  else { assert.deepEqual(f.first.pos, before); assert.deepEqual(f.first.vel, { x: 1, y: 0, z: 2 }); assert.equal(f.first.lungeTimer, 0); }
+});

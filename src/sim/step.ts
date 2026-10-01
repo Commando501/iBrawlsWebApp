@@ -19,7 +19,7 @@ import { resolveSimSettings } from './factory';
 import { type SimState } from './simState';
 import { type ActionsById, idleAction } from './actions';
 import { createRng, type Rng } from './rng';
-import { stepCombatantMovement, tickMovementCooldowns } from './physics';
+import { stepCombatantMovement, tickMovementCooldowns, normalizeYaw } from './physics';
 import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, tickWeaponSwapTimers, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
@@ -203,11 +203,22 @@ export function stepSimulation(
       }
       continue;
     }
+    // Ground policy commits before walking. In particular a newly accepted
+    // lunge returns from live AI without replacing launch-frame velocity or
+    // integrating flight until the following frame. Rejected commands still walk.
+    const earlyCommands = scheduledCombat[c.id];
+    const intentBeforeMovement = !!earlyCommands?.length && !c.isLunging;
+    if (intentBeforeMovement) {
+      c.yaw = normalizeYaw(act(c.id).aim);
+      c.isCrouching = act(c.id).crouch && !c.isJumping;
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
+      if (c.isLunging) continue;
+    }
     stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive);
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);
-    } else if (mixedObjectiveFrame) {
+    } else if (mixedObjectiveFrame && !intentBeforeMovement) {
       // Live AI commits at its own roster turn. A later actor's flight (or
       // planner observation) must see this attack/swap immediately, while
       // skeletal melee damage still waits for the post-objective animation pass.
