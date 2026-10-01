@@ -83,13 +83,25 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
   }
   // Never count an idle human or an unreachable teammate as guaranteed recovery coverage.
   const retriever = assignments.find(a => a.role === 'retriever' && routers.get(a.botId)!(a.destination, true).status !== 'blocked');
-  const reserve = retriever ?? (support.length > 1 ? [...support].filter(a => routers.get(a.botId)!(a.destination, true).status !== 'blocked')
+  const recoveryOptions = support.filter(a => routers.get(a.botId)!(a.destination, true).status !== 'blocked');
+  const recoveryArrival = (a: GrifballAssignment) => Math.max(actor(a).space?.mobileIn ?? 0,
+    routers.get(a.botId)!(anchor, true).length / Math.max(.1, actor(a).space?.speed ?? .1));
+  let reserve = retriever ?? (support.length > 1 ? [...recoveryOptions]
     .sort((a, b) => Number(b.role === 'safety') - Number(a.role === 'safety') ||
       fieldDistance(actor(a).pos, anchor) - fieldDistance(actor(b).pos, anchor) || a.botId.localeCompare(b.botId))[0] : undefined);
+  // A distant respawn must not leave the only useful runner protector reserved
+  // while every other escort has no viable engagement. Keep a separate recovery
+  // assignment, but do not count its travel time as ready double-team coverage.
+  if (friendly && reserve && !retriever && !memory.releaseRemaining[reserve.botId] &&
+    actor(reserve).space?.phase === 'ready' && (actor(reserve).space?.mobileIn ?? Infinity) <= 0 &&
+    scores.get(reserve.botId)!.some(s => s.score >= tuning.tankMinimumScore && s.protection > 0 && s.attackETA <= tuning.supportSeconds) &&
+    !support.some(a => a !== reserve && !memory.releaseRemaining[a.botId] && scores.get(a.botId)!.some(s => s.score >= tuning.tankMinimumScore))) {
+    const replacement = recoveryOptions.filter(a => a !== reserve && Number.isFinite(routers.get(a.botId)!(anchor, true).length))
+      .sort((a, b) => recoveryArrival(a) - recoveryArrival(b) || a.botId.localeCompare(b.botId))[0];
+    if (replacement) reserve = replacement;
+  }
   const recoveryId = reserve?.botId ?? null;
-  const recoveryPlayer = reserve ? actor(reserve) : undefined;
-  const coverageReady = !!recoveryPlayer && Math.max(recoveryPlayer.space?.mobileIn ?? 0,
-    routers.get(recoveryPlayer.id)!(anchor, true).length / Math.max(0.1, recoveryPlayer.space?.speed ?? 0.1)) <= tuning.supportSeconds + tuning.threatHorizon;
+  const coverageReady = !!reserve && recoveryArrival(reserve) <= tuning.supportSeconds + tuning.threatHorizon;
   for (const a of support) a.tanking = { mode: 'cover', targetId: null, partnerId: null, recoveryId, attack: false, doubleCommit: false,
     reason: a.botId === recoveryId ? 'Preserve recovery coverage' : 'No engagement worth leaving coverage', candidates: scores.get(a.botId)! };
   const place = (a: GrifballAssignment, desired: FieldPoint) => {

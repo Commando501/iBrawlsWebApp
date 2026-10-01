@@ -28,6 +28,58 @@ function defaultScene(): GrifballTacticalSnapshot {
   return s;
 }
 
+function reserveHandoffScene(team: 'blue' | 'red'): GrifballTacticalSnapshot {
+  const s = scene(), sign = team === 'blue' ? 1 : -1;
+  s.players = [p('runner', team, 0, 0), p('near', team, 2 * sign, -2 * sign),
+    p('far', team, -38 * sign, 15 * sign), p('enemy', team === 'blue' ? 'red' : 'blue', 5 * sign, 0)];
+  s.tactics!.defaults.stylesEnabled = false;
+  return s;
+}
+
+for (const team of ['blue', 'red'] as const) for (const reverse of [false, true])
+  test(`the only nearby escort protects the runner while a distant teammate recovers: ${team}/${reverse}`, () => {
+    const s = reserveHandoffScene(team);
+    if (reverse) s.players.reverse();
+    const state = run(s), near = state.assignments.get('near')!, far = state.assignments.get('far')!;
+    assert.equal(near.tanking?.mode, 'engage', 'reserving the only useful protector must not leave both escorts passive');
+    assert.equal(near.tanking.targetId, 'enemy');
+    assert.equal(near.tanking.attack, true);
+    assert.equal(near.tanking.recoveryId, 'far');
+    assert.equal(far.tanking?.attack, false);
+    assert.ok([...state.assignments.values()].every(a => !a.tanking?.doubleCommit), 'distant recovery is not ready double-team coverage');
+    assert.equal(selectGrifballAssignmentThreat(near, s.players.find(p => p.id === 'near')!.pos, s.players), 'enemy');
+  });
+
+for (const team of ['blue', 'red'] as const)
+  for (const boundary of ['recovering', 'airborne', 'release', 'low-value', 'slow-opening', 'other-attacker', 'blocked-recovery', 'observed-teammate'] as const)
+    test(`runner-protection reserve handoff respects ${boundary}: ${team}`, () => {
+      const s = reserveHandoffScene(team), sign = team === 'blue' ? 1 : -1;
+      const near = s.players[1], far = s.players[2], state = createGrifballTeamPlanState();
+      if (boundary === 'recovering') Object.assign(near.space!, { phase: 'recovering', attackIn: 5 });
+      if (boundary === 'airborne') near.space!.mobileIn = 5;
+      if (boundary === 'low-value') s.tactics!.defaults.tankMinimumScore = 10;
+      if (boundary === 'slow-opening') s.tactics!.defaults.supportSeconds = .25;
+      if (boundary === 'other-attacker') far.pos = { x: 4 * sign, z: 4 * sign };
+      if (boundary === 'observed-teammate') far.scripted = false;
+      if (boundary === 'blocked-recovery') s.geometry = buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52,
+        arenaHalfExtents: { x: 52, z: 23 }, objects: [{ type: 'box', position: { x: -20 * sign, y: 2, z: 0 },
+          scale: { x: 1, y: 4, z: 46 }, isCollidable: true }] } as CustomMapData, 52);
+      if (boundary === 'release') {
+        updateGrifballTeamPlan(state, s, .2);
+        state.tankingMemory[team].releaseRemaining.near = 1;
+      }
+      updateGrifballTeamPlan(state, s, .2);
+      const order = state.assignments.get('near')!.tanking!;
+      if (boundary === 'observed-teammate') {
+        assert.equal(order.recoveryId, null, 'a human/neural teammate cannot be assigned scripted recovery');
+        assert.equal(state.assignments.has('far'), false);
+      } else {
+        assert.equal(order.attack, false, boundary);
+        assert.equal(order.recoveryId, 'near', 'retain the reserve when the handoff is unavailable');
+      }
+      assert.ok([...state.assignments.values()].every(a => !a.tanking?.doubleCommit));
+    });
+
 for (const team of ['blue', 'red'] as const) for (const reverse of [false, true]) for (const main of [false, true]) {
   test(`default hammer pair preserves spacing and coverage: ${team}, reverse=${reverse}, main=${main}`, () => {
     const s = defaultScene();
