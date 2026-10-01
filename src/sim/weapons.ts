@@ -27,7 +27,7 @@ import { type UniversalSettings } from '../types';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
-import { resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
+import { GRIFBALL_PUNCH_RADIUS, resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
 import { adjustRangeForTargetModel } from '../components/grifball/modelHitbox';
 import { awardTeamKill, recordTeamDeath } from '../game/teamScoring';
 import {
@@ -249,7 +249,7 @@ export function inPlayerPunchVolume(attacker: SimCombatant, victim: SimCombatant
   const reach = resolvePunchLungeDistance(settings);
   return Math.hypot(victim.pos.x - attacker.pos.x - fwd.x * reach,
     victim.pos.y + BODY_CENTER_HEIGHT - attacker.pos.y - MELEE_EYE_HEIGHT + (attacker.crouchAmount ?? 0) - fwd.y * reach,
-    victim.pos.z - attacker.pos.z - fwd.z * reach) <= adjustRangeForTargetModel(1.5, victim.modelType);
+    victim.pos.z - attacker.pos.z - fwd.z * reach) <= adjustRangeForTargetModel(GRIFBALL_PUNCH_RADIUS, victim.modelType);
 }
 
 function playerLookDirection(c: SimCombatant) {
@@ -269,7 +269,7 @@ function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: Universa
 function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[]): void {
   const reach = c.weapon === 'ball' ? resolvePunchLungeDistance(settings)
     : strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
-  const radius = c.weapon === 'ball' ? 1.5 : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
+  const radius = c.weapon === 'ball' ? GRIFBALL_PUNCH_RADIUS : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
   const fwd = forwardDir(c.yaw);
   for (const victim of state.combatants) {
     if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;

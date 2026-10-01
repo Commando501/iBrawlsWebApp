@@ -6,7 +6,7 @@ import {
   type MatchStateMultipliers,
 } from './aiTuning';
 import { type CharacterModelType, type UniversalSettings } from '../types';
-import { resolvePunchLungeDistance } from './runnerBallSettings';
+import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from './runnerBallSettings';
 
 export type AICombatWeapon = 'hammer' | 'sword';
 
@@ -112,7 +112,7 @@ export function resolveAICombatDangerZone(
   settings: Pick<UniversalSettings, 'attackRange' | 'attackRadius' | 'grifballPunchLungeDistance'>,
   targetWeapon: AITacticalTarget['activeWeapon'],
 ): number {
-  return targetWeapon === 'ball' ? resolvePunchLungeDistance(settings) + 1.5 * 0.85
+  return targetWeapon === 'ball' ? resolvePunchLungeDistance(settings) + GRIFBALL_PUNCH_RADIUS * 0.85
     : settings.attackRange + settings.attackRadius * 0.85;
 }
 

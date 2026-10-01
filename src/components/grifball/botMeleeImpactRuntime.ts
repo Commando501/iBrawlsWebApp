@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { applyAIHammerJumpAtImpact } from './aiHammerJumpImpact';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
-import { resolvePunchLungeDistance } from '../../game/runnerBallSettings';
+import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from '../../game/runnerBallSettings';
 import { getForwardHeadingForYaw } from '../../game/yaw';
 import { getCombatBodyCenter, SWORD_SLASH_FORWARD_FACTOR, SWORD_SLASH_RADIUS } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
@@ -53,7 +53,7 @@ export function applyBotMeleeImpactForState({
       ? (state.settings.attackRange ?? 3.2)
       : (state.settings.attackRange ?? 3.2) * SWORD_SLASH_FORWARD_FACTOR);
   const radius = isBall
-    ? 1.5
+    ? GRIFBALL_PUNCH_RADIUS
     : (isHammer ? (state.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS);
 
   const eye = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);

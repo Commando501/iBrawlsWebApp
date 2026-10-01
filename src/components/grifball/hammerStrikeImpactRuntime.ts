@@ -2,7 +2,7 @@ import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import * as THREE from 'three';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { MAIN_AI_ID } from '../../game/roster';
-import { resolvePunchLungeDistance } from '../../game/runnerBallSettings';
+import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from '../../game/runnerBallSettings';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { getCombatBodyCenter } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
@@ -109,7 +109,7 @@ export function applyHammerStrikeImpactForState({
       }
     }
 
-    const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
+    const impactRadius = isBall ? GRIFBALL_PUNCH_RADIUS : (state.settings.attackRadius ?? 4.5);
     if (isBall) {
       spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
     } else {
@@ -261,7 +261,7 @@ export function applyHammerStrikeImpactForState({
     spawnVoxelShockwaveParticles(mainAI.pos, '#f59e0b');
   }
 
-  const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
+  const impactRadius = isBall ? GRIFBALL_PUNCH_RADIUS : (state.settings.attackRadius ?? 4.5);
   if (isBall) {
     spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
   } else {

@@ -2,6 +2,9 @@ import type { UniversalSettings } from '../types';
 
 export type RunnerMovementDirection = 'forward' | 'backward' | 'side';
 
+/** Existing punch splash radius, shared by execution and tactical observations. */
+export const GRIFBALL_PUNCH_RADIUS = 1.5;
+
 const DEFAULT_RUNNER_SPEED_PERCENT = 130;
 const DEFAULT_TRAJECTORY_COLOR = '#ff2b2b';
 

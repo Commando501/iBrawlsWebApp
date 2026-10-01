@@ -8,9 +8,51 @@ import { createLiveGrifballTacticalSnapshot } from '../../src/components/grifbal
 import { triggerPlayerHammerSwingForState, triggerPlayerHammerMeleeForState, triggerPlayerSwordSlashForState } from '../../src/components/grifball/playerWeaponActions';
 import { setSimCarrier } from '../../src/sim/grifball';
 import { setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
-import { observeGrifballSpace } from '../../src/game/aiGrifballSpace';
+import { estimateSpaceAttackTime, observeGrifballSpace } from '../../src/game/aiGrifballSpace';
 
 const noop = () => {};
+for (const owner of ['player', 'main_ai', 'bot_2'] as const)
+  for (const projection of [1.8, 3]) for (const placement of ['forward-splash', 'side-splash', 'outside'] as const)
+    test(`punch threat includes actual splash damage ${owner}/${projection}/${placement}`, () => {
+      const local = owner === 'player', f = createBotParityFixture(owner, !local, { grifballPunchLungeDistance: projection });
+      const { sim, state, bot, target } = f, [self, rival] = sim.combatants;
+      sim.combatExecution = local ? 'live-player-v1' : 'live-roster-v2'; sim.match.phase = 'playing';
+      self.id = owner; rival.id = target.id;
+      self.pos = { x: 0, y: 0, z: 0 }; self.yaw = 0;
+      const point = placement === 'side-splash' ? { x: 1.2, y: 0, z: projection }
+        : { x: 0, y: 0, z: projection + (placement === 'outside' ? 1.7 : 1.2) };
+      rival.pos = { ...point }; target.pos.set(point.x, point.y, point.z);
+      rival.hp = rival.maxHp = target.hp = target.maxHp = 20;
+      self.invulnerabilityTimer = rival.invulnerabilityTimer = self.weaponReadyTimer = rival.weaponReadyTimer = 0;
+      state.playerPos.set(0, 0, 0); state.yaw = Math.PI;
+      state.pWeaponState = 'ready'; state.pWeaponTimer = state.swapCooldownTimer = state.swapLockoutTimer = 0;
+      if (local) state.otherPlayers.delete(owner);
+      sim.match.ball.state = state.grifball.ball.state = 'held';
+      sim.match.ball.holderId = state.grifball.ball.holderId = owner;
+      setSimCarrier(self, true, sim.settings); setGrifballCarrierForState({ state, id: owner, carrying: true });
+      const actor = createLiveGrifballTacticalSnapshot(state, () => null, f.map).players.find(p => p.id === owner)!;
+      const observed = actor.space!, headless = observeSimGrifballSpace(self, sim.settings, sim.combatExecution);
+      const distance = Math.hypot(point.x, point.z), forecast = estimateSpaceAttackTime(actor, point, distance);
+      let impactTick = 0;
+      for (let tick = 1; tick <= 45; tick++) {
+        if (local) {
+          if (tick === 1) triggerPlayerHammerSwingForState({ state, recordHammerAttack: noop, playSwing: noop, sendSync: noop });
+          f.weaponFrame(1 / 60);
+        } else f.frame(tick === 1);
+        stepSimulation(sim, { [owner]: { ...idleAction(), attackPrimary: tick === 1 } }, { settings: sim.settings });
+        assert.equal(target.hp, rival.hp, `damage tick ${tick}`);
+        if (target.hp < 20 && !impactTick) impactTick = tick;
+      }
+      assert.equal(target.hp, placement === 'outside' ? 20 : 19, 'independent physical hit/miss control');
+      assert.equal(observed.reach, headless.reach);
+      assert.equal(observed.blastRadius, headless.blastRadius);
+      if (placement !== 'outside') {
+        assert.equal(forecast, observed.attackIn, 'a stationary punch already reaches this target; no invented travel delay');
+        assert.ok(impactTick / 60 + 1e-6 >= forecast && impactTick / 60 <= forecast + 3 / 60 + 1e-6);
+      } else assert.ok(distance > observed.reach);
+      assert.equal(observed.blastRadius, 1.5, 'nearby teammates can share the punch splash');
+    });
+
 for (const owner of ['player', 'main_ai', 'bot_2'] as const)
   for (const kind of ['slash', 'slam', 'swipe', 'punch'] as const)
     for (const tuned of [false, true]) test(`attack observations follow actual impacts ${owner}/${kind}/${tuned}`, () => {
