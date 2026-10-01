@@ -191,7 +191,9 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
     record.compare(120, `expected.${side}.playerHP`, hp, expectedPlayerHp);
     record.compare(120, `expected.${side}.targetHP`, targetHp, expectedTargetHp);
   }
-  const expectedFinish = spec.geometry?.finishTick ?? (trade ? 1 : spec.kind === 'boundary' ? 9 : spec.kind === 'timeout' ? 40
+  // Independently derive the first step strictly beyond 16 units at 24 units/s.
+  const travelEnd = Math.floor(16 / (24 / 60)) + 1;
+  const expectedFinish = spec.geometry?.finishTick ?? (trade ? 1 : spec.kind === 'boundary' ? 9 : spec.kind === 'timeout' ? travelEnd
     : ['shield', 'friendly'].includes(spec.kind) ? 1 : spec.kind === 'player-first' ? 6
     : spec.kind === 'melee-first' ? 8 : spec.kind.startsWith('same-frame') || spec.kind === 'killed-flight' ? 7
     : spec.kind === 'damaged-flight' ? 27 : 9);

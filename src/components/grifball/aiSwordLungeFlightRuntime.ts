@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type AILungeOutcome } from '../../game/aiCombatDecision';
 import { MAIN_AI_ID } from '../../game/roster';
+import { exceedsSwordLungeTravel } from '../../game/swordLungeTravel';
 import { type Combatant, type CustomMapData, type DeathEvent } from '../../types';
 import { isVectorXZAtArenaBoundary } from './arenaBounds';
 import {
@@ -169,7 +170,7 @@ export function resolveAISwordLungeFlightForCombatant({
 
   if (hitsBoundary) {
     finishSwordLunge(cooldownMult, 'miss_arena', target.id);
-  } else if (startDist > 16.0 || self.lungeTimer > 0.8) {
+  } else if (exceedsSwordLungeTravel(startDist) || self.lungeTimer > 0.8) {
     finishSwordLunge(cooldownMult, 'miss_timeout', target.id);
   }
 

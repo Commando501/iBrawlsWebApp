@@ -26,7 +26,8 @@ export function runShieldedFlightTrace(spec: typeof SHIELDED_FLIGHT_CASES[number
   // reaches the stationary player at 8/7; otherwise mutual contact is at 5/4.
   const singleContact = first === 'player' ? 8 : 7;
   const mutualContact = first === 'player' ? 5 : 4;
-  let playerHit = 0, botHit = 0, playerEnd = 1, botEnd = 40;
+  // A missed grounded flight ends strictly beyond 16, on the 41st 0.4-unit step.
+  let playerHit = 0, botHit = 0, playerEnd = 1, botEnd = Math.floor(16 / .4) + 1;
   if (shield === 'player') {
     botHit = playerEnd = 5;
     if (hp === 1) botEnd = 5;

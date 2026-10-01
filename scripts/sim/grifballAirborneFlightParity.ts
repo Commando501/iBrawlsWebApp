@@ -28,8 +28,11 @@ export function runAirborneFlightTrace(spec: typeof AIRBORNE_FLIGHT_CASES[number
   // sees the bot's previous pose; roster contact sees both current poses.
   const height = (n: number) => Math.max(0, m.botHeight + vy * n / 60 - .0025 * n * (n + 1));
   const gap = spec.first === 'player' ? 5 : 4.6;
+  // Strictly beyond 16 units at 0.4 units/tick: tick 40 is the boundary,
+  // tick 41 ends a missed grounded flight. Do not derive this from either engine.
+  const playerTravelEnd = Math.floor(16 / .4) + 1;
   let contact = 0, initiator: 'player' | 'roster' = 'player';
-  for (let n = 1; n <= 40; n++) {
+  for (let n = 1; n <= playerTravelEnd; n++) {
     const playerZ = gap - .4 * n;
     if (Math.hypot(playerZ - .4 * m.directionZ * (n - 1), height(n - 1)) <= 1.5) {
       contact = n; break;
@@ -40,7 +43,7 @@ export function runAirborneFlightTrace(spec: typeof AIRBORNE_FLIGHT_CASES[number
   }
   const playerHit = contact && (initiator === 'roster' || spec.trade || spec.hp > 1) ? contact : 0;
   const botHit = !contact ? 0 : initiator === 'player' || spec.trade ? contact : spec.hp > 1 ? contact + 1 : 0;
-  const playerEnd = contact ? initiator === 'roster' && !spec.trade && spec.hp > 1 ? contact + 1 : contact : 40;
+  const playerEnd = contact ? initiator === 'roster' && !spec.trade && spec.hp > 1 ? contact + 1 : contact : playerTravelEnd;
   const botEnd = contact || (spec.motion === 'overhead-miss' ? 39 : spec.motion === 'retain-upward' ? 41 : 48);
   const playerRevive = spec.hp === 1 && playerHit ? playerHit + 181 : 0;
   const botRevive = spec.hp === 1 && botHit ? botHit + (initiator === 'player' ? 180 : 181) : 0;

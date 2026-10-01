@@ -396,6 +396,8 @@ The optional `npm run validate:grifball-cross-host -- --manifest FILE --out NEW-
 
 State streaming pauses validation ticks when its 64-batch transfer queue is full, resuming when the consumer catches up. Waiting does not advance gameplay, inputs, clocks or seeded randomness. The queue still rejects overflow, transfer errors fail the trial, and a stalled consumer remains subject to the external watchdog. This flow control is confined to optional validation diagnostics.
 
+Live player and roster sword lunges tolerate 1e-9 units of numerical overshoot at their strict 16-unit travel cap. This prevents browser/Node rounding from ending the same flight on different ticks; contact is still resolved first and the elapsed timeout is unchanged. The opt-in live roster/mixed simulator profiles use the same boundary rule, with independent stopping-tick expectations and captured-pose regressions.
+
 Tactical target observations preserve committed weapon phases during AI decision cooldown. An opponent winding up or striking is no longer reported as recovering merely because its next decision is delayed. Ready or missing weapon phases retain the existing cooldown fallback. Regression checks cover main and ordinary roster actors and selection between attacking and genuinely recovering targets.
 
 Dash trail particles use cosmetic randomness, so scene availability and particle emission no longer advance the seeded gameplay random stream. This changes historical seeded match outcomes; validation evidence must identify the source version. A focused regression checks identical dash motion and subsequent gameplay draws with and without a scene, including emitted and skipped trails.

@@ -15,6 +15,7 @@ import {
 } from './playerWeaponActions';
 import { type CombatTradeReason } from './tradeRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
+import { exceedsSwordLungeTravel } from '../../game/swordLungeTravel';
 
 export function updatePlayerSwordLungeForState({
   state,
@@ -230,7 +231,7 @@ export function updatePlayerSwordLungeForState({
   }
 
   const startDist = state.playerPos.distanceTo(state.lungeStartPos);
-  if (startDist > 16.0 || state.lungeTimer > 0.8) {
+  if (exceedsSwordLungeTravel(startDist) || state.lungeTimer > 0.8) {
     finishPlayerSwordLungeRecoveryForState({
       state,
       hit: false,

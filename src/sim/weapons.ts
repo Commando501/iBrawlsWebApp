@@ -24,6 +24,7 @@
 
 import { type UniversalSettings } from '../types';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
+import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
 import { resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
 import { adjustRangeForTargetModel } from '../components/grifball/modelHitbox';
@@ -444,7 +445,7 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
   const boundary = isVectorXZAtArenaBoundary({ pos: new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z),
     activeCustomMap: state.map, arenaRadius: state.map.arenaRadius, inset: .65 });
   if (boundary) finish('miss_arena');
-  else if (Math.hypot(c.pos.x - start.x, c.pos.y - start.y, c.pos.z - start.z) > 16 || c.lungeTimer > .8) finish('miss_timeout');
+  else if (exceedsSwordLungeTravel(Math.hypot(c.pos.x - start.x, c.pos.y - start.y, c.pos.z - start.z)) || c.lungeTimer > .8) finish('miss_timeout');
 }
 
 /** Independently resolved local-player flight for the opt-in mixed profile. */
@@ -496,7 +497,7 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
     finish('hit'); return;
   }
   const start = c.lungeStartPos!;
-  if (Math.hypot(c.pos.x - start.x, c.pos.y - start.y, c.pos.z - start.z) > 16 || c.lungeTimer > .8) finish('miss_timeout');
+  if (exceedsSwordLungeTravel(Math.hypot(c.pos.x - start.x, c.pos.y - start.y, c.pos.z - start.z)) || c.lungeTimer > .8) finish('miss_timeout');
   else if (isVectorXZAtArenaBoundary({ pos: new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z), activeCustomMap: state.map,
     arenaRadius: state.map.arenaRadius, inset: .6 })) finish('miss_arena');
 }
