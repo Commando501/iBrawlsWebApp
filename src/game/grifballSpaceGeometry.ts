@@ -101,6 +101,11 @@ function getGrid(g: GrifballSpaceGeometry): Grid {
 
 type GridLink = { to: number; cost: number };
 type EndpointLinks = (grid: Grid, point: FieldPoint) => readonly GridLink[];
+// Integer navigation costs make equal-length grid paths independent of floating
+// addition order and host math roundoff. Coordinates and collision tests stay exact.
+const ROUTE_COST_SCALE = 1e9;
+const routeCost = (distance: number) => Math.round(distance * ROUTE_COST_SCALE);
+const compareLinks = (a: GridLink, b: GridLink) => a.cost - b.cost || a.to - b.to;
 
 /** Share endpoint visibility and distances across players in one planning refresh.
  * Geometry is immutable for this factory's lifetime. No threats or routes are cached. */
@@ -146,27 +151,34 @@ function createRouter(g: GrifballSpaceGeometry, start: FieldPoint, links: Endpoi
       const heap: { to: number; cost: number }[] = [];
       const push = (entry: { to: number; cost: number }) => {
         let i = heap.length; heap.push(entry);
-        while (i > 0) { const p = (i - 1) >> 1; if (heap[p].cost <= entry.cost) break; heap[i] = heap[p]; i = p; } heap[i] = entry;
+        while (i > 0) { const p = (i - 1) >> 1; if (compareLinks(heap[p], entry) <= 0) break; heap[i] = heap[p]; i = p; } heap[i] = entry;
       };
-      for (const { to, cost } of links(grid, start)) { costs[to] = cost; push({ to, cost }); }
+      for (const { to, cost } of links(grid, start)) { costs[to] = routeCost(cost); push({ to, cost: costs[to] }); }
       while (heap.length) {
         const current = heap[0], last = heap.pop()!;
         if (heap.length) {
           let i = 0;
-          while (2 * i + 1 < heap.length) { let child = 2 * i + 1; if (child + 1 < heap.length && heap[child + 1].cost < heap[child].cost) child++; if (heap[child].cost >= last.cost) break; heap[i] = heap[child]; i = child; } heap[i] = last;
+          while (2 * i + 1 < heap.length) { let child = 2 * i + 1; if (child + 1 < heap.length && compareLinks(heap[child + 1], heap[child]) < 0) child++; if (compareLinks(heap[child], last) >= 0) break; heap[i] = heap[child]; i = child; } heap[i] = last;
         }
         if (current.cost !== costs[current.to]) continue;
-        for (const edge of grid.edges[current.to]) if (current.cost + edge.cost < costs[edge.to]) {
-          costs[edge.to] = current.cost + edge.cost; parents[edge.to] = current.to; push({ to: edge.to, cost: costs[edge.to] });
+        for (const edge of grid.edges[current.to]) {
+          const cost = current.cost + routeCost(edge.cost);
+          if (cost < costs[edge.to]) {
+            costs[edge.to] = cost; parents[edge.to] = current.to; push({ to: edge.to, cost });
+          } else if (cost === costs[edge.to] && current.to < parents[edge.to]) {
+            // Equal-cost predecessors have lower costs than this node, so this
+            // stable choice cannot form a parent cycle or require re-expansion.
+            parents[edge.to] = current.to;
+          }
         }
       }
       search = { grid, costs, parents };
     }
     const { grid, costs, parents } = search;
     const ends = links(grid, end).filter(link => Number.isFinite(costs[link.to]));
-    ends.sort((a, b) => costs[a.to] + a.cost - costs[b.to] - b.cost || a.to - b.to);
+    ends.sort((a, b) => (costs[a.to] + routeCost(a.cost)) - (costs[b.to] + routeCost(b.cost)) || a.to - b.to);
     if (!ends.length) return blocked();
-    if (distanceOnly) return { status: 'routed', points: [], length: costs[ends[0].to] + ends[0].cost };
+    if (distanceOnly) return { status: 'routed', points: [], length: (costs[ends[0].to] + routeCost(ends[0].cost)) / ROUTE_COST_SCALE };
     const path: FieldPoint[] = [{ ...end }];
     for (let i = ends[0].to; i !== -1; i = parents[i]) path.push(grid.points[i]);
     path.reverse();

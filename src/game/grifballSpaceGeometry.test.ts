@@ -7,7 +7,7 @@ import { getGoalPlates } from './grifballGoals';
 import { seededRandom } from './simulationRandom';
 import { buildGrifballSpaceGeometry, createSpaceRouterFactory, isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
 
-test('shared routing preserves the pre-optimization 7,200-query supplied-map corpus', () => {
+test('stable routing preserves the audited 7,200-query supplied-map corpus', () => {
   const random = seededRandom(1907), results = [];
   for (const map of PREMADE_MAPS.map(toGrifballArena).filter(map => getGoalPlates(map).length === 2)) {
     const geometry = buildGrifballSpaceGeometry(map, map.arenaRadius);
@@ -17,17 +17,64 @@ test('shared routing preserves the pre-optimization 7,200-query supplied-map cor
     const ends = Array.from({ length: 80 }, () => ({ x: (random() * 2 - 1) * geometry.x * 1.05, z: (random() * 2 - 1) * geometry.z * 1.05 }));
     for (const start of starts) {
       const route = factory(start);
-      for (const end of ends) for (const distanceOnly of [false, true]) results.push({ map: map.id, start, end, distanceOnly, route: route(end, distanceOnly) });
+      for (const end of ends) for (const distanceOnly of [false, true]) {
+        const result = route(end, distanceOnly);
+        let from = start, length = 0;
+        for (const point of result.points) {
+          assert.ok(isSpaceSegmentOpen(geometry, from, point), `${map.id}: route crosses a blocker`);
+          length += Math.hypot(point.x - from.x, point.z - from.z); from = point;
+        }
+        if (!distanceOnly && result.status !== 'blocked') {
+          assert.deepEqual(from, end);
+          assert.ok(Math.abs(length - result.length) < 1e-9);
+        }
+        results.push({ map: map.id, start, end, distanceOnly, route: result });
+      }
     }
   }
   const encoded = JSON.stringify(results, (_key, v) => typeof v === 'number' && !Number.isFinite(v) ? { $number: String(v) } : v);
   assert.equal(results.length, 7200);
-  // Captured from ed8edc3's independent per-player routers before changing routing.
-  assert.equal(createHash('sha256').update(encoded).digest('hex'), '4f5fabd210dfce3f528bd7eecbba3d97a6ce150786ed8ba02fa8af57e85b0189');
+  // Stable integer-cost ties intentionally replace the original floating-cost
+  // paths. All 7,200 reachability statuses match the pre-fix corpus; the maximum
+  // distance-only change is < 1.8e-8. Segments are also checked independently above.
+  assert.equal(createHash('sha256').update(encoded).digest('hex'), '5787e419e321ccb6ac0b4e8521e1f9bdd91ca0fd8cf979b52ee5a35de2470e6f');
 });
 
 const wall = (height = 4): GrifballSpaceGeometry => ({ key: `router-wall-${height}`, shape: 'rectangular', x: 20, z: 12,
   blockers: [{ kind: 'box', x: 0, z: 0, hx: .5, hz: height }] });
+
+test('wall routes stay stable across the observed browser/Node carrier roundoff', () => {
+  const map = toGrifballArena(PREMADE_MAPS.find(map => map.id === 'forerunner_canyon')!);
+  const geometry = buildGrifballSpaceGeometry(map, map.arenaRadius);
+  const factory = createSpaceRouterFactory(geometry), end = { x: -47, z: 0 };
+  // The same carrier at tick 862 of the seed-101 local-player Canyon match.
+  const starts = [
+    { x: -12.035787978321046, z: 2.6459085930308817 },
+    { x: -12.035787978321048, z: 2.6459085930308825 },
+  ];
+  const routes = starts.map(start => factory(start)(end));
+  assert.equal(routes[0].status, 'routed');
+  assert.deepEqual(routes[0].points, routes[1].points);
+  assert.ok(Math.abs(routes[0].length - routes[1].length) < 1e-9);
+  for (const [index, route] of routes.entries()) {
+    let from = starts[index];
+    for (const point of route.points) {
+      assert.ok(isSpaceSegmentOpen(geometry, from, point));
+      from = point;
+    }
+  }
+  // Check both attack directions and more than the two captured float values.
+  for (const side of [1, -1]) {
+    const target = { x: end.x * side, z: end.z };
+    const origin = { x: starts[0].x * side, z: starts[0].z };
+    const expected = factory(origin)(target);
+    for (const epsilon of [-1e-12, -1e-14, 0, 1e-14, 1e-12]) {
+      const route = factory({ x: origin.x + epsilon, z: origin.z - epsilon })(target);
+      assert.deepEqual(route.points, expected.points);
+      assert.ok(Math.abs(route.length - expected.length) < 1e-9);
+    }
+  }
+});
 
 test('shared endpoints keep each origin independent and returned paths cannot poison later queries', () => {
   const geometry = wall(), factory = createSpaceRouterFactory(geometry);
