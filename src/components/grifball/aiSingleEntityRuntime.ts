@@ -1,3 +1,4 @@
+import { resolveAIGroundState } from '../../game/aiGroundState';
 import { finishAIHorizontalMotion } from '../../game/aiDashMotion';
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
 import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
@@ -9,8 +10,6 @@ import {
 } from '../../game/aiBotCoordinator';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import {
-  canAttemptChargeAbortFeint,
-  getApproachFeintWindow,
   getPlayerFeintMultiplier,
   rollFeintAttempt,
   rollFeintCooldownDuration,
@@ -24,21 +23,14 @@ import {
   advanceAIWeaponSwapFeint,
 } from '../../game/aiMatchContext';
 import {
-  advanceAISlide,
-  getSlideSpeed,
-  shouldStartAISlide,
-} from '../../game/aiMovementMechanics';
-import {
   accumulateStandoffTimer,
   isInStandoffBand,
-  shouldForceStandoffCommit,
 } from '../../game/aiPsychologicalPressure';
 import {
   applyCalibrationMultipliers,
   tickCalibrationPendingCounter,
   tickCalibrationPendingDodge,
 } from '../../game/aiSkillCalibration';
-import { shouldAvoidCoinFlipTrade } from '../../game/aiTuning';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
 import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { type LoadedNeuralBrain } from '../../game/neuralBrainLoader';
@@ -71,7 +63,6 @@ import { resolveAIGroundMovementPreludeForCombatant } from './aiGroundMovementPr
 import { resolveAILungeEvasionForCombatant } from './aiLungeEvasionRuntime';
 import { resolveNoTargetAIFrameForCombatant } from './aiNoTargetRuntime';
 import { resolvePostKillPressureForCombatant } from './aiPostKillPressureRuntime';
-import { resolveAIPressureStateForCombatant } from './aiPressureStateRuntime';
 import { finishAISwordLungeFrameForCombatant, finishTradedAISwordLungeForCombatant } from './aiSwordLungeFinishRuntime';
 import { resolveAISwordLungeFlightForCombatant } from './aiSwordLungeFlightRuntime';
 import { resolveAITargetPredictionFrame } from './aiTargetPredictionRuntime';
@@ -1325,330 +1316,24 @@ export function createAISingleEntityUpdaterForState({
         const coordLateral = getPincerApproachOffset(coordRoleInput);
         const totalApproachLateral = approachLateral + coordLateral;
   
-        if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && simulationRandom() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
-          if (startAIHammerJump(self, pos, vel, lookHeading, 'offensive')) {
-            weaponState = 'swing_up';
-          }
-        }
-  
-        if (state === 'APPROACHING') {
-          // Begin a slide as a committed ground gap-closer when conditions allow.
-          if (!slideActive && shouldStartAISlide({
-            enableSlide: s.settings.enableSlide,
-            slideCooldownRemaining: slideCooldownTimer,
-            state,
-            distanceToTarget,
-            engageRange: resolvedDangerZone,
-            movementComplexity,
-            isDashing: false,
-            isSliding: slideActive,
-            targetProtected: targetIsProtected,
-            minComplexity: tuning.slideMinComplexity,
-            minGap: tuning.slideMinGap,
-            maxGap: tuning.slideMaxGap,
-            triggerChance: tuning.slideTriggerChance,
-          })) {
-            slideActive = true;
-            slideDistanceTraveled = 0;
-            isSprinting = false;
-            sfx.playDash();
-          }
-  
-          if (slideActive) {
-            const slideSpeed = getSlideSpeed(s.settings.speedSlide, tuning.aiBaseGroundSpeed);
-            vel.copy(spatialLookHeading).multiplyScalar(slideSpeed);
-            pos.addScaledVector(vel, dt);
-            const advanced = advanceAISlide({
-              distanceTraveled: slideDistanceTraveled,
-              slideSpeed,
-              dt,
-              maxSlideDistance: s.settings.slideDistance ?? 8.0,
-            });
-            slideDistanceTraveled = advanced.distanceTraveled;
-            // End the slide if it is exhausted, the toggle was turned off, or we have
-            // closed into engage range.
-            if (advanced.finished || !s.settings.enableSlide || distanceToTarget <= (resolvedDangerZone + 1.5)) {
-              slideActive = false;
-              slideCooldownTimer = s.settings.slideCooldown ?? 1.5;
-            }
-          } else {
-            vel.copy(spatialLookHeading).multiplyScalar(4.0 * (s.settings.speedForward / 100) * spatialBias.aggressionMult * sprintMult);
-            if (totalApproachLateral !== 0) {
-              vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.9);
-            }
-            pos.addScaledVector(vel, dt);
-          }
-  
-          if (!slideActive && distanceToTarget <= (resolvedDangerZone + 3.2)) {
-            state = 'SIDE_STEPPING';
-            timer = simulationRandom() * 0.7 + 0.3;
-          }
-        }
-        else if (state === 'SIDE_STEPPING') {
-          const dir = Math.sin(swayTimer * 2.2) > 0 ? 1 : -1;
-          vel.copy(sidewayHeading).multiplyScalar(3.2 * (s.settings.speedSide / 100) * dir);
-          
-          // Hold inside our own weapon's hit range, not just outside the enemy danger
-          // zone. With a hammer, resolvedDangerZone + 1.2 (~8.6m default) sits *beyond*
-          // the hammer's own ~7m sphere reach, so two hammer bots would otherwise park
-          // where neither can land a blow and circle forever. Capping to just inside
-          // guaranteedKillRange makes them close until a swing actually connects.
-          const desiredDist = activeWeapon === 'sword'
-            ? (maxLungeRange * 0.7)
-            : Math.min(resolvedDangerZone + 1.2, guaranteedKillRange - 0.6);
-          const approachBias = distanceToTarget > desiredDist ? 0.35 : -0.45;
-          const approachSpeed = approachBias * 1.5 * (approachBias > 0 ? (s.settings.speedForward / 100) : (s.settings.speedBackward / 100));
-          const approachAggression = approachBias > 0 ? spatialBias.aggressionMult : 1;
-          vel.addScaledVector(spatialLookHeading, approachSpeed * approachAggression);
-          if (totalApproachLateral !== 0) {
-            vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.35);
-          }
-          
-          if (isCrouching) {
-            vel.multiplyScalar(0.45);
-          }
-          pos.addScaledVector(vel, dt);
-  
-          if (dashCooldownTimer <= 0 && distanceToTarget < (resolvedDangerZone + 2.0) && simulationRandom() < 0.015 && (movementComplexity >= 40)) {
-            const sideDir = simulationRandom() > 0.5 ? 1 : -1;
-            dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
-            dashRemaining = s.settings.dashDuration || 0.25;
-            dashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-          }
-  
-          if (target.weaponState === 'swing_up' && !targetIsProtected) {
-            const reactChance = tuning.reactChanceBase + (tunedAnticipationFactor * tuning.reactChanceAnticipation);
-            
-            const myHP = self.hp;
-            const targetHP = target.hp;
-            const shouldAvoidTrade = shouldAvoidCoinFlipTrade({
-              difficulty,
-              playstyleFactor,
-              botHP: myHP,
-              targetHP,
-              multipliers: matchMultipliers,
-            });
-  
-            if (shouldAvoidTrade || simulationRandom() < reactChance) {
-              state = 'DANCING_BACKWARD';
-              timer = effectiveReactionLatency + 0.35;
-  
-              if (dashCooldownTimer <= 0) {
-                dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-                dashRemaining = s.settings.dashDuration || 0.25;
-                dashCooldownTimer = s.settings.dashCooldown || 2.0;
-                sfx.playDash();
-              }
-            }
-          }
-  
-          if (targetIsProtected) {
-            state = 'DANCING_BACKWARD';
-            timer = 0.5;
-          }
-  
-          if (timer <= 0) {
-            const forceStandoffCommit = psychEnabled && shouldForceStandoffCommit(
-              psychState.standoffTimer,
-              playstyleFactor,
-              matchMultipliers,
-              simulationRandom()
-            );
-            if (forceStandoffCommit && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-              state = 'CHARGE_ATTACK';
-              psychState.standoffTimer = 0;
-            } else if (attackDistanceToTarget <= (resolvedAiReach + 0.5) && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-              state = 'CHARGE_ATTACK';
-            } else {
-              state = 'DANCING_FORWARD';
-              timer = simulationRandom() * 0.5 + 0.25;
-            }
-          }
-        } 
-        else if (state === 'DANCING_FORWARD') {
-          const approachFeintWindow = getApproachFeintWindow({
-            timerRemaining: timer,
-            targetProtected: targetIsProtected,
-            feintEligible: feintChance > 0,
-          });
-          if (approachFeintWindow !== null && tryFeintRoll(approachFeintWindow)) {
-            state = 'DANCING_BACKWARD';
-            timer = tuning.approachFeintBackTimer;
-            commitFeint();
-            vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
-            pos.addScaledVector(vel, dt);
-          } else {
-          const forwardSpeed = feintLungeFakeout ? 6.2 : 5.0;
-          vel.copy(lookHeading).multiplyScalar(forwardSpeed * (s.settings.speedForward / 100) * sprintMult);
-          if (totalApproachLateral !== 0) {
-            vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.5);
-          }
-          pos.addScaledVector(vel, dt);
-  
-          if (target.weaponState === 'swing_up' && !targetIsProtected) {
-            state = 'DANCING_BACKWARD';
-            timer = 0.65;
-            if (dashCooldownTimer <= 0 && simulationRandom() < 0.7) {
-              dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-              dashRemaining = s.settings.dashDuration || 0.25;
-              dashCooldownTimer = s.settings.dashCooldown || 2.0;
-              sfx.playDash();
-            }
-          } else if (attackDistanceToTarget <= resolvedAiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-            state = 'CHARGE_ATTACK';
-          }
-  
-          if (targetIsProtected) {
-            state = 'DANCING_BACKWARD';
-            timer = 0.5;
-          }
-  
-          if (timer <= 0) {
-            state = 'SIDE_STEPPING';
-            timer = simulationRandom() * 0.7 + 0.3;
-          }
-          }
-        } 
-        else if (state === 'DANCING_BACKWARD') {
-          vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
-          pos.addScaledVector(vel, dt);
-  
-          if (target.weaponState === 'recovering' && attackDistanceToTarget <= (resolvedAiReach + 2.5) && !targetIsProtected) {
-            state = 'CHARGE_ATTACK';
-          }
-  
-          if (timer <= 0) {
-            state = 'SIDE_STEPPING';
-            timer = 0.4;
-          }
-        } 
-        else if (state === 'CHARGE_ATTACK') {
-          if (
-            canAttemptChargeAbortFeint({
-              targetWeaponState: target.weaponState,
-              dashCooldownRemaining: dashCooldownTimer,
-              targetProtected: targetIsProtected,
-              feintEligible: feintChance > 0,
-            }) &&
-            tryFeintRoll(0.7)
-          ) {
-            const sideDir = simulationRandom() > 0.5 ? 1 : -1;
-            dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
-            dashRemaining = s.settings.dashDuration || 0.25;
-            dashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-            state = 'SIDE_STEPPING';
-            timer = tuning.chargeAbortSidestepTimer;
-            commitFeint();
-          } else {
-          if (dashCooldownTimer <= 0 && (movementComplexity >= 40) && !targetIsProtected) {
-            dashDir.copy(lookHeading).normalize();
-            dashRemaining = s.settings.dashDuration || 0.25;
-            dashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-          }
-  
-          vel.copy(lookHeading).multiplyScalar(6.5 * (s.settings.speedForward / 100));
-          pos.addScaledVector(vel, dt);
-  
-          if (attackDistanceToTarget <= stationarySwingReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-            if (isCoordAttackBlocked()) {
-              state = 'SIDE_STEPPING';
-              timer = 0.25;
-            } else {
-            const myHP = self.hp;
-            const targetHP = target.hp;
-            const shouldAvoidTrade = shouldAvoidCoinFlipTrade({
-              difficulty,
-              playstyleFactor,
-              botHP: myHP,
-              targetHP,
-              multipliers: matchMultipliers,
-              requireTargetOnCooldown: true,
-              targetOnCooldown: isTargetOnCooldown(target),
-            });
-            const targetIsSwinging = target.weaponState === 'swing_up' || target.weaponState === 'swing_down';
-  
-            if (shouldAvoidTrade && targetIsSwinging) {
-              state = 'DANCING_BACKWARD';
-              timer = 0.6;
-              if (dashCooldownTimer <= 0) {
-                dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-                dashRemaining = s.settings.dashDuration || 0.25;
-                dashCooldownTimer = s.settings.dashCooldown || 2.0;
-                sfx.playDash();
-              }
-            } else {
-              state = 'COOLDOWN';
-              timer = resolveScaledAIWeaponReloadTime(s.settings, activeWeapon, cooldownMult);
-              triggerCombatantAttack(self, activeWeapon);
-            }
-            }
-          } else if (attackDistanceToTarget > (resolvedAiReach + 2.0) || targetIsProtected) {
-            state = 'SIDE_STEPPING';
-            timer = 0.4;
-          }
-          }
-        }
-        else if (state === 'PRESSURING') {
-          const pressureFrame = resolveAIPressureStateForCombatant({
-            state: s,
-            frame: {
-              pos,
-              vel,
-              dashDir,
-              aiState: state,
-              timer,
-              dashRemaining,
-              dashCooldownTimer,
-              weaponState,
-            },
-            botId,
-            target,
-            pressureTargetId,
-            attackDistanceToTarget,
-            resolvedAiReach,
-            maxLungeRange,
-            effectivePressureAggression,
-            lookHeading,
-            sidewayHeading,
-            totalApproachLateral,
-            dt,
-            sprintMult,
-            activeWeapon,
-            stationarySwingReach,
-            minLungeRange,
-            targetProtected: targetIsProtected,
-            canStartWeaponAction,
-            cooldownMultiplier: cooldownMult,
-            playstyleFactor,
-            clearPressureTarget,
-            isCoordAttackBlocked,
-            triggerCombatantAttack: (weapon) => triggerCombatantAttack(self, weapon),
-            playDash: () => sfx.playDash(),
-          });
-          state = pressureFrame.aiState;
-          timer = pressureFrame.timer;
-          dashRemaining = pressureFrame.dashRemaining;
-          dashCooldownTimer = pressureFrame.dashCooldownTimer;
-          weaponState = pressureFrame.weaponState;
-        }
-        else if (state === 'COOLDOWN') {
-          vel.copy(lookHeading).multiplyScalar(-1.5 * (s.settings.speedBackward / 100));
-          if (isCrouching) {
-            vel.multiplyScalar(0.45);
-          }
-          pos.addScaledVector(vel, dt);
-  
-          if (timer <= 0) {
-            state = 'SIDE_STEPPING';
-            timer = 0.7;
-          }
-        }
-  
-        // Restore vertical velocity after FSM horizontal movement calculations
-        vel.y = savedVelY;
+        const groundStateFrame = resolveAIGroundState({
+          settings: s.settings,
+          frame: { pos, vel, dashDir, aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer,
+            slideActive, slideDistanceTraveled, slideCooldownTimer, isSprinting },
+          target, botId, botHP: self.hp, pressureTargetId, distanceToTarget, attackDistanceToTarget,
+          resolvedDangerZone, resolvedAiReach, guaranteedKillRange, maxLungeRange, minLungeRange,
+          stationarySwingReach, activeWeapon, canStartWeaponAction, targetIsProtected, difficulty,
+          movementComplexity, playstyleFactor, tunedAnticipationFactor, effectiveReactionLatency,
+          effectivePressureAggression, cooldownMult, dt, swayTimer, savedVelY, lookHeading,
+          spatialLookHeading, sidewayHeading, spatialBias, totalApproachLateral, sprintMult,
+          isCrouching, feintChance, feintLungeFakeout, psychEnabled, psychState, matchMultipliers, tuning,
+          startOffensiveHammerJump: heading => startAIHammerJump(self, pos, vel, heading, 'offensive'),
+          playDash: () => sfx.playDash(), tryFeintRoll, commitFeint,
+          isTargetOnCooldown: () => isTargetOnCooldown(target), isCoordAttackBlocked, clearPressureTarget,
+          triggerCombatantAttack: weapon => triggerCombatantAttack(self, weapon),
+        });
+        ({ aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer, slideActive,
+          slideDistanceTraveled, slideCooldownTimer, isSprinting } = groundStateFrame);
       }
   
       constrainCombatantToArena(pos, vel);
