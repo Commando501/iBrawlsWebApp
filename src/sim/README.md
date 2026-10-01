@@ -39,6 +39,7 @@ engine: zero changes to the live runtime.
 | `actions.ts` | `ActionInput` per combatant — the seam that replaces keyboard/gamepad/mobile input. |
 | `scriptedObjectiveInput.ts` | Opt-in `scripted-objective-v1` grounded world steering, with explicit scripted ownership; separate from player/RL controls. |
 | `grifballSupportInput.ts` | Converts one actor's own team-plan assignment into grounded retrieval/support input; returns `null` when another controller is required. |
+| `grifballCarrierInput.ts` | Executes carrier route/hold intent from its own plan; punch/pass decisions return explicit handoffs with no executable input. |
 | `simState.ts` | `SimState` + `SimCombatant`: a plain-`Vec3`, fully serializable mirror of the live combatant, stripped of React/THREE. |
 | `factory.ts` | `createMatch({ seed, teamSizes, settings, map })` — reuses `DEFAULT_ADMIN_SETTINGS`, the Championship Stadium arena, and the pure objective modules. |
 | `physics.ts` | Port of the movement core (turn, walk/run/crouch, dash, jump/gravity, lunge flight) + reused arena/obstacle constraint. |
@@ -107,7 +108,7 @@ selection, combat movement and airborne controls are not provided by this option
 
 ## Running
 
-For opt-in support planning, refresh a caller-owned `GrifballTeamPlanState` once per frame with `createSimGrifballTacticalSnapshot` and `updateGrifballTeamPlan`, then call `resolveSimGrifballSupportInput` for the actor. Supply its returned action and `scriptedObjective` to `stepSimulation` using the same settings and timestep. Observation, planning and command generation do not mutate simulator physics. The caller owns planning memory and controller handoffs; `null` is not an autonomous idle policy. Current paired validation covers one controlled ground actor with passive participants, including retrieval, pickup handoff and escort detours. Sequential multi-actor decisions, respawn scheduling and carrier/combat controllers are not yet integrated. Existing RL actions and simulator defaults are unchanged.
+For opt-in support planning, refresh a caller-owned `GrifballTeamPlanState` once per frame with `createSimGrifballTacticalSnapshot` and `updateGrifballTeamPlan`, then call `resolveSimGrifballSupportInput` for the actor. Supply its returned action and `scriptedObjective` to `stepSimulation` using the same settings and timestep. After pickup, `resolveSimGrifballCarrierInput` returns a carrier decision plus executable movement in `input`, or `input: null` for a new punch/pass handoff. Supply the caller's own AI weapon readiness after its cooldown update; this adapter does not implement that controller clock. Observation, planning and command generation do not mutate simulator physics. The caller owns planning memory and handoffs; null is not an autonomous idle policy. Paired validation covers one controlled ground actor with passive participants, including pickup-to-goal routes and escort detours. Sequential multi-actor decisions, respawn scheduling and carrier attack/pass controllers are not yet integrated. Existing RL actions and simulator defaults are unchanged.
 
 ```bash
 # Sim unit + determinism + golden-rules tests (also part of `npm test`):

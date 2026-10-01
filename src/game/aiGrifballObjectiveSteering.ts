@@ -1,7 +1,9 @@
-import { getGrifballSpacingOffset } from './aiGrifballRoles';
+import { getGrifballSpacingOffset, getGrifballRunnerSteering } from './aiGrifballRoles';
 import { getGrifballSpaceWaypoint } from './aiGrifballSpace';
 import { selectGrifballAssignmentThreat, type FieldPoint, type GrifballAssignment, type GrifballTacticalPlayer } from './aiGrifballTeamPlan';
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
+import { resolveDirectionalSpeedMultiplier } from './runnerBallSettings';
+import type { UniversalSettings } from '../types';
 
 export interface GrifballGroundMovement {
   velocity: FieldPoint;
@@ -26,10 +28,10 @@ export function computeSpacedGroundMovement({ pos, target, spacing, arrivalRadiu
 
 /** Shared decision only. Each host integrates and constrains its own position.
  * Null delegates runner/combat behavior to the caller's existing controller. */
-export function resolveGrifballSupportSteering({ assignment, pos, allies, players, ball, heldByAnyone, separation, speed, dt }: {
+export function resolveGrifballSupportSteering({ assignment, pos, allies, players, ball, heldByAnyone, separation, speed, retrySpeed = speed, dt }: {
   assignment: GrifballAssignment | undefined; pos: FieldPoint; allies: FieldPoint[];
   players: GrifballTacticalPlayer[]; ball: FieldPoint; heldByAnyone: boolean;
-  separation: number; speed: number; dt: number;
+  separation: number; speed: number; retrySpeed?: number; dt: number;
 }): (GrifballGroundMovement & { pickupRequested: boolean }) | null {
   if (!assignment || assignment.role === 'runner' || selectGrifballAssignmentThreat(assignment, pos, players)) return null;
   const { geometry, space } = assignment;
@@ -47,10 +49,70 @@ export function resolveGrifballSupportSteering({ assignment, pos, allies, player
   if (!open()) {
     movement = { ...movement, velocity: { x: 0, z: 0 } };
     if (waypoint) {
-      const retry = computeSpacedGroundMovement({ pos, target: waypoint, spacing: { x: 0, z: 0 }, arrivalRadius: .25, speed, dt });
+      const retry = computeSpacedGroundMovement({ pos, target: waypoint, spacing: { x: 0, z: 0 }, arrivalRadius: .25, speed: retrySpeed, dt });
       movement = { ...retry, heading: retry.heading ?? movement.heading };
     }
     if (!open()) movement = { ...movement, velocity: { x: 0, z: 0 } };
   }
   return { ...movement, pickupRequested };
+}
+
+export interface GrifballCarrierDecision extends GrifballGroundMovement {
+  kind: 'move' | 'blocked' | 'committed-punch' | 'punch' | 'pass' | 'wait';
+}
+
+/** Decide carrier intent from public observations. Punch/pass commitment and all
+ * state integration remain owned by the host. Threat order breaks equal ranges. */
+export function resolveGrifballCarrierDecision({ assignment, pos, players, threats, avoidanceEnemies, goal,
+  weaponState, canStartWeaponAction, settings, dt }: {
+  assignment: GrifballAssignment | undefined; pos: FieldPoint & { y: number };
+  players: GrifballTacticalPlayer[];
+  threats: { pos: FieldPoint & { y: number }; invulnerabilityTimer?: number }[];
+  avoidanceEnemies: FieldPoint[]; goal: FieldPoint | null; weaponState: string;
+  canStartWeaponAction: boolean; settings: UniversalSettings; dt: number;
+}): GrifballCarrierDecision | null {
+  const { geometry, space } = assignment ?? {};
+  const waypoint = geometry && space ? getGrifballSpaceWaypoint(geometry, pos, space) : null;
+  const stopped = (kind: GrifballCarrierDecision['kind'], heading?: FieldPoint): GrifballCarrierDecision =>
+    ({ kind, velocity: { x: 0, z: 0 }, ...(heading ? { heading } : {}) });
+  if (space && !waypoint) {
+    if (assignment && selectGrifballAssignmentThreat(assignment, pos, players)) return null;
+    return stopped('blocked');
+  }
+  if (!goal) return null;
+  if (weaponState === 'swing_up' || weaponState === 'swing_down') return stopped('committed-punch');
+  const routeDistance = waypoint ? Math.hypot(waypoint.x - pos.x, waypoint.z - pos.z) : 0;
+  const speed = 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true);
+  const finishBeforePunch = assignment?.runner?.selected.action === 'finish' && geometry && waypoint &&
+    waypoint.x === goal.x && waypoint.z === goal.z && isSpaceSegmentOpen(geometry, pos, goal) &&
+    routeDistance / speed < (settings.hammerMeleeSpeed ?? .24);
+  const escaping = assignment?.runner && assignment.runner.selected.action !== 'wait' && waypoint && routeDistance > .1;
+  let closest: FieldPoint | undefined, distance = Infinity;
+  for (const enemy of threats) {
+    if ((enemy.invulnerabilityTimer ?? 0) > 0) continue;
+    const dx = enemy.pos.x - pos.x, dy = enemy.pos.y - pos.y, dz = enemy.pos.z - pos.z;
+    if (escaping && dx * (waypoint.x - pos.x) + dz * (waypoint.z - pos.z) < 0) continue;
+    const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (range < distance) { distance = range; closest = { x: dx, z: dz }; }
+  }
+  if (!finishBeforePunch && closest && distance <= 2.2 && canStartWeaponAction && weaponState === 'ready') return stopped('punch', closest);
+  if (assignment?.pass?.selected && canStartWeaponAction && weaponState === 'ready') return stopped('pass', assignment.pass.selected.direction);
+  if (assignment?.runner?.selected.action === 'wait') return stopped('wait');
+  const heading = assignment?.runner && waypoint
+    ? { x: (waypoint.x - pos.x) / Math.max(.001, routeDistance), z: (waypoint.z - pos.z) / Math.max(.001, routeDistance) }
+    : getGrifballRunnerSteering(pos, waypoint ?? goal, avoidanceEnemies, 8);
+  const moveSpeed = waypoint ? Math.min(speed, Math.hypot(waypoint.x - pos.x, waypoint.z - pos.z) / Math.max(dt, .001)) : speed;
+  let movement: GrifballGroundMovement = { heading, velocity: { x: heading.x * moveSpeed, z: heading.z * moveSpeed } };
+  const open = () => !geometry || isSpaceSegmentOpen(geometry, pos,
+    { x: pos.x + movement.velocity.x * dt, z: pos.z + movement.velocity.z * dt });
+  if (!open()) {
+    movement = { ...movement, velocity: { x: 0, z: 0 } };
+    if (waypoint) {
+      const retry = computeSpacedGroundMovement({ pos, target: waypoint, spacing: { x: 0, z: 0 }, arrivalRadius: .25,
+        speed: 5.2 * resolveDirectionalSpeedMultiplier(settings, 'forward', true), dt });
+      movement = { ...retry, heading: retry.heading ?? movement.heading };
+    }
+    if (!open()) movement = { ...movement, velocity: { x: 0, z: 0 } };
+  }
+  return { kind: 'move', ...movement };
 }
