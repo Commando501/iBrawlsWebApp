@@ -186,6 +186,8 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
     c.hammerJumpWindowTimer = 0;
     c.hammerJumpsInAir = 0;
+    if (c.hammerJumpPlanned !== undefined) c.hammerJumpPlanned = false;
+    delete c.hammerJumpType;
     c.passChargeTimer = 0;
     c.runnerHealDelayTimer = 0;
     c.runnerLastHp = c.hp;

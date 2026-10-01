@@ -24,6 +24,7 @@
  */
 
 import { type UniversalSettings } from '../types';
+import { applyAIHammerJumpAtImpact, startAIHammerJumpAction } from '../game/aiHammerJump';
 import { resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
 import type { ScriptedCombatCommand } from './scriptedCombatInput';
 import type { RosterMeleeHitFeedback } from './scriptedMeleeFeedback';
@@ -275,6 +276,17 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
     : strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
   const radius = c.weapon === 'ball' ? GRIFBALL_PUNCH_RADIUS : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
   const fwd = forwardDir(c.yaw);
+  const impact = c.weapon === 'hammer' && c.hammerJumpPlanned
+    ? { x: c.pos.x, y: c.pos.y + 1.2 - reach, z: c.pos.z }
+    : { x: c.pos.x + fwd.x * reach, y: c.pos.y + 1.2, z: c.pos.z + fwd.z * reach };
+  if (c.hammerJumpPlanned) {
+    const jump = { ...c, activeWeapon: c.weapon, aiHammerJumpsInAir: c.hammerJumpsInAir };
+    if (applyAIHammerJumpAtImpact(jump, settings, impact)) c.grounded = false;
+    c.isJumping = jump.isJumping; c.hammerJumpsInAir = jump.aiHammerJumpsInAir;
+    c.hammerJumpWindowTimer = jump.hammerJumpWindowTimer;
+    c.hammerJumpPlanned = jump.hammerJumpPlanned;
+    if (jump.hammerJumpType !== undefined) c.hammerJumpType = jump.hammerJumpType; else delete c.hammerJumpType;
+  }
   // Live roster impacts visit the local player before the roster, regardless of storage order.
   const victims = state.combatExecution === 'live-mixed-v1'
     ? [...state.combatants].sort((a, b) => Number(isMixedPlayer(state, b)) - Number(isMixedPlayer(state, a))) : state.combatants;
@@ -282,8 +294,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
     if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;
     const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
     const targetRadius = usesRosterLifecycle(state) ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
-    if (Math.hypot(victim.pos.x - c.pos.x - fwd.x * reach, cy - c.pos.y - 1.2,
-      victim.pos.z - c.pos.z - fwd.z * reach) <= targetRadius) {
+    if (Math.hypot(victim.pos.x - impact.x, cy - impact.y, victim.pos.z - impact.z) <= targetRadius) {
       strike(state, c, victim, settings, events);
       if (victim.hp > 0) feedback?.(c, victim);
     }
@@ -304,6 +315,10 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
   };
   const slam = resolveHammerSlamTiming(settings);
   const roster = isRosterExecution(combatExecutionForActor(state, c));
+  // Objective pickup/release can change the equipped weapon during a swing.
+  // Live roster animation samples that weapon each frame, preserving elapsed time.
+  if (roster && c.weaponState !== 'idle' && c.attackKind !== 'none' && c.attackKind !== 'swipe')
+    c.attackKind = c.weapon === 'ball' ? 'punch' : c.weapon === 'sword' ? 'slash' : 'strike';
   const swingDuration = () => c.attackKind === 'slash' ? (settings.swordSlashSpeed ?? .22) * (roster ? .5 : 1)
     : roster && c.attackKind === 'swipe' ? (settings.hammerMeleeSpeed ? settings.hammerMeleeSpeed * .4 : .1)
     : c.attackKind === 'strike' ? slam.windupTime : (settings.hammerMeleeSpeed ?? .24);
@@ -599,6 +614,29 @@ export function stepCombatantWeapons(
           const timers = resolveAIWeaponSwapTimers(settings, c.swapLockoutTimer, c.weaponReadyTimer);
           c.swapLockoutTimer = timers.lockout; c.weaponReadyTimer = timers.readiness;
           decisionReady = true;
+        } else if (command.kind === 'hammer-jump') {
+          if (!engagement || !decisionReady || c.weapon !== 'hammer') continue;
+          const jump = { id: c.id, weaponState: 'ready' as import('../types').WeaponState, weaponTimer: c.weaponPhaseElapsed ?? 0,
+            isJumping: c.isJumping, aiHammerJumpsInAir: c.hammerJumpsInAir,
+            hammerJumpPlanned: c.hammerJumpPlanned, hammerJumpType: c.hammerJumpType };
+          const started = startAIHammerJumpAction({ self: jump, settings, vel: c.vel, horizontalHeading: command.heading,
+            jumpType: command.jumpType, playSwing: () => {}, playJump: () => {}, onMainAIHammerSwing: () => {
+              // Main AI's live weapon callback checks readiness and an active dash.
+              if (c.weaponReadyTimer > 0 || c.dashRemaining > 0) return;
+              c.weaponState = 'idle';
+              stepLiveAttack(state, c, { ...action, attackPrimary: true, attackSecondary: false }, settings, 0, events, true, feedback);
+              if ((c as SimCombatant).weaponState === 'windup') jump.weaponState = 'swing_up';
+            } });
+          if (jump.hammerJumpPlanned !== undefined) c.hammerJumpPlanned = jump.hammerJumpPlanned;
+          if (jump.hammerJumpType !== undefined) c.hammerJumpType = jump.hammerJumpType; else delete c.hammerJumpType;
+          if (!started) continue;
+          // Ordinary launch sets animation directly: it does not record a new
+          // attack timestamp through the generic attack callback in production.
+          c.weaponState = 'windup'; c.attackKind = 'strike'; c.weaponPhaseElapsed = 0;
+          c.weaponTimer = resolveHammerSlamTiming(settings).windupTime;
+          c.isJumping = jump.isJumping; c.hammerJumpsInAir = jump.aiHammerJumpsInAir;
+          if (c.isJumping) c.grounded = false;
+          decisionReady = false;
         } else if (decisionReady && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee')) {
           if (command.kind === 'lunge') {
             const target = findCombatant(state, command.targetId);
@@ -812,6 +850,8 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.hammerJumpWindowTimer = 0;
   c.hammerJumpsInAir = 0;
   if (c.aiHammerJumpCooldownTimer !== undefined) c.aiHammerJumpCooldownTimer = 0;
+  if (c.hammerJumpPlanned !== undefined) c.hammerJumpPlanned = false;
+  delete c.hammerJumpType;
   c.passChargeTimer = 0;
   c.isJumping = false;
   c.isLunging = false;

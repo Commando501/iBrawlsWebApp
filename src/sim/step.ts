@@ -212,7 +212,7 @@ export function stepSimulation(
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
           dashDecision = decision.dash;
-          if (decision.commandVersion === 'scripted-combat-v3' && decision.commands?.length) engagementCommit = {};
+          if (['scripted-combat-v3', 'scripted-combat-v4'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = {};
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
             const applyMobility = () => { applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind; };

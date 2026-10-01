@@ -6,39 +6,40 @@ import { validateScriptedObjectiveInput, SCRIPTED_OBJECTIVE_INPUT_VERSION } from
 
 export type ScriptedCombatCommand = { kind: 'revert-weapon-feint' } | { kind: 'swap'; weapon: 'hammer' | 'sword' }
   | { kind: 'melee'; weapon: 'hammer' | 'sword'; swipe: boolean }
+  | { kind: 'hammer-jump'; jumpType: 'offensive' | 'defensive'; heading?: { x: number; y: number; z: number } }
   | { kind: 'lunge'; targetId: string; direction: { x: number; y: number; z: number } };
 export interface ScriptedCombatInput {
-  version: 'scripted-combat-v1' | 'scripted-combat-v2' | 'scripted-combat-v3';
+  version: 'scripted-combat-v1' | 'scripted-combat-v2' | 'scripted-combat-v3' | 'scripted-combat-v4';
   scriptedBots: Readonly<Record<string, string>>;
   commands: Readonly<Record<string, readonly ScriptedCombatCommand[]>>;
 }
 
-/** V3 is available only at a scheduled actor's prepared engagement boundary. */
+/** V3/v4 are available only at a scheduled actor's prepared engagement boundary. */
 export interface ScriptedCombatEngagementContext {
   actorId: string;
   mobility: boolean;
   dash: boolean;
 }
 
-/** V1/v2 ground-AI and v3 prepared-engagement actuation, after caller-owned
+/** V1/v2 ground-AI and v3/v4 prepared-engagement actuation, after caller-owned
  * decision/reload arbitration. This
  * packet does not grant control to player/RL owners. Reject the whole packet
  * before any engine mutation, including malformed commands for later actors. */
 export function validateScriptedCombatInput(state: SimState, input: ScriptedCombatInput | undefined,
   actions: ActionsById, settings: UniversalSettings, engagement?: ScriptedCombatEngagementContext) {
   if (!input) return undefined;
-  const prepared = input.version === 'scripted-combat-v3';
+  const prepared = input.version === 'scripted-combat-v3' || input.version === 'scripted-combat-v4';
   if (input.version !== 'scripted-combat-v1' && input.version !== 'scripted-combat-v2' && !prepared) throw new Error('Unsupported scripted combat input version');
   if (prepared) {
     if (!engagement || state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
       Object.keys(input.commands).length !== 1 || !Object.hasOwn(input.commands, engagement.actorId))
-      throw new Error('Scripted combat v3 requires one scheduled prepared engagement');
+      throw new Error('Scripted engagement combat requires one scheduled prepared engagement');
     const actors = state.combatants.filter(c => c.id === engagement.actorId), actor = actors[0];
     if (actors.length !== 1 || actor.id === state.localPlayerId || actor.controller !== 'ai' ||
       !Object.hasOwn(input.scriptedBots, actor.id) || isNeuralNetDifficulty(input.scriptedBots[actor.id]) ||
       isNeuralNetDifficulty(state.settings.aiDifficulty) || isNeuralNetDifficulty(settings.aiDifficulty) ||
       !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 || actor.isLunging)
-      throw new Error('Scripted combat v3 requires an active armed AI engagement');
+      throw new Error('Scripted engagement combat requires an active armed AI engagement');
   } else {
     const movement = Object.fromEntries(Object.keys(input.commands).map(id => [id, { x: 0, z: 0 }]));
     validateScriptedObjectiveInput(state, { version: SCRIPTED_OBJECTIVE_INPUT_VERSION, scriptedBots: input.scriptedBots, movement }, actions, settings);
@@ -63,6 +64,12 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
           if (typeof command.swipe !== 'boolean' || command.swipe && command.weapon !== 'hammer') throw new Error(`Invalid scripted swipe: ${id}`);
           attacked = true;
         }
+      } else if (command.kind === 'hammer-jump') {
+        if (input.version !== 'scripted-combat-v4' || engagement!.mobility ||
+          !['offensive', 'defensive'].includes(command.jumpType) ||
+          command.heading && ![command.heading.x, command.heading.y, command.heading.z].every(Number.isFinite))
+          throw new Error(`Invalid or conflicting scripted hammer jump: ${id}`);
+        attacked = true;
       } else if (command.kind === 'lunge') {
         if (prepared && (engagement!.mobility || engagement!.dash || actor.dashRemaining > 0 || actor.slideActive))
           throw new Error(`Scripted lunge cannot share an evasion movement owner: ${id}`);
@@ -77,7 +84,8 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
       } else throw new Error(`Unknown scripted combat command: ${id}`);
     }
     validated[id] = commands.map(command => command.kind === 'lunge'
-      ? { ...command, direction: { ...command.direction } } : { ...command });
+      ? { ...command, direction: { ...command.direction } }
+      : command.kind === 'hammer-jump' && command.heading ? { ...command, heading: { ...command.heading } } : { ...command });
   }
   return validated;
 }

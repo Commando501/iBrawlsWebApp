@@ -123,6 +123,9 @@ export interface SimCombatant {
   hammerJumpsInAir: number;
   /** Optional scripted-AI recovery clock, created by runaway-altitude recovery. */
   aiHammerJumpCooldownTimer?: number;
+  /** Opt-in scheduled main-AI commitment, consumed at roster hammer impact. */
+  hammerJumpPlanned?: boolean;
+  hammerJumpType?: 'offensive' | 'defensive';
 
   // Grifball pass charge: held to wind up a throw (`grifballChargeMax`).
   passChargeTimer: number;
