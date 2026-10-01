@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, validateOpeningCombatCredit, validateOpeningPossession, validateMainJumpCommitments } from './grifballOpposedDecisionIntegration';
+import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, validateOpeningCombatCredit, validateOpeningPossession, validateOpeningRecovery, validateMainJumpCommitments } from './grifballOpposedDecisionIntegration';
 
 test('late main jump retains a verifiable commitment without inventing an impact', () => {
   const requests = [{ tick: 299, accepted: true }], dt = 1 / 60;
@@ -96,3 +96,44 @@ for (const mode of ['punch-first', 'hammer-first', 'contested'] as const) {
     assert.deepEqual(runOpposedDecisionTrace(spec), runOpposedDecisionTrace(spec));
   });
 }
+
+for (const recoveryId of ['defender', 'escort']) test('opening recovery validates the actual carrier: ' + recoveryId, () => {
+  const opponent = recoveryId === 'defender' ? 'escort' : 'defender';
+  const input = { defenderId: 'defender', contested: true, requireImpact: true, dropTick: 8,
+    pickups: [{ tick: 15, id: recoveryId }],
+    impacts: [{ tick: 150, id: opponent, victims: [recoveryId] }],
+    targetLookups: [{ tick: 143, id: opponent, target: recoveryId }],
+    frames: Array.from({length:150}, (_, index) => ({ tick:index+1, ball:{holderId:index>=14?recoveryId:null},
+      actors: [{id:'carrier',team:'blue',hp:0},{id:'escort',team:'blue',hp:1},{id:'defender',team:'red',hp:1}] })) };
+  assert.deepEqual(validateOpeningRecovery(input), []);
+  for (const defect of ['missing-drop','fractional-drop','missing-pickup','before-drop','late-pickup','fractional-pickup','wrong-owner',
+    'dead-carrier','wrong-holder','missing-target','friendly-target','dead-opponent','target-before-pickup',
+    'target-after-window','target-without-possession','missing-impact','wrong-victim','friendly-impact',
+    'impact-before-pickup','impact-after-window','missing-frame']) {
+    const broken = structuredClone(input);
+    if (defect === 'missing-drop') broken.dropTick=0;
+    if (defect === 'fractional-drop') broken.dropTick=8.5;
+    if (defect === 'missing-pickup') broken.pickups=[];
+    if (defect === 'before-drop') broken.pickups[0].tick=8;
+    if (defect === 'late-pickup') broken.pickups[0].tick=151;
+    if (defect === 'fractional-pickup') broken.pickups[0].tick=15.5;
+    if (defect === 'wrong-owner') broken.pickups[0].id='carrier';
+    if (defect === 'dead-carrier') broken.frames[14].actors.find(a=>a.id===recoveryId)!.hp=0;
+    if (defect === 'wrong-holder') broken.frames[14].ball.holderId=null;
+    if (defect === 'missing-target') broken.targetLookups=[];
+    if (defect === 'friendly-target') broken.targetLookups[0].id=recoveryId;
+    if (defect === 'dead-opponent') broken.frames[141].actors.find(a=>a.id===opponent)!.hp=0;
+    if (defect === 'target-before-pickup') broken.targetLookups[0].tick=15;
+    if (defect === 'target-after-window') broken.targetLookups[0].tick=151;
+    if (defect === 'target-without-possession') broken.frames[141].ball.holderId=null;
+    if (defect === 'missing-impact') broken.impacts=[];
+    if (defect === 'wrong-victim') broken.impacts[0].victims=['carrier'];
+    if (defect === 'friendly-impact') broken.impacts[0].id=recoveryId;
+    if (defect === 'impact-before-pickup') broken.impacts[0].tick=15;
+    if (defect === 'impact-after-window') broken.impacts[0].tick=151;
+    if (defect === 'missing-frame') broken.frames.splice(148,1);
+    assert.ok(validateOpeningRecovery(broken).length, defect);
+  }
+  assert.deepEqual(validateOpeningRecovery({...input, requireImpact:false, impacts:[]}), []);
+  assert.ok(validateOpeningRecovery({...input, requireImpact:false, targetLookups:[]}).length);
+});

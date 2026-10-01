@@ -649,14 +649,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('winner survives', winner.deaths, 0);
     check('first impact owner', impacts[0]?.id, winner.id);
     check('first impact victim', JSON.stringify(impacts[0]?.victims), JSON.stringify([loser.id]));
-    // Removing cosmetic dash draws changes seed 6's forward mobility opening:
-    // the defender commits on tick 3 instead of tick 2. Keep an exact golden
-    // boundary and separately require the full configured attack duration.
+    // The goal-side counter can commit on the first frame. Require prompt
+    // commitment and the full configured windup instead of a historical tick.
     const firstCommitment = attacks.find(a => a.id === winner.id);
+    check('opening commitment within three frames', !!firstCommitment && firstCommitment.tick >= 1 && firstCommitment.tick <= 3, true);
     check('first impact follows full commitment', impacts[0]?.tick,
       (firstCommitment?.tick ?? -100) + (punchWins ? 4 : 7));
-    check('first impact timing', impacts[0]?.tick,
-      punchWins ? 5 : spec.reverse ? 8 : mobility && spec.seed === 6 ? 10 : 9);
     check('loser commitment cancelled on death', impacts.some(i => i.id === loser.id), false);
     check('no post-death attack', attacks.some(a => a.id === loser.id && a.tick > impacts[0]?.tick), false);
     check('dead actor respawn clock advances once', Math.abs(loser.respawnTimer - (3 - (150 - (impacts[0]?.tick ?? 0)) / 60)) < 1e-9, true);
@@ -671,23 +669,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       check('runner retains possession', state.grifball.ball.holderId, carrierId);
       check('runner resumes route', carrier.pos.x * sign > 5, true);
     } else {
-      const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
-      check('expected recovery owner', pickups[0]?.id, recoveryId);
-      // Target-loss cancellation no longer restores a stale airborne dash. The
-      // two-actor winner therefore reaches recovery one/two frames earlier;
-      // physical pickup range, ownership and credit are independently checked.
-      check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 51 : 106);
-      if (spec.mode === 'contested') {
-        const followups = impacts.filter(i => i.victims.includes('escort'));
-        // The fixed opening/match fixtures require a follow-up hit. Mobility
-        // seeds may evade it; hostile targeting remains mandatory below, and
-        // all observed impacts/deaths still undergo the same accounting.
-        if (!mobility) check('opponent contests new runner', followups.length >= 1, true);
-        check('escort survival or lethal follow-up accounted for', state.otherPlayers.get('escort')!.hp > 0 ||
-          carrierDeaths.some(d => d.id === 'escort' && followups.some(i => i.tick === d.tick)), true);
-        check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
-        check('new carrier targeted autonomously', targetLookups.some(t => t.id === defender.id && t.target === 'escort' && t.tick > (pickups[0]?.tick ?? 150)), true);
-      }
+      for (const failure of validateOpeningRecovery({ defenderId: defender.id,
+        contested: spec.mode === 'contested', requireImpact: !mobility, dropTick,
+        frames, pickups, impacts, targetLookups })) check(failure, false, true);
+      if (spec.mode === 'contested') check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
     }
   }
   if (rosterContest) check('tactical configuration preserved', JSON.stringify(state.grifballTactics), tacticsBefore);
@@ -751,5 +736,40 @@ export function validateOpeningCombatCredit(
     if (actor.kills !== (credits.get(actor.id) ?? 0)) failures.push(`credited lethal impacts: ${actor.id}`);
     if (actor.deaths !== deaths.filter(d => d.id === actor.id).length) failures.push(`recorded deaths: ${actor.id}`);
   }
+  return failures;
+}
+
+/** Either contender may earn recovery. Prove the subsequent hostile response
+ * against the actual living carrier while it holds the ball, within the same
+ * 150-frame opening. Physical pickup, possession and death credit are checked
+ * independently by the frame coordinator and the other opening validators. */
+export function validateOpeningRecovery(input: {
+  defenderId: string; contested: boolean; requireImpact: boolean; dropTick: number;
+  frames: readonly { tick: number; ball: { holderId: string | null }; actors: readonly { id: string; team?: string; hp: number }[] }[];
+  pickups: readonly { tick: number; id: string }[];
+  impacts: readonly { tick: number; id: string; victims: readonly string[] }[];
+  targetLookups: readonly { tick: number; id: string; target: string }[];
+}) {
+  const failures: string[] = [], recovery = input.pickups[0];
+  if (!Number.isInteger(input.dropTick) || input.dropTick <= 0 || !recovery || !Number.isInteger(recovery.tick) || recovery.tick <= input.dropTick || recovery.tick > 150 ||
+    ![input.defenderId, ...(input.contested ? ['escort'] : [])].includes(recovery.id))
+    return ['opening requires timely recovery by a surviving contender'];
+  const frames = new Map(input.frames.map(f => [f.tick, f]));
+  const recovered = frames.get(recovery.tick);
+  if (recovered?.ball.holderId !== recovery.id || !recovered.actors.some(a => a.id === recovery.id && a.hp > 0))
+    failures.push('recovery belongs to the observed living carrier');
+  if (!input.contested) return failures;
+  const hostileResponse = (tick: number, id: string, target: string) => {
+    // Pre-impact frame avoids treating lethal follow-up damage as a dead target.
+    const frame = frames.get(tick - 1);
+    const actor = frame?.actors.find(a => a.id === id), carrier = frame?.actors.find(a => a.id === recovery.id);
+    return Number.isInteger(tick) && tick > recovery.tick && tick <= 150 && target === recovery.id &&
+      frame?.ball.holderId === recovery.id && !!actor && !!carrier && actor.hp > 0 && carrier.hp > 0 &&
+      !!actor.team && !!carrier.team && actor.team !== carrier.team;
+  };
+  if (!input.targetLookups.some(t => hostileResponse(t.tick, t.id, t.target)))
+    failures.push('new carrier targeted autonomously by a living opponent');
+  if (input.requireImpact && !input.impacts.some(i => i.victims.includes(recovery.id) && hostileResponse(i.tick, i.id, recovery.id)))
+    failures.push('opponent contests the actual new runner');
   return failures;
 }
