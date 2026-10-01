@@ -18,13 +18,16 @@ test('state streaming flushes the final batch and fails closed on transfer error
   const plan = await createSuitePlan(manifest, { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] });
   const job = { ...plan.jobs[0], watchdogSeconds: 10 };
   const result = failedTrial(job, 'scenario-complete', 'Synthetic completed driver fixture');
-  let count = 65;
+  let count = 65, ignoreReadiness = false;
   const server = createServer((_req, res) => {
     res.setHeader('Content-Type', 'text/html');
     res.end(`<!doctype html><h1>State transfer fixture</h1><script>
       window.__grifballValidation={version:1,buildId:'fixture',prepare:async()=>[],progress:()=>null,cancel:()=>{},
-      observeState:observer=>{window.observer=observer},runJob:async()=>{
-        for(let tick=0;tick<${count};tick++) window.observer(JSON.stringify({frame:{tick}}));
+      observeState:(observer,canAdvance)=>{window.observer=observer;window.canAdvance=canAdvance},runJob:async()=>{
+        for(let tick=0;tick<${count};tick++) {
+          while(!${ignoreReadiness} && window.canAdvance && !window.canAdvance()) await new Promise(resolve=>setTimeout(resolve,0));
+          window.observer(JSON.stringify({frame:{tick}}));
+        }
         return ${JSON.stringify(result)};
       }};</script>`);
   });
@@ -32,17 +35,28 @@ test('state streaming flushes the final batch and fails closed on transfer error
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
-    for (const mode of ['complete', 'rejected', 'overflow']) await t.test(mode, async () => {
-      count = mode === 'overflow' ? 3900 : 65;
+    for (const mode of ['complete', 'slow-consumer', 'rejected', 'overflow', 'stalled-consumer']) await t.test(mode, async () => {
+      count = mode === 'overflow' ? 3900 : mode.endsWith('consumer') ? 6005 : 65;
+      ignoreReadiness = mode === 'overflow';
       const batches: string[][] = [];
-      const actual = await runBrowserJob(browser, origin, 'fixture', plan, job, directory, new AbortController().signal, states => {
+      let active = 0, maximumActive = 0;
+      const actual = await runBrowserJob(browser, origin, 'fixture', plan,
+        { ...job, watchdogSeconds: mode === 'stalled-consumer' ? 2 : job.watchdogSeconds }, directory, new AbortController().signal, async states => {
         if (mode === 'rejected') throw new Error('Injected state transfer rejection');
+        active++; maximumActive = Math.max(maximumActive, active);
+        if (mode === 'stalled-consumer') await new Promise<void>(() => {});
+        if (mode === 'slow-consumer') await new Promise(resolve => setTimeout(resolve, 5));
         batches.push(states);
+        active--;
       });
-      if (mode === 'complete') {
+      if (mode === 'complete' || mode === 'slow-consumer') {
         assert.equal(actual.check.verdict, 'pass');
-        assert.deepEqual(batches.map(batch => batch.length), [60, 5]);
-        assert.deepEqual(batches.flat().map(state => JSON.parse(state).frame.tick), Array.from({ length: 65 }, (_, i) => i));
+        assert.deepEqual(batches.map(batch => batch.length), [...Array(Math.floor(count / 60)).fill(60), 5]);
+        assert.deepEqual(batches.flat().map(state => JSON.parse(state).frame.tick), Array.from({ length: count }, (_, i) => i));
+        assert.ok(maximumActive <= 64, 'flow control must retain the existing bound');
+      } else if (mode === 'stalled-consumer') {
+        assert.equal(actual.termination, 'watchdog');
+        assert.ok(maximumActive <= 64);
       } else {
         assert.equal(actual.check.verdict, 'fail');
         assert.match(actual.check.summary, mode === 'rejected' ? /transfer rejection/ : /bounded transfer backlog/);

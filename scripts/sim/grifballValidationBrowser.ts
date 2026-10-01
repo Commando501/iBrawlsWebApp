@@ -82,7 +82,13 @@ export async function runBrowserJob(browser: Browser, origin: string, buildId: s
             .finally(() => pending.delete(transfer));
           pending.add(transfer);
         } };
-        scope.__grifballValidation.observeState(state => { buffer.push(state); if (buffer.length === 60) queue.flush(); });
+        scope.__grifballValidation.observeState(
+          state => { buffer.push(state); if (buffer.length === 60) queue.flush(); },
+          () => {
+            if (failure) throw new Error(failure);
+            return pending.size < 64;
+          },
+        );
         scope.__grifballFlushState = async () => {
           queue.flush(); await Promise.all(pending);
           if (failure) throw new Error(failure);

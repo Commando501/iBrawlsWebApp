@@ -6,7 +6,7 @@ import { createSuitePlan } from '../../game/grifballValidation/plan';
 import { simulationRandom } from '../../game/simulationRandom';
 import { tickGrifballMatch, resolveMatchConfig, registerGoal } from '../../game/grifballMatch';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
-import { GrifballValidationRuntime } from './grifballValidationRuntime';
+import { GrifballValidationRuntime, type ValidationRuntimePort } from './grifballValidationRuntime';
 import { createInitialGrifballRuntimeState, type GrifballRuntimeState } from './runtimeState';
 import { cloneLabState } from './grifballTrialSetup';
 import { updateAIRosterTick } from './aiRosterTick';
@@ -19,7 +19,8 @@ import { assertDecisionTrace } from '../../game/grifballValidation/decisionTrace
 import type { ValidationLocalInput } from '../../game/grifballValidation/localPlayerInput';
 
 async function setup(roster: 'scripted-1v1' | 'scripted-3v4' | 'scripted-4v4' | 'local-4v4' | 'scenario' = 'scripted-1v1', mirrored = false,
-  tick?: (s: GrifballRuntimeState, dt: number) => void, seconds = 1, localAdapter = true) {
+  tick?: (s: GrifballRuntimeState, dt: number) => void, seconds = 1, localAdapter = true,
+  observation: Pick<ValidationRuntimePort, 'observeState' | 'canAdvance'> = {}) {
   const manifest = createSuiteManifest(roster === 'scenario' ? 'quick' : 'standard');
   manifest.cases = [manifest.cases.find(c => roster === 'scenario' ? c.scenario === 'pickup' : c.roster === (roster === 'local-4v4' ? 'scripted-3v4' : roster))!];
   if (roster === 'local-4v4') manifest.cases[0].roster = roster;
@@ -32,7 +33,7 @@ async function setup(roster: 'scripted-1v1' | 'scripted-3v4' | 'scripted-4v4' | 
   const runtime = new GrifballValidationRuntime({ state, resetControls: () => {}, removeActor: id => { meshes.delete(id); },
     provisionActor: p => { meshes.set(p.id, { group: new THREE.Group() }); }, hasActorMesh: id => meshes.has(id),
     ...(localAdapter ? { applyLocalInput: (input: ValidationLocalInput) => { inputs.push(input); } } : {}),
-    tick: dt => { calls++; tick?.(state, dt); } }, plan.cases[0], job);
+    tick: dt => { calls++; tick?.(state, dt); }, ...observation }, plan.cases[0], job);
   return { runtime, state, origin, meshes, calls: () => calls, fixture: plan.cases[0], inputs };
 }
 
@@ -164,6 +165,62 @@ test('decision diagnostics retain opening and recent event context without live 
   [...state.otherPlayers.values()][0].pos.x = 999;
   runtime.dispose();
   assert.equal(JSON.stringify(trace), captured);
+});
+
+test('transport backpressure preserves inputs, state, seeded draws and exact replay hashes', async () => {
+  const results = [];
+  for (const stalled of [false, true]) {
+    let ready = !stalled;
+    const states: string[] = [], draws: number[] = [];
+    const { runtime, state, calls, inputs } = await setup('local-4v4', false, (s, dt) => {
+      s.gameTime -= dt;
+      draws.push(simulationRandom());
+    }, 1, true, { observeState: value => states.push(value), canAdvance: () => ready });
+    try {
+      const initial = cloneLabState(state);
+      if (stalled) {
+        for (let i = 0; i < 100; i++) runtime.step();
+        assert.equal(calls(), 0); assert.equal(inputs.length, 0); assert.equal(states.length, 1);
+        assert.deepEqual(state, initial);
+      }
+      for (let tick = 0; tick < 60; tick++) {
+        ready = true; runtime.step();
+        if (stalled) {
+          ready = false;
+          for (let i = 0; i < 10; i++) runtime.step();
+          assert.equal(calls(), tick + 1);
+        }
+      }
+      const result = await runtime.done;
+      assert.equal(result.end?.tick, 60);
+      assert.equal(result.simulationCost.samples, 60);
+      results.push({ states, draws, inputs, deterministic: result.deterministic });
+    } finally { runtime.dispose(); }
+  }
+  assert.deepEqual(results[1], results[0]);
+});
+
+test('a failed transport readiness check fails the trial before another tick', async () => {
+  const { runtime, calls } = await setup('scenario', false, undefined, 1, true,
+    { canAdvance: () => { throw new Error('Injected transfer failure'); } });
+  try {
+    runtime.step();
+    const result = await runtime.done;
+    assert.equal(result.termination, 'invalid-state');
+    assert.match(result.check.summary, /Injected transfer failure/);
+    assert.equal(calls(), 0); assert.equal(result.end?.tick, 0);
+  } finally { runtime.dispose(); }
+});
+
+test('a backpressured trial can still be cancelled without advancing', async () => {
+  const { runtime, calls } = await setup('scenario', false, undefined, 1, true,
+    { canAdvance: () => false });
+  try {
+    runtime.step(); runtime.stop('cancelled');
+    const result = await runtime.done;
+    assert.equal(result.termination, 'cancelled');
+    assert.equal(calls(), 0); assert.equal(result.end?.tick, 0);
+  } finally { runtime.dispose(); }
 });
 
 test('simulation cap remains unfinished and no ticks occur after stopping', async () => {

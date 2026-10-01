@@ -38,6 +38,7 @@ function ValidationPage() {
   }, []);
   const busyRef = useRef(false), preparedRef = useRef<SuitePlan | null>(null);
   const stateObserverRef = useRef<((canonicalState: string) => void) | null>(null);
+  const stateCanAdvanceRef = useRef<(() => boolean) | undefined>(undefined);
   const progressRef = useRef<SuiteProgress | null>(null);
   const execute = async (plan: SuitePlan, jobId?: string) => {
     if (busyRef.current) throw new Error('A validation job is already running');
@@ -52,6 +53,7 @@ function ValidationPage() {
           signal.addEventListener('abort', cancel, { once: true });
           setMounted({ fixture, job,
             observeState: stateObserverRef.current ?? undefined,
+            canAdvance: stateCanAdvanceRef.current,
             onReady: handle => { signal.removeEventListener('abort', cancel); resolve(handle); },
             onError: err => { signal.removeEventListener('abort', cancel); reject(err); },
           });
@@ -82,9 +84,10 @@ function ValidationPage() {
         if (output.results.length !== 1) throw new Error('Job produced no result');
         return output.results[0];
       },
-      observeState(observer) {
+      observeState(observer, canAdvance) {
         if (busyRef.current) throw new Error('Cannot change state observer during a trial');
         stateObserverRef.current = observer;
+        stateCanAdvanceRef.current = observer ? canAdvance : undefined;
       },
       progress: () => progressRef.current,
       cancel: () => abortRef.current?.abort(),

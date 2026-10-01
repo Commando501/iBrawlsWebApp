@@ -744,6 +744,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         validationRuntimeRef.current = new GrifballValidationRuntime({
           state: stateRef.current,
           observeState: validationTrial.observeState,
+          canAdvance: validationTrial.canAdvance,
           tick: dt => validationTickRef.current(dt),
           resetControls: () => {
             keysPressed.current = {}; isMouseDown.current = false;

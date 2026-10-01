@@ -22,6 +22,7 @@ export interface GrifballGameProps {
   validationTrial?: {
       fixture: FrozenCase; job: ValidationJob;
       observeState?: (canonicalState: string) => void;
+      canAdvance?: () => boolean;
     onReady: (handle: TrialHandle) => void; onError: (error: Error) => void;
   };
   isPlaying: boolean;

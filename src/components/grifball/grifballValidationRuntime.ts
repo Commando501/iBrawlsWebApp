@@ -26,6 +26,8 @@ export interface ValidationRuntimePort {
   applyLocalInput?: (input: ValidationLocalInput) => void;
   /** Opt-in validation diagnostics; receives immutable serialized state, never live objects. */
   observeState?: (canonicalState: string) => void;
+  /** Validation transport readiness; waiting must not advance clocks, inputs or RNG. */
+  canAdvance?: () => boolean;
 }
 const MAX_TRACE = 512;
 function frame(state: GrifballRuntimeState, tick: number): TrialFrame {
@@ -299,6 +301,7 @@ export class GrifballValidationRuntime implements TrialHandle {
   step() {
     if (this.result) return;
     try {
+      if (this.port.canAdvance?.() === false) return;
       this.stage = 'before-tick'; this.checkInvariants(); this.port.resetControls();
       const started = performance.now(), playingBefore = this.port.state.grifball.phase === 'playing';
       this.stage = 'tick';
