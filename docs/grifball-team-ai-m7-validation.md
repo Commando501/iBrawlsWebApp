@@ -2612,3 +2612,21 @@ Focused checks pass **102/102** in **7.20 seconds** (output/m7-relative-height-f
 This establishes the nine declared relative-height profiles. Autonomous movement choices, broader carrier/player groups, full mixed execution across maps, held-out quality and calibrated performance remain open. The combined source-recorded v70 run still predates v71/v72; it cannot certify their additions.
 
 TypeScript initially rejects passing a wrapper's scenario shape to the independent validator. Its signature now requests only the frame history it reads, with the authored specification supplied separately. Final TypeScript passes (output/m7-relative-height-typecheck-final.log). Optional vertical metadata is omitted from unchanged planar traces; the final affected-file checks pass **385/385** in **12.62 seconds** (output/m7-relative-height-metadata-final.log).
+
+## 2026-10-01 — combined v70 acceptance finishes without reproduced defects
+
+The source-recorded combined run completes with **14/14 tests passing** in **1,418.09 seconds**, exit **0** (output/m7-finish-combined-aggregate.log). Its execution report records **0/9,819 action/objective differences**, **0/696 live-decision failures**, **0/92 map-mobility failures**, and zero missing dash, revival-attack, jump or post-reset passing groups. The landing/death boundary and Winter finish interruption are resolved in this combined run. The execution gate remains **inconclusive** because four declared coverage gaps remain. Legacy compatibility differences are retained as expected diagnostics; legacy training dynamics are not certified.
+
+This is protocol v70 evidence from commit 010e518a7d9233185a1ca3605e9a7bdfe6d3289c, working-tree hash 667fa54d00bfa9035fd65d4d2f83f1c81a8d2b670de40d6c6fa2d87699a5e67e, Node v20.19.1, 8 GiB heap. Report: output/m7-finish-combined-aggregate/gates/execution-parity.json; SHA-256 51d7098307597c98829b1a78d45d306c872b63e853f8183f6e497aa535fe2e9f. The report predates v71–v73 and does not certify their added matrices.
+
+## 2026-10-01 — v73 airborne carrier under committed focus fire
+
+Protocol **live-functions-vs-headless-step-v73** adds **48 encounters / 5,760 frames**: four existing runner/primary-attacker airborne profiles, grounded support using slash or lunge, one/two/three carrier HP and both roster orders. The mirrored order also uses main_ai as the primary attacker. Local movement is authored as retreat, cross or approach by profile; the carrier does not counter. The shared frame fixture now permits the second attacker during these airborne cases without changing either gameplay engine.
+
+An independent oracle derives ballistic movement, sampled three-dimensional flight contact, slash geometry, attack-phase order, lethal cancellation, possession, health, weapon cleanup, sole kill credit and every participant's position for all 120 ticks. A rising carrier receives slash damage on tick four and flight damage on tick six. An overhead primary can miss while grounded support lands a hit. Snapshot restoration crosses commitment, early damage, delayed flight contact and death.
+
+Focused tests pass **90/90** in **7.01 seconds**, including twenty-four continuations, three exact repeats, ten matching-corruption controls and full-history evidence compaction (output/m7-airborne-focus-focused.log). Shared frame, local/AI focus, airborne runner and evidence checks pass **812/812** in **12.00 seconds** (output/m7-airborne-focus-final.log). The aggregate now retains **256 focus-fire encounters / 30,720 frames**. Both repository test commands include the new tests.
+
+These cases establish the declared authored two-second encounters only. They do not certify arbitrary trajectories, autonomous steering/counters, revival or complete mixed matches. The four broad execution gaps, held-out quality, calibrated final-source performance and final repository/UI acceptance remain open. No browser behavior changes in this slice.
+
+TypeScript initially exhausted its default 4 GiB heap; the unchanged check passes with the established 8 GiB limit (output/m7-airborne-focus-typecheck-final.log).

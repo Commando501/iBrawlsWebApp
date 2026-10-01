@@ -33,8 +33,8 @@ export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; picku
 export interface RunnerCombatCase { airborne?: { runnerHeight: number; runnerVelocityY: number; attackerHeight: number; attackerVelocityY: number }; secondAttack?: 'slash' | 'lunge'; motion?: 'retreat' | 'cross' | 'approach'; mainAttacker?: boolean; mainRunner?: boolean; attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
 export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase, crowd?: CarrierCrowdCase, runnerCombat?: RunnerCombatCase) {
   if (runnerCombat && (spec.goal || charge || crowd)) throw new Error('Runner combat requires an off-goal runner');
-  if (runnerCombat?.airborne && (!spec.player || runnerCombat.attack !== 'lunge' || runnerCombat.counter || runnerCombat.secondAttack))
-    throw new Error('Airborne runner flight requires one committed attacker and local movement without a counter');
+  if (runnerCombat?.airborne && (!spec.player || runnerCombat.attack !== 'lunge' || runnerCombat.counter))
+    throw new Error('Airborne runner flight requires a committed lunge and local movement without a counter');
   if (crowd && (charge || spec.goal)) throw new Error('Carrier crowd fixture requires an off-goal runner without pass input');
   if (crowd?.recovery?.motion && crowd.recovery.motion !== 'stationary' && !spec.player) throw new Error('Moving recovery requires a local player runner');
   if (runnerCombat?.mainRunner && (spec.player || runnerCombat.mainAttacker)) throw new Error('Main runner requires a distinct roster attacker');
