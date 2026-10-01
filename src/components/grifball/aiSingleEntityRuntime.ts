@@ -1,6 +1,6 @@
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
 import * as THREE from 'three';
-import { type AILungeOutcome } from '../../game/aiCombatDecision';
+import { resolveAICombatDangerZone, type AILungeOutcome } from '../../game/aiCombatDecision';
 import {
   getPincerApproachOffset,
   registerBotEngagement,
@@ -766,7 +766,7 @@ export function createAISingleEntityUpdaterForState({
       yaw = targetYaw;
       botMesh.rotation.y = yaw;
   
-      const playerDangerZone = s.settings.attackRange + s.settings.attackRadius * 0.85;
+      const playerDangerZone = resolveAICombatDangerZone(s.settings, target.activeWeapon);
       const aiReach = s.settings.attackRange + s.settings.attackRadius * 0.75;
   
       // Playstyle combat spacing adjustments

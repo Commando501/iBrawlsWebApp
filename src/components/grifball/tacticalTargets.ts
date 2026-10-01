@@ -3,7 +3,6 @@ import { getCoordinatedTargetBonus } from '../../game/aiBotCoordinator';
 import { getTargetEdgeSelectionBonus } from '../../game/aiSpatialStrategy';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import { MAIN_AI_ID } from '../../game/roster';
-import { ballAsHammer } from '../../game/weaponCompat';
 import { type AIResolvedKnobs, type DerivedAIParams } from '../../game/aiTuning';
 import { type Combatant } from '../../types';
 import { type TacticalTargetCandidate } from './combatGeometry';
@@ -19,8 +18,9 @@ export const isTacticalTargetOnCooldown = (
 ): boolean => {
   const s = state;
   if (target.id === 'player') {
-    if (s.activeWeapon === 'hammer') {
-      return s.pWeaponState === 'recovering' || s.pWeaponState === 'swing_up' || s.pWeaponState === 'swing_down';
+    if (s.activeWeapon === 'hammer' || s.activeWeapon === 'ball') {
+      return s.pWeaponState === 'recovering' || s.pWeaponState === 'swing_up' || s.pWeaponState === 'swing_down' ||
+        (s.activeWeapon === 'ball' && s.isLunging);
     }
     return s.pSwordState === 'recovering' || s.pSwordState === 'slashing' || s.isLunging;
   }
@@ -67,8 +67,8 @@ export const buildPotentialTacticalTargets = (
       hp: s.playerHP,
       maxHp: s.playerMaxHP,
       invulnerabilityTimer: s.playerInvulnerabilityTimer,
-      activeWeapon: s.activeWeapon as TacticalTargetCandidate['activeWeapon'],
-      weaponState: s.activeWeapon === 'hammer' ? s.pWeaponState : s.pSwordState,
+      activeWeapon: s.activeWeapon,
+      weaponState: s.activeWeapon === 'hammer' || s.activeWeapon === 'ball' ? s.pWeaponState : s.pSwordState,
       isLunging: s.isLunging,
       dashCooldownRemaining: s.playerDashCooldownTimer,
       swapLockoutRemaining: s.swapLockoutTimer,
@@ -87,13 +87,16 @@ export const buildPotentialTacticalTargets = (
         hp: other.hp,
         maxHp: other.maxHp,
         invulnerabilityTimer: other.invulnerabilityTimer || 0,
-        activeWeapon: ballAsHammer(other.activeWeapon),
+        activeWeapon: other.activeWeapon ?? 'hammer',
         // Decision backoff starts when an attack is committed, before its
         // windup/impact. Keep that mechanical phase visible to opponents.
         weaponState: other.weaponState && other.weaponState !== 'ready'
           ? other.weaponState
           : other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : 'ready',
-        isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
+        // Punch animation shares hammer phase names but is not a lunge. Keep
+        // an actual lunge visible if possession changed during its movement.
+        isLunging: other.isLunging || (other.activeWeapon !== 'ball' &&
+          (other.weaponState === 'swing_up' || other.weaponState === 'swing_down')),
         dashCooldownRemaining: other.aiDashCooldownTimer || 0,
         swapLockoutRemaining: other.swapLockoutTimer || 0,
         vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),

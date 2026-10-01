@@ -156,6 +156,9 @@ test('getEvasionTimingScale reacts to learned reaction time', () => {
 });
 
 test('shouldAttemptBaitDodge only in bait band with sword out', () => {
+  for (const targetActiveWeapon of ['hammer', 'ball'] as const)
+    assert.equal(shouldAttemptBaitDodge({ distanceToTarget: BAIT_DODGE_DISTANCE, combatDistanceToTarget: BAIT_DODGE_DISTANCE,
+      spatialIQ: 100, targetIsLunging: false, targetActiveWeapon, dashCooldownRemaining: 0, difficulty: 'hard', rng: 0 }), false);
   assert.equal(
     shouldAttemptBaitDodge({
       distanceToTarget: BAIT_DODGE_DISTANCE,

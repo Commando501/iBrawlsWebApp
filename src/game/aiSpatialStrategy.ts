@@ -195,7 +195,7 @@ export interface BaitDodgeInput {
   combatDistanceToTarget: number;
   spatialIQ: number;
   targetIsLunging: boolean;
-  targetActiveWeapon: 'hammer' | 'sword';
+  targetActiveWeapon: 'hammer' | 'sword' | 'ball' | 'pistol';
   dashCooldownRemaining: number;
   difficulty: string;
   rng?: number;

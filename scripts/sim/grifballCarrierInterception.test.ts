@@ -13,8 +13,7 @@ function comboFixture(preserveReadyStrike: boolean) {
   let swaps = 0, attacks = 0;
   const noop = () => {};
   const target = { id: f.target.id, pos: new THREE.Vector3(2.75, 0, 0), vel: new THREE.Vector3(-7.54, 0, 0),
-    // The current combat target adapter represents a roster carrier as hammer.
-    hp: 2, maxHp: 2, activeWeapon: 'hammer' as const, weaponState: 'ready', isLunging: false, isCrouching: false, playerName: 'Runner' };
+    hp: 2, maxHp: 2, activeWeapon: 'ball' as const, weaponState: 'ready', isLunging: false, isCrouching: false, playerName: 'Runner' };
   const frame = { pos: f.bot.pos, vel: f.bot.vel, aiState: 'APPROACHING' as const, timer: 0, weaponState: 'ready' as const };
   const applyTacticalWeapon = () => { swaps++; return { activeWeapon: 'sword' as const, canStartWeaponAction: false, weaponState: 'ready' as const }; };
   const options: Parameters<typeof resolveAIComboOrchestrationForCombatant>[0] = { state: f.state, self: f.bot,

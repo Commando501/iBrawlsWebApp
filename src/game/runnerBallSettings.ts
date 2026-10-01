@@ -55,7 +55,7 @@ export function resolveTrajectoryLineColor(settings: UniversalSettings): string 
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_TRAJECTORY_COLOR;
 }
 
-export function resolvePunchLungeDistance(settings: UniversalSettings): number {
+export function resolvePunchLungeDistance(settings: Pick<UniversalSettings, 'grifballPunchLungeDistance'>): number {
   return clamp(finiteNumber(settings.grifballPunchLungeDistance, 1.8), 0.5, 5.0);
 }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateAICombatDecision } from './aiCombatDecision';
+import { evaluateAICombatDecision, resolveAICombatDangerZone } from './aiCombatDecision';
 
 const baseInput = {
   difficulty: 'hard',
@@ -29,6 +29,25 @@ const baseInput = {
   weaponPrioritization: 50,
   random: () => 0.99,
 };
+
+test('carrier spacing uses configured punch projection and splash, independent of hammer tuning', () => {
+  for (const [configured, projection] of [[undefined, 1.8], [0.1, 0.5], [4, 4], [99, 5], [NaN, 1.8]]) {
+    const settings = { ...baseInput, grifballPunchLungeDistance: configured };
+    assert.equal(resolveAICombatDangerZone(settings, 'ball'), projection! + 1.5 * .85);
+    assert.equal(resolveAICombatDangerZone({ ...settings, attackRange: 90, attackRadius: 40 }, 'ball'), projection! + 1.5 * .85);
+    for (const weapon of ['hammer', 'sword'] as const)
+      assert.equal(resolveAICombatDangerZone(settings, weapon), baseInput.attackRange + baseInput.attackRadius * .85);
+  }
+});
+
+test('weapon choice uses the same carrier spacing and retains actual inherited lunge counters', () => {
+  const input = { ...baseInput, weaponSwapIQ: 100, distanceToTarget: 4.2, combatDistanceToTarget: 4.2,
+    target: { ...baseInput.target, hp: 2, activeWeapon: 'ball' as const }, random: () => 0 };
+  assert.equal(evaluateAICombatDecision(input).weapon, 'sword', 'default punch reach permits the lunge band');
+  assert.equal(evaluateAICombatDecision({ ...input, target: { ...input.target, activeWeapon: 'hammer' } }).weapon, null);
+  assert.equal(evaluateAICombatDecision({ ...input, grifballPunchLungeDistance: 4 }).weapon, null, 'longer configured punch keeps its spacing');
+  assert.equal(evaluateAICombatDecision({ ...input, target: { ...input.target, isLunging: true } }).bulltrueCounter, 'hammer');
+});
 
 test('recent missed lunge against a close one-HP target chooses hammer', () => {
   const decision = evaluateAICombatDecision({
