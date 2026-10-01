@@ -9,6 +9,7 @@ import { stepSimulation } from '../../src/sim/step';
 import { idleAction } from '../../src/sim/actions';
 import type { Combatant } from '../../src/types';
 import type { SimCombatant } from '../../src/sim/simState';
+import { stepLiveGroundMotion, groundMotionAction, type GroundMotion } from './grifballGroundMotion';
 
 const KINDS = ['melee-first', 'lunge-first', 'same-frame-one', 'same-frame-two',
   'killed-flight', 'damaged-flight', 'trade-survivors', 'double-flight-two', 'double-flight-three'] as const;
@@ -30,8 +31,14 @@ const phase = (c: Combatant) => c.weaponState === 'ready' ? 'idle'
   : ['swing_up', 'melee_up'].includes(c.weaponState ?? '') ? 'windup'
   : ['swing_down', 'melee_down'].includes(c.weaponState ?? '') ? 'active' : 'recovering';
 
+export interface MixedContactMovement {
+  target?: GroundMotion;
+  melee?: GroundMotion;
+  meleeStartZ?: number;
+}
 /** Committed intents, independently advanced live and headless through mixed contact. */
-export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: number) {
+export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: number, movement?: MixedContactMovement) {
+  if (movement && spec.motion) throw new Error('Ground movement requires a grounded mixed-contact case');
   const id = (role: MixedContactCase['mainRole']) => spec.mainRole === role ? 'main_ai' : role;
   const f = lungeFixture(id('lunger'), spec.observer, id('target'));
   const { state, sim, bot, target } = f;
@@ -55,6 +62,9 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
     a.vel.set(0, 0, 0); b.vel = { x: 0, y: 0, z: 0 };
   }
   target.pos.z = pairs[1][1].pos.z = targetZ;
+  if (movement?.meleeStartZ !== undefined) pairs[2][0].pos.z = pairs[2][1].pos.z = movement.meleeStartZ;
+  const motionFor = (actorId: string) => actorId === target.id ? movement?.target
+    : actorId === id('melee') ? movement?.melee : undefined;
   if (spec.motion) for (const [a, b] of pairs) {
     a.pos.y = b.pos.y = 2;
     a.vel.y = b.vel.y = spec.motion === 'rising' ? 3 : -3;
@@ -99,14 +109,20 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
         tickCombatantInvulnerability(c, 1 / 60);
         c.aiTimer = Math.max(0, (c.aiTimer ?? 0) - 1 / 60);
         if (spec.motion) f.gravityPrelude(c);
+        const ground = motionFor(c.id);
+        if (ground) stepLiveGroundMotion(f, c, ground, tick);
         if (c.isLunging) f.flightFor(c, target);
       }
       f.visuals(1 / 60);
     });
-    const actions = Object.fromEntries(pairs.map(([, c]) => [c.id, { ...idleAction(), aim: c.yaw }]));
+    const actionsFor = (actors: typeof sim.combatants) => Object.fromEntries(actors.map(c => {
+      const ground = motionFor(c.id);
+      return [c.id, ground ? groundMotionAction(c, ground, tick, c.yaw, sim.settings) : { ...idleAction(), aim: c.yaw }];
+    }));
+    const actions = actionsFor(sim.combatants);
     const events = stepSimulation(sim, actions, { settings: sim.settings });
     if (restored) {
-      const replayEvents = stepSimulation(restored, actions, { settings: restored.settings });
+      const replayEvents = stepSimulation(restored, actionsFor(restored.combatants), { settings: restored.settings });
       record.compare(tick, 'snapshot.state', JSON.stringify(restored), JSON.stringify(sim));
       record.compare(tick, 'snapshot.events', JSON.stringify(replayEvents), JSON.stringify(events));
     }
@@ -129,6 +145,10 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
       record.compare(tick, `${a.id}.shield`, a.invulnerabilityTimer ?? 0, b.invulnerabilityTimer, 1e-6);
       record.compare(tick, `${a.id}.kills`, a.kills ?? 0, kills.get(b.id) ?? 0);
       record.compare(tick, `${a.id}.deaths`, a.deaths ?? 0, deaths.get(b.id) ?? 0);
+      if (motionFor(a.id)) {
+        record.compare(tick, `${a.id}.dashRemaining`, a.aiDashRemaining ?? 0, b.dashRemaining, 1e-6);
+        record.compare(tick, `${a.id}.dashCooldown`, a.aiDashCooldownTimer ?? 0, b.dashCooldownTimer, 1e-6);
+      }
       for (const axis of ['x', 'y', 'z'] as const) {
         record.compare(tick, `${a.id}.pos.${axis}`, a.pos[axis], b.pos[axis], 1e-6);
         record.compare(tick, `${a.id}.vel.${axis}`, a.vel[axis], b.vel[axis], 1e-6);
@@ -142,10 +162,15 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
     record.compare(tick, 'main.legacyKills', state.enemyKills, kills.get(main[1].id) ?? 0);
     record.compare(tick, 'main.legacyDeaths', state.enemyDeaths, deaths.get(main[1].id) ?? 0);
     frames.push({ tick, live: pairs.map(([c]) => ({ id: c.id, hp: c.hp, pos: c.pos.toArray(), vel: c.vel.toArray(),
-      lunging: !!c.isLunging, phase: phase(c), outcome: c.aiLastLungeOutcome, kills: c.kills ?? 0, deaths: c.deaths ?? 0 })),
+      lunging: !!c.isLunging, phase: phase(c), outcome: c.aiLastLungeOutcome, kills: c.kills ?? 0, deaths: c.deaths ?? 0,
+      ...(motionFor(c.id) ? { dashRemaining: c.aiDashRemaining ?? 0, dashCooldown: c.aiDashCooldownTimer ?? 0 } : {}) })),
       headless: pairs.map(([, c]) => ({ id: c.id, hp: c.hp, pos: { ...c.pos }, vel: { ...c.vel }, lunging: c.isLunging,
-        phase: c.weaponState, outcome: c.lungeOutcome, kills: kills.get(c.id) ?? 0, deaths: deaths.get(c.id) ?? 0 })) });
+        phase: c.weaponState, outcome: c.lungeOutcome, kills: kills.get(c.id) ?? 0, deaths: deaths.get(c.id) ?? 0,
+        ...(motionFor(c.id) ? { dashRemaining: c.dashRemaining, dashCooldown: c.dashCooldownTimer } : {}) })) });
   }
+  // Moving contacts have a separate geometry/timing oracle in their trace wrapper.
+  if (movement) return { name: Object.values(spec).join('/'), scenario: spec, movement,
+    ticks: 120, ...record.result(), frames };
   // Authored distances guarantee contacts on frames 6/7/8; melee impacts occur on 7.
   // These expectations are independent of agreement between the two engines.
   const expectedTargetTick = spec.kind === 'lunge-first' || spec.kind === 'trade-survivors' ? 6
