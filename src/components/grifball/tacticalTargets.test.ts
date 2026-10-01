@@ -7,6 +7,8 @@ import type { Combatant } from '../../types';
 import { createInitialGrifballRuntimeState } from './runtimeState';
 import { buildPotentialTacticalTargets, getBestTacticalTargetFromState, getTacticalTargetByIdFromState, isTacticalTargetOnCooldown } from './tacticalTargets';
 import { evaluateAICombatDecision } from '../../game/aiCombatDecision';
+import { evaluateTacticalWeaponChoiceForState } from './aiTacticalWeaponRuntime';
+import { withSimulationRandom } from '../../game/simulationRandom';
 
 function fixture(id: string) {
   const state = createInitialGrifballRuntimeState({ debugMode: false,
@@ -27,6 +29,27 @@ function fixture(id: string) {
   const target = make(id, 'red', 5);
   return { state, self, target, make };
 }
+
+for (const crowd of ['teammates', 'main-identity', 'enemy-crowd', 'local-teammate', 'local-enemy'] as const)
+  test(`tactical weapon choice counts real opposing bodies: ${crowd}`, () => {
+    const { state, self, target, make } = fixture(crowd === 'main-identity' ? 'main_ai' : 'enemy');
+    self.activeWeapon = 'sword'; target.hp = target.maxHp = 20;
+    target.weaponState = 'ready'; target.aiTimer = 0; target.pos.set(2, 0, 0);
+    if (crowd === 'teammates') { make('friend1', 'blue', 1); make('friend2', 'blue', -1); }
+    if (crowd === 'enemy-crowd') make('second-enemy', 'red', -2);
+    if (crowd === 'local-teammate' || crowd === 'local-enemy') {
+      state.isObserverMode = false; state.playerPos.set(1, 0, 0);
+      state.playerHP = 1; state.playerRespawnTimer = 0;
+      state.localPlayerTeam = crowd === 'local-enemy' ? 'red' : 'blue';
+    }
+    const observed = getTacticalTargetByIdFromState(state, self.id, target.id, [...state.otherPlayers.values()])!;
+    const decision = withSimulationRandom(() => 0, 0, () => evaluateTacticalWeaponChoiceForState({
+      state, botId: self.id, target: observed, difficulty: 'hard', mainAI: state.otherPlayers.get('main_ai'),
+      pressureAggression: 50, scoreContext: { scorePlayer: 0, scoreEnemy: 0 },
+      context: { weaponSwapIQ: 100, weaponPrioritization: 50, distanceToTarget: 2, canStartWeaponAction: true, weaponState: 'ready' },
+    }));
+    assert.equal(decision.weapon, crowd === 'enemy-crowd' || crowd === 'local-enemy' ? 'hammer' : 'sword');
+  });
 
 for (const id of ['main_ai', 'ordinary']) {
   test(`carrier observation distinguishes a punch from an inherited lunge: ${id}`, () => {
