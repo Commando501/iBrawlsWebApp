@@ -38,6 +38,14 @@ test('v77 retains the sampled inventory while earned tank outcomes use their sep
   assert.deepEqual(validateSampledParityEvidence(current),[]);
 });
 
+test('v79 requires the airborne view geometry family', () => {
+  const current=sampledReport('live-functions-vs-headless-step-v79');
+  assert.equal(Object.keys(current).length-1,50);
+  assert.deepEqual(validateSampledParityEvidence(current),[]);
+  delete current.airborneViewTraces;
+  assert.deepEqual(validateSampledParityEvidence(current),['airborneViewTraces: missing or empty family']);
+});
+
 test('v78 requires the separate controlled landing-turnover family', () => {
   const current=sampledReport('live-functions-vs-headless-step-v78');
   assert.equal(Object.keys(current).length-1,49);

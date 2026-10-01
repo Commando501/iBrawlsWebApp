@@ -72,6 +72,7 @@ export const SAMPLED_PARITY_FAMILIES = {
   'live-functions-vs-headless-step-v76': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces'],
   'live-functions-vs-headless-step-v77': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces'],
   'live-functions-vs-headless-step-v78': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces', 'landingTurnoverTraces'],
+  'live-functions-vs-headless-step-v79': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces', 'landingTurnoverTraces', 'airborneViewTraces'],
 } as const;
 
 /** Structural audit of retained evidence, including saved reports. This does not

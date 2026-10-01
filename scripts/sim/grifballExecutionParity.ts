@@ -1,3 +1,4 @@
+import { runAirborneViewParity, airborneViewCoverage } from './grifballAirborneViewParity';
 import { runPlannedMatchParity, plannedMatchCoverage } from './grifballPlannedMatchParity';
 import { runObjectiveInputParity } from './grifballObjectiveInputParity';
 import { runSampledContactParity } from './grifballSampledContactParity';
@@ -87,7 +88,7 @@ import { PLAYER_LUNGE_PARITY_CASES, runPlayerLungeParity, runPlayerLungeParityTr
 const noop = () => {};
 export const PARITY_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, discrete: 0 };
 export const PARITY_GAPS = ['Broader steering and airborne-carrier opposing player/roster flights, autonomous dash/steering decisions and broader moving/carrier mixed flight-melee groups; bounded four-roster rising/falling and assigned-walk/committed-dash flight-melee groups, mouse-view turns during grounded/rising/falling opposing flights with pickup, grounded and rising/falling roster mid-flight pickup, airborne flight against a moving local carrier, grounded local and AI carrier focus fire with counter/death ordering, opposing shields and airborne commitments are covered; nine relative-height/vertical-motion group profiles and four airborne local-carrier two-attacker profiles are covered; roster flight includes airborne, ballistic and assigned-walking/committed-dashing targets, trades and single-spawn revival',
-  'Broader player pitch/crouch/model geometry; current melee is resolved at impact and lunge contact is sampled after movement, with between-sample misses and adjacent-sample hits pinned for local and roster actors; bounded grounded pitched melee and local lunge launch/contact boundaries are covered; grounded roster geometry and authored moving sword/hammer impacts are covered',
+  'Broader player pitch/crouch/model geometry; current melee is resolved at impact and lunge contact is sampled after movement, with between-sample misses and adjacent-sample hits pinned for local and roster actors; bounded grounded pitched melee, rising/falling/landing local pitched slash with stance changes and model-size controls, and local lunge launch/contact boundaries are covered; grounded roster geometry and authored moving sword/hammer impacts are covered',
   'Full movement/combat/objective execution across all authored maps; bounded mixed-eight movement, committed melee, scoring, reset and revival frame ordering is covered on goal-capable supplied maps; autonomous complete mixed matches remain open',
   'Full AI decision-to-action integration and complete mixed player/roster execution; authored movement/attack intents do not certify autonomous choices'];
 export interface ParityDifference { tick: number; field: string; live: unknown; headless: unknown; tolerance: number }
@@ -242,6 +243,8 @@ export function runExecutionParity() {
   const lungeTraces = compactExecutionTraces(runLungeParity());
   const sampledContactTraces = compactExecutionTraces(runSampledContactParity());
   const objectiveInputTraces = compactExecutionTraces(runObjectiveInputParity());
+  const airborneViewTraces = compactExecutionTraces(runAirborneViewParity());
+  const airborneViewWitnesses = airborneViewCoverage(airborneViewTraces);
   const geometryTraces = compactExecutionTraces(runGeometryParity());
   const motionTraces = compactExecutionTraces(runMotionParity());
   const movingContactTraces = compactExecutionTraces(runMovingContactParity());
@@ -272,7 +275,7 @@ export function runExecutionParity() {
   const roundFlightTraces = compactExecutionTraces(runRoundFlightParity());
   const roundPlayerFlightTraces = compactExecutionTraces(runRoundPlayerFlightParity());
   const fullRosterFrameTraces = compactExecutionTraces(runFullRosterFrameParity());
-  const actionTraces = [...traces, ...botTraces, ...lungeTraces, ...sampledContactTraces, ...objectiveInputTraces, ...geometryTraces, ...motionTraces, ...movingContactTraces, ...multiActorTraces, ...spawnTraces, ...mixedSpawnTraces, ...mixedContactTraces, ...playerLungeTraces, ...mixedLifecycleTraces, ...opposedFlightTraces, ...carrierFlightTraces, ...airborneCarrierFlightTraces, ...turningFlightTraces, ...shieldedFlightTraces, ...airborneFlightTraces, ...objectiveTraces, ...frameObjectiveTraces, ...passInputTraces, ...chargeCombatTraces, ...carrierCrowdTraces, ...carrierRecoveryTraces, ...runnerCombatTraces, ...playerRunnerTraces, ...airborneRunnerTraces, ...focusFireTraces, ...roundFrameTraces, ...roundCombatTraces, ...roundFlightTraces, ...roundPlayerFlightTraces, ...fullRosterFrameTraces];
+  const actionTraces = [...airborneViewTraces, ...traces, ...botTraces, ...lungeTraces, ...sampledContactTraces, ...objectiveInputTraces, ...geometryTraces, ...motionTraces, ...movingContactTraces, ...multiActorTraces, ...spawnTraces, ...mixedSpawnTraces, ...mixedContactTraces, ...playerLungeTraces, ...mixedLifecycleTraces, ...opposedFlightTraces, ...carrierFlightTraces, ...airborneCarrierFlightTraces, ...turningFlightTraces, ...shieldedFlightTraces, ...airborneFlightTraces, ...objectiveTraces, ...frameObjectiveTraces, ...passInputTraces, ...chargeCombatTraces, ...carrierCrowdTraces, ...carrierRecoveryTraces, ...runnerCombatTraces, ...playerRunnerTraces, ...airborneRunnerTraces, ...focusFireTraces, ...roundFrameTraces, ...roundCombatTraces, ...roundFlightTraces, ...roundPlayerFlightTraces, ...fullRosterFrameTraces];
   const failures = actionTraces.filter(t => t.differenceCount);
   const decisionIntegrationTraces = compactExecutionTraces(runDecisionIntegration());
   const passDecisionTraces = compactExecutionTraces(runPassDecisionIntegration());
@@ -309,7 +312,8 @@ export function runExecutionParity() {
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
-  return gate('execution-parity', landingTurnoverWitnesses.errors.length || earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+  return gate('execution-parity', airborneViewWitnesses.errors.length || landingTurnoverWitnesses.errors.length || earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+    `View coverage: ${airborneViewWitnesses.errors.length} errors. ` +
     `Landing coverage: ${landingTurnoverWitnesses.errors.length} errors. ` +
     `Tank coverage: ${earnedTankWitnesses.errors.length} errors. ` +
     `Dash coverage misses ${dashWitnesses.missing.length} required groups. ` +
@@ -317,7 +321,9 @@ export function runExecutionParity() {
     `Jump coverage misses ${missingJumpWitnesses} required groups. ` +
     `Post-reset passing misses ${resetPassCoverage.missing.length} required groups. ` +
     `${failures.length}/${actionTraces.length} action traces differ. ${decisionFailures.length}/${liveDecisionTraces.length} live decision traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} map mobility traces fail. ${plannedMatchWitnesses.errors.length} planned-match coverage failures. ${PARITY_GAPS.length} gaps; legacy training remains uncertified.`,
-    { protocol: 'live-functions-vs-headless-step-v78', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    { protocol: 'live-functions-vs-headless-step-v79', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+      airborneViewTraces, airborneViewWitnesses,
+      airborneViewScope: '192 independently advanced local-player versus roster sword-slash cases: rising, falling or landing at impact; upward/downward pitch; crouch held/released or standing; medium/large target; main/ordinary identity; mirrored teams and player/mixed execution. Real keyboard stance, local motion and impact owners versus stepSimulation, checked against independent gravity, eye interpolation, reach and cone arithmetic. 60 frames each, 72 expected hits and 120 misses, 384 JSON continuations across impact and stance release. Grounded stationary targets, authored attack and flight; no autonomous choices, moving target/view, broader weapons, obstacles or quality claim.',
       landingTurnoverTraces, landingTurnoverWitnesses,
       landingTurnoverScope: 'Eight live-only 12-frame cases mirror teams, actor order and main/ordinary landing identity. An authored .17-unit descent lands during an autonomous full-windup carrier kill at tick 8. Independent gravity/velocity checks, real death/drop, end-of-frame order invalidation, next-tick reassignment and renewed ground movement are required. All cases must be present and successful. This controlled boundary supplements the unchanged fixed 32-case mobility matrix; it does not claim autonomous takeoff, a new independent-engine parity family, quality or broader airborne decisions.',
       plannedMatchTraces, plannedMatchWitnesses,
