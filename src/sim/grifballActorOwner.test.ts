@@ -82,6 +82,10 @@ for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 30, 1 / 60]) for
     t.diagnostic(`frames=${frames}; firstDamageSeconds=${(firstDamage ?? 0) * dt}`);
     assert.ok(ground > 0); assert.ok(run.state.combatants.slice(0, 2).some(c => c.hp < 50), 'must inflict real damage');
     assert.equal(run.matchContext.coordinator.engagements.get(id), 'target');
+    const learned = [...run.matchContext.playerModels.values()];
+    assert.ok(learned.some(model => model.damageDealtCount > 0), 'actual damage must update the shared opponent models');
+    if (weapon === 0) assert.ok(learned.some(model => model.hammerAttacks > 0), 'ground attacks must record accepted swings');
+    else assert.ok(learned.some(model => model.weaponSwaps > 0), 'accepted weapon changes must update learning');
     if (weapon === 100) { assert.ok(flights > 0, 'sword policy must actually traverse flight'); assert.ok(changedWeapon); }
   });
 

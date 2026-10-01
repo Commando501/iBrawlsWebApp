@@ -1,3 +1,4 @@
+import type { RosterCombatLearning } from './scriptedCombatLearning';
 /**
  * Headless weapon / combat step — the default legacy-v1 training model is a distilled port of the hammer/sword/punch
  * resolution from `GrifballGame.updatePhysics`. Each combatant runs a small FSM:
@@ -272,7 +273,7 @@ function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: Universa
 }
 
 /** Roster bots use a planar, body-centered splash, including sword and side-swipe. */
-function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], feedback?: RosterMeleeHitFeedback): void {
+function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], feedback?: RosterMeleeHitFeedback, learning?: RosterCombatLearning): void {
   const reach = c.weapon === 'ball' ? resolvePunchLungeDistance(settings)
     : strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
   const radius = c.weapon === 'ball' ? GRIFBALL_PUNCH_RADIUS : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
@@ -297,6 +298,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
     const targetRadius = usesRosterLifecycle(state) ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
     if (Math.hypot(victim.pos.x - impact.x, cy - impact.y, victim.pos.z - impact.z) <= targetRadius) {
       strike(state, c, victim, settings, events);
+      learning?.meleeHit(c, victim);
       if (victim.hp > 0) feedback?.(c, victim);
     }
   }
@@ -310,7 +312,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
  */
 function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
   settings: UniversalSettings, dt: number, events: KillEvent[], canAttack: boolean, feedback?: RosterMeleeHitFeedback,
-  movingAICommit = false): void {
+  movingAICommit = false, learning?: RosterCombatLearning, observeAttack = true): void {
   const enter = (phase: SimCombatant['weaponState'], duration: number) => {
     c.weaponState = phase; c.weaponPhaseElapsed = 0; c.weaponTimer = duration;
   };
@@ -342,6 +344,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       if (c.weapon === 'sword') c.lastSwordAttackTimeMs = now;
       else if (c.weapon === 'hammer') c.lastHammerAttackTimeMs = now;
     }
+    if (observeAttack && roster && c.weapon !== 'sword') learning?.hammerAttack(c);
     enter('windup', swingDuration());
   }
   const previous = c.weaponPhaseElapsed ?? 0;
@@ -359,13 +362,13 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       if (c.alive && elapsed >= duration) recover();
     } else if (elapsed >= duration) {
       enter('active', strikeDuration());
-      if (c.attackKind === 'slash') resolveRosterHit(state, c, settings, events, feedback);
+      if (c.attackKind === 'slash') resolveRosterHit(state, c, settings, events, feedback, learning);
     }
   } else if (c.weaponState === 'active') {
     const duration = strikeDuration();
     c.weaponTimer = Math.max(0, duration - elapsed);
     if (elapsed >= duration) {
-      if (roster) { if (c.attackKind !== 'slash') resolveRosterHit(state, c, settings, events, feedback); }
+      if (roster) { if (c.attackKind !== 'slash') resolveRosterHit(state, c, settings, events, feedback, learning); }
       else if (c.attackKind === 'punch') resolvePlayerPunch(state, c, settings, events);
       else {
         resolveHammerStrike(state, c, settings, events);
@@ -577,7 +580,8 @@ export function stepCombatantWeapons(
   lungeFeedback?: RosterLungeFeedback,
   swapTimersAdvanced = false,
   engagement?: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean;
-    committedFlight?: boolean; lungeStarted?: boolean }
+    committedFlight?: boolean; lungeStarted?: boolean },
+  learning?: RosterCombatLearning
 ): void | 'trade_return' {
   if (engagement && (stage !== 'intent' || !scriptedCommands || state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c)))
     throw new Error('Engagement commits require scheduled roster command intent');
@@ -589,7 +593,7 @@ export function stepCombatantWeapons(
   if (stage === 'flight-animation') {
     if (state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c) || scriptedCommands)
       throw new Error('Scheduled flight animation requires a mixed roster actor without commands');
-    stepLiveAttack(state, c, action, settings, dt, events, false, feedback);
+    stepLiveAttack(state, c, action, settings, dt, events, false, feedback, false, learning);
     return;
   }
   // The scheduled owner already spent intent clocks before flight movement.
@@ -632,12 +636,14 @@ export function stepCombatantWeapons(
           // Live feint expiry clears lockout, retains readiness and leaves the
           // underlying recovery animation running under the restored hammer.
           c.weapon = 'hammer'; c.swapLockoutTimer = 0;
+          learning?.weaponSwap(c, 'hammer');
           if (c.weaponState === 'recovering' && c.attackKind !== 'swipe') c.attackKind = 'strike';
           decisionReady = true;
         } else if (command.kind === 'swap') {
           if (c.isLunging && !engagement?.committedFlight || c.weapon === 'ball' || c.weapon === command.weapon || c.swapLockoutTimer > 0 ||
             c.weaponState === 'windup' || c.weaponState === 'active') continue;
           c.weapon = command.weapon;
+          learning?.weaponSwap(c, command.weapon);
           if (c.weaponState === 'recovering' && c.attackKind !== 'swipe') c.attackKind = c.weapon === 'sword' ? 'slash' : 'strike';
           const timers = resolveAIWeaponSwapTimers(settings, c.swapLockoutTimer, c.weaponReadyTimer);
           c.swapLockoutTimer = timers.lockout; c.weaponReadyTimer = timers.readiness;
@@ -652,7 +658,7 @@ export function stepCombatantWeapons(
               // Main AI's live weapon callback checks readiness and an active dash.
               if (c.weaponReadyTimer > 0 || (engagement.sequentialOpportunities ? entryDashRemaining : c.dashRemaining) > 0) return;
               c.weaponState = 'idle';
-              stepLiveAttack(state, c, { ...action, attackPrimary: true, attackSecondary: false }, settings, 0, events, true, feedback, !!engagement.sequentialOpportunities);
+              stepLiveAttack(state, c, { ...action, attackPrimary: true, attackSecondary: false }, settings, 0, events, true, feedback, !!engagement.sequentialOpportunities, learning, false);
               if ((c as SimCombatant).weaponState === 'windup') jump.weaponState = 'swing_up';
             } });
           if (jump.hammerJumpPlanned !== undefined) c.hammerJumpPlanned = jump.hammerJumpPlanned;
@@ -676,7 +682,7 @@ export function stepCombatantWeapons(
           }
           if (c.weapon !== command.weapon) continue;
           c.weaponState = 'idle';
-          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true, feedback, !!engagement);
+          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true, feedback, !!engagement, learning);
           decisionReady = false; committedHere = true;
         }
       }
@@ -691,6 +697,7 @@ export function stepCombatantWeapons(
     // A swap makes the new weapon un-ready for `weaponReadyTime` before it can fire.
     if (action.swapWeapon && !c.isLunging && c.weapon !== 'ball' && c.weaponState === 'idle' && c.swapLockoutTimer <= 0) {
       c.weapon = c.weapon === 'hammer' ? 'sword' : 'hammer';
+      learning?.weaponSwap(c, c.weapon);
       if (isRosterExecution(combatExecutionForActor(state, c))) {
         const timers = resolveAIWeaponSwapTimers(settings, c.swapLockoutTimer, c.weaponReadyTimer);
         c.swapLockoutTimer = timers.lockout;
@@ -734,12 +741,12 @@ export function stepCombatantWeapons(
   // Mixed frames commit the roster's requested action before objectives, but
   // advance skeletal melee afterward. Existing complete-step callers are unchanged.
   if (stage === 'intent') {
-    if (c.weaponState === 'idle') stepLiveAttack(state, c, action, settings, 0, events, canAttack, feedback);
+    if (c.weaponState === 'idle') stepLiveAttack(state, c, action, settings, 0, events, canAttack, feedback, false, learning);
     return;
   }
 
   if ((combatExecutionForActor(state, c) === 'live-player-v1' || isRosterExecution(combatExecutionForActor(state, c))) && !(c.weaponState === 'recovering' && c.attackKind === 'none')) {
-    stepLiveAttack(state, c, action, settings, dt, events, stage !== 'animation' && canAttack, feedback);
+    stepLiveAttack(state, c, action, settings, dt, events, stage !== 'animation' && canAttack, feedback, false, learning);
     return;
   }
 

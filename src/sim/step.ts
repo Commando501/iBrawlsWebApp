@@ -1,3 +1,4 @@
+import { validateScriptedCombatLearning, createScriptedCombatLearning, type ScriptedCombatLearning } from './scriptedCombatLearning';
 import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGroundFeedback } from './scriptedAIGround';
 /**
  * `stepSimulation` — one fixed simulation tick (dt = 1/60 s). The legacy profiles
@@ -67,6 +68,8 @@ export interface StepOptions {
   scriptedActorDecisions?: ScriptedActorDecisionOwner;
   /** Opt-in once-per-frame coordination clock and frozen team-plan publication. */
   scriptedCoordination?: ScriptedCoordination;
+  /** Accepted roster actions and melee impacts feed the shared opponent models. */
+  scriptedCombatLearning?: ScriptedCombatLearning;
 }
 
 /**
@@ -86,6 +89,16 @@ export function stepSimulation(
   if (options.scriptedActorDecisions && (options.scriptedCombat || options.scriptedObjective))
     throw new Error('Scheduled actor decisions cannot share precomputed combat or objective packets');
   if ((options.scriptedMeleeFeedback || options.scriptedLungeFeedback) && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
+  validateScriptedCombatLearning(state, options.scriptedCombatLearning, settings);
+  if (options.scriptedCombatLearning && options.scriptedLungeFeedback &&
+    (options.scriptedCombatLearning.matchContext.playerModels !== options.scriptedLungeFeedback.models ||
+      options.scriptedCombatLearning.matchContext.coordinator !== options.scriptedLungeFeedback.coordinator))
+    throw new Error('Combat learning and lunge feedback must share models and coordination');
+  if (options.scriptedCombatLearning && options.scriptedActorDecisions &&
+    Object.entries(options.scriptedCombatLearning.scriptedBots).some(([id, difficulty]) =>
+      options.scriptedActorDecisions!.scriptedBots[id] !== difficulty))
+    throw new Error('Combat learning must share the scheduled actor authority');
+  const learning = options.scriptedCombatLearning ? createScriptedCombatLearning(state, options.scriptedCombatLearning, settings) : undefined;
   validateScriptedMeleeFeedback(state, options.scriptedMeleeFeedback, settings);
   validateScriptedLungeFeedback(state, options.scriptedLungeFeedback, settings);
   if (options.scriptedMeleeFeedback && options.scriptedLungeFeedback &&
@@ -252,7 +265,10 @@ export function stepSimulation(
           }
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
-            const applyMobility = () => { applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind; };
+            const applyMobility = () => {
+              applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind;
+              if (mobility.kind === 'spatial-dodge') learning?.spatialDodge(c);
+            };
             if (engagementCommit) {
               engagementCommit.beforeAttack = applyMobility;
               engagementCommit.mobilityAfterCommands = decision.mobilityAfterCommands;
@@ -288,7 +304,7 @@ export function stepSimulation(
     if (intentBeforeMovement) {
       c.yaw = normalizeYaw(act(c.id).aim);
       c.isCrouching = act(c.id).crouch && (engagementPrepared || !c.isJumping);
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), engagementCommit);
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), engagementCommit, learning);
       if (c.isLunging && (!engagementCommit?.committedFlight || engagementCommit.lungeStarted)) {
         if (decisionActive) completeTurn(actorDecisions[actorDecisions.length - 1]);
         continue;
@@ -299,8 +315,8 @@ export function stepSimulation(
         // Spend intent clocks once even when a ground lunge returns early. An
         // empty command list leaves retained policy readiness with its owner.
         if (!intentBeforeMovement)
-          stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', [], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
-        return executeScriptedAIGround(state, c, settings, dt, savedVelY, groundOwner!, !!engagementCommit?.groundReadyOverride);
+          stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', [], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), undefined, learning);
+        return executeScriptedAIGround(state, c, settings, dt, savedVelY, groundOwner!, !!engagementCommit?.groundReadyOverride, learning);
       } } : undefined;
     const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision, groundExecution, evasionHold);
     if (evasionHold?.held) actorDecisions[actorDecisions.length - 1].evasionHeld = true;
@@ -314,7 +330,7 @@ export function stepSimulation(
     }
     if (rosterV2 && c.alive && c.isLunging) {
       const flightResult = stepCombatantWeapons(state, c, act(c.id), settings, dt, kills,
-        intentBeforeMovement ? 'flight' : 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
+        intentBeforeMovement ? 'flight' : 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id), undefined, learning);
       if (engagementCommit?.committedFlight && c.alive && flightResult !== 'trade_return')
         finishAIHorizontalMotion(c, { pos: c.pos, vel: c.vel, aiState: options.scriptedLungeFeedback!.memories[c.id].aiState });
       flightAdvanced!.add(c.id);
@@ -322,7 +338,7 @@ export function stepSimulation(
       // Live AI commits at its own roster turn. A later actor's flight (or
       // planner observation) must see this attack/swap immediately, while
       // skeletal melee damage still waits for the post-objective animation pass.
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scheduledCombat[c.id] ?? scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scheduledCombat[c.id] ?? scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), undefined, learning);
     }
     if (decisionActive) completeTurn(actorDecisions[actorDecisions.length - 1]);
   }
@@ -331,11 +347,11 @@ export function stepSimulation(
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
     if (mixedObjectiveFrame || c === player || flightAdvanced?.has(c.id)) continue;
-    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback);
+    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, false, undefined, learning);
     // Mixed execution advances paused animations below. The roster-only profile
     // has one combined weapon phase: suppress new input, not committed clocks.
     else if (!mixedObjectiveFrame && planner?.owns(c.id))
-      stepCombatantWeapons(state, c, { ...idleAction(), aim: c.yaw }, settings, dt, kills, 'complete', undefined, meleeFeedback);
+      stepCombatantWeapons(state, c, { ...idleAction(), aim: c.yaw }, settings, dt, kills, 'complete', undefined, meleeFeedback, undefined, false, undefined, learning);
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
@@ -369,9 +385,9 @@ export function stepSimulation(
   if (mixedObjectiveFrame) {
     for (const c of state.combatants) if (c !== player) {
       if (scheduledFlights.has(c.id))
-        stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'flight-animation', undefined, meleeFeedback);
+        stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'flight-animation', undefined, meleeFeedback, undefined, false, undefined, learning);
       else if (!flightAdvanced?.has(c.id))
-        stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback);
+        stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback, undefined, false, undefined, learning);
     }
     reconcileSimCarrier(state, settings);
   }

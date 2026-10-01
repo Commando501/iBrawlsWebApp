@@ -1,3 +1,4 @@
+import type { RosterCombatLearning } from './scriptedCombatLearning';
 import * as THREE from 'three';
 import { resolveAIGroundState, type AIGroundStateInput } from '../game/aiGroundState';
 import { startAIHammerJumpAction } from '../game/aiHammerJump';
@@ -108,7 +109,7 @@ function validateRequest(state: SimState, actor: SimCombatant, request: Scripted
  * Action callbacks run immediately at their actual position in the shared FSM;
  * skeletal animation/damage still belongs to the later roster animation pass. */
 export function executeScriptedAIGround(state: SimState, actor: SimCombatant, settings: UniversalSettings,
-  dt: number, savedVelY: number, owner: ScriptedAIGroundOwner, readyFromThisTurn = false): ScriptedAIGroundFeedback {
+  dt: number, savedVelY: number, owner: ScriptedAIGroundOwner, readyFromThisTurn = false, learning?: RosterCombatLearning): ScriptedAIGroundFeedback {
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
     actor.id === state.localPlayerId || actor.controller !== 'ai' || !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 ||
     actor.isLunging || actor.hasBall || actor.weapon === 'ball' || actor.dashRemaining > 0 || actor.isJumping || actor.pos.y > .01)
@@ -132,14 +133,17 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
   };
   // Live generic attack callbacks reset their animation; cached readiness was
   // already arbitrated by the policy. They do not spend another AI/weapon clock.
-  const swing = (timestampWeapon?: 'hammer' | 'sword') => {
+  const swing = (timestampWeapon?: 'hammer' | 'sword', observeAttack = true) => {
     actor.weaponState = 'windup'; actor.weaponPhaseElapsed = 0;
     actor.attackKind = actor.weapon === 'sword' ? 'slash' : 'strike';
     actor.weaponTimer = actor.weapon === 'sword' ? (settings.swordSlashSpeed ?? .22) * .5 : resolveHammerSlamTiming(settings).windupTime;
     if (timestampWeapon) {
       actor.lastAttackTick = state.tick;
       const now = state.combatTimeMs ?? state.tick * 1000 / 60;
-      if (timestampWeapon === 'hammer') actor.lastHammerAttackTimeMs = now; else actor.lastSwordAttackTimeMs = now;
+      if (timestampWeapon === 'hammer') {
+        actor.lastHammerAttackTimeMs = now;
+        if (observeAttack) learning?.hammerAttack(actor);
+      } else actor.lastSwordAttackTimeMs = now;
     }
   };
   let opportunity: AIGroundAttackOpportunityResult | undefined;
@@ -170,6 +174,7 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
           const timers = resolveAIWeaponSwapTimers(settings, actor.swapLockoutTimer, actor.weaponReadyTimer);
           actor.swapLockoutTimer = timers.lockout; actor.weaponReadyTimer = timers.readiness;
           if (settings.weaponReadyTime > 0) policy.canStartWeaponAction = false;
+          learning?.weaponSwap(actor, requestedWeapon);
           actions.push('swap-sword');
         }
         return { activeWeapon: policy.activeWeapon, canStartWeaponAction: policy.canStartWeaponAction, weaponState: frame.weaponState };
@@ -206,7 +211,7 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
       const started = startAIHammerJumpAction({ self: jump, settings, vel: frame.vel, horizontalHeading: heading,
         jumpType: 'offensive', playJump: () => {}, playSwing: () => {}, onMainAIHammerSwing: () => {
           if (actor.weaponReadyTimer > 0 || actor.dashRemaining > 0) return;
-          swing('hammer'); jump.weaponState = 'swing_up'; jump.weaponTimer = 0;
+          swing('hammer', false); jump.weaponState = 'swing_up'; jump.weaponTimer = 0;
         } });
       if (jump.hammerJumpPlanned !== undefined) actor.hammerJumpPlanned = jump.hammerJumpPlanned;
       if (jump.hammerJumpType !== undefined) actor.hammerJumpType = jump.hammerJumpType; else delete actor.hammerJumpType;

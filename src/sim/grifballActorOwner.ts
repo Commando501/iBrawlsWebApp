@@ -1,3 +1,4 @@
+import { recordCalibrationCounterAttempt } from '../game/aiSkillCalibration';
 import { getEffectivePressureAggression } from '../components/grifball/matchPressure';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import type { AIMatchContext } from '../game/aiMatchContext';
@@ -118,6 +119,7 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
         defensiveEvasionMult: a.difficulty === 'easy' ? 1 : 1.5 - Math.abs(a.playstyleFactor - .5),
       }, dt);
       if (!priorities) throw new Error(`Composed combat lost its engagement: ${actorId}`);
+      if (priorities.evasion?.counterStarted && a.calibrationEnabled) recordCalibrationCounterAttempt(ai, actorId);
       if (priorities.combo.lungeObservation) {
         const tuning = resolveBehaviorTuning(view.settings);
         observePlayerLungeStart(getOrCreatePlayerModel(ai, actorId, { emaAlpha: tuning.playerModelEmaAlpha,
@@ -156,7 +158,9 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
   const lunge: ScriptedLungeFeedback = { version: 'scripted-lunge-feedback-v1', memories, knobs, random,
     combos: ai.comboState, models: ai.playerModels, coordinator: ai.coordinator, pressure,
     get scoreContext() { return control.getScoreContext(state); } };
-  return { dt, scriptedActorDecisions: actorDecisions, scriptedLungeFeedback: lunge,
+  return { dt, settings: state.settings,
+    scriptedCombatLearning: { version: 'scripted-combat-learning-v1', scriptedBots, matchContext: ai, isObserverMode: control.isObserverMode },
+    scriptedActorDecisions: actorDecisions, scriptedLungeFeedback: lunge,
     scriptedMeleeFeedback: { version: 'scripted-melee-feedback-v1', memories, knobs, random, combos: ai.comboState },
     ...(planner ? { scriptedPlanner: planner, scriptedCoordination: { version: 'scripted-coordination-v1', coordinator: ai.coordinator } } : {}),
   };

@@ -89,6 +89,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
     hammerJumpPlanned: self.hammerJumpPlanned, hammerJumpType: self.hammerJumpType };
   const commands: ScriptedCombatCommand[] = [];
   let mobility: ScriptedAIMobilityCommand | undefined;
+  let counterStarted = false;
   const attack = (weapon: AICombatWeapon) => {
     commands.push({ kind: 'melee', weapon, swipe: false }); projected.weaponState = 'swing_up'; projected.weaponTimer = 0;
   };
@@ -118,10 +119,11 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
       mainAiIsLunging: target.id === 'main_ai' && target.isLunging, mainAiLungeDirX: target.lungeDir.x, mainAiLungeDirZ: target.lungeDir.z,
       botIsLunging: target.id !== 'main_ai' && !isMixedPlayer(state, target) && target.isLunging,
       botLungeDirX: target.lungeDir.x, botLungeDirZ: target.lungeDir.z }),
-    tryBulltrueCounter: () => resolveAIBulltrueCounterDecision({ settings: state.settings,
+    tryBulltrueCounter: () => { const counter = resolveAIBulltrueCounterDecision({ settings: state.settings,
       frame: { activeWeapon: weaponFrame.activeWeapon, aiState: frame.aiState, timer: frame.timer, weaponState: frame.weaponState },
       bulltrueCounter: context.bulltrueCounter, canStartWeaponAction: weaponFrame.canStartWeaponAction,
-      cooldownMultiplier: memory.cooldownMultiplier, triggerCombatantAttack: attack }),
+      cooldownMultiplier: memory.cooldownMultiplier, triggerCombatantAttack: attack });
+      counterStarted ||= counter.started; return counter; },
     startSpatialDodge: (x, z, track = true) => {
       mobility = createScriptedAISpatialDodgeCommand(self, state.map.arenaRadius, { x, z }, context.playerModel ?? null, context.random);
       startAISpatialDodgeMotion(state.settings, frame, mobility.direction);
@@ -151,7 +153,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   }
   const dash: ScriptedAIDashDecision | undefined = frame.dashRemaining > 0 ? { version: 'scripted-ai-dash-v1',
     aiState: result.aiState, pendingPostEvasionCharge: result.pendingPostEvasionCharge, target: dashTarget() } : undefined;
-  return { targetId: target.id, frame: result, commands, commandVersion: airborne ? 'scripted-combat-v6' as const : 'scripted-combat-v5' as const,
+  return { targetId: target.id, frame: result, commands, ...(counterStarted ? { counterStarted: true as const } : {}), commandVersion: airborne ? 'scripted-combat-v6' as const : 'scripted-combat-v5' as const,
     ...(airborneFrame ? { evasionFrame, airborneFrame } : {}),
     ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}),
     holdAfterEvasion: !retained?.committedFlight && result.isEvadingLunge && frame.dashRemaining <= 0,
