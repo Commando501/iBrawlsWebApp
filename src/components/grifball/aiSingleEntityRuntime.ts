@@ -23,10 +23,6 @@ import {
   advanceAIWeaponSwapFeint,
 } from '../../game/aiMatchContext';
 import {
-  accumulateStandoffTimer,
-  isInStandoffBand,
-} from '../../game/aiPsychologicalPressure';
-import {
   applyCalibrationMultipliers,
   tickCalibrationPendingCounter,
   tickCalibrationPendingDodge,
@@ -39,7 +35,7 @@ import { type Combatant } from '../../types';
 import { resolveAIAirborneHammerOpportunityForCombatant } from './aiAirborneHammerOpportunityRuntime';
 import { resolvePreGroundMovementRecoveryForCombatant } from './aiAirborneRecoveryRuntime';
 import { syncAICombatantFrameToState, syncAICombatantPoseAndState } from './aiCombatantFrameSync';
-import { resolveAICombatRangeFrame } from './aiCombatRangeRuntime';
+import { resolveAIEngagementPreparation } from '../../game/aiEngagementPreparation';
 import { resolveAICombatTuningPreludeForCombatant } from './aiCombatTuningPreludeRuntime';
 import { resolveAIComboOrchestrationForCombatant } from './aiComboOrchestrationRuntime';
 import { shouldBlockCoordinatedAttackForFrame } from './aiCoordinationRuntime';
@@ -47,7 +43,6 @@ import { resolveAIDashMovementForCombatant } from './aiDashMovementRuntime';
 import {
   integrateTargetEngagementGravityForCombatant,
   normalizeTargetEngagementFrameState,
-  resolveCombatantCrouchPose,
   tickAIEngagementCooldowns,
 } from './aiEngagementFrameRuntime';
 import {
@@ -790,65 +785,23 @@ export function createAISingleEntityUpdaterForState({
         tickCalibrationPendingCounter(s.aiMatchContext, botId, dt, targetIsLunging, tuning.counterResolveDelay, tuning.calibrationWindowSize);
       }
   
-      // Sliding forces a crouch posture, like the player's slide.
-      const isCrouching = resolveCombatantCrouchPose({
-        aiState: state,
-        swayTimer,
-        slideActive,
-        movementComplexity,
+      const engagementPreparation = resolveAIEngagementPreparation({
+        aiState: state, swayTimer, slideActive, movementComplexity, weaponState, coordCommitTimer,
+        psychEnabled, standoffTimer: psychState.standoffTimer, resolvedDangerZone, dt,
+        standoffRangeMinOffset: tuning.standoffRangeMinOffset, standoffRangeMaxOffset: tuning.standoffRangeMaxOffset,
+        range: { botPos: pos, botVel: vel, botIsJumping: self.isJumping, targetIsCrouching: target.isCrouching,
+          targetHp: target.hp, targetProtected: targetIsProtected, predictedTargetPos, distanceToTarget,
+          activeWeapon, attackRange: s.settings.attackRange, attackRadius: s.settings.attackRadius, resolvedAiReach },
       });
-  
-      if (isCrouching && botMesh.userData.modelSystem !== 'v3') {
-        botMesh.scale.set(1, 0.65, 1);
-      } else {
-        botMesh.scale.set(1, 1, 1);
-      }
+      const { isCrouching } = engagementPreparation;
+      if (isCrouching && botMesh.userData.modelSystem !== 'v3') botMesh.scale.set(1, 0.65, 1);
+      else botMesh.scale.set(1, 1, 1);
       self.isCrouching = isCrouching;
-  
-      // Resolve weapon-aware body distance and stationary swing commit bands.
-      const {
-        combatDistanceToTarget,
-        verticalDeltaToTarget,
-        attackDistanceToTarget,
-        guaranteedKillRange,
-        enemyInKillRange,
-        selfGrounded,
-        stationarySwingReach,
-      } = resolveAICombatRangeFrame({
-        botPos: pos,
-        botVel: vel,
-        botIsCrouching: isCrouching,
-        botIsJumping: self.isJumping,
-        targetIsCrouching: target.isCrouching,
-        targetHp: target.hp,
-        targetProtected: targetIsProtected,
-        predictedTargetPos,
-        distanceToTarget,
-        activeWeapon,
-        attackRange: s.settings.attackRange,
-        attackRadius: s.settings.attackRadius,
-        resolvedAiReach,
-      });
-  
-      const inCoordCommitBand =
-        attackDistanceToTarget <= resolvedAiReach + 0.5 &&
-        weaponState === 'ready' &&
-        !targetIsProtected &&
-        target.hp > 0;
-      if (inCoordCommitBand) {
-        coordCommitTimer += dt;
-      } else {
-        coordCommitTimer = 0;
-      }
-  
-      if (psychEnabled) {
-        psychState.standoffTimer = accumulateStandoffTimer(
-          psychState.standoffTimer,
-          isInStandoffBand(distanceToTarget, resolvedDangerZone, tuning.standoffRangeMinOffset, tuning.standoffRangeMaxOffset),
-          dt
-        );
-      }
-  
+      const { combatDistanceToTarget, verticalDeltaToTarget, attackDistanceToTarget, guaranteedKillRange,
+        enemyInKillRange, selfGrounded, stationarySwingReach } = engagementPreparation.range;
+      coordCommitTimer = engagementPreparation.coordCommitTimer;
+      psychState.standoffTimer = engagementPreparation.standoffTimer;
+
       // Adaptive learning: sample this acting combatant's OWN position (edge proximity) and
       // approach speed into its own model, so opponents that target it can read those
       // tendencies. Both samplers self-throttle (position rate-limits to ~0.25s).

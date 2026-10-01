@@ -99,5 +99,5 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
   return { targetId: target.id, frame, feints, lungeObservation,
     weaponFrame: { ...frame, observedSwapLockout: context.weaponFrame.observedSwapLockout, currentSwapLockout: lockout, readinessRemaining: readiness },
     needsMovement: frame.mode === 'continue', movement: frame.mode === 'sync_return' ? { x: 0, z: 0 } : undefined,
-    action: { ...idleAction(), aim: aim === 0 ? 0 : aim, crouch: self.isCrouching }, scriptedCombat };
+    action: { ...idleAction(), aim: aim === 0 ? 0 : aim, crouch: context.observation?.preparation?.isCrouching ?? self.isCrouching }, scriptedCombat };
 }

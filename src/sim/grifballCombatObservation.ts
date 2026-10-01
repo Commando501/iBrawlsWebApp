@@ -4,6 +4,10 @@ import { resolveAITargetPredictionFrame } from '../components/grifball/aiTargetP
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { SimState } from './simState';
+import { resolveAIEngagementPreparation, type AIEngagementPreparationInput } from '../game/aiEngagementPreparation';
+
+export type SimEngagementPreparation = Pick<AIEngagementPreparationInput,
+  'aiState' | 'swayTimer' | 'coordCommitTimer' | 'psychEnabled' | 'standoffTimer' | 'resolvedDangerZone'>;
 
 export interface AssignedCombatTuning {
   effectiveReactionLatency: number;
@@ -22,6 +26,8 @@ export interface SimGrifballCombatObservation {
   observedWeapon: 'hammer' | 'sword';
   targetProtected: boolean;
   resolvedAiReach: number;
+  /** Adopt at this priority boundary, before later model/feint/combo effects. */
+  preparation?: { isCrouching: boolean; coordCommitTimer: number; standoffTimer: number };
   range: ReturnType<typeof resolveAICombatRangeFrame>;
   prediction: {
     predictedTargetPos: { x: number; y: number; z: number };
@@ -54,11 +60,15 @@ function actorsForObservation(state: SimState, botId: string, targetId: string,
 }
 
 export function resolveSimGrifballCombatObservation(state: SimState, botId: string, targetId: string,
-  scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning, dt = 1 / 60): SimGrifballCombatObservation | null {
+  scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning, dt = 1 / 60,
+  preparation?: SimEngagementPreparation): SimGrifballCombatObservation | null {
   const actors = actorsForObservation(state, botId, targetId, scriptedBots, dt);
   if (!actors) return null;
   for (const key of ['effectiveReactionLatency', 'tunedAnticipationFactor', 'movementComplexity', 'playstyleFactor'] as const)
     if (!Number.isFinite(tuning[key])) throw new Error(`Invalid combat observation tuning: ${key}`);
+  if (preparation && (typeof preparation.psychEnabled !== 'boolean' ||
+    ![preparation.swayTimer ?? 0, preparation.coordCommitTimer, preparation.standoffTimer, preparation.resolvedDangerZone].every(Number.isFinite)))
+    throw new Error('Invalid engagement preparation memory');
   const { actor, target } = actors;
   const pos = new THREE.Vector3(actor.pos.x, actor.pos.y, actor.pos.z);
   const resolvedAiReach = (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor);
@@ -70,17 +80,24 @@ export function resolveSimGrifballCombatObservation(state: SimState, botId: stri
     predictionLandingWeight: behavior.predictionLandingWeight,
     aimAtCurrentTarget: actor.weaponState === 'windup' || actor.weaponState === 'active',
     activeCustomMap: state.map, arenaRadius: state.map.arenaRadius });
-  const range = resolveAICombatRangeFrame({ botPos: pos,
+  const rangeInput = { botPos: pos,
     botVel: new THREE.Vector3(actor.vel.x, actor.vel.y, actor.vel.z),
     botIsCrouching: actor.isCrouching, botIsJumping: actor.isJumping,
     targetIsCrouching: target.isCrouching, targetHp: target.hp,
     targetProtected: target.invulnerabilityTimer > 0,
     predictedTargetPos: prediction.predictedTargetPos, distanceToTarget: prediction.distanceToTarget,
     activeWeapon: actor.weapon as 'hammer' | 'sword', attackRange: state.settings.attackRange, attackRadius: state.settings.attackRadius,
-    resolvedAiReach });
+    resolvedAiReach };
+  const prepared = preparation ? resolveAIEngagementPreparation({ ...preparation, range: rangeInput,
+    slideActive: actor.slideActive, movementComplexity: tuning.movementComplexity,
+    weaponState: actor.weaponState === 'idle' ? 'ready' : actor.weaponState, dt,
+    standoffRangeMinOffset: behavior.standoffRangeMinOffset, standoffRangeMaxOffset: behavior.standoffRangeMaxOffset }) : undefined;
+  const range = prepared?.range ?? resolveAICombatRangeFrame(rangeInput);
   const point = (v: THREE.Vector3) => ({ x: v.x === 0 ? 0 : v.x, y: v.y === 0 ? 0 : v.y, z: v.z === 0 ? 0 : v.z });
   return { version: 'grifball-combat-observation-v1', tick: state.tick, actorId: botId, targetId,
     observedWeapon: actor.weapon as 'hammer' | 'sword', targetProtected: target.invulnerabilityTimer > 0, resolvedAiReach, range,
+    ...(prepared ? { preparation: { isCrouching: prepared.isCrouching, coordCommitTimer: prepared.coordCommitTimer,
+      standoffTimer: prepared.standoffTimer } } : {}),
     prediction: { predictedTargetPos: point(prediction.predictedTargetPos), movementTargetPos: point(prediction.movementTargetPos),
       toTarget: point(prediction.toTarget), distanceToTarget: prediction.distanceToTarget,
       targetAirborne: prediction.targetAirborne, aim: prediction.yaw - Math.PI } };
@@ -94,6 +111,9 @@ export function retainSimGrifballCombatObservation(state: SimState, botId: strin
     observation.actorId !== botId || !['hammer', 'sword'].includes(observation.observedWeapon))
     throw new Error('Retained combat observation must belong to this actor and tick');
   const p = observation.prediction, r = observation.range;
+  const prepared = observation.preparation;
+  if (prepared && (typeof prepared.isCrouching !== 'boolean' || ![prepared.coordCommitTimer, prepared.standoffTimer].every(Number.isFinite)))
+    throw new Error('Invalid retained engagement preparation');
   if (!p || !r || ![observation.resolvedAiReach, p.distanceToTarget, p.aim, r.combatDistanceToTarget,
     r.verticalDeltaToTarget, r.attackDistanceToTarget, r.guaranteedKillRange, r.stationarySwingReach].every(Number.isFinite) ||
     ![observation.targetProtected, p.targetAirborne, r.enemyInKillRange, r.selfGrounded].every(v => typeof v === 'boolean'))

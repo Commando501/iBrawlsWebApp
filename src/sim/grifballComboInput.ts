@@ -122,5 +122,5 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     ...(weaponFeintMemory ? { weaponFeintMemory } : {}),
     // JSON persistence canonicalizes signed zero. Normalize the command before
     // flight freezes its heading so restored and uninterrupted state stay exact.
-    action: { ...idleAction(), aim: aim === 0 ? 0 : aim, crouch: self.isCrouching }, scriptedCombat };
+    action: { ...idleAction(), aim: aim === 0 ? 0 : aim, crouch: context.observation?.preparation?.isCrouching ?? self.isCrouching }, scriptedCombat };
 }
