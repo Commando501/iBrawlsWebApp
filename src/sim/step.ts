@@ -11,6 +11,7 @@
  * sequence) therefore reproduces an identical state hash across runs and restarts.
  */
 
+import { prepareSimAIEngagementMotion } from './aiEngagementMotion';
 import { validateScriptedLungeFeedback, createScriptedLungeFeedback, type ScriptedLungeFeedback } from './scriptedLungeFeedback';
 import { validateScriptedMeleeFeedback, createScriptedMeleeFeedback, type ScriptedMeleeFeedback } from './scriptedMeleeFeedback';
 import { type UniversalSettings } from '../types';
@@ -172,6 +173,7 @@ export function stepSimulation(
   // Phase 1 — movement.
   for (const c of state.combatants) {
     if (c === player) continue;
+    let engagementPrepared = false;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -186,9 +188,21 @@ export function stepSimulation(
       else {
         const owner = options.scriptedActorDecisions!;
         const view = settings === state.settings ? state : { ...state, settings };
+        const context = { state: view, actorId: c.id, dt, clockPhase: 'after-swap-tick' as const };
+        const preparation = owner.prepare ? owner.prepare(context) : 'default';
+        if (preparation !== 'default' && preparation !== 'engagement') throw new Error(`Invalid actor preparation: ${c.id}`);
+        if (preparation === 'engagement') {
+          if (c.hasBall || c.weapon === 'ball' || view.match.ball.holderId === c.id)
+            throw new Error(`Carrier movement cannot use armed engagement preparation: ${c.id}`);
+          prepareSimAIEngagementMotion(view, c, settings, dt);
+          engagementPrepared = true;
+        }
+        const motionPhase = engagementPrepared ? 'after-engagement-gravity' as const : 'default' as const;
         const decision = validateScriptedActorDecision(view, owner, c.id,
-          owner.resolve({ state: view, actorId: c.id, dt, clockPhase: 'after-swap-tick' }), settings);
-        actorDecisions.push({ id: c.id, kind: decision.kind, ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
+          owner.resolve({ ...context, motionPhase }), settings);
+        if (engagementPrepared && (decision.kind === 'handled' ? decision.action : act(c.id)).jump)
+          throw new Error(`Engagement decisions require a scripted AI jump owner: ${c.id}`);
+        actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
           resolvedActions[c.id] = decision.action;
           if (decision.movement) scriptedMovement![c.id] = decision.movement;
@@ -214,7 +228,7 @@ export function stepSimulation(
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
       if (c.isLunging) continue;
     }
-    stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive);
+    stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared);
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);

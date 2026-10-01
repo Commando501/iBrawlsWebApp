@@ -121,6 +121,8 @@ export interface SimCombatant {
   // Hammer-jump: a hammer strike near self opens a window; jumping in it launches high.
   hammerJumpWindowTimer: number;
   hammerJumpsInAir: number;
+  /** Optional scripted-AI recovery clock, created by runaway-altitude recovery. */
+  aiHammerJumpCooldownTimer?: number;
 
   // Grifball pass charge: held to wind up a throw (`grifballChargeMax`).
   passChargeTimer: number;

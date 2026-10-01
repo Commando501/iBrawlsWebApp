@@ -41,7 +41,7 @@ export function recoverAirborneCombatantForFrame({
 
 export type PreGroundMovementRecoveryMode = 'continue' | 'sync_return';
 
-export function resolvePreGroundMovementRecoveryForCombatant({
+export function resolvePreGroundMovementRecoveryForCombatant<TSelf extends Pick<Combatant, 'isJumping' | 'aiHammerJumpsInAir'>>({
   self,
   pos,
   vel,
@@ -52,14 +52,14 @@ export function resolvePreGroundMovementRecoveryForCombatant({
   recoverCombatantAltitude,
   constrainCombatantToArena,
 }: {
-  self: Combatant;
+  self: TSelf;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   dt: number;
   movementComplexity: number;
   swayTimer: number;
   toTarget: THREE.Vector3;
-  recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
+  recoverCombatantAltitude: (self: TSelf, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 }): PreGroundMovementRecoveryMode {
   const isAirborneBeforeGroundMovement = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;

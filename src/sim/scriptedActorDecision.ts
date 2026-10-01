@@ -14,16 +14,22 @@ export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; move
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
   scriptedBots: Readonly<Record<string, string>>;
+  /** Called only after objective handoff. Choose engagement only when this
+   * actor enters the live target-engagement branch; no-target/objective recovery
+   * has a different owner. Gravity then precedes resolve and recovery precedes walking. */
+  prepare?: (context: { state: SimState; actorId: string; dt: number; clockPhase: 'after-swap-tick' }) => 'default' | 'engagement';
   /** Synchronous policy, called at this actor's turn after its shield/dash/swap
    * clocks. Read this host's state; mutate only caller-owned AI memory/RNG.
    * Handoff preserves the caller's fallback input and is not autonomous success.
    * AI reload/feint/combo/coordinator clocks remain the policy owner's responsibility. */
-  resolve(context: { state: SimState; actorId: string; dt: number; clockPhase: 'after-swap-tick' }): ScriptedActorDecision;
+  resolve(context: { state: SimState; actorId: string; dt: number; clockPhase: 'after-swap-tick';
+    motionPhase: 'default' | 'after-engagement-gravity' }): ScriptedActorDecision;
 }
 export interface ScriptedActorDecisionRecord {
   id: string;
   kind: 'handled' | 'handoff' | 'objective' | 'inactive';
   reason?: string;
+  motionPhase?: 'after-engagement-gravity';
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -32,6 +38,7 @@ export interface ScriptedActorDecisionRecord {
 export function validateScriptedActorDecisionOwner(state: SimState, owner: ScriptedActorDecisionOwner | undefined,
   settings: UniversalSettings, dt: number): void {
   if (!owner) return;
+  if (owner.prepare !== undefined && typeof owner.prepare !== 'function') throw new Error('Invalid actor preparation callback');
   if (owner.version !== 'scripted-actor-decision-v1' || typeof owner.resolve !== 'function') throw new Error('Invalid scripted actor decision owner');
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1') throw new Error('Actor decisions require mixed Grifball execution');
   if (!Number.isFinite(dt) || dt <= 0) throw new Error('Actor decisions require a positive finite timestep');

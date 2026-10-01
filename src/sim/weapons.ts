@@ -799,6 +799,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   }
   c.hammerJumpWindowTimer = 0;
   c.hammerJumpsInAir = 0;
+  if (c.aiHammerJumpCooldownTimer !== undefined) c.aiHammerJumpCooldownTimer = 0;
   c.passChargeTimer = 0;
   c.isJumping = false;
   c.isLunging = false;

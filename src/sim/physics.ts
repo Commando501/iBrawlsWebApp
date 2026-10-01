@@ -19,6 +19,7 @@
  */
 
 import * as THREE from 'three';
+import { finishSimAIEngagementMotion } from './aiEngagementMotion';
 import { type UniversalSettings } from '../types';
 import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
@@ -57,6 +58,7 @@ export function rightDir(yaw: number, out: THREE.Vector3 = new THREE.Vector3()):
 
 /** Cooldowns sampled by a scheduled roster decision before physical movement. */
 export function tickMovementCooldowns(c: SimCombatant, dt: number): void {
+  if ((c.aiHammerJumpCooldownTimer ?? 0) > 0) c.aiHammerJumpCooldownTimer = Math.max(0, c.aiHammerJumpCooldownTimer! - dt);
   if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
   if (c.invulnerabilityTimer > 0) c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
 }
@@ -72,7 +74,8 @@ export function stepCombatantMovement(
   settings: UniversalSettings,
   dt: number,
   objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent,
-  cooldownsAdvanced = false
+  cooldownsAdvanced = false,
+  engagementPrepared = false
 ): void {
   if (!c.alive) return;
   const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
@@ -109,7 +112,8 @@ export function stepCombatantMovement(
   // Face the requested aim instantly (mouse-equivalent), normalized to (-PI, PI].
   c.yaw = normalizeYaw(action.aim);
   // Live local inputs allow crouching in flight; other profiles keep grounded-only stance.
-  c.isCrouching = action.crouch && (playerView || !c.isJumping);
+  c.isCrouching = action.crouch && (engagementPrepared || playerView || !c.isJumping);
+  if (engagementPrepared && finishSimAIEngagementMotion(state, c, settings, dt)) return;
   const isRunner = c.hasBall || c.weapon === 'ball';
 
   // Dash trigger (tap): only when grounded-ready and off cooldown.

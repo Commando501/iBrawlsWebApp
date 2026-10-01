@@ -57,6 +57,7 @@ for (const id of ['ordinary', 'main_ai']) test(`ground policy does not spend an 
 
 for (const phase of ['countdown', 'scored', 'matchEnd'] as const) test(`inactive ${phase} never invokes decision memory owner`, () => {
   const f = fixture(); f.state.match.phase = phase; f.state.match.phaseTimer = 0;
+  f.owner.prepare = () => assert.fail('inactive preparation must not run');
   f.owner.resolve = () => assert.fail('inactive policy must not run');
   f.first.dashCooldownTimer = 1; f.first.invulnerabilityTimer = 1;
   const event = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
@@ -73,6 +74,7 @@ test('explicit handoff preserves fallback movement and leaves inputs unchanged',
 
 test('objective planner has priority and shares the advanced clock boundary', () => {
   const f = fixture(); f.first.pos.x = -15; f.second.pos.x = 15;
+  f.owner.prepare = () => assert.fail('handled objective must not run engagement preparation');
   f.owner.resolve = () => assert.fail('handled objective must not run combat fallback');
   const event = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner,
     scriptedPlanner: { version: 'scripted-objective-planner-v1', scriptedBots: f.owner.scriptedBots, plan: createGrifballTeamPlanState() } });
@@ -125,11 +127,13 @@ test('earlier lethal flight prevents the victim decision from running', () => {
 
 test('revival happens before current-life decisions and exactly-once shield sampling', () => {
   const f = fixture(); f.first.alive = false; f.first.hp = 0; f.first.respawnTimer = dt / 2;
+  f.first.aiHammerJumpCooldownTimer = 3;
   let observed = false;
   f.owner.resolve = ({ state, actorId }) => {
     if (actorId === 'ordinary') {
       const c = state.combatants.find(c => c.id === actorId)!;
       assert.ok(c.alive); assert.equal(c.hp, c.maxHp); assert.equal(c.respawnTimer, 0);
+      assert.equal(c.aiHammerJumpCooldownTimer, 0, 'new life clears altitude recovery cooldown');
       assert.equal(c.invulnerabilityTimer, state.settings.respawnInvulnerabilityDuration - dt); observed = true;
     }
     return { kind: 'handoff', reason: 'revival memory remains external' };
@@ -185,4 +189,48 @@ for (const blocked of [false, true]) test(`scheduled lunge commit precedes walki
   assert.equal(f.first.isLunging, !blocked); assert.equal(f.first.yaw, Math.PI / 2);
   if (blocked) assert.notDeepEqual(f.first.pos, before, 'rejected lunge still executes supplied movement');
   else { assert.deepEqual(f.first.pos, before); assert.deepEqual(f.first.vel, { x: 1, y: 0, z: 2 }); assert.equal(f.first.lungeTimer, 0); }
+});
+
+for (const invalid of [null, undefined, 'air', 1]) test(`invalid preparation result rejects before gravity: ${String(invalid)}`, () => {
+  const f = fixture(); f.first.pos.y = 2; f.first.vel.y = -3; f.first.isJumping = true;
+  f.owner.prepare = () => invalid as never;
+  const before = structuredClone(f.first.pos);
+  assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /Invalid actor preparation/);
+  assert.deepEqual(f.first.pos, before);
+});
+
+test('invalid preparation configuration rejects before any frame changes', () => {
+  const f = fixture(); f.owner.prepare = 1 as never; const before = structuredClone(f.state);
+  assert.throws(() => stepSimulation(f.state, {}, { scriptedActorDecisions: f.owner }), /preparation callback/);
+  assert.deepEqual(f.state, before);
+});
+
+test('engagement preparation refuses carriers and generic player jump ownership', () => {
+  const f = fixture(); f.owner.prepare = () => 'engagement'; f.first.hasBall = true;
+  assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /Carrier movement/);
+  f.first.hasBall = false; f.owner.resolve = () => ({ kind: 'handled', action: { ...idleAction(), jump: true } });
+  assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /scripted AI jump owner/);
+  f.owner.resolve = () => ({ kind: 'handoff', reason: 'fallback jump is also unowned' });
+  assert.throws(() => stepSimulation(f.state, { ordinary: { ...idleAction(), jump: true } },
+    { settings: f.state.settings, scriptedActorDecisions: f.owner }), /scripted AI jump owner/);
+});
+
+test('landing preparation permits the same-turn ground attack and advances recovery clocks once', () => {
+  const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => 'engagement';
+  f.first.pos = { x: 0, y: .01, z: 0 }; f.first.vel = { x: 0, y: -3, z: 0 }; f.first.isJumping = true;
+  f.first.hammerJumpsInAir = 1; f.first.aiHammerJumpCooldownTimer = 2 * dt;
+  f.second.team = 'red'; f.first.team = 'blue'; f.second.pos = { x: 0, y: 0, z: 2 };
+  f.second.hp = f.second.maxHp = 20;
+  f.owner.resolve = ({ state, actorId, clockPhase, motionPhase }) => {
+    const actor = state.combatants.find(c => c.id === actorId)!;
+    assert.equal(motionPhase, 'after-engagement-gravity'); assert.equal(actor.isJumping, false); assert.equal(actor.hammerJumpsInAir, 0);
+    const input = resolveSimGrifballGroundAttackInput(state, actorId, f.owner.scriptedBots,
+      { enemyInKillRange: true, aiState: 'APPROACHING', timer: 0, cooldownMultiplier: 1 }, dt, clockPhase);
+    return input ? { kind: 'handled', action: input.action, movement: input.scriptedObjective.movement[actorId] }
+      : { kind: 'handoff', reason: 'committed weapon recovery' };
+  };
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  assert.equal(f.first.weaponState, 'windup'); assert.equal(f.first.aiHammerJumpCooldownTimer, dt);
+  for (let i = 0; i < 40; i++) stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  assert.ok(f.second.hp < 20, 'landing-follow-up must produce real damage'); assert.equal(f.first.aiHammerJumpCooldownTimer, 0);
 });

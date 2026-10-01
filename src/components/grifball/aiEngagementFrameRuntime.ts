@@ -19,7 +19,7 @@ export function normalizeTargetEngagementFrameState(frame: AIEngagementFrame): v
   frame.timer = 0;
 }
 
-export function integrateTargetEngagementGravityForCombatant({
+export function integrateTargetEngagementGravityForCombatant<TSelf extends Pick<Combatant, 'isLunging' | 'isJumping' | 'aiHammerJumpsInAir'>>({
   self,
   frame,
   dt,
@@ -27,11 +27,11 @@ export function integrateTargetEngagementGravityForCombatant({
   recoverCombatantAltitude,
   constrainCombatantToArena,
 }: {
-  self: Combatant;
+  self: TSelf;
   frame: AIEngagementFrame;
   dt: number;
   gravityAcceleration: number;
-  recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
+  recoverCombatantAltitude: (self: TSelf, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 }): void {
   // Committed flight integrates velocity, gravity and constraints itself later in
