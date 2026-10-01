@@ -2,9 +2,8 @@ import * as THREE from 'three';
 import type { Combatant, UniversalSettings } from '../types';
 import {
   type BotCoordinatorState,
-  clearBotEngagements,
-  tickBotCoordinator,
 } from './aiBotCoordinator';
+import { beginAICoordinationFrame } from './aiCoordinationFrame';
 import {
   countOfflineBotSlots,
   createMainAICombatant,
@@ -267,8 +266,7 @@ export function tickAIOrchestrator(
   }
 
   if (input.rosterLocked) {
-    tickBotCoordinator(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
-    clearBotEngagements(coordinator);
+    beginAICoordinationFrame(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
     return { rosterChanged: false, totalCombatants: 1 + roster.size };
   }
 
@@ -302,8 +300,7 @@ export function tickAIOrchestrator(
     rosterChanged = true;
   }
 
-  tickBotCoordinator(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
-  clearBotEngagements(coordinator);
+  beginAICoordinationFrame(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
 
   return { rosterChanged, totalCombatants: 1 + offlineBotCount };
 }

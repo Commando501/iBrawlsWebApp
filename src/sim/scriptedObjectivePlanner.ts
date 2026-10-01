@@ -1,4 +1,6 @@
 import type { UniversalSettings } from '../types';
+import type { BotCoordinatorState } from '../game/aiBotCoordinator';
+import { publishGrifballTacticalEngagements } from '../game/aiCoordinationFrame';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import { resolvePunchCooldown } from '../game/runnerBallSettings';
 import { updateGrifballTeamPlan, type GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
@@ -80,12 +82,15 @@ export function validateScriptedObjectivePlanner(state: SimState, planner: Scrip
 /** Called once after local execution/roster respawns. Assignments use a frozen
  * observation, but each resolve reads current positions at that actor's turn. */
 export function beginScriptedObjectivePlanning(state: SimState, planner: ScriptedObjectivePlanner,
-  settings: UniversalSettings, dt: number, actions: ActionsById, swapTimersAdvanced: ReadonlySet<string> = new Set()) {
+  settings: UniversalSettings, dt: number, actions: ActionsById, swapTimersAdvanced: ReadonlySet<string> = new Set(),
+  coordinator?: BotCoordinatorState) {
   const view = settings === state.settings ? state : { ...state, settings };
-  updateGrifballTeamPlan(planner.plan, createSimGrifballTacticalSnapshot(view, {
+  const snapshot = createSimGrifballTacticalSnapshot(view, {
     scriptedBots: planner.scriptedBots, tactics: planner.tactics,
     pickupRequests: Object.fromEntries(Object.entries(actions).map(([id, action]) => [id, action.pickup])),
-  }), dt);
+  });
+  updateGrifballTeamPlan(planner.plan, snapshot, dt);
+  if (coordinator) publishGrifballTacticalEngagements(coordinator, planner.plan, snapshot.players);
   const frame: ScriptedObjectivePlannerFrame = { version: SCRIPTED_OBJECTIVE_PLANNER_VERSION, decisions: [] };
   const owns = (id: string) => Object.hasOwn(planner.scriptedBots, id);
   const ownsPunch = (id: string) => Object.hasOwn(planner.punchControl?.cooldowns ?? {}, id);

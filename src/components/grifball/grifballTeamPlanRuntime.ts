@@ -1,8 +1,9 @@
 import { liveTimings } from '../../game/grifballValidation/telemetry';
 import { createGrifballTacticalSnapshot } from '../../game/grifballTacticalContract';
 import { getGrifballTeamSpawn, createDefaultSpawnPoints } from './arenaSpawns';
-import { setTacticalBotEngagements, type BotCoordRole } from '../../game/aiBotCoordinator';
-import { updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer } from '../../game/aiGrifballTeamPlan';
+import { setTacticalBotEngagements } from '../../game/aiBotCoordinator';
+import { publishGrifballTacticalEngagements } from '../../game/aiCoordinationFrame';
+import { updateGrifballTeamPlan, resetGrifballTeamPlan, type GrifballTacticalPlayer } from '../../game/aiGrifballTeamPlan';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
 import type { GrifballRuntimeState } from './runtimeState';
 import { GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH } from './combatGeometry';
@@ -81,13 +82,6 @@ export function updateGrifballTeamPlanForState(
   timing?.record('snapshot', observed - started);
   // Countdown/scored reset revisions are bookkeeping, not active planner refresh samples.
   timing?.record(snapshot.playing && revision !== plan.revision ? 'plannerRefresh' : 'plannerBetween', planned - observed);
-  const engagements: [string, { targetId: string; role: BotCoordRole }][] = [];
-  for (const a of plan.assignments.values()) {
-    const bot = players.find(p => p.id === a.botId);
-    if (!bot) continue;
-    const targetId = selectGrifballAssignmentThreat(a, bot.pos, players);
-    if (targetId && (a.defense || a.tanking?.attack && targetId === a.tanking.targetId)) engagements.push([a.botId, { targetId, role: a.tanking?.mode === 'punish' ? 'flanker' : 'pressure' }]);
-  }
-  setTacticalBotEngagements(state.aiMatchContext.coordinator, engagements);
+  publishGrifballTacticalEngagements(state.aiMatchContext.coordinator, plan, players);
   timing?.record('coordination', performance.now() - planned);
 }

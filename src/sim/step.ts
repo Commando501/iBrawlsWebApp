@@ -13,6 +13,9 @@ import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGro
  */
 
 import { prepareSimAIEngagementMotion } from './aiEngagementMotion';
+import { beginAICoordinationFrame } from '../game/aiCoordinationFrame';
+import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
+import { validateScriptedCoordination, type ScriptedCoordination } from './scriptedCoordination';
 import { applyScriptedAIMobility, type ScriptedAIDashDecision } from './scriptedAIMobility';
 import { validateScriptedLungeFeedback, createScriptedLungeFeedback, type ScriptedLungeFeedback } from './scriptedLungeFeedback';
 import { validateScriptedMeleeFeedback, createScriptedMeleeFeedback, type ScriptedMeleeFeedback } from './scriptedMeleeFeedback';
@@ -60,6 +63,8 @@ export interface StepOptions {
   /** Own-state combat/fallback policy at each active actor's turn. May follow
    * scriptedPlanner objective handoffs; cannot share precomputed packet owners. */
   scriptedActorDecisions?: ScriptedActorDecisionOwner;
+  /** Opt-in once-per-frame coordination clock and frozen team-plan publication. */
+  scriptedCoordination?: ScriptedCoordination;
 }
 
 /**
@@ -74,6 +79,8 @@ export function stepSimulation(
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
   validateScriptedActorDecisionOwner(state, options.scriptedActorDecisions, settings, dt);
+  validateScriptedCoordination(state, options.scriptedCoordination, !!options.scriptedPlanner,
+    options.scriptedLungeFeedback?.coordinator, dt);
   if (options.scriptedActorDecisions && (options.scriptedCombat || options.scriptedObjective))
     throw new Error('Scheduled actor decisions cannot share precomputed combat or objective packets');
   if ((options.scriptedMeleeFeedback || options.scriptedLungeFeedback) && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
@@ -155,6 +162,8 @@ export function stepSimulation(
     if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills);
     else { delete player.playerSwordLungeRecovery; player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
   }
+  if (options.scriptedCoordination)
+    beginAICoordinationFrame(options.scriptedCoordination.coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.
   if (rosterV2) {
@@ -164,7 +173,8 @@ export function stepSimulation(
     const cooldowns = options.scriptedPlanner?.punchControl?.cooldowns;
     for (const c of dead) if (c.alive && cooldowns && Object.hasOwn(cooldowns, c.id)) cooldowns[c.id] = 0;
   }
-  const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions, swapTimersAdvanced) : null;
+  const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions,
+    swapTimersAdvanced, options.scriptedCoordination?.coordinator) : null;
 
   // Ordinary live AI returns before movement/intent in inactive Grifball phases.
   // Capture the pre-objective phase: countdown completion resumes AI on the next frame.
