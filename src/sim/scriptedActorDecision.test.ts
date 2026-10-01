@@ -354,3 +354,77 @@ for (const defect of ['missing', 'handoff', 'version', 'state', 'pending', 'targ
     assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /AI dash|AI mobility/);
     assert.deepEqual(f.first.pos, before); assert.equal(f.first.dashRemaining, remaining);
   });
+
+for (const version of ['scripted-combat-v1', 'scripted-combat-v2', 'scripted-combat-v3'] as const)
+  test(`airborne melee requires prepared v3 ownership: ${version}`, () => {
+    const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' };
+    f.owner.prepare = () => version === 'scripted-combat-v3' ? 'default' : 'engagement';
+    f.first.pos.y = 1; f.first.isJumping = true;
+    f.owner.resolve = () => ({ kind: 'handled', action: idleAction(), commands: [{ kind: 'melee', weapon: 'hammer', swipe: false }], commandVersion: version });
+    assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /grounded walker|prepared engagement/);
+    assert.equal(f.first.weaponState, 'idle');
+  });
+
+for (const withDash of [false, true]) test(`v3 lunge cannot share evasion actuation: ${withDash}`, () => {
+  const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => 'engagement';
+  f.first.weapon = 'sword'; f.first.team = 'blue'; f.second.team = 'red';
+  f.owner.resolve = () => ({ kind: 'handled', action: idleAction(), commandVersion: 'scripted-combat-v3',
+    commands: [{ kind: 'lunge', targetId: f.second.id, direction: { x: 1, y: 0, z: 0 } }],
+    mobility: withDash ? { version: 'scripted-ai-mobility-v2', kind: 'spatial-dodge', direction: { x: 1, z: 0 } }
+      : { version: 'scripted-ai-mobility-v1', kind: 'emergency-hop', direction: { x: 1, z: 0 } },
+    ...(withDash ? { dash: { version: 'scripted-ai-dash-v1', aiState: 'APPROACHING', pendingPostEvasionCharge: false,
+      target: { targetWeaponState: 'ready', attackDistanceToTarget: 10, resolvedAiReach: 3, spatialIQ: 80, targetProtected: false, weaponReady: true } } } : {}) });
+  const before = { ...f.first.pos };
+  assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /share an evasion movement owner/);
+  assert.deepEqual(f.first.pos, before); assert.equal(f.first.isJumping, false); assert.equal(f.first.isLunging, false);
+});
+
+for (const unready of [false, true]) test(`v3 prefix, hop and melee preserve readiness and one clock tick: ${unready}`, () => {
+  const f = fixture(); f.owner.prepare = ({ actorId }) => actorId === 'ordinary' ? 'engagement' : 'default';
+  f.state.settings.weaponReadyTime = 0; f.first.weapon = 'sword'; f.first.weaponState = 'recovering'; f.first.attackKind = 'slash';
+  f.first.weaponTimer = 1; f.first.attackCooldown = 3 * dt; f.first.hammerJumpWindowTimer = 4 * dt;
+  f.first.weaponReadyTimer = unready ? 3 * dt : 0;
+  const changes: { weapon: string; x: number; y: number }[] = []; let physicalWeapon = f.first.weapon;
+  Object.defineProperty(f.first, 'weapon', { enumerable: true, configurable: true, get: () => physicalWeapon,
+    set: value => { changes.push({ weapon: value, x: f.first.pos.x, y: f.first.pos.y }); physicalWeapon = value; } });
+  f.owner.resolve = ({ state, actorId }) => {
+    if (actorId === 'main_ai') {
+      const prior = state.combatants.find(c => c.id === 'ordinary')!;
+      assert.equal(prior.weaponState, unready ? 'recovering' : 'windup'); assert.ok(prior.isJumping);
+      assert.ok(Math.abs(prior.pos.x - 7.5 * dt) < 1e-10, 'later actor sees the hop and counter commit');
+      return { kind: 'handoff', reason: 'observation-only actor' };
+    }
+    return { kind: 'handled', action: idleAction(), commandVersion: 'scripted-combat-v3',
+      commands: [{ kind: 'revert-weapon-feint' }, { kind: 'swap', weapon: 'sword' }, { kind: 'melee', weapon: 'sword', swipe: false }],
+      mobility: { version: 'scripted-ai-mobility-v1', kind: 'emergency-hop', direction: { x: 1, z: 0 } } };
+  };
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  assert.deepEqual(changes, [{ weapon: 'hammer', x: 0, y: 0 }, { weapon: 'sword', x: 0, y: 0 }], 'prefixes execute before hop displacement');
+  assert.equal(f.first.weaponReadyTimer, unready ? 3 * dt - dt : 0);
+  assert.ok(Math.abs(f.first.hammerJumpWindowTimer - 3 * dt) < 1e-10, 'weapon intent clocks advance once');
+  if (!unready) { assert.equal(f.first.attackKind, 'slash'); assert.equal(f.first.weaponPhaseElapsed, dt); }
+});
+
+for (const committed of ['windup', 'active'] as const) test(`v3 moving melee cannot restart a committed ${committed}`, () => {
+  const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => 'engagement';
+  f.first.weaponState = committed; f.first.weaponPhaseElapsed = .01; f.first.attackKind = 'strike';
+  f.owner.resolve = () => ({ kind: 'handled', action: idleAction(), commandVersion: 'scripted-combat-v3',
+    commands: [{ kind: 'melee', weapon: 'hammer', swipe: false }], mobility: { version: 'scripted-ai-mobility-v1', kind: 'emergency-hop', direction: { x: 1, z: 0 } } });
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  assert.equal(f.first.weaponState, committed); assert.equal(f.first.weaponPhaseElapsed, .01 + dt); assert.ok(f.first.isJumping);
+});
+
+test('a counter committed before a later lethal flight cannot deal posthumous melee damage', () => {
+  const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => 'engagement';
+  f.state.settings.enableSwordTrade = f.state.settings.enableHammerSwordTrade = false;
+  f.first.team = 'blue'; f.first.hp = 1; f.second.team = 'red'; f.second.hp = f.second.maxHp = 20;
+  f.second.pos = { x: 0, y: 0, z: 1.7 }; f.second.weapon = 'sword'; f.second.isLunging = true;
+  f.second.lungeDir = { x: 0, y: 0, z: -1 }; f.second.lungeTargetId = f.first.id; f.second.lungeStartPos = { ...f.second.pos };
+  f.owner.resolve = () => ({ kind: 'handled', action: idleAction(), commandVersion: 'scripted-combat-v3',
+    commands: [{ kind: 'melee', weapon: 'hammer', swipe: false }] });
+  const events = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  assert.equal(events.actorDecisionFrame!.decisions[0].kind, 'handled'); assert.equal(f.first.alive, false);
+  assert.equal(events.kills[0].victimId, f.first.id); assert.equal(f.first.weaponState, 'idle');
+  for (let tick = 0; tick < 20; tick++) stepSimulation(f.state, {}, { settings: f.state.settings });
+  assert.equal(f.second.hp, 20);
+});

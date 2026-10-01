@@ -297,7 +297,8 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
  * weaponTimer remains remaining time for existing observation consumers.
  */
 function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
-  settings: UniversalSettings, dt: number, events: KillEvent[], canAttack: boolean, feedback?: RosterMeleeHitFeedback): void {
+  settings: UniversalSettings, dt: number, events: KillEvent[], canAttack: boolean, feedback?: RosterMeleeHitFeedback,
+  movingAICommit = false): void {
   const enter = (phase: SimCombatant['weaponState'], duration: number) => {
     c.weaponState = phase; c.weaponPhaseElapsed = 0; c.weaponTimer = duration;
   };
@@ -311,7 +312,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
     : c.attackKind === 'swipe' ? (settings.hammerMeleeSpeed ? settings.hammerMeleeSpeed * .6 : .14)
     : Math.max(.03, (settings.hammerMeleeSpeed ?? .24) * .5);
   if (c.weaponState === 'idle') {
-    if (!canAttack || c.dashRemaining > 0) return;
+    if (!canAttack || c.dashRemaining > 0 && !movingAICommit) return;
     if (action.attackSecondary && c.weapon === 'sword') {
       startLunge(c, settings, state); c.lastAttackTick = state.tick; return;
     }
@@ -548,8 +549,11 @@ export function stepCombatantWeapons(
   scriptedCommands?: readonly ScriptedCombatCommand[],
   feedback?: RosterMeleeHitFeedback,
   lungeFeedback?: RosterLungeFeedback,
-  swapTimersAdvanced = false
+  swapTimersAdvanced = false,
+  engagement?: { beforeAttack?: () => void }
 ): void {
+  if (engagement && (stage !== 'intent' || !scriptedCommands || state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c)))
+    throw new Error('Engagement commits require scheduled roster command intent');
   if (scriptedCommands && (!usesRosterLifecycle(state) || isMixedPlayer(state, c)))
     throw new Error('Scripted combat commands require a roster actor in an explicit live roster profile');
   if (!c.alive) return;
@@ -572,7 +576,14 @@ export function stepCombatantWeapons(
       // ordering, including a recovery swap making the local decision ready;
       // the old animation itself continues unless a subsequent attack replaces it.
       let decisionReady = c.weaponState === 'idle';
+      let mobilityApplied = false;
+      const applyMobility = () => {
+        if (mobilityApplied) return;
+        mobilityApplied = true;
+        engagement?.beforeAttack?.();
+      };
       for (const command of scriptedCommands) {
+        if (command.kind === 'melee' || command.kind === 'lunge') applyMobility();
         if (command.kind === 'revert-weapon-feint') {
           if (c.isLunging || c.weapon !== 'sword' || c.weaponState === 'windup' || c.weaponState === 'active') continue;
           // Live feint expiry clears lockout, retains readiness and leaves the
@@ -588,7 +599,7 @@ export function stepCombatantWeapons(
           const timers = resolveAIWeaponSwapTimers(settings, c.swapLockoutTimer, c.weaponReadyTimer);
           c.swapLockoutTimer = timers.lockout; c.weaponReadyTimer = timers.readiness;
           decisionReady = true;
-        } else if (decisionReady && c.weaponReadyTimer <= 0 && c.dashRemaining <= 0) {
+        } else if (decisionReady && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee')) {
           if (command.kind === 'lunge') {
             const target = findCombatant(state, command.targetId);
             if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || target.team === c.team || target.invulnerabilityTimer > 0) continue;
@@ -598,10 +609,11 @@ export function stepCombatantWeapons(
           }
           if (c.weapon !== command.weapon) continue;
           c.weaponState = 'idle';
-          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true, feedback);
+          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true, feedback, !!engagement);
           decisionReady = false;
         }
       }
+      applyMobility();
     }
 
     // Weapon swap (hammer <-> sword): blocked while carrying the ball, mid-action, or on lockout.

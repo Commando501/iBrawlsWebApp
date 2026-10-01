@@ -176,6 +176,7 @@ export function stepSimulation(
     if (c === player) continue;
     let engagementPrepared = false;
     let dashDecision: ScriptedAIDashDecision | undefined;
+    let engagementCommit: { beforeAttack?: () => void } | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -211,9 +212,12 @@ export function stepSimulation(
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
           dashDecision = decision.dash;
+          if (decision.commandVersion === 'scripted-combat-v3' && decision.commands?.length) engagementCommit = {};
           if (decision.mobility) {
-            applyScriptedAIMobility(c, decision.mobility, dt, settings);
-            actorDecisions[actorDecisions.length - 1].mobility = decision.mobility.kind;
+            const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
+            const applyMobility = () => { applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind; };
+            if (engagementCommit) engagementCommit.beforeAttack = applyMobility;
+            else applyMobility();
           }
           resolvedActions[c.id] = decision.action;
           if (decision.movement) scriptedMovement![c.id] = decision.movement;
@@ -228,7 +232,7 @@ export function stepSimulation(
       }
       continue;
     }
-    // Ground policy commits before walking. In particular a newly accepted
+    // Scripted policy commits before movement. In particular a newly accepted
     // lunge returns from live AI without replacing launch-frame velocity or
     // integrating flight until the following frame. Rejected commands still walk.
     const earlyCommands = scheduledCombat[c.id];
@@ -236,7 +240,7 @@ export function stepSimulation(
     if (intentBeforeMovement) {
       c.yaw = normalizeYaw(act(c.id).aim);
       c.isCrouching = act(c.id).crouch && !c.isJumping;
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), engagementCommit);
       if (c.isLunging) continue;
     }
     const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision);

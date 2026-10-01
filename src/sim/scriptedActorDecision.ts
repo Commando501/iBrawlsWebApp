@@ -71,16 +71,18 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   if (action.attackSecondary && state.combatants.find(c => c.id === id)?.weapon === 'sword')
     throw new Error(`Scheduled sword lunges require target-locked commands: ${id}`);
   const actions = { [id]: action };
+  const otherMovement = decision.movement !== undefined;
+  const incompatibleCommands = (decision.commands?.length ?? 0) > 0 && decision.commandVersion !== 'scripted-combat-v3';
   const mobility = decision.mobility === undefined ? undefined : validateScriptedAIMobility(state, id, decision.mobility,
-    action, engagementPrepared, decision.movement !== undefined || (decision.commands?.length ?? 0) > 0);
+    action, engagementPrepared, otherMovement || incompatibleCommands);
   const dash = decision.dash === undefined ? undefined : validateScriptedAIDashDecision(state, id, decision.dash,
-    action, engagementPrepared, mobility, decision.movement !== undefined || (decision.commands?.length ?? 0) > 0);
+    action, engagementPrepared, mobility, otherMovement || incompatibleCommands);
   if (mobility?.kind === 'spatial-dodge' && !dash) throw new Error(`Spatial dodge requires AI dash observations: ${id}`);
   const movement = decision.movement === undefined ? undefined : validateScriptedObjectiveInput(state, {
     version: 'scripted-objective-v1', scriptedBots: owner.scriptedBots, movement: { [id]: decision.movement },
   }, actions, settings)![id];
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
-  }, actions, settings)![id];
+  }, actions, settings, engagementPrepared ? { actorId: id, mobility: !!mobility, dash: !!dash } : undefined)![id];
   return { kind: 'handled', action: { ...action }, ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

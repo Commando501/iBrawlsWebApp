@@ -117,3 +117,9 @@ for (const defect of ['v1', 'misplaced', 'duplicate']) test(`malformed feint ${d
   assert.throws(() => stepSimulation(f.state, f.actions, { settings: f.state.settings, scriptedCombat: f.input }));
   assert.deepEqual(f.state, before);
 });
+
+test('v3 engagement commands cannot be submitted as precomputed frame packets', () => {
+  const f = fixture(); f.input.version = 'scripted-combat-v3'; const before = structuredClone(f.state);
+  assert.throws(() => stepSimulation(f.state, f.actions, { settings: f.state.settings, scriptedCombat: f.input }), /scheduled prepared engagement/);
+  assert.deepEqual(f.state, before);
+});
