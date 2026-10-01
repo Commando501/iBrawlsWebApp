@@ -260,7 +260,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v67');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v68');
   assert.deepEqual(details.dashWitnesses.missing, []);
   assert.ok(details.dashWitnesses.airborneSteps > 0);
   assert.ok(details.dashWitnesses.airborneLandings > 0);
@@ -280,7 +280,9 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.mixedSpawnTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.spawnTraces.length, 156);
   assert.ok(details.spawnTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.mixedContactTraces.length, 324);
+  assert.equal(details.mixedContactTraces.length, 972);
+  for (const motion of ['rising', 'falling']) assert.equal(
+    details.mixedContactTraces.filter((t: any) => t.scenario.motion === motion).length, 324);
   assert.ok(details.mixedContactTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.playerLungeTraces.length, 184);
   assert.ok(details.playerLungeTraces.every((t: any) => t.differenceCount === 0));

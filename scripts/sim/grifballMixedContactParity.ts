@@ -13,6 +13,7 @@ import type { SimCombatant } from '../../src/sim/simState';
 const KINDS = ['melee-first', 'lunge-first', 'same-frame-one', 'same-frame-two',
   'killed-flight', 'damaged-flight', 'trade-survivors', 'double-flight-two', 'double-flight-three'] as const;
 export interface MixedContactCase {
+  motion?: 'rising' | 'falling';
   kind: typeof KINDS[number];
   attack: 'slash' | 'slam' | 'swipe';
   reverse: boolean;
@@ -23,12 +24,14 @@ export const MIXED_CONTACT_CASES: MixedContactCase[] = KINDS.flatMap(kind =>
   (['slash', 'slam', 'swipe'] as const).flatMap(attack => [false, true].flatMap(reverse =>
     (['lunger', 'target', 'melee'] as const).flatMap(mainRole => [false, true].map(observer =>
       ({ kind, attack, reverse, mainRole, observer }))))));
+export const AIRBORNE_MIXED_CONTACT_CASES: MixedContactCase[] = (['rising', 'falling'] as const)
+  .flatMap(motion => MIXED_CONTACT_CASES.map(spec => ({ ...spec, motion })));
 const phase = (c: Combatant) => c.weaponState === 'ready' ? 'idle'
   : ['swing_up', 'melee_up'].includes(c.weaponState ?? '') ? 'windup'
   : ['swing_down', 'melee_down'].includes(c.weaponState ?? '') ? 'active' : 'recovering';
 
 /** Committed intents, independently advanced live and headless through mixed contact. */
-export function runMixedContactParityTrace(spec: MixedContactCase) {
+export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: number) {
   const id = (role: MixedContactCase['mainRole']) => spec.mainRole === role ? 'main_ai' : role;
   const f = lungeFixture(id('lunger'), spec.observer, id('target'));
   const { state, sim, bot, target } = f;
@@ -52,6 +55,11 @@ export function runMixedContactParityTrace(spec: MixedContactCase) {
     a.vel.set(0, 0, 0); b.vel = { x: 0, y: 0, z: 0 };
   }
   target.pos.z = pairs[1][1].pos.z = targetZ;
+  if (spec.motion) for (const [a, b] of pairs) {
+    a.pos.y = b.pos.y = 2;
+    a.vel.y = b.vel.y = spec.motion === 'rising' ? 3 : -3;
+    a.isJumping = b.isJumping = true;
+  }
   const targetHp = spec.kind === 'same-frame-two' || spec.kind === 'double-flight-two' ? 2
     : spec.kind === 'trade-survivors' || spec.kind === 'double-flight-three' ? 3 : 1;
   target.hp = target.maxHp = pairs[1][1].hp = pairs[1][1].maxHp = targetHp;
@@ -82,6 +90,7 @@ export function runMixedContactParityTrace(spec: MixedContactCase) {
   const kills = new Map<string, number>(), deaths = new Map<string, number>();
   const finishedLive = new Map<string, number>(), finishedSim = new Map<string, number>();
   const firstDamageLive = new Map<string, number>(), firstDamageSim = new Map<string, number>();
+  let restored: typeof sim | undefined;
   for (let tick = 1; tick <= 120; tick++) {
     const before = pairs.map(([a, b]) => ({ liveHp: a.hp, simHp: b.hp, liveFlight: !!a.isLunging, simFlight: b.isLunging }));
     withSimulationRandom(random, tick / 60, () => {
@@ -89,11 +98,19 @@ export function runMixedContactParityTrace(spec: MixedContactCase) {
       for (const c of state.otherPlayers.values()) if (c.hp > 0) {
         tickCombatantInvulnerability(c, 1 / 60);
         c.aiTimer = Math.max(0, (c.aiTimer ?? 0) - 1 / 60);
+        if (spec.motion) f.gravityPrelude(c);
         if (c.isLunging) f.flightFor(c, target);
       }
       f.visuals(1 / 60);
     });
-    const events = stepSimulation(sim, Object.fromEntries(pairs.map(([, c]) => [c.id, { ...idleAction(), aim: c.yaw }])), { settings: sim.settings });
+    const actions = Object.fromEntries(pairs.map(([, c]) => [c.id, { ...idleAction(), aim: c.yaw }]));
+    const events = stepSimulation(sim, actions, { settings: sim.settings });
+    if (restored) {
+      const replayEvents = stepSimulation(restored, actions, { settings: restored.settings });
+      record.compare(tick, 'snapshot.state', JSON.stringify(restored), JSON.stringify(sim));
+      record.compare(tick, 'snapshot.events', JSON.stringify(replayEvents), JSON.stringify(events));
+    }
+    if (snapshotAt === tick) restored = JSON.parse(JSON.stringify(sim));
     for (const e of events.kills) {
       kills.set(e.attackerId, (kills.get(e.attackerId) ?? 0) + 1);
       deaths.set(e.victimId, (deaths.get(e.victimId) ?? 0) + 1);
@@ -167,4 +184,42 @@ export function runMixedContactParityTrace(spec: MixedContactCase) {
   }
   return { name: Object.values(spec).join('/'), scenario: spec, ticks: 120, ...record.result(), frames };
 }
-export const runMixedContactParity = () => MIXED_CONTACT_CASES.map(runMixedContactParityTrace);
+/** Ballistic expectations are independent of both runtime implementations. All four
+ * actors are alive through tick five, before the earliest authored contact. */
+export function validateAirborneMixedContact(trace: ReturnType<typeof runMixedContactParityTrace>) {
+  const record = parityRecorder(), spec = trace.scenario;
+  if (!spec.motion) throw new Error('Airborne contact validation requires a motion case');
+  record.compare(120, 'expected.frameCount', trace.frames.length, 120);
+  const actors = ['lunger', 'target', 'melee', 'extra'] as const;
+  for (let tick = 1; tick <= 5; tick++) {
+    const frame = trace.frames[tick - 1];
+    record.compare(tick, 'expected.tick', frame?.tick, tick);
+    for (const role of actors) {
+      const id = role === spec.mainRole ? 'main_ai' : role;
+      const flight = role === 'lunger' || role === 'extra' && spec.kind.startsWith('double-flight');
+      // Horizontal lunge launch retains upward momentum and arrests a fall.
+      const initialVy = spec.motion === 'rising' ? 3 : flight ? 0 : -3;
+      const expectedVy = initialVy - .3 * tick;
+      const expectedY = 2 + initialVy * tick / 60 - .0025 * tick * (tick + 1);
+      const live = frame?.live.find(c => c.id === id), headless = frame?.headless.find(c => c.id === id);
+      for (const [side, y, vy] of [['live', live?.pos[1], live?.vel[1]],
+        ['headless', headless?.pos.y, headless?.vel.y]] as const) {
+        record.compare(tick, `expected.${id}.${side}.height`, y, expectedY, 1e-6);
+        record.compare(tick, `expected.${id}.${side}.verticalSpeed`, vy, expectedVy, 1e-6);
+      }
+    }
+  }
+  return record.result();
+}
+
+export function runAirborneMixedContactTrace(spec: MixedContactCase, snapshotAt?: number) {
+  const trace = runMixedContactParityTrace(spec, snapshotAt);
+  const expected = validateAirborneMixedContact(trace);
+  return { ...trace, differenceCount: trace.differenceCount + expected.differenceCount,
+    differences: [...trace.differences, ...expected.differences].slice(0, 64) };
+}
+
+export const runMixedContactParity = () => [
+  ...MIXED_CONTACT_CASES.map(spec => runMixedContactParityTrace(spec)),
+  ...AIRBORNE_MIXED_CONTACT_CASES.map(spec => runAirborneMixedContactTrace(spec)),
+];
