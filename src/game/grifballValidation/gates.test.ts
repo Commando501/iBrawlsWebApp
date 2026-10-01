@@ -7,6 +7,7 @@ import { createSuiteManifest } from './profiles';
 import { createSuitePlan } from './plan';
 import { correctnessGate, reproducibilityGate, createNullControlPlan, validateGateProtocol, type GateProtocol } from './gates';
 import { qualityGate } from './qualityGate';
+import { aggregateSuiteReport } from './report';
 import { performanceGate } from './performanceGate';
 import { DeterministicTrace, LiveTimings, COST_CHANNELS, liveTimings } from './telemetry';
 import { trialCheck, type TrialResult } from './runner';
@@ -92,6 +93,32 @@ test('quality clusters mirrored/style legs within seeds and reports each stratum
   for (const [i, item] of r.entries()) if (p.jobs[i].variant === 'baseline') item.metrics![p.jobs[i].focalTeam].goals += 2;
   assert.equal(qualityGate(p, r, { ...passedNull, evidence: [...passedNull.evidence] }, protocol).check.verdict, 'fail');
 });
+
+for (const outcome of ['missing-opportunities', 'regression', 'unresolved'] as const)
+  test(`quality report persists a large ${outcome} matrix without losing diagnostics`, async () => {
+    const original = await fixture(true), manifest = structuredClone(original.manifest);
+    manifest.cases.forEach((c, i) => { c.id = `quality-${i}-`.padEnd(64, 'x'); });
+    const p = await createSuitePlan(manifest, code), r = results(p);
+    for (const [i, job] of p.jobs.entries()) {
+      if (outcome === 'missing-opportunities') {
+        r[i].metrics![job.focalTeam].completedPossessions = 0;
+        r[i].metrics![job.focalTeam].pressuredCarrierSeconds = 0;
+      } else if (job.variant === 'candidate') {
+        r[i].metrics![job.focalTeam].goals = outcome === 'regression' ? 0 : 1;
+      }
+    }
+    const g = qualityGate(p, r, { ...passedNull, evidence: [...passedNull.evidence] }, protocol);
+    const report = aggregateSuiteReport(p, { planId: p.id, jobs: r.map(v => v.check), gates: [g.check] });
+    assert.equal(report.gates.find(v => v.id === 'quality')?.verdict, outcome === 'regression' ? 'fail' : 'inconclusive');
+    assert.ok(g.check.summary.length <= 500);
+    assert.deepEqual(g.check.evidence, ['gates/quality.json']);
+    const d = g.details as any;
+    assert.equal(d.strata.length, 6);
+    if (outcome === 'missing-opportunities') {
+      assert.ok(d.issues.some((issue: string) => issue.includes(manifest.cases[1].id) && issue.includes('goalsPerPossession')));
+      assert.ok(d.strata.every((s: any) => s.measures.goalsPerPossession.unavailable.length === 12));
+    } else assert.equal(d.generalization[outcome === 'regression' ? 'regressions' : 'unresolved'].length, 6);
+  });
 
 test('quality cannot infer generalization from a single map or repeated cases on that map', async () => {
   const p = await fixture(true), check = { ...passedNull, evidence: [...passedNull.evidence] };

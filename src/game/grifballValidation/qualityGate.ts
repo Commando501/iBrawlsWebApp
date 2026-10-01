@@ -71,13 +71,17 @@ export function qualityGate(plan: SuitePlan, results: readonly TrialResult[], nu
   const unresolved = strata.filter(s => s.measures.goalMargin.estimate.low === null || s.measures.goalMargin.estimate.low! <= 0);
   const labels = (groups: typeof strata) => groups.map(s => `${s.caseId}/${s.map}/${s.opponent}`).join(', ');
   const generalized = unresolved.length === 0 && strata.length > 0;
-  return gate('quality', issues.length ? 'inconclusive' : regression || regressions.length ? 'fail'
-    : improved && generalized && nullControlRequired(plan) ? 'pass' : 'inconclusive',
-    issues.length ? issues.join(' ') : regressions.length ? `Goal-margin regression detected in ${labels(regressions)}.`
+  const summary = issues.length ? issues.join(' ') : regressions.length ? `Goal-margin regression detected in ${labels(regressions)}.`
     : regression ? 'Pooled goal-margin regression detected.'
     : !generalized ? `Positive goal-margin effect not established in ${labels(unresolved)}.`
     : improved && nullControlRequired(plan) ? 'Primary effect exceeds the predeclared minimum with positive effects across every map/opponent stratum.'
-    : 'No established improvement over the minimum effect.',
+    : 'No established improvement over the minimum effect.';
+  // CheckResult summaries have a 500-character persistence limit. Matrix-sized
+  // diagnostics belong in the linked evidence; retain every issue/stratum there.
+  const boundedSummary = summary.length <= 500 ? summary
+    : `Quality evidence: ${completed}/${jobs.length} matches completed; ${issues.length} protocol/coverage issues; ${insufficient.length} insufficient metric strata; ${regressions.length} regressing and ${unresolved.length} unresolved goal-margin strata. See gates/quality.json for all issues, estimates and unavailable observations.`;
+  return gate('quality', issues.length ? 'inconclusive' : regression || regressions.length ? 'fail'
+    : improved && generalized && nullControlRequired(plan) ? 'pass' : 'inconclusive', boundedSummary,
     { protocol: 'paired-seed-t95-v2', weighting: 'Equal case × opponent weights, both sides averaged within seed; all cases must share complete seeds.',
       generalization: { minimumMaps: 2, stratumLowerBound: 0, regressions: regressions.map(s => ({ caseId: s.caseId, map: s.map, opponent: s.opponent })),
         unresolved: unresolved.map(s => ({ caseId: s.caseId, map: s.map, opponent: s.opponent })) },
