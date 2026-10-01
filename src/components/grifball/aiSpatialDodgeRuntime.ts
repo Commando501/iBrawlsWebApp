@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import {
   pickPerpendicularDodgeDirection,
@@ -33,6 +34,7 @@ interface AISpatialDodgeContext {
   weaponReady: boolean;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
   playDash: () => void;
+  random?: () => number;
 }
 
 export interface AISpatialDodgeResult {
@@ -58,6 +60,7 @@ export function startAISpatialDodgeForCombatant({
   weaponReady,
   recordCombatantObservation,
   playDash,
+  random = simulationRandom,
 }: AISpatialDodgeContext & {
   frame: AISpatialDodgeFrame;
 }): true {
@@ -68,6 +71,7 @@ export function startAISpatialDodgeForCombatant({
     lungeDirZ,
     arenaRadius: state.arenaRadius,
     playerModel,
+    rng: random(),
   });
   frame.dashDir.set(dodgePick.x, 0, dodgePick.z).normalize();
   frame.dashRemaining = state.settings.dashDuration || 0.25;
@@ -131,6 +135,7 @@ export function resolveAIEmergencyHopDodgeForCombatant({
   lungeDirZ,
   playerModel,
   playJump,
+  random = simulationRandom,
 }: {
   state: GrifballRuntimeState;
   self: Combatant;
@@ -141,6 +146,7 @@ export function resolveAIEmergencyHopDodgeForCombatant({
   lungeDirZ: number;
   playerModel: PlayerModelSnapshot | null;
   playJump: () => void;
+  random?: () => number;
 }): true {
   const dodgePick = pickPerpendicularDodgeDirection({
     botPosX: pos.x,
@@ -149,6 +155,7 @@ export function resolveAIEmergencyHopDodgeForCombatant({
     lungeDirZ,
     arenaRadius: state.arenaRadius,
     playerModel,
+    rng: random(),
   });
   vel.set(dodgePick.x * 7.5, vel.y, dodgePick.z * 7.5);
   if (!self.isJumping) {

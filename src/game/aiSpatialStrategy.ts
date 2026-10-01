@@ -199,6 +199,7 @@ export interface BaitDodgeInput {
   dashCooldownRemaining: number;
   difficulty: string;
   rng?: number;
+  random?: () => number;
   /** Tuning overrides (default to module constants). */
   baitDistance?: number;
   baitBand?: number;
@@ -222,7 +223,7 @@ export function shouldAttemptBaitDodge(input: BaitDodgeInput): boolean {
   if (dist < minDist || dist > maxDist) {
     return false;
   }
-  const rng = input.rng ?? simulationRandom();
+  const rng = input.rng ?? (input.random ?? simulationRandom)();
   const chance = (input.spatialIQ / 100) * 0.14;
   return rng < chance;
 }
