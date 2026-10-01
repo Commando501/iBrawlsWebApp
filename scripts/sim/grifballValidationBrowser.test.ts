@@ -9,6 +9,48 @@ import { createSuiteManifest } from '../../src/game/grifballValidation/profiles'
 import { createSuitePlan } from '../../src/game/grifballValidation/plan';
 import { bounded, failedTrial, runBrowserJob } from './grifballValidationBrowser';
 
+test('state streaming flushes the final batch and fails closed on transfer errors or overflow', { timeout: 60000 }, async t => {
+  const root = resolve('output/grifball-validation'); mkdirSync(root, { recursive: true });
+  const directory = mkdtempSync(join(root, 'state-stream-'));
+  mkdirSync(join(directory, 'logs')); mkdirSync(join(directory, 'screenshots'));
+  const manifest = createSuiteManifest('quick'); manifest.cases = manifest.cases.slice(0, 1);
+  manifest.cases[0].seeds = [101]; manifest.cases[0].mirrored = false;
+  const plan = await createSuitePlan(manifest, { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] });
+  const job = { ...plan.jobs[0], watchdogSeconds: 10 };
+  const result = failedTrial(job, 'scenario-complete', 'Synthetic completed driver fixture');
+  let count = 65;
+  const server = createServer((_req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.end(`<!doctype html><h1>State transfer fixture</h1><script>
+      window.__grifballValidation={version:1,buildId:'fixture',prepare:async()=>[],progress:()=>null,cancel:()=>{},
+      observeState:observer=>{window.observer=observer},runJob:async()=>{
+        for(let tick=0;tick<${count};tick++) window.observer(JSON.stringify({frame:{tick}}));
+        return ${JSON.stringify(result)};
+      }};</script>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const browser = await chromium.launch({ channel: 'chromium', headless: true });
+  try {
+    for (const mode of ['complete', 'rejected', 'overflow']) await t.test(mode, async () => {
+      count = mode === 'overflow' ? 3900 : 65;
+      const batches: string[][] = [];
+      const actual = await runBrowserJob(browser, origin, 'fixture', plan, job, directory, new AbortController().signal, states => {
+        if (mode === 'rejected') throw new Error('Injected state transfer rejection');
+        batches.push(states);
+      });
+      if (mode === 'complete') {
+        assert.equal(actual.check.verdict, 'pass');
+        assert.deepEqual(batches.map(batch => batch.length), [60, 5]);
+        assert.deepEqual(batches.flat().map(state => JSON.parse(state).frame.tick), Array.from({ length: 65 }, (_, i) => i));
+      } else {
+        assert.equal(actual.check.verdict, 'fail');
+        assert.match(actual.check.summary, mode === 'rejected' ? /transfer rejection/ : /bounded transfer backlog/);
+      }
+    });
+  } finally { await browser.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
 test('driver retains injected invalid-state, missing-asset, blocked-renderer and browser-crash failures', { timeout: 60000 }, async t => {
   const root = resolve('output/grifball-validation'); mkdirSync(root, { recursive: true });
   const directory = mkdtempSync(join(root, 'driver-faults-'));

@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiveTimings, PLANNER_REFRESH_TRACE_LIMIT, assertPlannerRefreshTrace, retainPlannerRefreshTrace } from './telemetry';
+import { DeterministicTrace, LiveTimings, PLANNER_REFRESH_TRACE_LIMIT, assertPlannerRefreshTrace, retainPlannerRefreshTrace } from './telemetry';
+
+test('state observation preserves exact hashes and cannot mutate the recorded state', async () => {
+  const captured: string[] = [], normal = new DeterministicTrace();
+  const observed = new DeterministicTrace(value => { captured.push(value); JSON.parse(value).position[0] = 999; });
+  for (let tick = 0; tick < 121; tick++) {
+    const value = { tick, position: [tick / 3, 0, 1] };
+    normal.add(value); observed.add(value);
+  }
+  assert.equal(captured.length, 121);
+  assert.equal(JSON.parse(captured[0]).position[0], 0);
+  assert.deepEqual(await observed.finish(), await normal.finish());
+});
 
 test('planner timing trace captures only valid warm refreshes and owns exported samples', () => {
   const timing = new LiveTimings();

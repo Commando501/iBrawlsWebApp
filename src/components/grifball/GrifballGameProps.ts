@@ -20,7 +20,8 @@ import { type CharacterLoadout } from '../VoxelModels';
 export interface GrifballGameProps {
   /** Private isolated session for the Lab or dedicated validation page; ordinary matches never supply this. */
   validationTrial?: {
-    fixture: FrozenCase; job: ValidationJob;
+      fixture: FrozenCase; job: ValidationJob;
+      observeState?: (canonicalState: string) => void;
     onReady: (handle: TrialHandle) => void; onError: (error: Error) => void;
   };
   isPlaying: boolean;

@@ -3,6 +3,7 @@ import { canonicalJSON, hashInput } from './plan';
 /** Exact IEEE-754 JSON numbers, sorted object keys/actor IDs; no rounding or timing fields. */
 export interface DeterminismEvidence { version: 1; algorithm: 'sha256-pages-v1'; ticks: number; hash: string | null; error: string | null }
 export class DeterministicTrace {
+  constructor(private readonly observeState?: (canonicalState: string) => void) {}
   private page: unknown[] = [];
   private pages: Promise<string>[] = [];
   private count = 0;
@@ -11,6 +12,7 @@ export class DeterministicTrace {
     // Validate now: JSON serialization must never turn NaN/Infinity into null.
     const canonical = canonicalJSON(value);
     if (this.error) return;
+    this.observeState?.(canonical);
     this.page.push(canonical); this.count++;
     if (this.page.length === 60) this.flush();
   }

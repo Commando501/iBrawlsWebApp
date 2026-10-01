@@ -44,7 +44,7 @@ function watchPage(page: Page, log: (message: string) => void, failures: string[
   page.on('response', response => { if (response.status() >= 400) fail(`HTTP ${response.status()}: ${response.url()}`); });
 }
 export async function runBrowserJob(browser: Browser, origin: string, buildId: string, plan: SuitePlan, job: ValidationJob,
-  directory: string, signal: AbortSignal): Promise<TrialResult> {
+  directory: string, signal: AbortSignal, onStateBatch?: (states: string[]) => void | Promise<void>): Promise<TrialResult> {
   let context: BrowserContext | undefined, page: Page | undefined;
   const failures: string[] = [];
   let lines = 0;
@@ -61,11 +61,42 @@ export async function runBrowserJob(browser: Browser, origin: string, buildId: s
     if (actualBuild !== buildId) throw new Error('Validation page build identity mismatch');
     await page.evaluate(({ manifest, code, id }) => window.__grifballValidation!.prepare(manifest, code, id),
       { manifest: plan.manifest, code: plan.code, id: plan.id });
+    if (onStateBatch) {
+      await page.exposeFunction('__grifballStateBatch', onStateBatch);
+      await page.evaluate(() => {
+        const scope = window as typeof window & {
+          __grifballStateBatch: (states: string[]) => Promise<void>;
+          __grifballFlushState?: () => Promise<void>;
+        };
+        if (!scope.__grifballValidation?.observeState) throw new Error('Build lacks state observation');
+        let buffer: string[] = [], failure: string | null = null;
+        const pending = new Set<Promise<void>>();
+        // An object method survives tsx/esbuild serialization without an
+        // outer-scope function-name helper in Playwright's page.evaluate.
+        const queue = { flush() {
+          if (failure) throw new Error(failure);
+          if (!buffer.length) return;
+          if (pending.size >= 64) throw new Error('State observation exceeded its bounded transfer backlog');
+          const batch = buffer; buffer = [];
+          const transfer = scope.__grifballStateBatch(batch).catch(error => { failure = String(error); })
+            .finally(() => pending.delete(transfer));
+          pending.add(transfer);
+        } };
+        scope.__grifballValidation.observeState(state => { buffer.push(state); if (buffer.length === 60) queue.flush(); });
+        scope.__grifballFlushState = async () => {
+          queue.flush(); await Promise.all(pending);
+          if (failure) throw new Error(failure);
+          scope.__grifballValidation!.observeState!(null);
+        };
+      });
+    }
     if (failures.length) throw new Error(failures.join('; '));
     const running = page.evaluate(id => window.__grifballValidation!.runJob(id), job.id);
     // Capture the real canvas while simulation runs. Never delay the job's result on a screenshot.
     void page.waitForFunction(() => window.__grifballValidation?.progress()?.stage === 'running', undefined, { timeout: 15000 }).then(() => page!.screenshot({ path: join(directory, 'screenshots', `${name}-arena.png`), timeout: 5000 })).catch(() => {});
     const result = await running;
+    if (onStateBatch) await page.evaluate(() =>
+      (window as typeof window & { __grifballFlushState: () => Promise<void> }).__grifballFlushState());
     if (result.jobId !== job.id || result.check.id !== job.id) throw new Error('Browser returned a result for another job');
     if (failures.length) return { ...result, termination: 'setup-error' as const, check: trialCheck(job.id, 'setup-error', failures.join('; ')) };
     return result;

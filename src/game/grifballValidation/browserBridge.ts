@@ -7,6 +7,8 @@ export interface GrifballValidationBridge {
   readonly buildId: string;
   prepare(manifest: SuiteManifest, code: CodeIdentity, expectedPlanId: string): Promise<string[]>;
   runJob(jobId: string): Promise<TrialResult>;
+  /** Optional diagnostics on the dedicated validation page only. Set while idle. */
+  observeState?(observer: ((canonicalState: string) => void) | null): void;
   progress(): SuiteProgress | null;
   cancel(): void;
 }

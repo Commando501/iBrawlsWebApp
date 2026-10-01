@@ -743,6 +743,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const events = buildOrchestratorEvents({ silentSpawn: true });
         validationRuntimeRef.current = new GrifballValidationRuntime({
           state: stateRef.current,
+          observeState: validationTrial.observeState,
           tick: dt => validationTickRef.current(dt),
           resetControls: () => {
             keysPressed.current = {}; isMouseDown.current = false;

@@ -24,6 +24,8 @@ export interface ValidationRuntimePort {
   provisionActor: (actor: Combatant) => void;
   hasActorMesh: (id: string) => boolean;
   applyLocalInput?: (input: ValidationLocalInput) => void;
+  /** Opt-in validation diagnostics; receives immutable serialized state, never live objects. */
+  observeState?: (canonicalState: string) => void;
 }
 const MAX_TRACE = 512;
 function frame(state: GrifballRuntimeState, tick: number): TrialFrame {
@@ -54,7 +56,7 @@ export class GrifballValidationRuntime implements TrialHandle {
   private settingsKey: string;
   private configKey: string;
   private slotKey = '';
-  private deterministic = new DeterministicTrace();
+  private deterministic: DeterministicTrace;
   private timings = new LiveTimings();
   private behavior: BehaviorEvidence = { version: 1, ticks: 0, pickups: 0, throws: 0, recoveries: 0, respawns: 0,
     goals: { blue: 0, red: 0 }, roleReleases: 0, staleRoleTicks: 0 };
@@ -68,6 +70,7 @@ export class GrifballValidationRuntime implements TrialHandle {
   private localInput: ValidationLocalInput | null = null;
 
   constructor(private port: ValidationRuntimePort, readonly fixture: FrozenCase, readonly job: ValidationJob) {
+    this.deterministic = new DeterministicTrace(port.observeState);
     this.origin = cloneLabState(port.state);
     this.done = new Promise(resolve => { this.resolve = resolve; });
     this.random = seededRandom(job.seed);
