@@ -573,7 +573,7 @@ export function stepCombatantWeapons(
   feedback?: RosterMeleeHitFeedback,
   lungeFeedback?: RosterLungeFeedback,
   swapTimersAdvanced = false,
-  engagement?: { beforeAttack?: () => void; sequentialOpportunities?: boolean; groundReadyOverride?: boolean }
+  engagement?: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean }
 ): void {
   if (engagement && (stage !== 'intent' || !scriptedCommands || state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c)))
     throw new Error('Engagement commits require scheduled roster command intent');
@@ -605,8 +605,10 @@ export function stepCombatantWeapons(
         mobilityApplied = true;
         engagement?.beforeAttack?.();
       };
-      for (const command of scriptedCommands) {
-        if (command.kind === 'melee' || command.kind === 'lunge' || command.kind === 'hammer-jump') applyMobility();
+      for (const [index, command] of scriptedCommands.entries()) {
+        if (engagement?.mobilityAfterCommands === undefined
+          ? command.kind === 'melee' || command.kind === 'lunge' || command.kind === 'hammer-jump'
+          : index === engagement.mobilityAfterCommands) applyMobility();
         if (command.kind === 'revert-weapon-feint') {
           if (c.isLunging || c.weapon !== 'sword' || c.weaponState === 'windup' || c.weaponState === 'active') continue;
           // Live feint expiry clears lockout, retains readiness and leaves the

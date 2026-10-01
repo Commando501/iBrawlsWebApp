@@ -16,7 +16,9 @@ export const remainingDecisionSwapTime = (remaining: number, dt: number, phase: 
 export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand; dash?: ScriptedAIDashDecision; ground?: ScriptedAIGroundOwner; noTarget?: ScriptedAINoTargetOwner;
   /** Live evasion returns after airborne recovery when no dash remains. Keep
    * the retained velocity without walking or running the ground FSM. */
-  holdAfterEvasion?: boolean }
+  holdAfterEvasion?: boolean;
+  /** Number of earlier combo commands to execute before evasion mobility. */
+  mobilityAfterCommands?: number }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -89,6 +91,10 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   for (const key of ['jump', 'dash', 'crouch', 'pickup', 'attackPrimary', 'attackSecondary', 'swapWeapon'] as const)
     if (typeof action[key] !== 'boolean') throw new Error(`Actor decision requires boolean ${key}: ${id}`);
   if (action.aimPitch !== undefined && !Number.isFinite(action.aimPitch)) throw new Error(`Invalid actor pitch: ${id}`);
+  if (decision.mobilityAfterCommands !== undefined && (!decision.mobility || decision.commandVersion !== 'scripted-combat-v6' ||
+    !Number.isInteger(decision.mobilityAfterCommands) || decision.mobilityAfterCommands < 0 ||
+    decision.mobilityAfterCommands > (decision.commands?.length ?? 0)))
+    throw new Error(`Invalid evasion command boundary: ${id}`);
   if (decision.holdAfterEvasion !== undefined && typeof decision.holdAfterEvasion !== 'boolean')
     throw new Error(`Invalid evasion movement hold: ${id}`);
   if (decision.holdAfterEvasion) {
@@ -123,5 +129,7 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
   }, actions, settings, engagementPrepared ? { actorId: id, mobility: !!mobility, dash: !!dash } : undefined)![id];
-  return { kind: 'handled', action: { ...action }, ...(decision.holdAfterEvasion ? { holdAfterEvasion: true } : {}), ...(noTarget ? { noTarget } : {}), ...(ground ? { ground } : {}), ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
+  return { kind: 'handled', action: { ...action }, ...(decision.holdAfterEvasion ? { holdAfterEvasion: true } : {}),
+    ...(decision.mobilityAfterCommands !== undefined ? { mobilityAfterCommands: decision.mobilityAfterCommands } : {}),
+    ...(noTarget ? { noTarget } : {}), ...(ground ? { ground } : {}), ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

@@ -194,7 +194,7 @@ export function stepSimulation(
     let noTargetOwner: ScriptedAINoTargetOwner | undefined;
     let dashDecision: ScriptedAIDashDecision | undefined;
     let evasionHold: { held: boolean } | undefined;
-    let engagementCommit: { beforeAttack?: () => void; sequentialOpportunities?: boolean; groundReadyOverride?: boolean } | undefined;
+    let engagementCommit: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean } | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -240,7 +240,10 @@ export function stepSimulation(
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
             const applyMobility = () => { applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind; };
-            if (engagementCommit) engagementCommit.beforeAttack = applyMobility;
+            if (engagementCommit) {
+              engagementCommit.beforeAttack = applyMobility;
+              engagementCommit.mobilityAfterCommands = decision.mobilityAfterCommands;
+            }
             else applyMobility();
           }
           resolvedActions[c.id] = decision.action;
