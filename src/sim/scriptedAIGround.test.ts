@@ -38,6 +38,37 @@ function fixture(id = 'ordinary') {
   return { state, actor, target, owner, decision, request, step, draws: () => draws, calls: () => calls };
 }
 type Fixture = ReturnType<typeof fixture>;
+for (const id of ['main_ai', 'ordinary']) for (const branch of ['fsm', 'stationary', 'lunge', 'declined-lunge'] as const)
+  test(`turn completion adopts ground ${branch} before later AI memory reads: ${id}`, () => {
+    const f = fixture(id), completed: string[] = [];
+    let memory: { aiState?: string; timer?: number; actions: string[]; standoffTimer: number } | undefined;
+    if (branch !== 'fsm') {
+      opportunity(f).enemyInKillRange = branch === 'stationary';
+      if (branch !== 'stationary') { f.actor.weapon = f.request.policy.activeWeapon = 'sword'; f.request.policy.random = () => 0; }
+      if (branch === 'declined-lunge') f.target.pos = { ...f.actor.pos };
+    }
+    f.owner.scriptedBots = { [id]: 'normal', target: 'normal' };
+    f.owner.prepare = ({ actorId }) => actorId === id ? 'engagement' : 'default';
+    f.owner.resolve = ({ actorId }) => {
+      if (actorId === id) return f.decision;
+      assert.deepEqual(completed, [id], 'ground feedback must be adopted before later resolve');
+      assert.ok(memory, 'completion supplies ground memory');
+      assert.deepEqual(memory.actions, branch === 'lunge' ? ['lunge'] : branch === 'declined-lunge' ? [] : ['attack-hammer']);
+      assert.equal(memory.standoffTimer, 1);
+      return { kind: 'handoff', reason: 'later AI observed completed ground memory' };
+    };
+    f.owner.completeTurn = ({ actorId, record }) => {
+      completed.push(actorId);
+      if (actorId === id) {
+        assert.ok(record.ground, 'ground feedback available at completion');
+        memory = structuredClone(record.ground);
+        assert.equal(f.actor.weaponPhaseElapsed ?? 0, 0, 'animation remains later');
+        if (branch === 'lunge') { assert.equal(f.actor.lungeTimer, 0); assert.equal(f.actor.pos.z, 0); }
+      }
+    };
+    const events = f.step(); assert.deepEqual(completed, [id, 'target']);
+    assert.deepEqual(memory, events.actorDecisionFrame!.decisions[0].ground);
+  });
 for (const id of ['main_ai', 'ordinary']) {
   test(`ground movement reaches callbacks and later roster actors before animation: ${id}`, () => {
     const f = fixture(id); let observed = false;

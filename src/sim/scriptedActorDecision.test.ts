@@ -7,6 +7,126 @@ import { resolveSimGrifballGroundAttackInput } from './grifballGroundAttackInput
 import { createGrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import type { ScriptedActorDecisionOwner } from './scriptedActorDecision';
 
+for (const reverse of [false, true]) for (const stepDt of [1 / 30, 1 / 60])
+  test(`turn completion memory and checkpoints preserve roster ordering: ${reverse}/${stepDt}`, () => {
+    const f = fixture(); if (reverse) f.state.combatants.splice(0, 2, f.second, f.first);
+    type Memory = Record<string, { turns: number; priorTurns: number; z: number }>;
+    let state = f.state, restored = structuredClone(state);
+    let memory: Memory = {}, restoredMemory: Memory = {};
+    const run = (current: typeof state, owned: Memory) => {
+      const order = current.combatants.filter(c => c.controller === 'ai').map(c => c.id), calls: string[] = [];
+      const owner: ScriptedActorDecisionOwner = { ...f.owner,
+        beginTurn: ({ actorId }) => { calls.push(`begin:${actorId}`); },
+        resolve: ({ actorId }) => {
+          calls.push(`resolve:${actorId}`);
+          const prior = order.indexOf(actorId) === 1 ? order[0] : undefined;
+          if (prior) assert.equal(owned[prior].turns, current.tick + 1, 'earlier completion must be adopted before later resolve');
+          return { kind: 'handled', action: idleAction(), movement: { x: 0, z: prior ? .5 : 1 } };
+        },
+        completeTurn: ({ actorId, state: view, dt: actualDt, record }) => {
+          calls.push(`complete:${actorId}`);
+          assert.equal(actualDt, stepDt); assert.equal(view.tick, current.tick);
+          assert.equal(record.id, actorId); assert.equal(record.kind, 'handled');
+          const prior = order.indexOf(actorId) === 1 ? order[0] : undefined;
+          owned[actorId] = { turns: (owned[actorId]?.turns ?? 0) + 1,
+            priorTurns: prior ? owned[prior].turns : 0, z: view.combatants.find(c => c.id === actorId)!.pos.z };
+        },
+      };
+      const events = stepSimulation(current, {}, { settings: current.settings, dt: stepDt, scriptedActorDecisions: owner });
+      assert.deepEqual(calls, order.flatMap(id => [`begin:${id}`, `resolve:${id}`, `complete:${id}`]));
+      return events;
+    };
+    for (let frame = 0; frame < 60; frame++) {
+      assert.deepEqual(run(state, memory), run(restored, restoredMemory));
+      assert.deepEqual(state, restored); assert.deepEqual(memory, restoredMemory);
+      if ([1, 20, 45].includes(frame)) { restored = structuredClone(restored); restoredMemory = structuredClone(restoredMemory); }
+    }
+  });
+
+for (const branch of ['handoff', 'handled', 'command-lunge', 'existing-flight', 'air-recovery', 'dash'] as const)
+  test(`turn completion observes ${branch} before later actor and animation`, () => {
+    const f = fixture(), calls: string[] = [], settings = { ...f.state.settings, speedForward: 51 };
+    f.owner.prepare = ({ actorId }) => actorId === 'ordinary' && ['air-recovery', 'dash'].includes(branch) ? 'engagement' : 'default';
+    if (branch === 'command-lunge' || branch === 'existing-flight') {
+      f.first.weapon = 'sword'; f.second.team = 'red'; f.second.pos = { x: 0, y: 0, z: 8 };
+      if (branch === 'existing-flight') {
+        f.first.isLunging = true; f.first.lungeTargetId = f.second.id; f.first.lungeDir = { x: 0, y: 0, z: 1 };
+        f.first.lungeStartPos = { ...f.first.pos };
+      }
+    }
+    if (branch === 'air-recovery') { f.first.pos.y = 2; f.first.isJumping = true; f.first.vel.y = -1; }
+    if (branch === 'dash') { f.first.dashRemaining = .01; f.first.dashDir = { x: 1, y: 0, z: 0 }; }
+    f.owner.resolve = ({ actorId }) => {
+      if (actorId === 'main_ai') {
+        assert.deepEqual(calls, ['ordinary'], 'earlier turn must have completed');
+        return { kind: 'handoff', reason: 'observe prior memory' };
+      }
+      if (branch === 'handoff' || branch === 'existing-flight') return { kind: 'handoff', reason: 'fallback or committed motion' };
+      return { kind: 'handled', action: { ...idleAction(), attackPrimary: branch === 'handled' },
+        ...(branch === 'command-lunge' ? { commands: [{ kind: 'lunge' as const, targetId: f.second.id, direction: { x: 0, y: 0, z: 1 } }] } : {}),
+        ...(branch === 'dash' ? { dash: { version: 'scripted-ai-dash-v1' as const, aiState: 'SIDE_STEPPING' as const, pendingPostEvasionCharge: true,
+          target: { targetWeaponState: 'recovering' as const, attackDistanceToTarget: 2, resolvedAiReach: 3, spatialIQ: 80, targetProtected: false, weaponReady: true } } } : {}) };
+    };
+    f.owner.completeTurn = ({ state, actorId, record, dt: actualDt }) => {
+      assert.equal(state.settings, settings); assert.equal(actualDt, dt); assert.equal(state.tick, 0);
+      assert.equal(actorId, record.id); calls.push(actorId);
+      if (actorId !== 'ordinary') return;
+      if (branch === 'handled') { assert.equal(f.first.weaponState, 'windup'); assert.equal(f.first.weaponPhaseElapsed, 0); }
+      if (branch === 'command-lunge') { assert.equal(f.first.isLunging, true); assert.equal(f.first.lungeTimer, 0); assert.equal(f.first.pos.z, 0); }
+      if (branch === 'existing-flight') { assert.ok(f.first.pos.z > 0); assert.equal(f.first.lungeTimer, dt); }
+      if (branch === 'air-recovery') assert.ok(f.first.pos.y < 2);
+      if (branch === 'dash') {
+        assert.equal(f.first.dashRemaining, 0);
+        assert.deepEqual(record.dash, { aiState: 'CHARGE_ATTACK', pendingPostEvasionCharge: false });
+      }
+    };
+    stepSimulation(f.state, {}, { settings, scriptedActorDecisions: f.owner });
+    assert.deepEqual(calls, ['ordinary', 'main_ai']); assert.notEqual(f.state.settings, settings);
+  });
+
+for (const phase of ['countdown', 'scored', 'matchEnd', 'dead', 'unowned'] as const)
+  test(`turn completion excludes ${phase} actors`, () => {
+    const f = fixture();
+    if (phase === 'dead') for (const c of [f.first, f.second]) { c.alive = false; c.hp = 0; c.respawnTimer = 10; }
+    else if (phase === 'unowned') f.owner.scriptedBots = {};
+    else f.state.match.phase = phase;
+    f.owner.completeTurn = () => assert.fail('inactive actor cannot complete');
+    stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+  });
+
+test('turn completion includes objective ownership before the next beginTurn', () => {
+  const f = fixture(), completed: string[] = [];
+  f.first.pos.x = -15; f.second.pos.x = 15;
+  f.owner.resolve = () => assert.fail('objective must own these turns');
+  f.owner.beginTurn = ({ actorId }) => { if (actorId === 'main_ai') assert.deepEqual(completed, ['ordinary']); };
+  f.owner.completeTurn = ({ actorId, record }) => { assert.equal(record.kind, 'objective'); completed.push(actorId); };
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner,
+    scriptedPlanner: { version: 'scripted-objective-planner-v1', scriptedBots: f.owner.scriptedBots, plan: createGrifballTeamPlanState() } });
+  assert.deepEqual(completed, ['ordinary', 'main_ai']);
+});
+
+test('invalid completion callback rejects before frame mutation', () => {
+  const f = fixture(); f.owner.completeTurn = null as never; const before = structuredClone(f.state);
+  assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /complete-turn callback/);
+  assert.deepEqual(f.state, before);
+});
+
+test('failed decision never completes and completion errors stop later actors without rollback', () => {
+  for (const failAt of ['resolve', 'complete'] as const) {
+    const f = fixture(), calls: string[] = [];
+    f.owner.resolve = ({ actorId }) => {
+      assert.equal(actorId, 'ordinary');
+      if (failAt === 'resolve') throw new Error('decision failed');
+      return { kind: 'handled', action: { ...idleAction(), attackPrimary: true } };
+    };
+    f.owner.completeTurn = ({ actorId }) => { calls.push(actorId); throw new Error('completion failed'); };
+    assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /failed/);
+    assert.deepEqual(calls, failAt === 'resolve' ? [] : ['ordinary']);
+    assert.equal(f.first.weaponState, failAt === 'resolve' ? 'idle' : 'windup'); assert.equal(f.state.tick, 0);
+    assert.equal(f.second.weaponState, 'idle');
+  }
+});
+
 function fixture() {
   const state = createMatch({ seed: 1, combatExecution: 'live-mixed-v1', teamSizes: { blue: 2, red: 1 }, settings: { aiDifficulty: 'normal' } });
   const [first, second, player] = state.combatants; state.localPlayerId = player.id = 'player'; player.controller = 'remote';

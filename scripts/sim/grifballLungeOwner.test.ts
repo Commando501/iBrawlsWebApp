@@ -130,6 +130,34 @@ function controlFixture() {
     combos: new Map(), models: new Map(), coordinator: createBotCoordinator(), random: rng.next };
   return { sim, control, rng };
 }
+for (const lethal of [false, true]) test(`turn completion sees resolved flight memory before later actor: lethal=${lethal}`, () => {
+  const { sim, control } = controlFixture(), [self, target] = sim.combatants;
+  sim.combatExecution = 'live-mixed-v1'; sim.localPlayerId = 'player';
+  sim.combatants.push({ ...structuredClone(target), id: 'player', controller: 'remote', pos: { x: 25, y: 0, z: 25 } });
+  self.pos = { x: 0, y: 0, z: 0 }; self.weapon = 'sword'; self.isLunging = true;
+  self.lungeStartPos = { ...self.pos }; self.lungeDir = { x: 0, y: 0, z: 1 }; self.lungeTargetId = target.id;
+  target.pos = { x: 0, y: 0, z: 1.7 }; target.hp = target.maxHp = lethal ? 1 : 20;
+  for (const c of sim.combatants) c.invulnerabilityTimer = c.weaponReadyTimer = c.swapLockoutTimer = 0;
+  const completed: string[] = [], decisions: string[] = [];
+  const events = stepSimulation(sim, {}, { settings: sim.settings, scriptedLungeFeedback: control,
+    scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: { owner: 'normal', target: 'normal' },
+      resolve: ({ actorId }) => {
+        decisions.push(actorId);
+        if (actorId === 'target') { assert.deepEqual(completed, ['owner']); assert.equal(control.memories.owner.aiState, 'PRESSURING'); }
+        return { kind: 'handoff', reason: 'existing flight or observation' };
+      },
+      completeTurn: ({ actorId }) => {
+        completed.push(actorId);
+        if (actorId === 'owner') {
+          assert.equal(self.isLunging, false); assert.equal(control.memories.owner.lastLungeOutcome, 'hit');
+          assert.equal(control.memories.owner.aiState, lethal ? 'COOLDOWN' : 'PRESSURING');
+          assert.equal(target.hp, lethal ? 0 : 19);
+        }
+      },
+    } });
+  assert.deepEqual(completed, lethal ? ['owner'] : ['owner', 'target']); assert.deepEqual(decisions, completed);
+  assert.equal(events.kills.length, lethal ? 1 : 0);
+});
 for (const defect of ['version', 'legacy', 'local', 'remote', 'absent', 'duplicate', 'neural', 'random', 'memory', 'models', 'coordinator',
   'pressure', 'inherited-pressure', 'pressure-nan', 'pressure-negative', 'pressure-skip', 'multiplier', 'score', 'win-target', 'combos', 'overlap'])
   test(`lunge feedback rejects ${defect} before mutation`, () => {

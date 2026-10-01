@@ -21,6 +21,12 @@ export interface ScriptedActorDecisionOwner {
    * handoff. Advance caller-owned adaptive clocks here, including carrier and
    * target-free turns. No physical mutation; inactive actors never call this. */
   beginTurn?: (context: { state: SimState; actorId: string; dt: number; clockPhase: 'after-swap-tick' }) => void;
+  /** Once after each active actor's movement/intent or early lunge return, before
+   * the next roster actor. Adopt ground/dash feedback into caller-owned memory;
+   * do not mutate physical state. Later objective/animation events are not yet
+   * resolved. A failed turn does not complete; callback errors abort in place. */
+  completeTurn?: (context: { state: SimState; actorId: string; dt: number;
+    record: Readonly<ScriptedActorDecisionRecord> }) => void;
   /** Called only after objective handoff. Choose engagement only when this
    * actor enters the live target-engagement branch; no-target/objective recovery
    * has a different owner. Gravity then precedes resolve and recovery precedes walking. */
@@ -49,6 +55,7 @@ export function validateScriptedActorDecisionOwner(state: SimState, owner: Scrip
   settings: UniversalSettings, dt: number): void {
   if (!owner) return;
   if (owner.beginTurn !== undefined && typeof owner.beginTurn !== 'function') throw new Error('Invalid actor begin-turn callback');
+  if (owner.completeTurn !== undefined && typeof owner.completeTurn !== 'function') throw new Error('Invalid actor complete-turn callback');
   if (owner.prepare !== undefined && typeof owner.prepare !== 'function') throw new Error('Invalid actor preparation callback');
   if (owner.version !== 'scripted-actor-decision-v1' || typeof owner.resolve !== 'function') throw new Error('Invalid scripted actor decision owner');
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1') throw new Error('Actor decisions require mixed Grifball execution');

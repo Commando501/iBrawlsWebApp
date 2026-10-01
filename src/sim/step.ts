@@ -109,6 +109,9 @@ export function stepSimulation(
   const resolvedActions = options.scriptedPlanner || options.scriptedActorDecisions ? { ...actionsById } : actionsById;
   const scheduledCombat: Record<string, readonly ScriptedCombatCommand[]> = Object.create(null);
   const actorDecisions: ScriptedActorDecisionRecord[] = [];
+  const completeTurn = (record: ScriptedActorDecisionRecord) => options.scriptedActorDecisions?.completeTurn?.({
+    state: settings === state.settings ? state : { ...state, settings }, actorId: record.id, dt, record,
+  });
   const ownsDecision = (id: string) => !!options.scriptedActorDecisions && Object.hasOwn(options.scriptedActorDecisions.scriptedBots, id);
   const rng: Rng = createRng(0);
   rng.setState(state.rngState);
@@ -257,7 +260,10 @@ export function stepSimulation(
       c.yaw = normalizeYaw(act(c.id).aim);
       c.isCrouching = act(c.id).crouch && !c.isJumping;
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), engagementCommit);
-      if (c.isLunging) continue;
+      if (c.isLunging) {
+        if (decisionActive) completeTurn(actorDecisions[actorDecisions.length - 1]);
+        continue;
+      }
     }
     const groundExecution: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback } | undefined = groundOwner
       ? { execute: savedVelY => {
@@ -272,7 +278,10 @@ export function stepSimulation(
     if (dashFeedback) actorDecisions[actorDecisions.length - 1].dash = dashFeedback;
     // Ground opportunities run inside movement after recovery. A fresh lunge
     // owns the remainder of this turn, just like an early combo lunge.
-    if (groundExecution?.completed?.actions.includes('lunge')) continue;
+    if (groundExecution?.completed?.actions.includes('lunge')) {
+      if (decisionActive) completeTurn(actorDecisions[actorDecisions.length - 1]);
+      continue;
+    }
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);
@@ -282,6 +291,7 @@ export function stepSimulation(
       // skeletal melee damage still waits for the post-objective animation pass.
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scheduledCombat[c.id] ?? scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
     }
+    if (decisionActive) completeTurn(actorDecisions[actorDecisions.length - 1]);
   }
 
   // Mixed roster decisions commit before objectives; skeletal damage follows them.
