@@ -19,6 +19,8 @@ const unit = (d: Direction) => {
   const length = Math.hypot(d.x, d.z);
   return length ? { x: d.x / length, z: d.z / length } : { x: 0, z: 0 };
 };
+/** Authored world-space intent for the explicit scripted objective contract. */
+export const groundMotionIntent = (motion: GroundMotion, tick: number) => unit(directionAt(motion, tick));
 
 export function stepLiveGroundMotion(f: ReturnType<typeof createBotParityFixture>, c: Combatant, motion: GroundMotion, tick: number) {
   if (c.hp <= 0 || c.isLunging) return;

@@ -64,7 +64,8 @@ export function stepCombatantMovement(
   c: SimCombatant,
   action: ActionInput,
   settings: UniversalSettings,
-  dt: number
+  dt: number,
+  objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent
 ): void {
   if (!c.alive) return;
   const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
@@ -131,6 +132,13 @@ export function stepCombatantMovement(
     const speed = settings.dashDistance / (settings.dashDuration || 0.25);
     c.vel.x = c.dashDir.x * speed;
     c.vel.z = c.dashDir.z * speed;
+  } else if (objectiveMovement) {
+    // Objective steering is world-space and independent of attack facing. Live
+    // support walking uses forward speed; carriers use the runner forward rule.
+    const speed = isRunner ? 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true)
+      : 5.2 * settings.speedForward / 100;
+    c.vel.x = objectiveMovement.x * speed;
+    c.vel.z = objectiveMovement.z * speed;
   } else {
     if (playerView) c.crouchAmount = (c.crouchAmount ?? 0) + ((c.isCrouching ? .72 : 0) - (c.crouchAmount ?? 0)) * 12 * dt;
     forwardDir(c.yaw, _f);

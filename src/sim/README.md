@@ -37,6 +37,7 @@ engine: zero changes to the live runtime.
 |---|---|
 | `rng.ts` | Seeded mulberry32 PRNG. **The only randomness source** — no `Math.random` may ever appear under `src/sim/`. Serializable single-uint32 state. |
 | `actions.ts` | `ActionInput` per combatant — the seam that replaces keyboard/gamepad/mobile input. |
+| `scriptedObjectiveInput.ts` | Opt-in `scripted-objective-v1` grounded world steering, with explicit scripted ownership; separate from player/RL controls. |
 | `simState.ts` | `SimState` + `SimCombatant`: a plain-`Vec3`, fully serializable mirror of the live combatant, stripped of React/THREE. |
 | `factory.ts` | `createMatch({ seed, teamSizes, settings, map })` — reuses `DEFAULT_ADMIN_SETTINGS`, the Championship Stadium arena, and the pure objective modules. |
 | `physics.ts` | Port of the movement core (turn, walk/run/crouch, dash, jump/gravity, lunge flight) + reused arena/obstacle constraint. |
@@ -58,6 +59,22 @@ restarts (`step.test.ts`). This holds because:
   equal without trailing-bit sensitivity.
 
 ## Reuse vs. port vs. divergence
+
+`StepOptions.scriptedObjective` supplies versioned world-space analog movement for
+the live objective walker in `live-roster-v2` or `live-mixed-v1` Grifball execution.
+Its `movement` map contains `{ x, z }` vectors with magnitude at most one, and its
+`scriptedBots` map explicitly names authorized AI actors. Facing remains in each
+actor's normal `aim` input. This preserves attack facing while applying objective
+walking speed, independent of player backward/side speed settings. The simulator
+still integrates displacement and resolves arena constraints itself.
+
+The whole frame's explicit input is validated before state mutation. Remote/local
+players, neural-controlled actors, unsupported profiles, inactive/dead/airborne
+actors and conflicting dash/jump inputs are rejected. Ordinary player/RL controls
+and older snapshots retain their behavior when this option is omitted. Replays
+using it must retain the versioned input alongside ordinary actions and resupply
+both after JSON restoration. It is a grounded execution seam; autonomous planner
+selection, combat movement and airborne controls are not provided by this option.
 
 **Reused verbatim (pure, already shared with the live game):** `grifballBall`,
 `grifballGoals`, `grifballMatch`, `teamScoring`, `grifballTeams`, `roster`,

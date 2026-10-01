@@ -19,7 +19,7 @@ import { setSimCarrier } from '../../src/sim/grifball';
 import { setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import type { ParityDifference } from './grifballExecutionParity';
 import type { SimCombatExecution } from '../../src/sim/simState';
-import { groundMotionAction, stepLiveGroundMotion, type GroundMotion } from './grifballGroundMotion';
+import { groundMotionAction, groundMotionIntent, stepLiveGroundMotion, type GroundMotion } from './grifballGroundMotion';
 
 const noop = () => {};
 export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target', sourceMap?: CustomMapData) {
@@ -87,6 +87,7 @@ export interface BotParityCase {
   attackerCrouch?: boolean;
   targetCrouch?: boolean;
   movement?: { attacker?: GroundMotion; target?: GroundMotion };
+  movementExecution?: 'scripted-objective-v1';
   expectedHitTick?: number;
   hits: number;
 }
@@ -121,6 +122,7 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
   self.isCrouching = bot.isCrouching = !!spec.attackerCrouch;
   rival.isCrouching = target.isCrouching = !!spec.targetCrouch;
   self.id = id; rival.id = target.id; self.pos = { x: 0, y: 0, z: 0 };
+  if (spec.movementExecution) { self.controller = bot.controller; rival.controller = target.controller; }
   const p = spec.target ?? { x: 0, z: 2 };
   rival.pos = { x: p.x, y: 0, z: p.z }; target.pos.set(p.x, 0, p.z);
   rival.hp = rival.maxHp = target.hp;
@@ -151,7 +153,11 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
       ? groundMotionAction(self, spec.movement.attacker, tick, spec.aim ?? 0, sim.settings) : idleAction()), aim: spec.aim ?? 0, crouch: !!spec.attackerCrouch,
       attackPrimary: request && !spec.secondary, attackSecondary: request && !!spec.secondary },
       [rival.id]: { ...(spec.movement?.target
-        ? groundMotionAction(rival, spec.movement.target, tick, 0, sim.settings) : idleAction()), crouch: !!spec.targetCrouch } }, { settings: sim.settings });
+        ? groundMotionAction(rival, spec.movement.target, tick, 0, sim.settings) : idleAction()), crouch: !!spec.targetCrouch } }, { settings: sim.settings,
+      ...(spec.movementExecution ? { scriptedObjective: { version: spec.movementExecution, scriptedBots: { [id]: 'normal', [rival.id]: 'normal' },
+        movement: Object.fromEntries(([['attacker', self], ['target', rival]] as const)
+          .filter(([role, actor]) => spec.movement?.[role] && actor.alive)
+          .map(([role, actor]) => [actor.id, groundMotionIntent(spec.movement![role]!, tick)])) } } : {}) });
     if (!liveHitTick && target.hp < 20) liveHitTick = tick;
     if (!simHitTick && rival.hp < 20) simHitTick = tick;
     const phase = bot.weaponState === 'ready' ? 'idle'
@@ -176,9 +182,11 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
     }
     frames.push({ tick, request, live: { weapon: bot.weaponState, elapsed: bot.weaponTimer, hp: bot.hp, targetHp: target.hp,
       motion: spec.movement ? [bot, target].map(c => ({ pos: c.pos.toArray(), vel: c.vel.toArray(),
+        ...(spec.movementExecution ? { yaw: c.yaw } : {}),
         dashRemaining: c.aiDashRemaining ?? 0, dashCooldown: c.aiDashCooldownTimer ?? 0 })) : undefined },
       headless: { weapon: self.weaponState, elapsed: self.weaponPhaseElapsed ?? 0, hp: self.hp, targetHp: rival.hp,
         motion: spec.movement ? [self, rival].map(c => ({ pos: { ...c.pos }, vel: { ...c.vel },
+          ...(spec.movementExecution ? { yaw: c.yaw } : {}),
           dashRemaining: c.dashRemaining, dashCooldown: c.dashCooldownTimer })) : undefined } });
   }
   compare(240, 'expectedDamage.live', 20 - target.hp, spec.hits);

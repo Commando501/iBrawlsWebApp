@@ -21,6 +21,7 @@ import { stepCombatantMovement } from './physics';
 import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
+import { validateScriptedObjectiveInput, type ScriptedObjectiveInput } from './scriptedObjectiveInput';
 
 /** Canonical fixed timestep. */
 export const SIM_DT = 1 / 60;
@@ -34,6 +35,8 @@ export interface StepOptions {
   settings?: UniversalSettings;
   /** Timestep override (defaults to {@link SIM_DT}). */
   dt?: number;
+  /** Opt-in planner movement; separate from player/RL ActionInput. */
+  scriptedObjective?: ScriptedObjectiveInput;
 }
 
 /**
@@ -46,6 +49,7 @@ export function stepSimulation(
   options: StepOptions = {}
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
+  const scriptedMovement = validateScriptedObjectiveInput(state, options.scriptedObjective, actionsById, settings);
   const dt = options.dt ?? SIM_DT;
   const rng: Rng = createRng(0);
   rng.setState(state.rngState);
@@ -114,7 +118,7 @@ export function stepSimulation(
       }
       continue;
     }
-    stepCombatantMovement(state, c, act(c.id), settings, dt);
+    stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id]);
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
       flightAdvanced!.add(c.id);
