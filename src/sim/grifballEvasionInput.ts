@@ -74,7 +74,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
     actors.length !== 1 || isMixedPlayer(state, self) || self.controller !== 'ai' || !Object.hasOwn(scriptedBots, botId) || typeof scriptedBots[botId] !== 'string' ||
     isNeuralNetDifficulty(scriptedBots[botId]) || isNeuralNetDifficulty(state.settings.aiDifficulty) ||
-    !self.alive || self.hp <= 0 || self.respawnTimer > 0 || self.isLunging || self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === botId ||
+    !self.alive || self.hp <= 0 || self.respawnTimer > 0 || self.isLunging && !retained?.committedFlight || self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === botId ||
     targets.length !== 1 || target.id === botId || target.team === self.team || !target.alive || target.hp <= 0 || target.respawnTimer > 0 ||
     !Object.hasOwn(memories, botId) || target.controller === 'ai' && !isMixedPlayer(state, target) && !Object.hasOwn(memories, target.id)) return null;
   const memory = memories[botId], observed = observeSimTacticalWeaponTarget(state, target, memories[target.id]);
@@ -154,7 +154,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   return { targetId: target.id, frame: result, commands, commandVersion: airborne ? 'scripted-combat-v6' as const : 'scripted-combat-v5' as const,
     ...(airborneFrame ? { evasionFrame, airborneFrame } : {}),
     ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}),
-    holdAfterEvasion: result.isEvadingLunge && frame.dashRemaining <= 0,
+    holdAfterEvasion: !retained?.committedFlight && result.isEvadingLunge && frame.dashRemaining <= 0,
     weaponFrame: { ...weaponFrame, weaponState: result.weaponState },
     motion: { pos: { ...frame.pos }, vel: { ...frame.vel }, dashDir: { ...frame.dashDir }, ...projected },
     needsMovement: true as const };

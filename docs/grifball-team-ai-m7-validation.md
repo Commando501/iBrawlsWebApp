@@ -3489,3 +3489,33 @@ The next integration boundary is the complete actor owner: adaptive begin-turn a
 Focused validation passes 96/96 across the new ground-policy and existing combat-priority files in 4.44 seconds (output/m7-ground-policy-focused.log), including 44 new controls. The feedback negative control fails all nine selected checks (35 intentionally filtered, 1.33 seconds).
 
 Final validation: the explicit 114-file regression bundle passes 10,012/10,012 in 142.05 seconds (output/m7-ground-policy-regressions.log; exact file list output/m7-ground-policy-test-files.json). TypeScript and isolated client/server builds pass (output/m7-ground-policy-typecheck.log and output/m7-ground-policy-build.log; Vite 58.00 seconds, existing chunk-size warning). No full-repository, browser or aggregate acceptance rerun is claimed.
+
+## 2026-10-01 - scheduled committed-flight decisions and animation
+
+Committed flight now has an explicit scheduled engagement path. The observation and target-engagement boundaries accept caller-owned flight turns; the composed combat priorities continue feint/tactical/combo/evasion decisions and state/sway clocks. The scheduler applies this turn's facing and contact target without replacing the launch direction. An accepted combo restart retains its early return without travelling or spending later decision clocks. Evasion can launch during flight, while actual flight movement retains precedence over dash travel and ground recovery.
+
+Intent and contact are separate phases, preventing double clock advancement or contact before movement. Explicit scheduled flight requires its finish-feedback owner, and final horizontal handling uses that owner's current AI state. Trade completion retains its early return. A separate post-objective animation phase advances swings during flight, matching live roster visuals; inspection caught the simulator's previous animation freeze. Non-trade lethal contact credits the committed sword even if an earlier decision equipped the hammer. Existing callers retain their previous ownership contracts.
+
+Fifty new controls cover live flight travel/final velocity comparisons for main/ordinary identities at 30/60 Hz, selected-target damage and feedback, swap/reversion/slash/restart execution, priority clocks, hop/dodge precedence, ownership rejection, kill attribution and trade returns. Four multi-frame comparisons exercise the real live roster weapon animation during flight. Eight mirrored paired 12-frame priority traces compare full simulation/context/memory/random state across restoration at frames 1, 5 and 9 (96 frames per uninterrupted/restored host). Targets and initial flights are controlled; these are flight integration checks, not autonomous full matches or quality acceptance.
+
+The focused two-file bundle passes 102/102 in output/m7-flight-owner-focused.log. Removing current-target adoption fails all four selected contact controls (42 other controls intentionally filtered in that earlier 46-test version; output/m7-flight-owner-negative-target.log). The mutation was restored before final validation. Both repository test commands register the new file.
+
+### Remaining-work status after this slice
+
+M7 is still in automated integration and acceptance. The milestone systems and validation infrastructure are substantially implemented, but component checks do not establish complete autonomous match behavior or improvement against the frozen baseline. This slice closes the committed-flight integration gap inside the broader actor-composition workstream. It does not close a complete match-acceptance gate.
+
+There are seven remaining workstreams, estimated at 10-14 further substantial implementation/validation slices. This is a planning range, not a fixed countdown or a promise that no further defects will appear:
+
+| Remaining workstream | Estimated slices | Completion evidence needed |
+| --- | ---: | --- |
+| Complete actor orchestration and remaining model/calibration feedback | 2-3 | Adaptive tuning, target selection, combat/ground/flight, no-target recovery and feedback run together under one owner |
+| Death, respawn, round/match reset and checkpoint ownership | 1 | Memory resets and restored continuation verified across lifecycle boundaries |
+| Genuine opposed full-match completion | 1-2 | Objective-driven matches finish without authored combat or fallback inputs being counted as success |
+| Known contested-opening, map, revival and dash cases | 2-3 | Repair and rerun the outstanding behavior cases under their existing criteria |
+| Frozen-baseline and held-out quality/generalization evidence | 2 | Mirrored comparisons, seed-cluster uncertainty and held-out scenarios show acceptable tactical outcomes |
+| Final-source serial performance acceptance | 1 | Current-source planner cost meets the retained absolute and paired-ratio gates |
+| Final repository, browser and CLI/Lab acceptance reports | 1-2 | Required checks and evidence agree on the final source |
+
+The existing Quick CI gate is regression coverage, not M7 acceptance. Historical browser/performance results must be refreshed on final source. The main uncertainty is the behavioral fixes uncovered by full matches and baseline comparisons. Human-only readiness follows completion of these automated gates; human testing then assesses spacing and escort feel, tactical readability, fairness and enjoyment. Bugs discovered during that review can still require implementation work.
+
+Final validation: the explicit 115-file regression bundle passes 10,062/10,062 in 158.88 seconds (output/m7-flight-owner-regressions.log; exact file list output/m7-flight-owner-test-files.json). TypeScript and isolated client/server builds pass (output/m7-flight-owner-typecheck.log and output/m7-flight-owner-build.log; Vite 23.16 seconds, existing chunk-size warning). No full-repository, browser or aggregate M7 acceptance rerun is claimed.

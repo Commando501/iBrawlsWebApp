@@ -43,7 +43,7 @@ export function createScriptedAISpatialDodgeCommand(self: Pick<SimCombatant, 'po
 }
 
 export function validateScriptedAIMobility(state: SimState, id: string, command: ScriptedAIMobilityCommand,
-  action: ActionInput, engagementPrepared: boolean, hasOtherCommands: boolean): ScriptedAIMobilityCommand {
+  action: ActionInput, engagementPrepared: boolean, hasOtherCommands: boolean, committedFlight = false): ScriptedAIMobilityCommand {
   const self = state.combatants.find(c => c.id === id);
   if (!command || !(command.version === 'scripted-ai-mobility-v1' && command.kind === 'emergency-hop' ||
     command.version === 'scripted-ai-mobility-v2' && ['emergency-hop', 'spatial-dodge'].includes(command.kind)))
@@ -53,7 +53,7 @@ export function validateScriptedAIMobility(state: SimState, id: string, command:
     Math.abs(Math.hypot(direction.x, direction.z) - 1) > 1e-6)
     throw new Error(`AI mobility requires a unit direction: ${id}`);
   if (!engagementPrepared || !self || !self.alive || self.hp <= 0 || self.respawnTimer > 0 ||
-    self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === id || self.isLunging ||
+    self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === id || self.isLunging && !committedFlight ||
     (command.kind === 'emergency-hop' && self.slideActive && self.dashRemaining <= 0) ||
     (command.kind === 'spatial-dodge' && (self.dashCooldownTimer > 0 || self.dashRemaining > 0)))
     throw new Error(`AI mobility requires an uncommitted armed engagement: ${id}`);
@@ -78,7 +78,7 @@ export function applyScriptedAIMobility(self: SimCombatant, command: ScriptedAIM
 
 export function validateScriptedAIDashDecision(state: SimState, id: string, decision: ScriptedAIDashDecision,
   action: ActionInput, engagementPrepared: boolean, mobility: ScriptedAIMobilityCommand | undefined,
-  hasOtherCommands: boolean): ScriptedAIDashDecision {
+  hasOtherCommands: boolean, committedFlight = false): ScriptedAIDashDecision {
   const self = state.combatants.find(c => c.id === id);
   if (!decision || decision.version !== 'scripted-ai-dash-v1' || typeof decision.pendingPostEvasionCharge !== 'boolean')
     throw new Error(`Invalid AI dash decision: ${id}`);
@@ -92,7 +92,7 @@ export function validateScriptedAIDashDecision(state: SimState, id: string, deci
     !Number.isFinite(target.spatialIQ) || target.spatialIQ < 0 || target.spatialIQ > 100 ||
     typeof target.targetProtected !== 'boolean' || typeof target.weaponReady !== 'boolean')
     throw new Error(`Invalid AI dash observation: ${id}`);
-  if (!engagementPrepared || !self || self.isLunging || !self.alive || self.hp <= 0 || self.respawnTimer > 0 ||
+  if (!engagementPrepared || !self || self.isLunging && !committedFlight || !self.alive || self.hp <= 0 || self.respawnTimer > 0 ||
     self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === id ||
     (mobility?.kind !== 'spatial-dodge' && self.dashRemaining <= 0))
     throw new Error(`AI dash requires an armed engagement dash: ${id}`);

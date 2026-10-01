@@ -19,6 +19,7 @@ export interface ScriptedCombatEngagementContext {
   actorId: string;
   mobility: boolean;
   dash: boolean;
+  committedFlight?: boolean;
 }
 
 /** V1/v2 ground-AI and v3-v6 prepared-engagement actuation, after caller-owned
@@ -29,6 +30,8 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
   actions: ActionsById, settings: UniversalSettings, engagement?: ScriptedCombatEngagementContext) {
   if (!input) return undefined;
   const sequential = input.version === 'scripted-combat-v6';
+  const flight = engagement?.committedFlight === true;
+  if (flight && !sequential) throw new Error('Scheduled flight commands require sequential engagement execution');
   const prepared = input.version === 'scripted-combat-v3' || input.version === 'scripted-combat-v4' || input.version === 'scripted-combat-v5' || sequential;
   if (input.version !== 'scripted-combat-v1' && input.version !== 'scripted-combat-v2' && !prepared) throw new Error('Unsupported scripted combat input version');
   if (prepared) {
@@ -39,7 +42,7 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
     if (actors.length !== 1 || actor.id === state.localPlayerId || actor.controller !== 'ai' ||
       !Object.hasOwn(input.scriptedBots, actor.id) || isNeuralNetDifficulty(input.scriptedBots[actor.id]) ||
       isNeuralNetDifficulty(state.settings.aiDifficulty) || isNeuralNetDifficulty(settings.aiDifficulty) ||
-      !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 || actor.isLunging)
+      !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 || actor.isLunging !== flight)
       throw new Error('Scripted engagement combat requires an active armed AI engagement');
   } else {
     const movement = Object.fromEntries(Object.keys(input.commands).map(id => [id, { x: 0, z: 0 }]));
@@ -76,7 +79,7 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
           throw new Error(`Invalid or conflicting scripted hammer jump: ${id}`);
         attemptedJump = true; attacked = input.version !== 'scripted-combat-v5' && !sequential;
       } else if (command.kind === 'lunge') {
-        if (prepared && (engagement!.mobility || engagement!.dash || actor.dashRemaining > 0 || actor.slideActive))
+        if (prepared && !flight && (engagement!.mobility || engagement!.dash || actor.dashRemaining > 0 || actor.slideActive))
           throw new Error(`Scripted lunge cannot share an evasion movement owner: ${id}`);
         const targets = state.combatants.filter(c => c.id === command.targetId), target = targets[0];
         const dir = command.direction;

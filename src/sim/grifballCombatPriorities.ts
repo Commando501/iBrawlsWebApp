@@ -38,6 +38,7 @@ export function resolveSimGrifballCombatPriorities(state: ComboArgs[0], botId: s
   if (!combo) return null;
   const next = { ...memory, aiState: combo.frame.aiState, timer: combo.frame.timer };
   let decision: Extract<ScriptedActorDecision, { kind: 'handled' }> = { kind: 'handled', action: combo.action,
+    ...(context.observation?.committedFlight ? { flightTargetId: combo.targetId } : {}),
     commands: combo.scriptedCombat.commands[botId], commandVersion: 'scripted-combat-v6' };
   let evasion: ReturnType<typeof resolveSimGrifballEvasionInput> = null;
   // A combo lunge returns before evasion, airborne opportunities and timer/sway

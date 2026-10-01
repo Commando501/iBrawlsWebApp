@@ -27,12 +27,12 @@ function validateOwner(owner: SimTargetEngagementOwner) {
 }
 
 /** Call in prepare, after target selection and before engagement gravity. Only
- * caller-owned memory changes. Objective/no-target and committed-flight turns
- * retain their own boundaries. The caller enters engagement only on true. */
+ * caller-owned memory changes. Flight must be explicitly selected; objective
+ * and no-target turns retain their boundaries. Enter engagement only on true. */
 export function beginSimGrifballTargetEngagement(state: SimState, botId: string, targetId: string,
-  scriptedBots: Readonly<Record<string, string>>, owner: SimTargetEngagementOwner, dt = 1 / 60): boolean {
+  scriptedBots: Readonly<Record<string, string>>, owner: SimTargetEngagementOwner, dt = 1 / 60, committedFlight = false): boolean {
   validateOwner(owner);
-  if (!getSimGrifballObservationActors(state, botId, targetId, scriptedBots, dt)) return false;
+  if (!getSimGrifballObservationActors(state, botId, targetId, scriptedBots, dt, committedFlight)) return false;
   registerBotEngagement(owner.matchContext.coordinator, botId, targetId);
   normalizeTargetEngagementFrameState(owner.memory);
   return true;
@@ -45,14 +45,14 @@ export function beginSimGrifballTargetEngagement(state: SimState, botId: string,
 export function observeSimGrifballTargetEngagement(state: SimState, botId: string, targetId: string,
   scriptedBots: Readonly<Record<string, string>>,
   adaptive: NonNullable<ReturnType<typeof resolveSimGrifballAdaptiveTuning>>,
-  owner: SimTargetEngagementOwner & { nowSeconds: number; isObserverMode: boolean }, dt = 1 / 60) {
+  owner: SimTargetEngagementOwner & { nowSeconds: number; isObserverMode: boolean; committedFlight?: true }, dt = 1 / 60) {
   validateOwner(owner);
   const { matchContext, memory } = owner;
   if (!adaptive || adaptive.psychState !== matchContext.psychState.get(botId) ||
     !(matchContext.skillCalibration instanceof Map) || !(matchContext.playerModels instanceof Map) ||
     !Number.isFinite(owner.nowSeconds) || owner.nowSeconds < 0 || typeof owner.isObserverMode !== 'boolean')
     throw new Error('Target engagement requires the current adaptive context and match clock');
-  const actors = getSimGrifballObservationActors(state, botId, targetId, scriptedBots, dt);
+  const actors = getSimGrifballObservationActors(state, botId, targetId, scriptedBots, dt, !!owner.committedFlight);
   if (!actors) return null;
   if (matchContext.coordinator.engagements.get(botId) !== targetId || memory.aiState === 'SPAWN_GUARDING')
     throw new Error('Target engagement must begin before observation');
@@ -62,7 +62,7 @@ export function observeSimGrifballTargetEngagement(state: SimState, botId: strin
   const observation = resolveSimGrifballCombatObservation(state, botId, targetId, scriptedBots, adaptive, dt, {
     aiState: memory.aiState, swayTimer: memory.swayTimer, coordCommitTimer: memory.coordCommitTimer,
     psychEnabled: adaptive.psychEnabled, standoffTimer: adaptive.psychState.standoffTimer, resolvedDangerZone,
-  })!;
+  }, !!owner.committedFlight)!;
   const behavior = resolveBehaviorTuning(state.settings);
   // Live tactical target observations count committed overhead swings as a
   // lunging threat as well as actual sword flight. Do not use isLunging alone.

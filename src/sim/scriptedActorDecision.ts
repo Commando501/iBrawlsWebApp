@@ -18,7 +18,9 @@ export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; move
    * the retained velocity without walking or running the ground FSM. */
   holdAfterEvasion?: boolean;
   /** Number of earlier combo commands to execute before evasion mobility. */
-  mobilityAfterCommands?: number }
+  mobilityAfterCommands?: number;
+  /** Live target/facing selection during committed flight; heading stays frozen. */
+  flightTargetId?: string }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -55,6 +57,7 @@ export interface ScriptedActorDecisionRecord {
   noTarget?: ScriptedAINoTargetFeedback;
   /** True only when the grounded evasion return actually owned movement. */
   evasionHeld?: true;
+  flightTargetId?: string;
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -91,6 +94,18 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   for (const key of ['jump', 'dash', 'crouch', 'pickup', 'attackPrimary', 'attackSecondary', 'swapWeapon'] as const)
     if (typeof action[key] !== 'boolean') throw new Error(`Actor decision requires boolean ${key}: ${id}`);
   if (action.aimPitch !== undefined && !Number.isFinite(action.aimPitch)) throw new Error(`Invalid actor pitch: ${id}`);
+  const committedFlight = decision.flightTargetId !== undefined;
+  if (committedFlight) {
+    const actor = state.combatants.find(c => c.id === id), targets = state.combatants.filter(c => c.id === decision.flightTargetId), target = targets[0];
+    if (!engagementPrepared || !actor?.isLunging || actor.hasBall || actor.weapon === 'ball' || state.match.ball.holderId === id ||
+      targets.length !== 1 || target.id === id || target.team === actor.team || !target.alive || target.hp <= 0 || target.respawnTimer > 0 ||
+      decision.commandVersion !== 'scripted-combat-v6' || !Array.isArray(decision.commands) ||
+      action.attackPrimary || action.attackSecondary || action.swapWeapon ||
+      decision.commands.some(command => command.kind === 'lunge' && command.targetId !== decision.flightTargetId) ||
+      decision.noTarget || decision.ground || decision.movement !== undefined ||
+      decision.holdAfterEvasion || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash || action.pickup || action.passCharge !== 0)
+      throw new Error(`Scheduled flight requires an exclusive current armed engagement: ${id}`);
+  }
   if (decision.mobilityAfterCommands !== undefined && (!decision.mobility || decision.commandVersion !== 'scripted-combat-v6' ||
     !Number.isInteger(decision.mobilityAfterCommands) || decision.mobilityAfterCommands < 0 ||
     decision.mobilityAfterCommands > (decision.commands?.length ?? 0)))
@@ -119,17 +134,18 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   const otherMovement = decision.movement !== undefined;
   const incompatibleCommands = (decision.commands?.length ?? 0) > 0 && !['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '');
   const mobility = decision.mobility === undefined ? undefined : validateScriptedAIMobility(state, id, decision.mobility,
-    action, engagementPrepared, otherMovement || incompatibleCommands);
+    action, engagementPrepared, otherMovement || incompatibleCommands, committedFlight);
   const dash = decision.dash === undefined ? undefined : validateScriptedAIDashDecision(state, id, decision.dash,
-    action, engagementPrepared, mobility, otherMovement || incompatibleCommands);
+    action, engagementPrepared, mobility, otherMovement || incompatibleCommands, committedFlight);
   if (mobility?.kind === 'spatial-dodge' && !dash) throw new Error(`Spatial dodge requires AI dash observations: ${id}`);
   const movement = decision.movement === undefined ? undefined : validateScriptedObjectiveInput(state, {
     version: 'scripted-objective-v1', scriptedBots: owner.scriptedBots, movement: { [id]: decision.movement },
   }, actions, settings)![id];
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
-  }, actions, settings, engagementPrepared ? { actorId: id, mobility: !!mobility, dash: !!dash } : undefined)![id];
+  }, actions, settings, engagementPrepared ? { actorId: id, mobility: !!mobility, dash: !!dash, committedFlight } : undefined)![id];
   return { kind: 'handled', action: { ...action }, ...(decision.holdAfterEvasion ? { holdAfterEvasion: true } : {}),
+    ...(committedFlight ? { flightTargetId: decision.flightTargetId } : {}),
     ...(decision.mobilityAfterCommands !== undefined ? { mobilityAfterCommands: decision.mobilityAfterCommands } : {}),
     ...(noTarget ? { noTarget } : {}), ...(ground ? { ground } : {}), ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

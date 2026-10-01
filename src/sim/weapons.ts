@@ -102,7 +102,8 @@ function strike(
   attacker: SimCombatant,
   victim: SimCombatant,
   settings: UniversalSettings,
-  events: KillEvent[]
+  events: KillEvent[],
+  weapon = attacker.weapon
 ): void {
   victim.hp -= 1;
   if (victim.hp > 0) return;
@@ -127,7 +128,7 @@ function strike(
     victim.runnerHealDelayTimer = 0;
     victim.runnerLastHp = victim.hp;
   }
-  events.push({ attackerId: attacker.id, victimId: victim.id, weapon: attacker.weapon });
+  events.push({ attackerId: attacker.id, victimId: victim.id, weapon });
 }
 
 const SIM_FPS = 60;
@@ -433,8 +434,8 @@ export function tickWeaponIntentTimers(c: SimCombatant, dt: number, swapTimersAd
   if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
 }
 
-/** Committed roster flight: one locked target, one contact, elapsed timeout and AI cooldown. */
-function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback): void {
+/** Committed roster flight: one selected target, one contact, elapsed timeout and AI cooldown. */
+function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback): void | 'trade_return' {
   c.lungeTimer += dt;
   const target = findCombatant(state, c.lungeTargetId!);
   const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>, actor = c, damageAlreadyRecorded = false) => {
@@ -457,7 +458,9 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     const trade = c.invulnerabilityTimer <= 0 && (target.weapon === 'sword'
       ? settings.enableSwordTrade && (targetWasLunging || primaryActive || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
       : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primaryActive || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350)));
-    strike(state, c, target, settings, events);
+    // A live decision can equip the hammer during flight. Non-trade contact
+    // still credits the committed sword lunge, not the newly equipped weapon.
+    strike(state, c, target, settings, events, trade ? c.weapon : 'sword');
     if (trade) {
       strike(state, target, c, settings, events);
       feedback?.impact(c, target, true);
@@ -476,7 +479,7 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
       if (c.alive) finish('hit', c, !isMixedPlayer(state, target));
       else { c.isLunging = false; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0; }
     } else { feedback?.impact(c, target, false); finish('hit'); }
-    return;
+    return trade ? 'trade_return' : undefined;
   }
   const start = c.lungeStartPos!;
   const boundary = isVectorXZAtArenaBoundary({ pos: new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z),
@@ -568,18 +571,33 @@ export function stepCombatantWeapons(
   settings: UniversalSettings,
   dt: number,
   events: KillEvent[],
-  stage: 'complete' | 'intent' | 'animation' = 'complete',
+  stage: 'complete' | 'intent' | 'animation' | 'flight' | 'flight-animation' = 'complete',
   scriptedCommands?: readonly ScriptedCombatCommand[],
   feedback?: RosterMeleeHitFeedback,
   lungeFeedback?: RosterLungeFeedback,
   swapTimersAdvanced = false,
-  engagement?: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean }
-): void {
+  engagement?: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean;
+    committedFlight?: boolean; lungeStarted?: boolean }
+): void | 'trade_return' {
   if (engagement && (stage !== 'intent' || !scriptedCommands || state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c)))
     throw new Error('Engagement commits require scheduled roster command intent');
   if (scriptedCommands && (!usesRosterLifecycle(state) || isMixedPlayer(state, c)))
     throw new Error('Scripted combat commands require a roster actor in an explicit live roster profile');
   if (!c.alive) return;
+  // Live roster visuals advance swings even during flight. This phase follows
+  // objectives and must neither resolve flight contact nor spend intent clocks.
+  if (stage === 'flight-animation') {
+    if (state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c) || scriptedCommands)
+      throw new Error('Scheduled flight animation requires a mixed roster actor without commands');
+    stepLiveAttack(state, c, action, settings, dt, events, false, feedback);
+    return;
+  }
+  // The scheduled owner already spent intent clocks before flight movement.
+  if (stage === 'flight') {
+    if (!usesRosterLifecycle(state) || isMixedPlayer(state, c) || !c.isLunging || scriptedCommands)
+      throw new Error('Flight contact requires an existing roster flight without new commands');
+    return resolveRosterLunge(state, c, settings, dt, events, lungeFeedback);
+  }
   if (stage === 'animation' && c.isLunging) return;
   if (isMixedPlayer(state, c)) {
     if (c.isLunging) return;
@@ -610,14 +628,14 @@ export function stepCombatantWeapons(
           ? command.kind === 'melee' || command.kind === 'lunge' || command.kind === 'hammer-jump'
           : index === engagement.mobilityAfterCommands) applyMobility();
         if (command.kind === 'revert-weapon-feint') {
-          if (c.isLunging || c.weapon !== 'sword' || c.weaponState === 'windup' || c.weaponState === 'active') continue;
+          if (c.isLunging && !engagement?.committedFlight || c.weapon !== 'sword' || c.weaponState === 'windup' || c.weaponState === 'active') continue;
           // Live feint expiry clears lockout, retains readiness and leaves the
           // underlying recovery animation running under the restored hammer.
           c.weapon = 'hammer'; c.swapLockoutTimer = 0;
           if (c.weaponState === 'recovering' && c.attackKind !== 'swipe') c.attackKind = 'strike';
           decisionReady = true;
         } else if (command.kind === 'swap') {
-          if (c.isLunging || c.weapon === 'ball' || c.weapon === command.weapon || c.swapLockoutTimer > 0 ||
+          if (c.isLunging && !engagement?.committedFlight || c.weapon === 'ball' || c.weapon === command.weapon || c.swapLockoutTimer > 0 ||
             c.weaponState === 'windup' || c.weaponState === 'active') continue;
           c.weapon = command.weapon;
           if (c.weaponState === 'recovering' && c.attackKind !== 'swipe') c.attackKind = c.weapon === 'sword' ? 'slash' : 'strike';
@@ -653,6 +671,7 @@ export function stepCombatantWeapons(
             if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || target.team === c.team || target.invulnerabilityTimer > 0) continue;
             c.lungeTargetId = command.targetId; c.lungeAimDirection = { ...command.direction };
             startLunge(c, settings, state); c.lastAttackTick = state.tick;
+            if (engagement) engagement.lungeStarted = true;
             return; // Live combo commitment returns before advancing new flight.
           }
           if (c.weapon !== command.weapon) continue;
@@ -692,9 +711,12 @@ export function stepCombatantWeapons(
     }
   }
 
+  // Scheduled flight decisions commit before travel, including an empty intent.
+  if (stage === 'intent' && engagement?.committedFlight) return;
+
   // Active lunge flight: kill-on-contact, run down the lunge timer.
   if (c.isLunging) {
-    if (usesRosterLifecycle(state)) { resolveRosterLunge(state, c, settings, dt, events, lungeFeedback); return; }
+    if (usesRosterLifecycle(state)) return resolveRosterLunge(state, c, settings, dt, events, lungeFeedback);
     resolveLungeHit(state, c, settings, events);
     c.lungeTimer = Math.max(0, c.lungeTimer - dt);
     if (c.lungeTimer <= 0) {

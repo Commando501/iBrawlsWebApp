@@ -13,6 +13,7 @@ import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGro
  */
 
 import { prepareSimAIEngagementMotion } from './aiEngagementMotion';
+import { finishAIHorizontalMotion } from '../game/aiDashMotion';
 import { executeScriptedAINoTarget, type ScriptedAINoTargetOwner } from './scriptedAINoTarget';
 import { beginAICoordinationFrame } from '../game/aiCoordinationFrame';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
@@ -150,6 +151,7 @@ export function stepSimulation(
       ? (state.tick + 1) * SIM_DT * 1000 : previousTimeMs + dt * 1000;
   }
   const flightAdvanced = rosterV2 ? new Set<string>() : null;
+  const scheduledFlights = new Set<string>();
   const swapTimersAdvanced = new Set<string>();
   // Local physics/contact and weapon animation precede roster respawn and AI.
   if (player) {
@@ -194,7 +196,8 @@ export function stepSimulation(
     let noTargetOwner: ScriptedAINoTargetOwner | undefined;
     let dashDecision: ScriptedAIDashDecision | undefined;
     let evasionHold: { held: boolean } | undefined;
-    let engagementCommit: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean } | undefined;
+    let engagementCommit: { beforeAttack?: () => void; mobilityAfterCommands?: number; sequentialOpportunities?: boolean; groundReadyOverride?: boolean;
+      committedFlight?: boolean; lungeStarted?: boolean } | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -237,6 +240,14 @@ export function stepSimulation(
           noTargetOwner = decision.noTarget;
           if (decision.holdAfterEvasion) evasionHold = { held: false };
           if (['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = { sequentialOpportunities: decision.commandVersion === 'scripted-combat-v6' };
+          if (decision.flightTargetId !== undefined) {
+            if (!options.scriptedLungeFeedback || !Object.hasOwn(options.scriptedLungeFeedback.knobs, c.id))
+              throw new Error(`Scheduled flight requires its AI finish feedback owner: ${c.id}`);
+            c.lungeTargetId = decision.flightTargetId;
+            scheduledFlights.add(c.id);
+            actorDecisions[actorDecisions.length - 1].flightTargetId = decision.flightTargetId;
+            engagementCommit = { ...engagementCommit, sequentialOpportunities: true, committedFlight: true };
+          }
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
             const applyMobility = () => { applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind; };
@@ -271,12 +282,12 @@ export function stepSimulation(
     // lunge returns from live AI without replacing launch-frame velocity or
     // integrating flight until the following frame. Rejected commands still walk.
     const earlyCommands = scheduledCombat[c.id];
-    const intentBeforeMovement = !!earlyCommands?.length && !c.isLunging;
+    const intentBeforeMovement = !!engagementCommit?.committedFlight || !!earlyCommands?.length && !c.isLunging;
     if (intentBeforeMovement) {
       c.yaw = normalizeYaw(act(c.id).aim);
-      c.isCrouching = act(c.id).crouch && !c.isJumping;
+      c.isCrouching = act(c.id).crouch && (engagementPrepared || !c.isJumping);
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), engagementCommit);
-      if (c.isLunging) {
+      if (c.isLunging && (!engagementCommit?.committedFlight || engagementCommit.lungeStarted)) {
         if (decisionActive) completeTurn(actorDecisions[actorDecisions.length - 1]);
         continue;
       }
@@ -300,7 +311,10 @@ export function stepSimulation(
       continue;
     }
     if (rosterV2 && c.alive && c.isLunging) {
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
+      const flightResult = stepCombatantWeapons(state, c, act(c.id), settings, dt, kills,
+        intentBeforeMovement ? 'flight' : 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
+      if (engagementCommit?.committedFlight && c.alive && flightResult !== 'trade_return')
+        finishAIHorizontalMotion(c, { pos: c.pos, vel: c.vel, aiState: options.scriptedLungeFeedback!.memories[c.id].aiState });
       flightAdvanced!.add(c.id);
     } else if (mixedObjectiveFrame && !intentBeforeMovement && !groundExecution?.completed) {
       // Live AI commits at its own roster turn. A later actor's flight (or
@@ -351,8 +365,12 @@ export function stepSimulation(
       : tickGrifballObjective(state, settings, dt, objectiveActions, options.scriptedPlanner);
 
   if (mixedObjectiveFrame) {
-    for (const c of state.combatants) if (c !== player && !flightAdvanced?.has(c.id))
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback);
+    for (const c of state.combatants) if (c !== player) {
+      if (scheduledFlights.has(c.id))
+        stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'flight-animation', undefined, meleeFeedback);
+      else if (!flightAdvanced?.has(c.id))
+        stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback);
+    }
     reconcileSimCarrier(state, settings);
   }
 
