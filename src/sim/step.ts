@@ -22,12 +22,15 @@ import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, type KillE
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 import { validateScriptedObjectiveInput, type ScriptedObjectiveInput } from './scriptedObjectiveInput';
+import { beginScriptedObjectivePlanning, validateScriptedObjectivePlanner, type ScriptedObjectivePlanner, type ScriptedObjectivePlannerFrame } from './scriptedObjectivePlanner';
 
 /** Canonical fixed timestep. */
 export const SIM_DT = 1 / 60;
 
 export interface StepEvents extends ObjectiveEvents {
   kills: KillEvent[];
+  /** Present only for explicit scripted planning; handoffs are not autonomous successes. */
+  plannerFrame?: ScriptedObjectivePlannerFrame;
 }
 
 export interface StepOptions {
@@ -37,6 +40,9 @@ export interface StepOptions {
   dt?: number;
   /** Opt-in planner movement; separate from player/RL ActionInput. */
   scriptedObjective?: ScriptedObjectiveInput;
+  /** Opt-in own-state decisions at each roster actor's turn. Mutually exclusive
+   * with a precomputed scriptedObjective packet; legacy/RL defaults are unchanged. */
+  scriptedPlanner?: ScriptedObjectivePlanner;
 }
 
 /**
@@ -49,8 +55,12 @@ export function stepSimulation(
   options: StepOptions = {}
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
-  const scriptedMovement = validateScriptedObjectiveInput(state, options.scriptedObjective, actionsById, settings);
   const dt = options.dt ?? SIM_DT;
+  if (options.scriptedObjective && options.scriptedPlanner) throw new Error('Choose either scripted objective inputs or a scripted planner');
+  validateScriptedObjectivePlanner(state, options.scriptedPlanner, settings, dt);
+  const scriptedMovement = validateScriptedObjectiveInput(state, options.scriptedObjective, actionsById, settings)
+    ?? (options.scriptedPlanner ? Object.create(null) : undefined);
+  const resolvedActions = options.scriptedPlanner ? { ...actionsById } : actionsById;
   const rng: Rng = createRng(0);
   rng.setState(state.rngState);
 
@@ -58,7 +68,7 @@ export function stepSimulation(
   const mixed = state.combatExecution === 'live-mixed-v1';
   // An omitted mixed-frame command is idle, preserving a reset/respawn heading.
   // Resolve it at use time because roster revival runs after local physics.
-  const act = (id: string) => actionsById[id] ?? (mixed
+  const act = (id: string) => resolvedActions[id] ?? (mixed
     ? { ...idleAction(), aim: state.combatants.find(c => c.id === id)!.yaw } : idleAction());
   const mixedObjectiveFrame = mixed && state.mode === 'grifball';
   const player = mixed ? state.combatants.find(c => c.id === state.localPlayerId) : undefined;
@@ -101,16 +111,19 @@ export function stepSimulation(
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.
   if (rosterV2) tickRespawns(state, settings, dt, state.combatants.filter(c => c !== player));
+  const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions) : null;
 
   // Ordinary live AI returns before movement/intent in inactive Grifball phases.
   // Capture the pre-objective phase: countdown completion resumes AI on the next frame.
   // This is explicit per actor; existing committed-action and legacy profiles keep their behavior.
-  const phasePaused = new Set(mixedObjectiveFrame && state.match.phase !== 'playing'
-    ? state.combatants.filter(c => c !== player && c.pauseDuringInactiveGrifball).map(c => c.id) : []);
+  const phasePaused = new Set(state.match.phase !== 'playing'
+    ? state.combatants.filter(c => c !== player && (mixedObjectiveFrame && c.pauseDuringInactiveGrifball || planner?.owns(c.id))).map(c => c.id) : []);
 
   // Phase 1 — movement.
   for (const c of state.combatants) {
     if (c === player) continue;
+    const planned = planner?.resolve(c);
+    if (planned) { resolvedActions[c.id] = planned.action; scriptedMovement![c.id] = planned.movement; }
     if (phasePaused.has(c.id)) {
       if (c.alive) {
         c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
@@ -128,7 +141,12 @@ export function stepSimulation(
   // Mixed roster decisions commit before objectives; skeletal damage follows them.
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
-    if (c !== player && !phasePaused.has(c.id) && !flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete');
+    if (c === player || flightAdvanced?.has(c.id)) continue;
+    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete');
+    // Mixed execution advances paused animations below. The roster-only profile
+    // has one combined weapon phase: suppress new input, not committed clocks.
+    else if (!mixedObjectiveFrame && planner?.owns(c.id))
+      stepCombatantWeapons(state, c, { ...idleAction(), aim: c.yaw }, settings, dt, kills);
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
@@ -150,7 +168,7 @@ export function stepSimulation(
 
   // A paused AI clears pickup intent even when this objective update ends countdown.
   const objectiveActions = phasePaused.size
-    ? Object.fromEntries(Object.entries(actionsById).filter(([id]) => !phasePaused.has(id))) : actionsById;
+    ? Object.fromEntries(Object.entries(resolvedActions).filter(([id]) => !phasePaused.has(id))) : resolvedActions;
 
   // Phase 4 — objective: grifball (ball/pickups/scoring) or combat (kill-target win).
   const objective =
@@ -170,5 +188,5 @@ export function stepSimulation(
   state.tick += 1;
   state.rngState = rng.getState();
 
-  return { ...objective, kills };
+  return { ...objective, kills, ...(planner ? { plannerFrame: planner.frame } : {}) };
 }
