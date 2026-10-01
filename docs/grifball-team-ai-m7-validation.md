@@ -2325,3 +2325,16 @@ Each row contains four paired games (two known seeds, both sides). The opposing 
 | Aggressive | +2.00 | 0 → 3 | +1.00 |
 
 Each row again has four paired development games. The shallower setting helps the two struggling styles but materially worsens the patient matchup. It is not promoted to the default. No quality or calibrated performance gate was requested, and one-map/two-seed exploratory results cannot establish generalization. The full development comparison, current carrier-recovery aggregate and separate marking-fix validation are still running against their respective frozen sources.
+
+## 2026-09-30 — carrier-recovery development quality matrix
+
+`output/m7-carrier-recovery-quality-proof/` completes **48/48** main matches without censoring and **24 exact null pairs**. The 156 Quick checks, TypeScript, three builds, startup and correctness pass. Startup, Canyon and Stadium screenshots were inspected. Frozen source is `a635fcaa9035edb79bf3657b1bbb696ca33dd9ec`, dirty hash `ce9e4c5047e094a2568389ddb93c85654d0f1936d1f0f6302299ae72511bf0b7`, including concurrent outline work. The later marking change is outside this run.
+
+The unchanged development matrix compares tactics disabled with full tactics, using Canyon/Stadium, seeds 101/102, both sides and three styles. The equal-stratum pooled goal-margin estimate is **−0.5417**, with seed-cluster 95% interval **[−4.2476, +3.1643]**; seed deltas are −0.25 and −0.8333.
+
+| Map | Balanced | Patient | Aggressive |
+| --- | --- | --- | --- |
+| Canyon | +0.25 | +2.00 | +0.50 |
+| Stadium | −3.75 | +1.00 | −3.25 |
+
+Values are paired candidate-minus-baseline goal-margin means. Stadium/balanced and Stadium/aggressive each have four baseline wins and zero candidate wins. The current build improves the descriptive Canyon means relative to the preceding development run, while Stadium/aggressive worsens; changes between those source versions prevent attributing the differences to carrier recovery alone. The gate remains **inconclusive**, citing tuning overlap and inadequate supporting-metric opportunities; the CLI reports **exit 2 / incomplete evidence**. This is neither a held-out quality pass nor calibrated performance evidence. Both defensive-depth diagnostics likewise show opponent-dependent tradeoffs, so their global defaults remain unchanged. The marking fix addresses a separately reproduced assignment defect and still needs its own broader quality evidence.
