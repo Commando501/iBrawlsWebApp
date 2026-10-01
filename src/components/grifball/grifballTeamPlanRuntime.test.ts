@@ -52,6 +52,58 @@ for (const team of ['blue', 'red'] as const) for (const finish of [false, true])
     assert.equal(result.frame.weaponState, 'ready');
   });
 
+for (const team of ['blue', 'red'] as const) for (const id of ['a', 'main_ai']) for (const local of [false, true])
+  test(`runner reaches a clear nearby finish before starting a slower punch: ${team}/${id}/local=${local}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!, direction = team === 'blue' ? 1 : -1;
+    state.otherPlayers.delete('a'); runner.id = id; runner.team = team; state.otherPlayers.set(id, runner);
+    // Winter tick 2,895: the selected finish was interrupted by a new punch.
+    runner.pos.set(45.15580810457188 * direction, 0, 0.9660441872260561); runner.activeWeapon = 'ball';
+    state.otherPlayers.get('b')!.team = team;
+    const enemy = state.otherPlayers.get('enemy')!; enemy.team = team === 'blue' ? 'red' : 'blue';
+    enemy.pos.set(46.88790580137603 * direction, 0, -0.38239071958770254);
+    if (local) {
+      state.isObserverMode = false; state.localPlayerTeam = enemy.team;
+      state.playerPos.copy(enemy.pos); state.otherPlayers.delete('enemy');
+    }
+    state.settings.hammerMeleeSpeed = 0.5;
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = id;
+    state.grifballTactics = defaultGrifballTactics();
+    Object.assign(state.grifballTactics.defaults, { runnerRiskWeight: 0, styleVariation: 0 });
+    updateGrifballTeamPlanForState(state, 0.2, goal);
+    assert.equal(state.aiMatchContext.grifballTeamPlan.runnerPlans[team].selected.action, 'finish');
+    const targetBefore = (local ? state.playerPos : enemy.pos).clone(), before = runner.pos.x;
+    const result = move(state, id, {}, [], true);
+    assert.equal(result.attacks, 0);
+    assert.ok((result.frame.pos.x - before) * direction > 0);
+    assert.equal(result.frame.weaponState, 'ready');
+    assert.deepEqual(local ? state.playerPos : enemy.pos, targetBefore);
+  });
+
+for (const variant of ['slow-runner', 'fast-punch', 'routed', 'blocked', 'disabled', 'committed'] as const)
+  test(`near-goal punch remains available when finishing first is not viable: ${variant}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!;
+    runner.pos.set(45, 0, 0); runner.activeWeapon = 'ball';
+    state.otherPlayers.get('enemy')!.pos.set(47, 0, 0);
+    state.settings.hammerMeleeSpeed = 0.5;
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+    state.grifballTactics = defaultGrifballTactics();
+    Object.assign(state.grifballTactics.defaults, { runnerRiskWeight: 0, styleVariation: 0 });
+    if (variant === 'slow-runner') state.settings.grifballRunnerSpeedForward = 20;
+    if (variant === 'fast-punch') state.settings.hammerMeleeSpeed = 0.1;
+    if (variant === 'disabled') state.grifballTactics.defaults.enabled = false;
+    updateGrifballTeamPlanForState(state, 0.2, goal);
+    const assignment = state.aiMatchContext.grifballTeamPlan.assignments.get('a');
+    if (variant === 'routed') assignment!.space!.route.points = [{ x: 45, z: 2 }, { x: 47, z: 0 }];
+    if (variant === 'blocked' || variant === 'routed') {
+      // Keep the cached finish but add a newly observed obstacle across its segment.
+      assignment!.geometry!.blockers.push({ kind: 'circle', x: 46, z: 0, radius: 0.2 });
+    }
+    const result = move(state, 'a', variant === 'committed' ? { weaponState: 'swing_up' } : {}, [], true);
+    assert.equal(result.attacks, variant === 'committed' || variant === 'blocked' ? 0 : 1);
+    assert.equal(result.frame.pos.x, 45);
+    assert.equal(result.frame.weaponState, variant === 'blocked' ? 'ready' : 'swing_up');
+  });
+
 test('a nearer pursuer does not hide a frontal blocker from the runner punch selector', () => {
   const state = setup(), runner = state.otherPlayers.get('a')!;
   runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';

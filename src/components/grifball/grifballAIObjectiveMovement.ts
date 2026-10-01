@@ -164,6 +164,13 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     }
 
     const routeDistance = waypoint ? Math.hypot(waypoint.x - frame.pos.x, waypoint.z - frame.pos.z) : 0;
+    const speed = 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true);
+    // Honor a clear planned finish when reaching the goal center takes less time
+    // than winding up a new punch. Committed strikes are handled above.
+    const finishBeforePunch = assignment?.runner?.selected.action === 'finish' && geometry && waypoint &&
+      waypoint.x === goalPos.x && waypoint.z === goalPos.z &&
+      isSpaceSegmentOpen(geometry, frame.pos, goalPos) &&
+      routeDistance / speed < (state.settings.hammerMeleeSpeed ?? 0.24);
     const escaping = assignment?.runner && assignment.runner.selected.action !== 'wait' && waypoint && routeDistance > 0.1;
     let closestEnemy: { pos: THREE.Vector3 } | null = null;
     let closestDist = Infinity;
@@ -188,7 +195,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       }
     });
 
-    if (closestEnemy && closestDist <= 2.2 && canStartWeaponAction && frame.weaponState === 'ready') {
+    if (!finishBeforePunch && closestEnemy && closestDist <= 2.2 && canStartWeaponAction && frame.weaponState === 'ready') {
       const toEnemy = closestEnemy.pos.clone().sub(frame.pos);
       frame.vel.x = 0;
       frame.vel.z = 0;
@@ -222,7 +229,6 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       8.0
     );
 
-    const speed = 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true);
     const attackYaw = frame.yaw;
     applyGroundDirection(frame, steer.x, steer.z, waypoint ? Math.min(speed, Math.hypot(waypoint.x - frame.pos.x, waypoint.z - frame.pos.z) / Math.max(dt, 0.001)) : speed, dt);
     validateMove();
