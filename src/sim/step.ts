@@ -184,6 +184,10 @@ export function stepSimulation(
     if (decisionActive) {
       tickMovementCooldowns(c, dt);
       if (!swapTimersAdvanced.has(c.id)) { tickWeaponSwapTimers(c, dt); swapTimersAdvanced.add(c.id); }
+      options.scriptedActorDecisions!.beginTurn?.({
+        state: settings === state.settings ? state : { ...state, settings },
+        actorId: c.id, dt, clockPhase: 'after-swap-tick',
+      });
     }
     const planned = planner?.resolve(c);
     if (planned) { resolvedActions[c.id] = planned.action; scriptedMovement![c.id] = planned.movement; }
