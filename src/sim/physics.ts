@@ -102,7 +102,8 @@ export function stepCombatantMovement(
 
   // Face the requested aim instantly (mouse-equivalent), normalized to (-PI, PI].
   c.yaw = normalizeYaw(action.aim);
-  c.isCrouching = action.crouch && !c.isJumping;
+  // Live local inputs allow crouching in flight; other profiles keep grounded-only stance.
+  c.isCrouching = action.crouch && (playerView || !c.isJumping);
   const isRunner = c.hasBall || c.weapon === 'ball';
 
   // Dash trigger (tap): only when grounded-ready and off cooldown.
