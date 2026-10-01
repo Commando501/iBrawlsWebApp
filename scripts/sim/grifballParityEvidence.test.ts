@@ -21,6 +21,15 @@ test('sampled report inventories distinguish the v74 and v75 additions', () => {
   assert.deepEqual(validateSampledParityEvidence(previous), ['objectiveInputTraces: missing or empty family']);
 });
 
+test('v76 retains independent planned-match evidence without changing older inventories', () => {
+  const previous = sampledReport(), current = sampledReport('live-functions-vs-headless-step-v76');
+  assert.equal(previous.plannedMatchTraces, undefined);
+  assert.equal(Object.keys(current).length - 1, 48);
+  assert.deepEqual(validateSampledParityEvidence(current), []);
+  previous.protocol = current.protocol;
+  assert.deepEqual(validateSampledParityEvidence(previous), ['plannedMatchTraces: missing or empty family']);
+});
+
 for (const corruption of ['missing', 'empty', 'metadata', 'later-metadata', 'renamed', 'extra', 'count',
   'fractional-count', 'retained-count', 'hash', 'kind', 'no-frames', 'too-many-frames', 'truncated-count'] as const)
   test(`sampled report audit rejects ${corruption} without rerunning gameplay`, () => {
@@ -49,7 +58,7 @@ for (const corruption of ['missing', 'empty', 'metadata', 'later-metadata', 'ren
   });
 
 test('sampled report audit rejects unsupported versions and preserves diagnostic verdicts', () => {
-  for (const value of [null, undefined, {}, { protocol: 'live-functions-vs-headless-step-v76' }, { protocol: 'toString' }])
+  for (const value of [null, undefined, {}, { protocol: 'live-functions-vs-headless-step-v77' }, { protocol: 'toString' }])
     assert.ok(validateSampledParityEvidence(value).length > 0);
   const report = { check: { verdict: 'inconclusive' }, details: sampledReport() };
   report.details.legacyCompatibility = [{ frames: Array.from({ length: 240 }, (_, tick) => ({ tick })), differenceCount: 10 }];
