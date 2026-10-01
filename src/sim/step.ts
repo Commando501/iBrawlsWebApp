@@ -12,6 +12,7 @@
  */
 
 import { prepareSimAIEngagementMotion } from './aiEngagementMotion';
+import { applyScriptedAIMobility } from './scriptedAIMobility';
 import { validateScriptedLungeFeedback, createScriptedLungeFeedback, type ScriptedLungeFeedback } from './scriptedLungeFeedback';
 import { validateScriptedMeleeFeedback, createScriptedMeleeFeedback, type ScriptedMeleeFeedback } from './scriptedMeleeFeedback';
 import { type UniversalSettings } from '../types';
@@ -199,11 +200,15 @@ export function stepSimulation(
         }
         const motionPhase = engagementPrepared ? 'after-engagement-gravity' as const : 'default' as const;
         const decision = validateScriptedActorDecision(view, owner, c.id,
-          owner.resolve({ ...context, motionPhase }), settings);
+          owner.resolve({ ...context, motionPhase }), settings, engagementPrepared);
         if (engagementPrepared && (decision.kind === 'handled' ? decision.action : act(c.id)).jump)
           throw new Error(`Engagement decisions require a scripted AI jump owner: ${c.id}`);
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
+          if (decision.mobility) {
+            applyScriptedAIMobility(c, decision.mobility, dt);
+            actorDecisions[actorDecisions.length - 1].mobility = decision.mobility.kind;
+          }
           resolvedActions[c.id] = decision.action;
           if (decision.movement) scriptedMovement![c.id] = decision.movement;
           if (decision.commands) scheduledCombat[c.id] = decision.commands;

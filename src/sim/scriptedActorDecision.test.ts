@@ -234,3 +234,49 @@ test('landing preparation permits the same-turn ground attack and advances recov
   for (let i = 0; i < 40; i++) stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
   assert.ok(f.second.hp < 20, 'landing-follow-up must produce real damage'); assert.equal(f.first.aiHammerJumpCooldownTimer, 0);
 });
+
+for (const defect of ['version', 'kind', 'direction', 'zero', 'length', 'nonfinite', 'phase', 'flight', 'dash-active', 'slide-active',
+  'jump', 'dash', 'attack', 'swap', 'move', 'objective', 'commands', 'pickup', 'pass'])
+  test(`emergency hop rejects unsupported ${defect}`, () => {
+    const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => defect === 'phase' ? 'default' : 'engagement';
+    if (defect === 'flight') f.first.isLunging = true;
+    if (defect === 'dash-active') f.first.dashRemaining = .2;
+    if (defect === 'slide-active') f.first.slideActive = true;
+    f.owner.resolve = () => {
+      const decision: any = { kind: 'handled', action: idleAction(), mobility: {
+        version: 'scripted-ai-mobility-v1', kind: 'emergency-hop', direction: { x: 1, z: 0 } } };
+      if (defect === 'version') decision.mobility.version = 'invalid';
+      if (defect === 'kind') decision.mobility.kind = 'dash';
+      if (defect === 'direction') decision.mobility.direction = null;
+      if (defect === 'zero') decision.mobility.direction.x = 0;
+      if (defect === 'length') decision.mobility.direction.x = 2;
+      if (defect === 'nonfinite') decision.mobility.direction.x = NaN;
+      if (defect === 'jump') decision.action.jump = true;
+      if (defect === 'dash') decision.action.dash = true;
+      if (defect === 'attack') decision.action.attackPrimary = true;
+      if (defect === 'swap') decision.action.swapWeapon = true;
+      if (defect === 'move') decision.action.moveX = 1;
+      if (defect === 'pickup') decision.action.pickup = true;
+      if (defect === 'pass') decision.action.passCharge = .5;
+      if (defect === 'objective') decision.movement = { x: 0, z: 0 };
+      if (defect === 'commands') decision.commands = [{ kind: 'melee', weapon: 'hammer', swipe: false }];
+      return decision;
+    };
+    const before = { ...f.first.pos };
+    assert.throws(() => stepSimulation(f.state, {}, { scriptedActorDecisions: f.owner }), /AI mobility/);
+    assert.deepEqual(f.first.pos, before, 'invalid command must not actuate the hop');
+    assert.equal(f.first.isJumping, false);
+  });
+
+test('emergency hop execution preserves the validated packet and does not consume simulation RNG', () => {
+  const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => 'engagement';
+  const decision = { kind: 'handled' as const, action: idleAction(), mobility: {
+    version: 'scripted-ai-mobility-v1' as const, kind: 'emergency-hop' as const, direction: { x: 1, z: 0 } } };
+  const before = structuredClone(decision), rng = f.state.rngState;
+  f.owner.resolve = () => decision;
+  const events = stepSimulation(f.state, {}, { scriptedActorDecisions: f.owner });
+  assert.deepEqual(decision, before); assert.equal(f.state.rngState, rng);
+  assert.equal(events.actorDecisionFrame!.decisions[0].mobility, 'emergency-hop');
+  assert.equal(f.first.pos.x, 7.5 * dt); assert.equal(f.first.pos.y, 5.5 * dt);
+  assert.equal(f.first.vel.x, 7.5 * (1 - 5 * dt)); assert.ok(f.first.isJumping);
+});

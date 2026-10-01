@@ -1,4 +1,5 @@
 import { simulationRandom } from '../../game/simulationRandom';
+import { applyAIEmergencyHopMotion } from '../../game/aiEmergencyHop';
 import * as THREE from 'three';
 import {
   pickPerpendicularDodgeDirection,
@@ -157,16 +158,6 @@ export function resolveAIEmergencyHopDodgeForCombatant({
     playerModel,
     rng: random(),
   });
-  vel.set(dodgePick.x * 7.5, vel.y, dodgePick.z * 7.5);
-  if (!self.isJumping) {
-    self.isJumping = true;
-    vel.y = 5.5;
-    playJump();
-    pos.y += vel.y * dt;
-  }
-  // Engagement gravity already advanced existing flight this frame. Only a
-  // newly started hop contributes vertical displacement here.
-  pos.x += vel.x * dt;
-  pos.z += vel.z * dt;
+  if (applyAIEmergencyHopMotion(self, pos, vel, dodgePick, dt)) playJump();
   return true;
 }

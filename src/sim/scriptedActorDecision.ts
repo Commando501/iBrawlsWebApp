@@ -2,6 +2,7 @@ import type { UniversalSettings } from '../types';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { ActionInput } from './actions';
 import type { SimState } from './simState';
+import { validateScriptedAIMobility, type ScriptedAIMobilityCommand } from './scriptedAIMobility';
 import { validateScriptedCombatInput, type ScriptedCombatCommand, type ScriptedCombatInput } from './scriptedCombatInput';
 import { validateScriptedObjectiveInput, type ObjectiveGroundIntent } from './scriptedObjectiveInput';
 
@@ -9,7 +10,7 @@ export type ScriptedDecisionClockPhase = 'before-swap-tick' | 'after-swap-tick';
 export const remainingDecisionSwapTime = (remaining: number, dt: number, phase: ScriptedDecisionClockPhase) =>
   Math.max(0, remaining - (phase === 'after-swap-tick' ? 0 : dt));
 
-export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version'] }
+export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -30,6 +31,7 @@ export interface ScriptedActorDecisionRecord {
   kind: 'handled' | 'handoff' | 'objective' | 'inactive';
   reason?: string;
   motionPhase?: 'after-engagement-gravity';
+  mobility?: ScriptedAIMobilityCommand['kind'];
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -52,7 +54,7 @@ export function validateScriptedActorDecisionOwner(state: SimState, owner: Scrip
 }
 
 export function validateScriptedActorDecision(state: SimState, owner: ScriptedActorDecisionOwner, id: string,
-  decision: ScriptedActorDecision, settings: UniversalSettings): ScriptedActorDecision {
+  decision: ScriptedActorDecision, settings: UniversalSettings, engagementPrepared = false): ScriptedActorDecision {
   if (decision?.kind === 'handoff') {
     if (typeof decision.reason !== 'string' || !decision.reason.trim()) throw new Error(`Actor handoff requires a reason: ${id}`);
     return { kind: 'handoff', reason: decision.reason };
@@ -67,11 +69,13 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   if (action.attackSecondary && state.combatants.find(c => c.id === id)?.weapon === 'sword')
     throw new Error(`Scheduled sword lunges require target-locked commands: ${id}`);
   const actions = { [id]: action };
+  const mobility = decision.mobility === undefined ? undefined : validateScriptedAIMobility(state, id, decision.mobility,
+    action, engagementPrepared, decision.movement !== undefined || (decision.commands?.length ?? 0) > 0);
   const movement = decision.movement === undefined ? undefined : validateScriptedObjectiveInput(state, {
     version: 'scripted-objective-v1', scriptedBots: owner.scriptedBots, movement: { [id]: decision.movement },
   }, actions, settings)![id];
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
   }, actions, settings)![id];
-  return { kind: 'handled', action: { ...action }, ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
+  return { kind: 'handled', action: { ...action }, ...(mobility ? { mobility } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }
