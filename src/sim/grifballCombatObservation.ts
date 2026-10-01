@@ -42,7 +42,7 @@ export interface SimGrifballCombatObservation {
 /** Observation authority is broader than ground movement: active airborne,
  * sliding and dashing AI still observe targets before those movement owners run.
  * Committed flight, carriers, player/RL actors and inactive AI have other owners. */
-function actorsForObservation(state: SimState, botId: string, targetId: string,
+export function getSimGrifballObservationActors(state: SimState, botId: string, targetId: string,
   scriptedBots: Readonly<Record<string, string>>, dt: number) {
   if (!Number.isFinite(dt) || dt <= 0) throw new Error('Combat observation requires a positive finite timestep');
   if (state.mode !== 'grifball' || !['live-roster-v2', 'live-mixed-v1'].includes(state.combatExecution ?? ''))
@@ -62,7 +62,7 @@ function actorsForObservation(state: SimState, botId: string, targetId: string,
 export function resolveSimGrifballCombatObservation(state: SimState, botId: string, targetId: string,
   scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning, dt = 1 / 60,
   preparation?: SimEngagementPreparation): SimGrifballCombatObservation | null {
-  const actors = actorsForObservation(state, botId, targetId, scriptedBots, dt);
+  const actors = getSimGrifballObservationActors(state, botId, targetId, scriptedBots, dt);
   if (!actors) return null;
   for (const key of ['effectiveReactionLatency', 'tunedAnticipationFactor', 'movementComplexity', 'playstyleFactor'] as const)
     if (!Number.isFinite(tuning[key])) throw new Error(`Invalid combat observation tuning: ${key}`);
@@ -120,5 +120,5 @@ export function retainSimGrifballCombatObservation(state: SimState, botId: strin
     throw new Error('Invalid retained combat observation');
   for (const v of [p.predictedTargetPos, p.movementTargetPos, p.toTarget])
     if (!v || ![v.x, v.y, v.z].every(Number.isFinite)) throw new Error('Invalid retained combat observation vector');
-  return actorsForObservation(state, botId, observation.targetId, scriptedBots, dt) ? observation : null;
+  return getSimGrifballObservationActors(state, botId, observation.targetId, scriptedBots, dt) ? observation : null;
 }

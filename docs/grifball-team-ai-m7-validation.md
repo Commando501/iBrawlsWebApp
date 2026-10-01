@@ -3402,3 +3402,15 @@ Planning estimate after this slice: 10-14 further substantial slices across seve
 - Complete final repository/browser/CLI-Lab acceptance verification and reports: 1-2.
 
 The main uncertainty is how many behavioral fixes autonomous matches and baseline comparisons uncover. Human-only readiness requires these automated gates to pass with retained current-source evidence. Human testing then assesses tactical readability, escort/spacing feel, fairness and enjoyment, with any discovered bugs returned to implementation.
+
+## 2026-10-01 - compose target engagement entry and observation
+
+The scheduled target-engagement boundary now registers the selected target and uses the shared live spawn-guard normalization before engagement gravity. After gravity, it captures the prepared range/stance, resolves pending dodge/counter calibration from the observed threat, adopts coordination commitment and psychological standoff clocks, and samples approach models into the same caller-owned adaptive context. Committed overhead AI swings count as incoming threats as well as actual flight, matching tactical target observations. Objective/no-target/committed-flight turns retain their existing owners. Feint timers remain exclusively owned by the combo adapter; later AI timer/sway advancement is not moved into observation.
+
+The initial focused 51-test bundle passes in 0.91 seconds (output/m7-target-engagement-focused.log). Disabling spawn-guard normalization fails all five selected entry/scheduled controls (output/m7-target-engagement-negative-entry.log; 46 intentionally filtered, 0.585 seconds). Source was restored. Four landing variants were then added, giving 55 new tests in the final regression run.
+
+Eight paired scheduled 60-frame traces (480 frames per uninterrupted/restored host) cover main/ordinary actors, 30/60 Hz and ground/landing entry. They compose the adaptive prelude, entry, observation, combo/feint and ground attack decisions; require real damage, once-per-turn feint spending and later-roster visibility; and compare full state/events/context/memory through checkpoints at frames 1, 20 and 45. Evasion and movement steering are deliberately inactive in these fixtures; they do not establish complete autonomous opposed play.
+
+The next integration step is tactical weapon selection after weapon-feint expiry, followed by full combo/evasion/ground and committed-flight composition. Lifecycle/reset ownership, autonomous opposed completion, known contested-opening/revival/map failures, frozen-baseline/held-out quality/generalization, final-source performance and human review remain open. M7 is not yet human-only.
+
+Final validation: the 111-file bundle passes 9,797/9,797 in 157.74 seconds (output/m7-target-engagement-regressions.log; exact file list in output/m7-target-engagement-test-files.json). TypeScript and isolated client/server builds pass (output/m7-target-engagement-typecheck.log and output/m7-target-engagement-build.log; Vite 68 seconds, existing chunk-size warning). Both repository test commands register the new file. No current-source browser or aggregate M7 acceptance rerun is claimed.

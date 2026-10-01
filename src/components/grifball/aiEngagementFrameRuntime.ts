@@ -11,7 +11,7 @@ export interface AIEngagementFrame {
   hammerJumpCooldownTimer: number | undefined;
 }
 
-export function normalizeTargetEngagementFrameState(frame: AIEngagementFrame): void {
+export function normalizeTargetEngagementFrameState(frame: Pick<AIEngagementFrame, 'aiState' | 'timer'>): void {
   if (frame.aiState !== 'SPAWN_GUARDING') {
     return;
   }
