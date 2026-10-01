@@ -565,7 +565,7 @@ export function stepCombatantWeapons(
   feedback?: RosterMeleeHitFeedback,
   lungeFeedback?: RosterLungeFeedback,
   swapTimersAdvanced = false,
-  engagement?: { beforeAttack?: () => void }
+  engagement?: { beforeAttack?: () => void; sequentialOpportunities?: boolean }
 ): void {
   if (engagement && (stage !== 'intent' || !scriptedCommands || state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c)))
     throw new Error('Engagement commits require scheduled roster command intent');
@@ -591,6 +591,8 @@ export function stepCombatantWeapons(
       // ordering, including a recovery swap making the local decision ready;
       // the old animation itself continues unless a subsequent attack replaces it.
       let decisionReady = c.weaponState === 'idle';
+      const entryDashRemaining = c.dashRemaining;
+      let committedHere = false;
       let mobilityApplied = false;
       const applyMobility = () => {
         if (mobilityApplied) return;
@@ -598,7 +600,7 @@ export function stepCombatantWeapons(
         engagement?.beforeAttack?.();
       };
       for (const command of scriptedCommands) {
-        if (command.kind === 'melee' || command.kind === 'lunge') applyMobility();
+        if (command.kind === 'melee' || command.kind === 'lunge' || command.kind === 'hammer-jump') applyMobility();
         if (command.kind === 'revert-weapon-feint') {
           if (c.isLunging || c.weapon !== 'sword' || c.weaponState === 'windup' || c.weaponState === 'active') continue;
           // Live feint expiry clears lockout, retains readiness and leaves the
@@ -622,9 +624,9 @@ export function stepCombatantWeapons(
           const started = startAIHammerJumpAction({ self: jump, settings, vel: c.vel, horizontalHeading: command.heading,
             jumpType: command.jumpType, playSwing: () => {}, playJump: () => {}, onMainAIHammerSwing: () => {
               // Main AI's live weapon callback checks readiness and an active dash.
-              if (c.weaponReadyTimer > 0 || c.dashRemaining > 0) return;
+              if (c.weaponReadyTimer > 0 || (engagement.sequentialOpportunities ? entryDashRemaining : c.dashRemaining) > 0) return;
               c.weaponState = 'idle';
-              stepLiveAttack(state, c, { ...action, attackPrimary: true, attackSecondary: false }, settings, 0, events, true, feedback);
+              stepLiveAttack(state, c, { ...action, attackPrimary: true, attackSecondary: false }, settings, 0, events, true, feedback, !!engagement.sequentialOpportunities);
               if ((c as SimCombatant).weaponState === 'windup') jump.weaponState = 'swing_up';
             } });
           if (jump.hammerJumpPlanned !== undefined) c.hammerJumpPlanned = jump.hammerJumpPlanned;
@@ -636,8 +638,8 @@ export function stepCombatantWeapons(
           c.weaponTimer = resolveHammerSlamTiming(settings).windupTime;
           c.isJumping = jump.isJumping; c.hammerJumpsInAir = jump.aiHammerJumpsInAir;
           if (c.isJumping) c.grounded = false;
-          decisionReady = false;
-        } else if (decisionReady && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee')) {
+          decisionReady = false; committedHere = true;
+        } else if ((decisionReady || engagement?.sequentialOpportunities && committedHere && command.kind === 'melee' && command.weapon === 'hammer' && !command.swipe) && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee')) {
           if (command.kind === 'lunge') {
             const target = findCombatant(state, command.targetId);
             if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || target.team === c.team || target.invulnerabilityTimer > 0) continue;
@@ -648,7 +650,7 @@ export function stepCombatantWeapons(
           if (c.weapon !== command.weapon) continue;
           c.weaponState = 'idle';
           stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true, feedback, !!engagement);
-          decisionReady = false;
+          decisionReady = false; committedHere = true;
         }
       }
       applyMobility();

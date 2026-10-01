@@ -72,7 +72,7 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
     throw new Error(`Scheduled sword lunges require target-locked commands: ${id}`);
   const actions = { [id]: action };
   const otherMovement = decision.movement !== undefined;
-  const incompatibleCommands = (decision.commands?.length ?? 0) > 0 && !['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5'].includes(decision.commandVersion ?? '');
+  const incompatibleCommands = (decision.commands?.length ?? 0) > 0 && !['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '');
   const mobility = decision.mobility === undefined ? undefined : validateScriptedAIMobility(state, id, decision.mobility,
     action, engagementPrepared, otherMovement || incompatibleCommands);
   const dash = decision.dash === undefined ? undefined : validateScriptedAIDashDecision(state, id, decision.dash,

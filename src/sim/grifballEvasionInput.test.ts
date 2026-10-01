@@ -135,3 +135,51 @@ for (const kind of ['lunge', 'swap', 'hammer-jump'] as const) test(`v5 forbids $
     commands: { main_ai: [{ kind: 'hammer-jump', jumpType: 'defensive' }, second] } }, {}, f.state.settings,
     { actorId: 'main_ai', mobility: false, dash: false }));
 });
+
+for (const version of ['scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'] as const)
+  test(`combined jump mobility is explicitly versioned: ${version}`, () => {
+    const f = fixture();
+    const validate = () => validateScriptedCombatInput(f.state, { version, scriptedBots: f.authority,
+      commands: { main_ai: [{ kind: 'hammer-jump', jumpType: 'offensive', heading: { x: 0, y: 0, z: 1 } }] } }, {}, f.state.settings,
+      { actorId: 'main_ai', mobility: true, dash: false });
+    if (version === 'scripted-combat-v6') assert.doesNotThrow(validate); else assert.throws(validate);
+  });
+
+for (const kind of ['lunge', 'swap', 'sword', 'swipe'] as const) test(`v6 refuses ${kind} after a hammer opportunity`, () => {
+  const f = fixture();
+  const second = kind === 'lunge' ? { kind, targetId: f.target.id, direction: { x: 0, y: 0, z: 1 } }
+    : kind === 'swap' ? { kind, weapon: 'sword' as const }
+      : { kind: 'melee' as const, weapon: kind === 'sword' ? 'sword' as const : 'hammer' as const, swipe: kind === 'swipe' };
+  assert.throws(() => validateScriptedCombatInput(f.state, { version: 'scripted-combat-v6', scriptedBots: f.authority,
+    commands: { main_ai: [{ kind: 'melee', weapon: 'hammer', swipe: false }, second] } }, {}, f.state.settings,
+    { actorId: 'main_ai', mobility: false, dash: false }));
+});
+
+for (const phase of ['windup', 'active', 'recovering'] as const) test(`v6 cannot restart an existing ${phase} commitment`, () => {
+  const f = fixture(); f.actor.weaponState = phase; f.actor.attackKind = 'strike'; f.actor.weaponPhaseElapsed = .01;
+  stepCombatantWeapons(f.state, f.actor, idleAction(), f.state.settings, 0, [], 'intent', [
+    { kind: 'melee', weapon: 'hammer', swipe: false }, { kind: 'hammer-jump', jumpType: 'offensive' },
+    { kind: 'melee', weapon: 'hammer', swipe: false },
+  ], undefined, undefined, true, { sequentialOpportunities: true });
+  assert.equal(f.actor.weaponState, phase); assert.equal(f.actor.weaponPhaseElapsed, .01);
+  assert.equal(f.actor.lastHammerAttackTimeMs, undefined); assert.equal(!!f.actor.hammerJumpPlanned, false);
+});
+
+test('v6 main jump still refuses a dash that was already active at turn entry', () => {
+  const f = fixture(); f.actor.dashRemaining = .2;
+  stepCombatantWeapons(f.state, f.actor, idleAction(), f.state.settings, 0, [], 'intent', [
+    { kind: 'hammer-jump', jumpType: 'offensive' },
+  ], undefined, undefined, true, { sequentialOpportunities: true });
+  assert.equal(f.actor.weaponState, 'idle'); assert.equal(f.actor.hammerJumpPlanned, false);
+  assert.equal(f.actor.isJumping, false); assert.equal(f.actor.hammerJumpsInAir, 0);
+});
+
+for (const invalid of ['airborne', 'range', 'height'] as const) test(`airborne follow-up refuses invalid ${invalid}`, () => {
+  const f = fixture();
+  f.context.airborneOpportunity = { targetAirborne: true, movementComplexity: 80, resolvedDangerZone: 3,
+    tunedAnticipationFactor: 0, enemyInKillRange: false, verticalDeltaToTarget: 4 };
+  if (invalid === 'airborne') (f.context.airborneOpportunity as any).targetAirborne = undefined;
+  if (invalid === 'range') f.context.airborneOpportunity.resolvedDangerZone = Infinity;
+  if (invalid === 'height') f.context.airborneOpportunity.verticalDeltaToTarget = NaN;
+  assert.throws(f.resolve); assert.equal(f.draws(), 0);
+});

@@ -62,7 +62,9 @@ export function validateScriptedAIMobility(state: SimState, id: string, command:
   if (hasOtherCommands || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash ||
     action.attackPrimary || action.attackSecondary || action.swapWeapon || action.pickup || action.passCharge !== 0)
     throw new Error(`Unsupported AI mobility action combination: ${id}`);
-  return { ...command, direction: { ...direction } };
+  // JSON canonicalizes signed zero. Normalize accepted commands before physics
+  // stores a direction/velocity that a restored state must reproduce exactly.
+  return { ...command, direction: { x: direction.x === 0 ? 0 : direction.x, z: direction.z === 0 ? 0 : direction.z } };
 }
 
 /** Called once after decision validation and before airborne recovery. */

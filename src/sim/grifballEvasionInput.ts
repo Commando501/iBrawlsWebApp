@@ -1,3 +1,4 @@
+import { resolveAIAirborneHammerOpportunity } from '../game/aiAirborneHammerOpportunity';
 import * as THREE from 'three';
 import { resolveAILungeEvasionDecision, type AILungeEvasionFrame } from '../game/aiLungeEvasionDecision';
 import { resolveAIBulltrueCounterDecision } from '../game/aiBulltrueCounterDecision';
@@ -38,6 +39,11 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
     weaponFrame: GroundOpportunityWeaponFrame; pendingPostEvasionCharge: boolean;
     bulltrueCounter: AICombatWeapon | null; defensiveEvasionMult: number; spatialIQ: number; swayTimer: number;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
+    /** Optional next live priority, before AI timer/sway advancement. These are
+     * the same pre-evasion range observations, not a forecast from the hopped pose. */
+    airborneOpportunity?: { targetAirborne: boolean; movementComplexity: number; resolvedDangerZone: number;
+      tunedAnticipationFactor: number; enemyInKillRange: boolean; verticalDeltaToTarget: number };
+
   }, dt = 1 / 60) {
   if (context.motionPhase !== 'after-engagement-gravity' || typeof context.random !== 'function' || !Number.isFinite(dt) || dt <= 0)
     throw new Error('Evasion requires prepared engagement and caller-owned randomness');
@@ -48,6 +54,10 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
     context.spatialIQ < 0 || context.spatialIQ > 100 || typeof context.pendingPostEvasionCharge !== 'boolean' ||
     typeof weaponFrame.canStartWeaponAction !== 'boolean' || !['hammer', 'sword'].includes(weaponFrame.activeWeapon) ||
     ![null, 'hammer', 'sword'].includes(context.bulltrueCounter)) throw new Error('Invalid evasion observation');
+  const airborne = context.airborneOpportunity;
+  if (airborne && (typeof airborne.targetAirborne !== 'boolean' || typeof airborne.enemyInKillRange !== 'boolean' ||
+    ![airborne.movementComplexity, airborne.resolvedDangerZone, airborne.tunedAnticipationFactor, airborne.verticalDeltaToTarget].every(Number.isFinite)))
+    throw new Error('Invalid airborne opportunity observation');
   const actors = state.combatants.filter(c => c.id === botId), self = actors[0];
   const targets = state.combatants.filter(c => c.id === observation.targetId), target = targets[0];
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
@@ -74,6 +84,17 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   const dashTarget = () => ({ targetWeaponState: observed.weaponState,
     attackDistanceToTarget: observation.combatDistanceToTarget, resolvedAiReach: observation.resolvedAiReach,
     targetProtected: target.invulnerabilityTimer > 0, spatialIQ: context.spatialIQ, weaponReady: frame.weaponState === 'ready' });
+  const startHammerJump = (jumpType: 'offensive' | 'defensive', heading?: { x: number; y: number; z: number }) => {
+    const started = startAIHammerJumpAction({ self: projected, settings: state.settings, vel: frame.vel, jumpType, horizontalHeading: heading,
+      playJump: () => {}, playSwing: () => {}, onMainAIHammerSwing: () => {
+        if (weaponFrame.readinessRemaining <= 0 && self.dashRemaining <= 0) {
+          projected.weaponState = 'swing_up'; projected.weaponTimer = 0;
+        }
+      } });
+    // Rejected main jumps can clear a plan before a later counter.
+    commands.push({ kind: 'hammer-jump', jumpType, ...(heading ? { heading: { ...heading } } : {}) });
+    return started;
+  };
   const result = resolveAILungeEvasionDecision({ settings: state.settings, frame, targetWeapon: target.weapon,
     distanceToTarget: observation.distanceToTarget, combatDistanceToTarget: observation.combatDistanceToTarget,
     targetIsLunging: observed.isLunging, difficulty: scriptedBots[botId], defensiveEvasionMult: context.defensiveEvasionMult,
@@ -100,23 +121,27 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
       mobility = createScriptedAIEmergencyHopCommand(self, state.map.arenaRadius, { x, z }, context.playerModel ?? null, context.random);
       applyAIEmergencyHopMotion(projected, frame.pos, frame.vel, mobility.direction, dt); return true;
     },
-    startHammerJump: () => {
-      const started = startAIHammerJumpAction({ self: projected, settings: state.settings, vel: frame.vel, jumpType: 'defensive',
-        playJump: () => {}, playSwing: () => {}, onMainAIHammerSwing: () => {
-          if (weaponFrame.readinessRemaining <= 0 && self.dashRemaining <= 0) {
-            projected.weaponState = 'swing_up'; projected.weaponTimer = 0;
-          }
-        } });
-      // Keep failed attempts: main AI clears a queued plan when its weapon
-      // callback refuses, before the final timed-counter priority runs.
-      commands.push({ kind: 'hammer-jump', jumpType: 'defensive' });
-      return started;
-    },
+    startHammerJump: () => startHammerJump('defensive'),
     triggerHammerAttack: () => attack('hammer'),
   });
+  const evasionFrame = { ...result };
+  const airborneFrame = airborne ? resolveAIAirborneHammerOpportunity({ settings: state.settings,
+    frame: { pos: frame.pos, vel: frame.vel, aiState: result.aiState, timer: result.timer, weaponState: result.weaponState },
+    targetHp: target.hp, targetVerticalVelocity: target.vel.y, targetProtected: target.invulnerabilityTimer > 0,
+    ...airborne, difficulty: scriptedBots[botId], canStartWeaponAction: weaponFrame.canStartWeaponAction,
+    activeWeapon: weaponFrame.activeWeapon, distanceToTarget: observation.distanceToTarget,
+    combatDistanceToTarget: observation.combatDistanceToTarget, resolvedAiReach: observation.resolvedAiReach,
+    cooldownMultiplier: memory.cooldownMultiplier, tuning: resolveBehaviorTuning(state.settings), random: context.random,
+    triggerHammerAttack: () => attack('hammer'),
+    startHammerJump: () => startHammerJump('offensive', { ...observation.toTarget, y: 0 }) }) : undefined;
+  if (airborneFrame) {
+    result.aiState = airborneFrame.aiState; result.timer = airborneFrame.timer; result.weaponState = airborneFrame.weaponState;
+    frame.weaponState = result.weaponState;
+  }
   const dash: ScriptedAIDashDecision | undefined = frame.dashRemaining > 0 ? { version: 'scripted-ai-dash-v1',
     aiState: result.aiState, pendingPostEvasionCharge: result.pendingPostEvasionCharge, target: dashTarget() } : undefined;
-  return { targetId: target.id, frame: result, commands, commandVersion: 'scripted-combat-v5' as const,
+  return { targetId: target.id, frame: result, commands, commandVersion: airborne ? 'scripted-combat-v6' as const : 'scripted-combat-v5' as const,
+    ...(airborneFrame ? { evasionFrame, airborneFrame } : {}),
     ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}),
     weaponFrame: { ...weaponFrame, weaponState: result.weaponState },
     motion: { pos: { ...frame.pos }, vel: { ...frame.vel }, dashDir: { ...frame.dashDir }, ...projected },

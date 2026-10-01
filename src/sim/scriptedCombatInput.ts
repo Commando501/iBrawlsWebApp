@@ -9,26 +9,27 @@ export type ScriptedCombatCommand = { kind: 'revert-weapon-feint' } | { kind: 's
   | { kind: 'hammer-jump'; jumpType: 'offensive' | 'defensive'; heading?: { x: number; y: number; z: number } }
   | { kind: 'lunge'; targetId: string; direction: { x: number; y: number; z: number } };
 export interface ScriptedCombatInput {
-  version: 'scripted-combat-v1' | 'scripted-combat-v2' | 'scripted-combat-v3' | 'scripted-combat-v4' | 'scripted-combat-v5';
+  version: 'scripted-combat-v1' | 'scripted-combat-v2' | 'scripted-combat-v3' | 'scripted-combat-v4' | 'scripted-combat-v5' | 'scripted-combat-v6';
   scriptedBots: Readonly<Record<string, string>>;
   commands: Readonly<Record<string, readonly ScriptedCombatCommand[]>>;
 }
 
-/** V3-v5 are available only at a scheduled actor's prepared engagement boundary. */
+/** V3-v6 are available only at a scheduled actor's prepared engagement boundary. */
 export interface ScriptedCombatEngagementContext {
   actorId: string;
   mobility: boolean;
   dash: boolean;
 }
 
-/** V1/v2 ground-AI and v3-v5 prepared-engagement actuation, after caller-owned
+/** V1/v2 ground-AI and v3-v6 prepared-engagement actuation, after caller-owned
  * decision/reload arbitration. This
  * packet does not grant control to player/RL owners. Reject the whole packet
  * before any engine mutation, including malformed commands for later actors. */
 export function validateScriptedCombatInput(state: SimState, input: ScriptedCombatInput | undefined,
   actions: ActionsById, settings: UniversalSettings, engagement?: ScriptedCombatEngagementContext) {
   if (!input) return undefined;
-  const prepared = input.version === 'scripted-combat-v3' || input.version === 'scripted-combat-v4' || input.version === 'scripted-combat-v5';
+  const sequential = input.version === 'scripted-combat-v6';
+  const prepared = input.version === 'scripted-combat-v3' || input.version === 'scripted-combat-v4' || input.version === 'scripted-combat-v5' || sequential;
   if (input.version !== 'scripted-combat-v1' && input.version !== 'scripted-combat-v2' && !prepared) throw new Error('Unsupported scripted combat input version');
   if (prepared) {
     if (!engagement || state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
@@ -51,11 +52,13 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
       throw new Error(`Scripted armed combat cannot control a carrier: ${id}`);
     if (actions[id]?.attackPrimary || actions[id]?.attackSecondary || actions[id]?.swapWeapon)
       throw new Error(`Scripted combat has conflicting action owners: ${id}`);
-    if (!Array.isArray(commands) || commands.length > (input.version === 'scripted-combat-v5' ? 4 : 3)) throw new Error(`Invalid scripted combat sequence: ${id}`);
-    let attacked = false, attemptedJump = false;
+    if (!Array.isArray(commands) || commands.length > (sequential ? 5 : input.version === 'scripted-combat-v5' ? 4 : 3)) throw new Error(`Invalid scripted combat sequence: ${id}`);
+    let attacked = false, attemptedJump = false, actionStarted = false;
     for (const command of commands) {
       if (!command || attacked) throw new Error(`An attack must finish its scripted combat sequence: ${id}`);
-      if (attemptedJump && (input.version !== 'scripted-combat-v5' || command.kind !== 'melee'))
+      if (sequential && actionStarted && !(command.kind === 'hammer-jump' || command.kind === 'melee' && command.weapon === 'hammer' && !command.swipe))
+        throw new Error(`Only hammer opportunities may follow an engagement action: ${id}`);
+      if (!sequential && attemptedJump && (input.version !== 'scripted-combat-v5' || command.kind !== 'melee'))
         throw new Error(`Only a melee counter may follow a hammer-jump attempt: ${id}`);
       if (command.kind === 'revert-weapon-feint') {
         if (input.version === 'scripted-combat-v1' || commands.indexOf(command) !== 0 || commands.filter(c => c?.kind === 'revert-weapon-feint').length !== 1)
@@ -64,14 +67,14 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
         if (command.weapon !== 'hammer' && command.weapon !== 'sword') throw new Error(`Invalid scripted weapon: ${id}`);
         if (command.kind === 'melee') {
           if (typeof command.swipe !== 'boolean' || command.swipe && command.weapon !== 'hammer') throw new Error(`Invalid scripted swipe: ${id}`);
-          attacked = true;
+          attacked = !sequential || command.weapon !== 'hammer' || command.swipe;
         }
       } else if (command.kind === 'hammer-jump') {
-        if (!['scripted-combat-v4', 'scripted-combat-v5'].includes(input.version) || engagement!.mobility ||
+        if (!['scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(input.version) || engagement!.mobility && !sequential ||
           !['offensive', 'defensive'].includes(command.jumpType) ||
           command.heading && ![command.heading.x, command.heading.y, command.heading.z].every(Number.isFinite))
           throw new Error(`Invalid or conflicting scripted hammer jump: ${id}`);
-        attemptedJump = true; attacked = input.version !== 'scripted-combat-v5';
+        attemptedJump = true; attacked = input.version !== 'scripted-combat-v5' && !sequential;
       } else if (command.kind === 'lunge') {
         if (prepared && (engagement!.mobility || engagement!.dash || actor.dashRemaining > 0 || actor.slideActive))
           throw new Error(`Scripted lunge cannot share an evasion movement owner: ${id}`);
@@ -84,6 +87,7 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
           throw new Error(`Invalid scripted lunge target: ${id}`);
         attacked = true;
       } else throw new Error(`Unknown scripted combat command: ${id}`);
+      if (command.kind !== 'swap' && command.kind !== 'revert-weapon-feint') actionStarted = true;
     }
     validated[id] = commands.map(command => command.kind === 'lunge'
       ? { ...command, direction: { ...command.direction } }

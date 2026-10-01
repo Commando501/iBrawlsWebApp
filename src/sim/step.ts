@@ -176,7 +176,7 @@ export function stepSimulation(
     if (c === player) continue;
     let engagementPrepared = false;
     let dashDecision: ScriptedAIDashDecision | undefined;
-    let engagementCommit: { beforeAttack?: () => void } | undefined;
+    let engagementCommit: { beforeAttack?: () => void; sequentialOpportunities?: boolean } | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -212,7 +212,7 @@ export function stepSimulation(
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
           dashDecision = decision.dash;
-          if (['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = {};
+          if (['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = { sequentialOpportunities: decision.commandVersion === 'scripted-combat-v6' };
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
             const applyMobility = () => { applyScriptedAIMobility(c, mobility, dt, settings); record.mobility = mobility.kind; };
