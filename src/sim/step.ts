@@ -164,14 +164,19 @@ export function stepSimulation(
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback);
       flightAdvanced!.add(c.id);
+    } else if (mixedObjectiveFrame) {
+      // Live AI commits at its own roster turn. A later actor's flight (or
+      // planner observation) must see this attack/swap immediately, while
+      // skeletal melee damage still waits for the post-objective animation pass.
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback);
     }
   }
 
   // Mixed roster decisions commit before objectives; skeletal damage follows them.
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
-    if (c === player || flightAdvanced?.has(c.id)) continue;
-    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback);
+    if (mixedObjectiveFrame || c === player || flightAdvanced?.has(c.id)) continue;
+    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback);
     // Mixed execution advances paused animations below. The roster-only profile
     // has one combined weapon phase: suppress new input, not committed clocks.
     else if (!mixedObjectiveFrame && planner?.owns(c.id))
