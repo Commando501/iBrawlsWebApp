@@ -12,7 +12,8 @@
  * Fidelity notes / divergences (see README):
  *  - Reach + forward constants are reused from `combatGeometry`; the hit test is a
  *    forward-cone approximation (distance ≤ reach, facing dot ≥ threshold) rather than
- *    the live per-VFX swept volume. Pinned by fidelity spot-checks, to be tightened.
+ *    the live impact-time sphere/cone checks. Live lunge contact is sampled after
+ *    movement, not swept between frames; VFX trails do not resolve damage.
  *  - live-player-v1 explicitly opts into player slash/swipe mid-swing impact and
  *    two-stage slam/punch timing. It does not certify AI, lunge or trade parity.
  *  - live-roster-v1 opts into stationary roster attack phases and projected splash

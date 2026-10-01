@@ -73,8 +73,11 @@ restarts (`step.test.ts`). This holds because:
 
 **Intentional divergences (to be tightened against golden fidelity tests — Verification
 #3 in the plan):**
-- **Melee hit test** is a forward-cone approximation (distance ≤ reach, facing dot ≥
-  0.35) using the reused reach constants, not the live per-VFX swept volume.
+- **Legacy melee hit test** is a forward-cone approximation (distance ≤ reach,
+  facing dot ≥ 0.35). The opt-in live profiles port the impact-time sphere/cone
+  checks. Live lunge contact is sampled after movement, not swept between frames;
+  VFX trails do not resolve damage. Protocol v74 retains explicit between-sample
+  miss, aligned-sample hit and outside-path controls for local and roster flights.
 - **Combos, feints, weapon trades, hammer-jump, psychological pressure** — heuristic-AI
   flavour, not modelled. These belong to the (future) `harness/heuristicPolicy.ts`.
 - **Sprint/slide** input is not in the action space (and `enableSprint`/`enableSlide`

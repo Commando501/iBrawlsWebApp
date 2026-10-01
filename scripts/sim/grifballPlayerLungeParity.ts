@@ -26,6 +26,8 @@ export interface PlayerLungeParityCase {
   geometry?: {
     name: string; targetZ: number; targetCrouch?: boolean; large?: boolean;
     playerY?: number; playerCrouch?: boolean; pitch?: number; finishTick: number;
+    /** Move the target laterally after committing the original heading. */
+    afterLockX?: number; expectedHit?: boolean;
   };
 }
 export const PLAYER_LUNGE_PARITY_CASES: PlayerLungeParityCase[] = KINDS.flatMap(kind =>
@@ -50,6 +52,8 @@ const phase = (c: Combatant) => c.weaponState === 'ready' ? 'idle'
 /** Live local physics → player animation → roster respawn/shield → roster animation,
  * independently compared with stepSimulation. No state copying after commitment. */
 export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution: SimCombatExecution = 'live-mixed-v1', snapshotAt?: number) {
+  if ((spec.geometry?.afterLockX !== undefined || spec.geometry?.expectedHit !== undefined) && spec.kind !== 'hit-two')
+    throw new Error('Sampled contact geometry requires the nonlethal hit-two fixture');
   const f = createBotParityFixture('melee', false, {}, spec.mainTarget ? 'main_ai' : 'target');
   const { state, sim, target, bot, refs, map } = f;
   const trade = spec.kind.includes('trade'), threatened = spec.kind.endsWith('flight');
@@ -119,6 +123,9 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
       stepCombatantWeapons(sim, b, { ...idleAction(), attackPrimary: true }, sim.settings, 0, []);
     }
   });
+  if (spec.geometry?.afterLockX !== undefined) {
+    target.pos.x = pairs[1][1].pos.x = direction * spec.geometry.afterLockX;
+  }
   if (spec.reverse) { state.otherPlayers = new Map([...state.otherPlayers].reverse()); sim.combatants.reverse(); }
   const kills = new Map<string, number>(), deaths = new Map<string, number>();
   let endTick = 0, simEndTick = 0;
@@ -183,7 +190,7 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
     frames.push({ tick, live: livePlayer, headless: headlessPlayer, actors: actorFrames });
   }
   record.compare(120, 'finishTick', endTick, simEndTick);
-  const expectedTargetHp = spec.kind === 'hit-two' || spec.kind.endsWith('trade-two') ? 1
+  const expectedTargetHp = spec.geometry?.expectedHit === false ? 2 : spec.kind === 'hit-two' || spec.kind.endsWith('trade-two') ? 1
     : spec.kind === 'shield' ? 2 : ['friendly', 'timeout', 'boundary', 'killed-flight'].includes(spec.kind) ? 1 : 0;
   const expectedPlayerHp = spec.kind.endsWith('trade-one') || spec.kind === 'killed-flight' ? 0
     : ['hit-two', 'same-frame-two'].includes(spec.kind) ? 2 : 1;
