@@ -94,3 +94,21 @@ test('zero-delay tactical and opening-combo swaps retain their order even with n
   stepSimulation(f.state, { [f.self.id]: result.action }, { settings: f.state.settings, scriptedCombat: result.scriptedCombat });
   assert.equal(f.self.weapon, 'sword'); assert.equal(f.self.weaponReadyTimer, 0); assert.equal(f.self.swapLockoutTimer, 0);
 });
+
+test('expiry preserves the pre-tick feint flag for tactical swap and opening combo arbitration', () => {
+  const f = fixture(); f.context.comboState = null as never; f.tuning.weaponSwapIQ = 100;
+  const result = resolveSimGrifballComboInput(f.state, f.plan, f.self.id, f.owners, f.tuning, f.memories,
+    { ...f.context, tacticalWeapon: 'sword', swapFeintActive: true, weaponFeintMemory: { swapRemaining: 1 / 120 }, random: () => 0 })!;
+  assert.equal(result.frame.activeWeapon, 'hammer'); assert.equal(result.comboState, null);
+  assert.deepEqual(result.scriptedCombat.commands[f.self.id], [{ kind: 'revert-weapon-feint' }]);
+  assert.equal(result.scriptedCombat.version, 'scripted-combat-v2'); assert.deepEqual(result.weaponFeintMemory, {});
+});
+
+for (const defect of ['negative', 'nan', 'infinite', 'active-conflict']) test(`invalid feint ${defect} rejects before observation or RNG`, () => {
+  const f = fixture(); let draws = 0;
+  const memory = { swapRemaining: defect === 'negative' ? -1 : defect === 'nan' ? NaN : defect === 'infinite' ? Infinity : 1 };
+  const before = structuredClone({ state: f.state, memories: f.memories, plan: f.plan });
+  assert.throws(() => resolveSimGrifballComboInput(f.state, f.plan, f.self.id, f.owners, f.tuning, f.memories,
+    { ...f.context, weaponFeintMemory: memory, random: () => { draws++; return 0; } }));
+  assert.equal(draws, 0); assert.deepEqual({ state: f.state, memories: f.memories, plan: f.plan }, before);
+});

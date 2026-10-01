@@ -1,5 +1,5 @@
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
-import { canApplyAITacticalWeaponSwap, isAIWeaponStrikeCommitted } from '../../game/aiTacticalWeaponSwap';
+import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
 import { resolveAICombatDangerZone, type AILungeOutcome } from '../../game/aiCombatDecision';
 import {
@@ -20,7 +20,7 @@ import {
   startFeintCooldown,
   startWeaponSwapFeint,
   tickFeintCooldown,
-  tickWeaponSwapFeintTimer,
+  advanceAIWeaponSwapFeint,
 } from '../../game/aiMatchContext';
 import {
   advanceAISlide,
@@ -941,7 +941,7 @@ export function createAISingleEntityUpdaterForState({
         weaponState = 'ready';
       };
   
-      if (tickWeaponSwapFeintTimer(aiContext, botId, dt, !isAIWeaponStrikeCommitted(weaponState))) {
+      if (advanceAIWeaponSwapFeint(aiContext, botId, dt, activeWeapon, weaponState, hammerForbidden).revert) {
         revertWeaponSwapFeint();
       }
   

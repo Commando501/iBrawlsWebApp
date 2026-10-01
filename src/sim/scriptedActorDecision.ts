@@ -2,14 +2,14 @@ import type { UniversalSettings } from '../types';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { ActionInput } from './actions';
 import type { SimState } from './simState';
-import { validateScriptedCombatInput, type ScriptedCombatCommand } from './scriptedCombatInput';
+import { validateScriptedCombatInput, type ScriptedCombatCommand, type ScriptedCombatInput } from './scriptedCombatInput';
 import { validateScriptedObjectiveInput, type ObjectiveGroundIntent } from './scriptedObjectiveInput';
 
 export type ScriptedDecisionClockPhase = 'before-swap-tick' | 'after-swap-tick';
 export const remainingDecisionSwapTime = (remaining: number, dt: number, phase: ScriptedDecisionClockPhase) =>
   Math.max(0, remaining - (phase === 'after-swap-tick' ? 0 : dt));
 
-export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[] }
+export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version'] }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -64,7 +64,7 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
     version: 'scripted-objective-v1', scriptedBots: owner.scriptedBots, movement: { [id]: decision.movement },
   }, actions, settings)![id];
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
-    version: 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
+    version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
   }, actions, settings)![id];
-  return { kind: 'handled', action: { ...action }, ...(movement ? { movement } : {}), ...(commands ? { commands } : {}) };
+  return { kind: 'handled', action: { ...action }, ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

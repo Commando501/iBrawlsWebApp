@@ -3,11 +3,11 @@ import type { SimState } from './simState';
 import type { UniversalSettings } from '../types';
 import { validateScriptedObjectiveInput, SCRIPTED_OBJECTIVE_INPUT_VERSION } from './scriptedObjectiveInput';
 
-export type ScriptedCombatCommand = { kind: 'swap'; weapon: 'hammer' | 'sword' }
+export type ScriptedCombatCommand = { kind: 'revert-weapon-feint' } | { kind: 'swap'; weapon: 'hammer' | 'sword' }
   | { kind: 'melee'; weapon: 'hammer' | 'sword'; swipe: boolean }
   | { kind: 'lunge'; targetId: string; direction: { x: number; y: number; z: number } };
 export interface ScriptedCombatInput {
-  version: 'scripted-combat-v1';
+  version: 'scripted-combat-v1' | 'scripted-combat-v2';
   scriptedBots: Readonly<Record<string, string>>;
   commands: Readonly<Record<string, readonly ScriptedCombatCommand[]>>;
 }
@@ -18,7 +18,7 @@ export interface ScriptedCombatInput {
 export function validateScriptedCombatInput(state: SimState, input: ScriptedCombatInput | undefined,
   actions: ActionsById, settings: UniversalSettings) {
   if (!input) return undefined;
-  if (input.version !== 'scripted-combat-v1') throw new Error('Unsupported scripted combat input version');
+  if (input.version !== 'scripted-combat-v1' && input.version !== 'scripted-combat-v2') throw new Error('Unsupported scripted combat input version');
   const movement = Object.fromEntries(Object.keys(input.commands).map(id => [id, { x: 0, z: 0 }]));
   validateScriptedObjectiveInput(state, { version: SCRIPTED_OBJECTIVE_INPUT_VERSION, scriptedBots: input.scriptedBots, movement }, actions, settings);
   const validated: Record<string, ScriptedCombatCommand[]> = Object.create(null);
@@ -32,7 +32,10 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
     let attacked = false;
     for (const command of commands) {
       if (!command || attacked) throw new Error(`An attack must finish its scripted combat sequence: ${id}`);
-      if (command.kind === 'swap' || command.kind === 'melee') {
+      if (command.kind === 'revert-weapon-feint') {
+        if (input.version !== 'scripted-combat-v2' || commands.indexOf(command) !== 0 || commands.filter(c => c?.kind === 'revert-weapon-feint').length !== 1)
+          throw new Error(`Feint reversion requires v2 and the first command: ${id}`);
+      } else if (command.kind === 'swap' || command.kind === 'melee') {
         if (command.weapon !== 'hammer' && command.weapon !== 'sword') throw new Error(`Invalid scripted weapon: ${id}`);
         if (command.kind === 'melee') {
           if (typeof command.swipe !== 'boolean' || command.swipe && command.weapon !== 'hammer') throw new Error(`Invalid scripted swipe: ${id}`);

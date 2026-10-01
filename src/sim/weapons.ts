@@ -573,7 +573,14 @@ export function stepCombatantWeapons(
       // the old animation itself continues unless a subsequent attack replaces it.
       let decisionReady = c.weaponState === 'idle';
       for (const command of scriptedCommands) {
-        if (command.kind === 'swap') {
+        if (command.kind === 'revert-weapon-feint') {
+          if (c.isLunging || c.weapon !== 'sword' || c.weaponState === 'windup' || c.weaponState === 'active') continue;
+          // Live feint expiry clears lockout, retains readiness and leaves the
+          // underlying recovery animation running under the restored hammer.
+          c.weapon = 'hammer'; c.swapLockoutTimer = 0;
+          if (c.weaponState === 'recovering' && c.attackKind !== 'swipe') c.attackKind = 'strike';
+          decisionReady = true;
+        } else if (command.kind === 'swap') {
           if (c.isLunging || c.weapon === 'ball' || c.weapon === command.weapon || c.swapLockoutTimer > 0 ||
             c.weaponState === 'windup' || c.weaponState === 'active') continue;
           c.weapon = command.weapon;

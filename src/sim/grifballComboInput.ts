@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { resolveAIComboOrchestrationForCombatant, type AIComboOrchestrationFrame } from '../components/grifball/aiComboOrchestrationRuntime';
 import { resolveAICombatDangerZone, type AICombatWeapon, type PlayerModelSnapshot } from '../game/aiCombatDecision';
 import { type BotComboState } from '../game/aiComboEngine';
+import { advanceAIWeaponSwapFeint, tickFeintCooldown } from '../game/aiMatchContext';
 import { canApplyAITacticalWeaponSwap, resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
 import { canStartAIWeaponAction } from '../game/aiWeaponTiming';
 import type { GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
@@ -12,6 +13,8 @@ import { idleAction } from './actions';
 import { normalizeYaw } from './physics';
 import { isMixedPlayer, type SimState } from './simState';
 import { type ScriptedCombatCommand, type ScriptedCombatInput } from './scriptedCombatInput';
+
+export interface SimWeaponFeintMemory { cooldownRemaining?: number; swapRemaining?: number }
 
 /** Run the production combo owner against this engine's target and clocks.
  * The caller resolves earlier objective/feint priorities and tactical intent,
@@ -23,8 +26,16 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
   }, memories: Readonly<Record<string, TacticalAIMemory>>, context: {
     comboState: BotComboState | null; tacticalWeapon: AICombatWeapon | null; swapFeintActive: boolean;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
+    /** Explicit ownership of this pre-combo feint clock boundary. The active
+     * flag must describe the supplied pre-tick memory. Adopt returned memory. */
+    weaponFeintMemory?: SimWeaponFeintMemory;
   }, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   if (typeof context.random !== 'function') throw new Error('Combo decisions require a caller-owned random stream');
+  if (context.weaponFeintMemory) {
+    for (const remaining of [context.weaponFeintMemory.cooldownRemaining, context.weaponFeintMemory.swapRemaining])
+      if (remaining !== undefined && (!Number.isFinite(remaining) || remaining < 0)) throw new Error('Invalid weapon feint clock');
+    if (context.swapFeintActive !== ((context.weaponFeintMemory.swapRemaining ?? 0) > 0)) throw new Error('Conflicting weapon feint activity');
+  }
   if (!Object.hasOwn(memories, botId)) return null;
   const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt, clockPhase);
   if (!observation) return null;
@@ -37,6 +48,27 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
   let activeWeapon = self.weapon, weaponState = observeSimTacticalWeaponTarget(state, self).weaponState as AIComboOrchestrationFrame['weaponState'];
   let lockout = remainingDecisionSwapTime(self.swapLockoutTimer, dt, clockPhase), readiness = remainingDecisionSwapTime(self.weaponReadyTimer, dt, clockPhase);
   let canStartWeaponAction = canStartAIWeaponAction({ ...memories[botId], swapCooldownTimer: readiness });
+  const observedSwapLockout = lockout;
+  let swapFeintActive = context.swapFeintActive;
+  let weaponFeintMemory: SimWeaponFeintMemory | undefined;
+  if (context.weaponFeintMemory) {
+    const memory = context.weaponFeintMemory;
+    const feints = {
+      feintCooldowns: new Map(memory.cooldownRemaining === undefined ? [] : [[botId, memory.cooldownRemaining]]),
+      weaponSwapFeintTimers: new Map(memory.swapRemaining === undefined ? [] : [[botId, memory.swapRemaining]]),
+    };
+    tickFeintCooldown(feints, botId, dt);
+    const expiry = advanceAIWeaponSwapFeint(feints, botId, dt, activeWeapon, weaponState, tuning.weaponPrioritization >= 100);
+    swapFeintActive = expiry.swapFeintActive;
+    if (expiry.revert) {
+      commands.push({ kind: 'revert-weapon-feint' });
+      activeWeapon = 'hammer'; weaponState = 'ready'; lockout = 0;
+    }
+    weaponFeintMemory = {
+      ...(feints.feintCooldowns.has(botId) ? { cooldownRemaining: feints.feintCooldowns.get(botId)! } : {}),
+      ...(feints.weaponSwapFeintTimers.has(botId) ? { swapRemaining: feints.weaponSwapFeintTimers.get(botId)! } : {}),
+    };
+  }
   const assignment = plan.assignments.get(botId)!;
   const interception = !!state.match.ball.holderId && assignment.tuning?.enabled === true &&
     assignment.defense?.targetId === state.match.ball.holderId &&
@@ -48,7 +80,7 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     frame: { pos: point(self.pos), vel: point(self.vel), ...memories[botId], weaponState },
     activeWeapon, canStartWeaponAction, tacticalWeapon: context.tacticalWeapon,
     preserveReadyStrike: interception && target.id === state.match.ball.holderId && observation.range.enemyInKillRange,
-    swapFeintActive: context.swapFeintActive, targetProtected: target.invulnerabilityTimer > 0,
+    swapFeintActive, targetProtected: target.invulnerabilityTimer > 0,
     targetAirborne: observation.prediction.targetAirborne,
     hasVerticalLungeLine: !observation.prediction.targetAirborne || tuning.movementComplexity >= 60,
     targetIsLunging: observed.isLunging, dt, difficulty: scriptedBots[botId], ...tuning,
@@ -56,7 +88,7 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     minLungeRange: resolveAICombatDangerZone(state.settings, target.weapon) * tuning.spacingFactor * .85,
     maxLungeRange: Math.min(18, state.settings.swordLungeDistance ?? 14.5),
     resolvedAiReach: (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor),
-    swapLockoutRemaining: lockout, cooldownMultiplier: memories[botId].cooldownMultiplier,
+    swapLockoutRemaining: observedSwapLockout, cooldownMultiplier: memories[botId].cooldownMultiplier,
     getTargetPlayerModel: () => context.playerModel ?? null, random: context.random,
     applyTacticalWeapon: requestedWeapon => {
       if (canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon, weaponState, swapLockoutTimer: lockout,
@@ -74,9 +106,10 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     recordCombatantObservation: () => { lungeObservation = { distance: observation.prediction.targetAirborne
       ? observation.range.combatDistanceToTarget : observation.prediction.distanceToTarget }; },
   });
-  const scriptedCombat: ScriptedCombatInput = { version: 'scripted-combat-v1', scriptedBots, commands: { [botId]: commands } };
+  const scriptedCombat: ScriptedCombatInput = { version: weaponFeintMemory ? 'scripted-combat-v2' : 'scripted-combat-v1', scriptedBots, commands: { [botId]: commands } };
   const aim = normalizeYaw(observation.prediction.aim);
   return { targetId: target.id, frame, comboState: aiContext.comboState.get(botId) ?? null, lungeObservation,
+    ...(weaponFeintMemory ? { weaponFeintMemory } : {}),
     // JSON persistence canonicalizes signed zero. Normalize the command before
     // flight freezes its heading so restored and uninterrupted state stay exact.
     action: { ...idleAction(), aim: aim === 0 ? 0 : aim, crouch: self.isCrouching }, scriptedCombat };

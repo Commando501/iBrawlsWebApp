@@ -95,3 +95,25 @@ test('invalid combat timesteps and overflowing directions reject before any muta
   assert.throws(() => stepSimulation(f.state, f.actions, { settings: f.state.settings, scriptedCombat: f.input }));
   assert.deepEqual(f.state, before);
 });
+
+for (const phase of ['idle', 'recovering', 'windup', 'active'] as const)
+  test(`v2 feint reversion retains readiness and respects committed ${phase}`, () => {
+    const f = fixture(); f.input.version = 'scripted-combat-v2';
+    f.input.commands = { [f.actor.id]: [{ kind: 'revert-weapon-feint' }] };
+    f.actor.weaponState = phase; f.actor.attackKind = 'slash'; f.actor.weaponPhaseElapsed = 0;
+    f.actor.swapLockoutTimer = .5; f.actor.weaponReadyTimer = .4;
+    stepSimulation(f.state, f.actions, { settings: f.state.settings, scriptedCombat: f.input });
+    const committed = phase === 'windup' || phase === 'active';
+    assert.equal(f.actor.weapon, committed ? 'sword' : 'hammer');
+    assert.equal(f.actor.swapLockoutTimer, committed ? .5 - 1 / 60 : 0);
+    assert.equal(f.actor.weaponReadyTimer, .4 - 1 / 60);
+  });
+
+for (const defect of ['v1', 'misplaced', 'duplicate']) test(`malformed feint ${defect} packet rejects atomically`, () => {
+  const f = fixture(); f.input.version = defect === 'v1' ? 'scripted-combat-v1' : 'scripted-combat-v2';
+  f.input.commands = { [f.actor.id]: defect === 'misplaced' ? [{ kind: 'swap', weapon: 'sword' }, { kind: 'revert-weapon-feint' }]
+    : defect === 'duplicate' ? [{ kind: 'revert-weapon-feint' }, { kind: 'revert-weapon-feint' }] : [{ kind: 'revert-weapon-feint' }] };
+  const before = structuredClone(f.state);
+  assert.throws(() => stepSimulation(f.state, f.actions, { settings: f.state.settings, scriptedCombat: f.input }));
+  assert.deepEqual(f.state, before);
+});
