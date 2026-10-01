@@ -61,7 +61,14 @@ const getCombatantTargetVitals = (
   };
 };
 
-export function finishAISwordLungeForCombatant({
+export function finishAISwordLungeForCombatant(context: AISwordLungeFinishContext & { frame: AISwordLungeFinishFrame }): void {
+  finishAISwordLungeWithVitals({ ...context,
+    targetVitals: context.targetId ? getCombatantTargetVitals(context.state, context.targetId) : { hp: 0, invulnerabilityTimer: 0 } });
+}
+
+/** Shared completion owner. Each host supplies its current post-contact vitals;
+ * callbacks own pressure, combo selection and adaptive observations. */
+export function finishAISwordLungeWithVitals({
   state,
   self,
   frame,
@@ -74,7 +81,12 @@ export function finishAISwordLungeForCombatant({
   recordBotDamageTag,
   tryEnterPressureState,
   tryStartComboOnHit,
-}: AISwordLungeFinishContext & {
+  targetVitals,
+}: Omit<AISwordLungeFinishContext, 'state' | 'self'> & {
+  state: Pick<GrifballRuntimeState, 'settings'>;
+  self: Pick<Combatant, 'isLunging' | 'weaponState' | 'aiLastLungeOutcome' | 'aiLastLungeTargetId' |
+    'aiPostLungeDecisionTimer' | 'lungeStartPos' | 'aiTimer' | 'isJumping' | 'vel'>;
+  targetVitals: { hp: number; invulnerabilityTimer: number };
   frame: AISwordLungeFinishFrame;
 }): void {
   self.isLunging = false;
@@ -93,7 +105,6 @@ export function finishAISwordLungeForCombatant({
     recordBotDamageTag(botId, targetId);
     if (!damageAlreadyRecorded) recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
 
-    const targetVitals = getCombatantTargetVitals(state, targetId);
     enteredPressure = tryEnterPressureState(
       botId,
       targetId,

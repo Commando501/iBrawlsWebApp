@@ -23,7 +23,7 @@ export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target')
 
 /** Attach the production flight/finish callbacks without creating or committing actors. */
 export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>,
-  feedback: Partial<Pick<Parameters<typeof finishAISwordLungeFrameForCombatant>[0], 'tryEnterPressureState' | 'tryStartComboOnHit'>> = {}) {
+  feedback: Partial<Pick<Parameters<typeof finishAISwordLungeFrameForCombatant>[0], 'tryEnterPressureState' | 'tryStartComboOnHit' | 'recordBotDamageTag' | 'cooldownMultiplier'>> & { recordPlayerDamageTaken?: () => void } = {}) {
   const { bot, target, state, refs, map } = f;
   const outcomes: string[] = [], deaths: DeathEvent[] = [];
   const recordDeathEvent = (attacker: string, victim: string): DeathEvent => {
@@ -57,7 +57,7 @@ export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>,
         target: tradeTarget, reason, rosterCombatant: id => state.otherPlayers.get(id), evaluatePlayerKillMedals: () => [],
         recordDeathEvent, getLocalPlayerFeedName: () => 'Player', playExplosion: noop, playDeath: noop,
         spawnVoxelShockwaveParticles: noop, recordBotCalibrationDeath: noop, pushStatsUpdate: noop }),
-      renderSwordLungeTrailVfx: noop, recordPlayerDamageTaken: noop, playExplosion: noop, playDeath: noop,
+      renderSwordLungeTrailVfx: noop, recordPlayerDamageTaken: feedback.recordPlayerDamageTaken ?? noop, playExplosion: noop, playDeath: noop,
       spawnVoxelShockwaveParticles: noop, recordDeathEvent, recordBotPsychKill: noop, recordBotCalibrationDeath: noop, pushStatsUpdate: noop });
   };
   const gravityPrelude = (self: typeof bot, dt = 1 / 60) => integrateTargetEngagementGravityForCombatant({ self,

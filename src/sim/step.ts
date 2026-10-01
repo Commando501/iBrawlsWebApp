@@ -11,6 +11,7 @@
  * sequence) therefore reproduces an identical state hash across runs and restarts.
  */
 
+import { validateScriptedLungeFeedback, createScriptedLungeFeedback, type ScriptedLungeFeedback } from './scriptedLungeFeedback';
 import { validateScriptedMeleeFeedback, createScriptedMeleeFeedback, type ScriptedMeleeFeedback } from './scriptedMeleeFeedback';
 import { type UniversalSettings } from '../types';
 import { resolveRunnerThrowAllowed } from '../game/runnerBallSettings';
@@ -49,6 +50,8 @@ export interface StepOptions {
   scriptedCombat?: ScriptedCombatInput;
   /** Caller-owned stationary hit-to-combo feedback, opt-in independently of movement. */
   scriptedMeleeFeedback?: ScriptedMeleeFeedback;
+  /** Explicit post-flight AI memory/observation owner. */
+  scriptedLungeFeedback?: ScriptedLungeFeedback;
 }
 
 /**
@@ -62,8 +65,16 @@ export function stepSimulation(
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
-  if (options.scriptedMeleeFeedback && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
+  if ((options.scriptedMeleeFeedback || options.scriptedLungeFeedback) && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
   validateScriptedMeleeFeedback(state, options.scriptedMeleeFeedback, settings);
+  validateScriptedLungeFeedback(state, options.scriptedLungeFeedback, settings);
+  if (options.scriptedMeleeFeedback && options.scriptedLungeFeedback &&
+    Object.keys(options.scriptedMeleeFeedback.knobs).some(id => Object.hasOwn(options.scriptedLungeFeedback!.knobs, id)) &&
+    (options.scriptedMeleeFeedback.combos !== options.scriptedLungeFeedback.combos ||
+      options.scriptedMeleeFeedback.memories !== options.scriptedLungeFeedback.memories ||
+      options.scriptedMeleeFeedback.random !== options.scriptedLungeFeedback.random))
+    throw new Error('Overlapping melee and lunge feedback must share AI memory, combos and RNG');
+  const lungeFeedback = options.scriptedLungeFeedback ? createScriptedLungeFeedback(state, options.scriptedLungeFeedback, settings) : undefined;
   const meleeFeedback = options.scriptedMeleeFeedback ? createScriptedMeleeFeedback(state, options.scriptedMeleeFeedback, settings) : undefined;
   if (options.scriptedCombat && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Scripted combat requires a positive finite timestep');
   if (options.scriptedObjective && options.scriptedPlanner) throw new Error('Choose either scripted objective inputs or a scripted planner');
@@ -151,7 +162,7 @@ export function stepSimulation(
     }
     stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id]);
     if (rosterV2 && c.alive && c.isLunging) {
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback);
       flightAdvanced!.add(c.id);
     }
   }
@@ -160,7 +171,7 @@ export function stepSimulation(
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
     if (c === player || flightAdvanced?.has(c.id)) continue;
-    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete', scriptedCombat?.[c.id], meleeFeedback);
+    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback);
     // Mixed execution advances paused animations below. The roster-only profile
     // has one combined weapon phase: suppress new input, not committed clocks.
     else if (!mixedObjectiveFrame && planner?.owns(c.id))

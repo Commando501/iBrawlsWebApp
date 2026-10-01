@@ -27,6 +27,7 @@ import { type UniversalSettings } from '../types';
 import { resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
 import type { ScriptedCombatCommand } from './scriptedCombatInput';
 import type { RosterMeleeHitFeedback } from './scriptedMeleeFeedback';
+import type { RosterLungeFeedback } from './scriptedLungeFeedback';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
@@ -409,15 +410,16 @@ function resolveLungeHit(
 }
 
 /** Committed roster flight: one locked target, one contact, elapsed timeout and AI cooldown. */
-function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[]): void {
+function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback): void {
   c.lungeTimer += dt;
   const target = findCombatant(state, c.lungeTargetId!);
-  const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>, actor = c) => {
+  const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>, actor = c, damageAlreadyRecorded = false) => {
     actor.isLunging = false; actor.weaponState = 'idle'; actor.weaponTimer = 0; actor.weaponPhaseElapsed = 0;
     actor.lungeOutcome = outcome; actor.attackCooldown = settings.swordLungeReload ?? 1.2;
     actor.vel.x = actor.vel.z = 0;
     if (actor.pos.y > .01 || Math.abs(actor.vel.y) > .01) { actor.vel.y = Math.min(actor.vel.y, 0); actor.isJumping = true; }
     else { actor.vel.y = 0; actor.isJumping = false; }
+    feedback?.finish(actor, outcome, actor === c ? c.lungeTargetId : c.id, damageAlreadyRecorded);
   };
   if (!target || !target.alive || !areHostile(c, target)) { finish('target_dead'); return; }
   const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
@@ -434,21 +436,22 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
+      feedback?.impact(c, target, true);
       if (target.alive && targetWasLunging && isMixedPlayer(state, target)) {
         // Incoming trades consume local flight into player recovery. The live
         // player keeps this frame's velocity until the next movement update.
         target.isLunging = false; target.lungeTimer = 0; target.lungeOutcome = 'hit';
         target.weaponState = 'recovering'; target.attackKind = 'none'; target.weaponPhaseElapsed = 0;
         target.weaponTimer = target.attackCooldown = settings.swordLungeReload ?? 1.2;
-      } else if (target.alive && targetWasLunging) finish('hit', target);
+      } else if (target.alive && targetWasLunging) finish('hit', target, true);
       else if (target.alive && primaryActive) {
         target.weaponState = 'recovering'; target.weaponPhaseElapsed = 0;
         target.weaponTimer = recoverForKind(target.attackKind, settings);
         target.attackCooldown = target.weaponTimer;
       }
-      if (c.alive) finish('hit');
+      if (c.alive) finish('hit', c, !isMixedPlayer(state, target));
       else { c.isLunging = false; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0; }
-    } else finish('hit');
+    } else { feedback?.impact(c, target, false); finish('hit'); }
     return;
   }
   const start = c.lungeStartPos!;
@@ -536,7 +539,8 @@ export function stepCombatantWeapons(
   events: KillEvent[],
   stage: 'complete' | 'intent' | 'animation' = 'complete',
   scriptedCommands?: readonly ScriptedCombatCommand[],
-  feedback?: RosterMeleeHitFeedback
+  feedback?: RosterMeleeHitFeedback,
+  lungeFeedback?: RosterLungeFeedback
 ): void {
   if (scriptedCommands && (!usesRosterLifecycle(state) || isMixedPlayer(state, c)))
     throw new Error('Scripted combat commands require a roster actor in an explicit live roster profile');
@@ -612,7 +616,7 @@ export function stepCombatantWeapons(
 
   // Active lunge flight: kill-on-contact, run down the lunge timer.
   if (c.isLunging) {
-    if (usesRosterLifecycle(state)) { resolveRosterLunge(state, c, settings, dt, events); return; }
+    if (usesRosterLifecycle(state)) { resolveRosterLunge(state, c, settings, dt, events, lungeFeedback); return; }
     resolveLungeHit(state, c, settings, events);
     c.lungeTimer = Math.max(0, c.lungeTimer - dt);
     if (c.lungeTimer <= 0) {
