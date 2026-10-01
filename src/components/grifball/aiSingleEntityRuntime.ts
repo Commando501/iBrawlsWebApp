@@ -758,6 +758,7 @@ export function createAISingleEntityUpdaterForState({
         tunedAnticipationFactor,
         predictionAnticipationBonus: tuning.predictionAnticipationBonus,
         predictionLandingWeight: tuning.predictionLandingWeight,
+        aimAtCurrentTarget: ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState),
         movementComplexity,
         activeCustomMap,
         arenaRadius: s.arenaRadius,
