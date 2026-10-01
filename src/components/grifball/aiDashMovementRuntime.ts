@@ -1,4 +1,3 @@
-import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { shouldCommitChargeAfterEvasion } from '../../game/aiSpatialStrategy';
 import { type AIBehaviorState, type Combatant } from '../../types';
@@ -68,12 +67,10 @@ export function resolveAIDashMovementForCombatant({
     frame.pendingPostEvasionCharge = false;
   }
 
-  if (simulationRandom() <= 0.15) {
-    return;
-  }
-
   const scene = refs.scene;
-  if (!scene) {
+  // Trail effects must not advance the seeded gameplay stream. Otherwise a
+  // rendererless match makes different AI decisions after the first dash.
+  if (!scene || Math.random() <= 0.15) {
     return;
   }
 
@@ -90,8 +87,8 @@ export function resolveAIDashMovementForCombatant({
   scene.add(mesh);
   refs.damageExplosionParticles.push({
     mesh,
-    velocity: new THREE.Vector3((simulationRandom() - 0.5) * 0.4, simulationRandom() * 0.2, (simulationRandom() - 0.5) * 0.4),
+    velocity: new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * 0.2, (Math.random() - 0.5) * 0.4),
     life: 0.0,
-    maxLife: 0.25 + simulationRandom() * 0.15,
+    maxLife: 0.25 + Math.random() * 0.15,
   });
 }

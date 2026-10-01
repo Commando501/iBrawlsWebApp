@@ -646,7 +646,14 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('winner survives', winner.deaths, 0);
     check('first impact owner', impacts[0]?.id, winner.id);
     check('first impact victim', JSON.stringify(impacts[0]?.victims), JSON.stringify([loser.id]));
-    check('first impact timing', impacts[0]?.tick, punchWins ? 5 : spec.reverse ? 8 : 9);
+    // Removing cosmetic dash draws changes seed 6's forward mobility opening:
+    // the defender commits on tick 3 instead of tick 2. Keep an exact golden
+    // boundary and separately require the full configured attack duration.
+    const firstCommitment = attacks.find(a => a.id === winner.id);
+    check('first impact follows full commitment', impacts[0]?.tick,
+      (firstCommitment?.tick ?? -100) + (punchWins ? 4 : 7));
+    check('first impact timing', impacts[0]?.tick,
+      punchWins ? 5 : spec.reverse ? 8 : mobility && spec.seed === 6 ? 10 : 9);
     check('loser commitment cancelled on death', impacts.some(i => i.id === loser.id), false);
     check('no post-death attack', attacks.some(a => a.id === loser.id && a.tick > impacts[0]?.tick), false);
     check('dead actor respawn clock advances once', Math.abs(loser.respawnTimer - (3 - (150 - (impacts[0]?.tick ?? 0)) / 60)) < 1e-9, true);
