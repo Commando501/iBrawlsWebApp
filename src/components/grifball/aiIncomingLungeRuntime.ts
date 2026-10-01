@@ -16,7 +16,7 @@ export function resolveIncomingLungeDirectionForTarget({
   toTarget: LungeDirLike;
   playerIsLunging: boolean;
   playerLungeDir: LungeDirLike;
-  mainAi: Pick<Combatant, 'aiState' | 'lungeTargetDir'> | undefined;
+  mainAi: Pick<Combatant, 'isLunging' | 'lungeTargetDir'> | undefined;
   targetOtherBot: Pick<Combatant, 'isLunging' | 'lungeTargetDir'> | undefined;
 }): { x: number; z: number } {
   return resolveTargetLungeDirection({
@@ -28,7 +28,7 @@ export function resolveIncomingLungeDirectionForTarget({
     playerIsLunging: target.id === 'player' && playerIsLunging,
     playerLungeDirX: playerLungeDir.x,
     playerLungeDirZ: playerLungeDir.z,
-    mainAiIsLunging: target.id === 'main_ai' && mainAi?.aiState === 'LUNGING',
+    mainAiIsLunging: target.id === 'main_ai' && !!mainAi?.isLunging,
     mainAiLungeDirX: mainAi?.lungeTargetDir?.x || 0,
     mainAiLungeDirZ: mainAi?.lungeTargetDir?.z || 0,
     botIsLunging: !!targetOtherBot?.isLunging,
