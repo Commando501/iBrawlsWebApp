@@ -1,19 +1,23 @@
 import type { UniversalSettings } from '../types';
 
 export interface TacticalWeaponSwapContext {
-  carrierInterception: boolean;
   swordForbidden: boolean;
   hammerForbidden: boolean;
 }
 
-/** Tactical requests run after combo/feint arbitration. This preserves the live
- * policy; it is not permission for every host to swap during an animation. */
+export function isAIWeaponStrikeCommitted(weaponState: string): boolean {
+  return weaponState === 'swing_up' || weaponState === 'swing_down' ||
+    weaponState === 'melee_up' || weaponState === 'melee_down';
+}
+
+/** Tactical requests run after combo/feint arbitration. A weapon change cannot
+ * reinterpret the geometry and timing of an already committed strike. */
 export function canApplyAITacticalWeaponSwap(context: TacticalWeaponSwapContext & {
   activeWeapon: string; requestedWeapon: 'hammer' | 'sword';
   weaponState: string; swapLockoutTimer: number; force?: boolean;
 }): boolean {
   if (context.requestedWeapon === context.activeWeapon) return false;
-  if (context.carrierInterception && ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(context.weaponState)) return false;
+  if (isAIWeaponStrikeCommitted(context.weaponState)) return false;
   if (context.requestedWeapon === 'sword' ? context.swordForbidden : context.hammerForbidden) return false;
   return !!context.force || context.swapLockoutTimer <= 0;
 }

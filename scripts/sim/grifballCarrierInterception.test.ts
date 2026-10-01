@@ -99,7 +99,7 @@ test('Stadium carrier interception retains committed weapons through impact and 
     fixedHz: 60, simulationSeconds: 300, watchdogSeconds: 900 }];
   const plan = await createSuitePlan(manifest, { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] });
   const job = plan.jobs.find(j => j.variant === 'candidate')!, host = createAutonomousValidationRuntime(plan.cases[0], job);
-  let checked = 0;
+  let checked = 0, otherCommitments = 0;
   try {
     for (let tick = 0; tick < job.simulationTicks; tick++) {
       const s = host.state, holder = s.grifball.ball.holderId;
@@ -107,6 +107,12 @@ test('Stadium carrier interception retains committed weapons through impact and 
       host.runtime.step();
       for (const p of s.otherPlayers.values()) {
         const b = before.get(p.id)!, a = s.aiMatchContext.grifballTeamPlan.assignments.get(p.id);
+        if (b.hp > 0 && p.hp > 0 && b.weapon !== 'ball' && p.activeWeapon !== 'ball' &&
+          ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(b.phase ?? '') &&
+          !(holder && a?.defense?.targetId === holder && (a.defense.mode === 'intercept' || a.defense.emergency))) {
+          otherCommitments++;
+          assert.equal(p.activeWeapon, b.weapon, `${tick + 1}/${p.id}: non-interception strikes also retain their weapon`);
+        }
         if (holder && holder === s.grifball.ball.holderId && b.hp > 0 && p.hp > 0 &&
           a?.defense?.targetId === holder && (a.defense.mode === 'intercept' || a.defense.emergency) &&
           ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(b.phase ?? '')) {
@@ -119,8 +125,9 @@ test('Stadium carrier interception retains committed weapons through impact and 
     const result = await host.runtime.done;
     assert.equal(result.termination, 'match-end'); assert.equal(result.check.verdict, 'pass');
     assert.ok(checked > 0, 'must exercise committed interceptions');
+    assert.ok(otherCommitments > 0, 'must exercise commitments outside carrier interception');
     assert.ok(result.metrics!.red.turnovers > 0, 'defenders must stop a carrier');
     assert.ok(result.metrics!.blue.possessions > 0, 'the earlier 0-possession regression must recover the ball');
-    t.diagnostic(JSON.stringify({ ticks: result.end!.tick, checked, goals: result.behavior!.goals, possessions: result.metrics!.blue.possessions }));
+    t.diagnostic(JSON.stringify({ ticks: result.end!.tick, checked, otherCommitments, goals: result.behavior!.goals, possessions: result.metrics!.blue.possessions }));
   } finally { host.runtime.dispose(); }
 });

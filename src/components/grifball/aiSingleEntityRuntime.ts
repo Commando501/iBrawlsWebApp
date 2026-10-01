@@ -1,5 +1,5 @@
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
-import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
+import { canApplyAITacticalWeaponSwap, isAIWeaponStrikeCommitted } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
 import { resolveAICombatDangerZone, type AILungeOutcome } from '../../game/aiCombatDecision';
 import {
@@ -923,7 +923,7 @@ export function createAISingleEntityUpdaterForState({
         (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.mode === 'last-defender' || teamAssignment.defense.emergency);
       const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
         if (!canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon: tacticalWeapon, weaponState,
-          carrierInterception, swordForbidden, hammerForbidden, force, swapLockoutTimer: self.swapLockoutTimer ?? 0 })) return;
+          swordForbidden, hammerForbidden, force, swapLockoutTimer: self.swapLockoutTimer ?? 0 })) return;
         swapCombatantWeapon(self, tacticalWeapon, true);
         activeWeapon = tacticalWeapon;
         weaponState = 'ready';
@@ -941,7 +941,7 @@ export function createAISingleEntityUpdaterForState({
         weaponState = 'ready';
       };
   
-      if (tickWeaponSwapFeintTimer(aiContext, botId, dt)) {
+      if (tickWeaponSwapFeintTimer(aiContext, botId, dt, !isAIWeaponStrikeCommitted(weaponState))) {
         revertWeaponSwapFeint();
       }
   

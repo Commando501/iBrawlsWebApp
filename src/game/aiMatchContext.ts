@@ -102,14 +102,16 @@ export function startWeaponSwapFeint(context: AIMatchContext, botId: string, del
   context.weaponSwapFeintTimers.set(botId, delay);
 }
 
-/** Returns true when the revert timer just expired this tick. */
-export function tickWeaponSwapFeintTimer(context: AIMatchContext, botId: string, dt: number): boolean {
+/** Returns true once expiry can be consumed. An in-flight strike keeps an
+ * expired feint pending, so reverting cannot change its weapon before impact. */
+export function tickWeaponSwapFeintTimer(context: AIMatchContext, botId: string, dt: number, canRevert = true): boolean {
   const remaining = context.weaponSwapFeintTimers.get(botId);
   if (remaining === undefined || remaining <= 0) {
     return false;
   }
   const next = remaining - dt;
   if (next <= 0) {
+    if (!canRevert) return false;
     context.weaponSwapFeintTimers.delete(botId);
     return true;
   }

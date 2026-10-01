@@ -9,7 +9,7 @@ import { stepSimulation } from '../../src/sim/step';
 import { stepCombatantWeapons } from '../../src/sim/weapons';
 
 const dt = 1 / 60;
-const context = { carrierInterception: false, swordForbidden: false, hammerForbidden: false };
+const context = { swordForbidden: false, hammerForbidden: false };
 
 for (const profile of ['live-roster-v2', 'live-mixed-v1'] as const)
   for (const id of ['main_ai', 'bot_2']) for (const desired of ['hammer', 'sword'] as const)
@@ -114,12 +114,11 @@ for (const reason of ['same', 'forbidden', 'lockout', 'windup', 'active', 'recov
     assert.deepEqual(sim, before);
   });
 
-test('carrier interception commitments cannot be overridden by a forced tactical swap', () => {
+test('committed strikes cannot be overridden by a forced tactical swap', () => {
   for (const weaponState of ['swing_up', 'swing_down', 'melee_up', 'melee_down']) {
     const request = { ...context, activeWeapon: 'hammer', requestedWeapon: 'sword' as const,
       weaponState, swapLockoutTimer: 0, force: true };
-    assert.equal(canApplyAITacticalWeaponSwap({ ...request, carrierInterception: true }), false);
-    assert.equal(canApplyAITacticalWeaponSwap(request), true, 'preserve existing non-interception arbitration');
+    assert.equal(canApplyAITacticalWeaponSwap(request), false);
   }
 });
 
