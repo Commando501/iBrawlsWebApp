@@ -1,4 +1,5 @@
 import { resolveAIAirborneHammerOpportunity } from '../game/aiAirborneHammerOpportunity';
+import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import * as THREE from 'three';
 import { resolveAILungeEvasionDecision, type AILungeEvasionFrame } from '../game/aiLungeEvasionDecision';
 import { resolveAIBulltrueCounterDecision } from '../game/aiBulltrueCounterDecision';
@@ -35,7 +36,7 @@ export interface SimEvasionObservation {
 export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   scriptedBots: Readonly<Record<string, string>>, memories: Readonly<Record<string, TacticalAIMemory>>,
   context: {
-    motionPhase: 'after-engagement-gravity'; observation: SimEvasionObservation;
+    motionPhase: 'after-engagement-gravity'; observation: SimEvasionObservation | SimGrifballCombatObservation;
     weaponFrame: GroundOpportunityWeaponFrame; pendingPostEvasionCharge: boolean;
     bulltrueCounter: AICombatWeapon | null; defensiveEvasionMult: number; spatialIQ: number; swayTimer: number;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
@@ -47,14 +48,24 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   }, dt = 1 / 60) {
   if (context.motionPhase !== 'after-engagement-gravity' || typeof context.random !== 'function' || !Number.isFinite(dt) || dt <= 0)
     throw new Error('Evasion requires prepared engagement and caller-owned randomness');
-  const { observation, weaponFrame } = context;
+  const { weaponFrame } = context;
+  const retained = 'version' in context.observation
+    ? retainSimGrifballCombatObservation(state, botId, scriptedBots, context.observation, dt) : undefined;
+  if (retained === null) return null;
+  const observation: SimEvasionObservation = retained ? {
+    targetId: retained.targetId, distanceToTarget: retained.prediction.distanceToTarget,
+    combatDistanceToTarget: retained.range.combatDistanceToTarget, toTarget: retained.prediction.toTarget,
+    resolvedAiReach: retained.resolvedAiReach,
+  } : context.observation as SimEvasionObservation;
   if (![observation.distanceToTarget, observation.combatDistanceToTarget, observation.resolvedAiReach,
     weaponFrame.readinessRemaining, weaponFrame.currentSwapLockout, weaponFrame.observedSwapLockout].every(n => Number.isFinite(n) && n >= 0) ||
     ![observation.toTarget.x, observation.toTarget.z, context.swayTimer, context.defensiveEvasionMult, context.spatialIQ].every(Number.isFinite) ||
     context.spatialIQ < 0 || context.spatialIQ > 100 || typeof context.pendingPostEvasionCharge !== 'boolean' ||
     typeof weaponFrame.canStartWeaponAction !== 'boolean' || !['hammer', 'sword'].includes(weaponFrame.activeWeapon) ||
     ![null, 'hammer', 'sword'].includes(context.bulltrueCounter)) throw new Error('Invalid evasion observation');
-  const airborne = context.airborneOpportunity;
+  const airborne = context.airborneOpportunity && retained ? { ...context.airborneOpportunity,
+    targetAirborne: retained.prediction.targetAirborne, enemyInKillRange: retained.range.enemyInKillRange,
+    verticalDeltaToTarget: retained.range.verticalDeltaToTarget } : context.airborneOpportunity;
   if (airborne && (typeof airborne.targetAirborne !== 'boolean' || typeof airborne.enemyInKillRange !== 'boolean' ||
     ![airborne.movementComplexity, airborne.resolvedDangerZone, airborne.tunedAnticipationFactor, airborne.verticalDeltaToTarget].every(Number.isFinite)))
     throw new Error('Invalid airborne opportunity observation');

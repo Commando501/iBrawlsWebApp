@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveSimGrifballEvasionInput } from './grifballEvasionInput';
+import { resolveSimGrifballEvasionInput, type SimEvasionObservation } from './grifballEvasionInput';
 import { createMatch } from './factory';
 import { idleAction } from './actions';
 import { stepSimulation } from './step';
@@ -21,7 +21,7 @@ function fixture() {
   const memory = { aiState: 'APPROACHING' as const, timer: 0, cooldownMultiplier: 1 };
   const memories: Record<string, typeof memory> = { main_ai: { ...memory }, target: { ...memory } };
   let draws = 0;
-  const context: Parameters<typeof resolveSimGrifballEvasionInput>[4] = {
+  const context: Parameters<typeof resolveSimGrifballEvasionInput>[4] & { observation: SimEvasionObservation } = {
     motionPhase: 'after-engagement-gravity', observation: { targetId: target.id, distanceToTarget: 8, combatDistanceToTarget: 8,
       toTarget: { x: 0, z: 8 }, resolvedAiReach: 3 },
     weaponFrame: { activeWeapon: 'hammer', weaponState: 'ready', canStartWeaponAction: true,

@@ -1,3 +1,4 @@
+import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import { remainingDecisionSwapTime, type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import * as THREE from 'three';
 import { resolveAIComboOrchestrationForCombatant, type AIComboOrchestrationFrame } from '../components/grifball/aiComboOrchestrationRuntime';
@@ -24,6 +25,7 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
   scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning & {
     weaponSwapIQ: number; weaponPrioritization: number; spacingFactor: number;
   }, memories: Readonly<Record<string, TacticalAIMemory>>, context: {
+    observation?: SimGrifballCombatObservation;
     comboState: BotComboState | null; tacticalWeapon: AICombatWeapon | null; swapFeintActive: boolean;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
     /** Explicit ownership of this pre-combo feint clock boundary. The active
@@ -37,7 +39,9 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     if (context.swapFeintActive !== ((context.weaponFeintMemory.swapRemaining ?? 0) > 0)) throw new Error('Conflicting weapon feint activity');
   }
   if (!Object.hasOwn(memories, botId)) return null;
-  const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt, clockPhase);
+  const observation = context.observation
+    ? retainSimGrifballCombatObservation(state, botId, scriptedBots, context.observation, dt)
+    : resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt, clockPhase);
   if (!observation) return null;
   const self = state.combatants.find(c => c.id === botId)!, target = state.combatants.find(c => c.id === observation.targetId)!;
   if (target.controller === 'ai' && !isMixedPlayer(state, target) && !Object.hasOwn(memories, target.id)) return null;
@@ -69,8 +73,8 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
       ...(feints.weaponSwapFeintTimers.has(botId) ? { swapRemaining: feints.weaponSwapFeintTimers.get(botId)! } : {}),
     };
   }
-  const assignment = plan.assignments.get(botId)!;
-  const interception = !!state.match.ball.holderId && assignment.tuning?.enabled === true &&
+  const assignment = plan.assignments.get(botId);
+  const interception = !!state.match.ball.holderId && assignment?.tuning?.enabled === true &&
     assignment.defense?.targetId === state.match.ball.holderId &&
     (assignment.defense.mode === 'intercept' || assignment.defense.mode === 'last-defender' || assignment.defense.emergency);
   let lungeObservation: { distance: number } | null = null;
@@ -80,14 +84,14 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     frame: { pos: point(self.pos), vel: point(self.vel), ...memories[botId], weaponState },
     activeWeapon, canStartWeaponAction, tacticalWeapon: context.tacticalWeapon,
     preserveReadyStrike: interception && target.id === state.match.ball.holderId && observation.range.enemyInKillRange,
-    swapFeintActive, targetProtected: target.invulnerabilityTimer > 0,
+    swapFeintActive, targetProtected: context.observation?.targetProtected ?? target.invulnerabilityTimer > 0,
     targetAirborne: observation.prediction.targetAirborne,
     hasVerticalLungeLine: !observation.prediction.targetAirborne || tuning.movementComplexity >= 60,
     targetIsLunging: observed.isLunging, dt, difficulty: scriptedBots[botId], ...tuning,
     ...observation.range, distanceToTarget: observation.prediction.distanceToTarget,
     minLungeRange: resolveAICombatDangerZone(state.settings, target.weapon) * tuning.spacingFactor * .85,
     maxLungeRange: Math.min(18, state.settings.swordLungeDistance ?? 14.5),
-    resolvedAiReach: (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor),
+    resolvedAiReach: context.observation?.resolvedAiReach ?? (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor),
     swapLockoutRemaining: observedSwapLockout, cooldownMultiplier: memories[botId].cooldownMultiplier,
     getTargetPlayerModel: () => context.playerModel ?? null, random: context.random,
     applyTacticalWeapon: requestedWeapon => {

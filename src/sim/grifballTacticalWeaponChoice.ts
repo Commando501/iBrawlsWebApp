@@ -1,3 +1,4 @@
+import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import { remainingDecisionSwapTime, type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import { evaluateTacticalWeaponChoice, type TacticalWeaponActor } from '../game/aiTacticalWeaponChoice';
 import { canStartAIWeaponAction } from '../game/aiWeaponTiming';
@@ -33,6 +34,7 @@ export function resolveSimGrifballTacticalWeaponChoice(state: SimState, plan: Gr
   botId: string, scriptedBots: Readonly<Record<string, string>>,
   tuning: AssignedCombatTuning & { weaponSwapIQ: number; weaponPrioritization: number; pressureAggression: number },
   memories: Readonly<Record<string, TacticalAIMemory>>, context: {
+    observation?: SimGrifballCombatObservation;
     random: () => number;
     scoreContext: AIMatchScoreContext;
     recentLungeMemory?: AILungeMemory | null;
@@ -40,7 +42,9 @@ export function resolveSimGrifballTacticalWeaponChoice(state: SimState, plan: Gr
   }, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   if (typeof context.random !== 'function') throw new Error('Tactical weapon decisions require a caller-owned random stream');
   if (!Object.hasOwn(memories, botId)) return null;
-  const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt, clockPhase);
+  const observation = context.observation
+    ? retainSimGrifballCombatObservation(state, botId, scriptedBots, context.observation, dt)
+    : resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt, clockPhase);
   if (!observation) return null;
   const self = state.combatants.find(c => c.id === botId)!, target = state.combatants.find(c => c.id === observation.targetId)!;
   if (target.controller === 'ai' && !isMixedPlayer(state, target) && !Object.hasOwn(memories, target.id)) return null;

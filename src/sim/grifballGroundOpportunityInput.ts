@@ -1,3 +1,4 @@
+import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import * as THREE from 'three';
 import { resolveAIGroundAttackOpportunityForCombatant, type AITacticalWeaponApplyResult } from '../components/grifball/aiGroundAttackOpportunityRuntime';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
@@ -29,6 +30,7 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
   scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning & {
     weaponPrioritization: number; spacingFactor: number; aggressiveLungeMult: number; feintChance: number;
   }, memory: TacticalAIMemory, context: {
+    observation?: SimGrifballCombatObservation; targetMemory?: TacticalAIMemory;
     weaponFrame: GroundOpportunityWeaponFrame; comboActive: boolean; feints: SimWeaponFeintMemory;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
   }, dt = 1 / 60) {
@@ -38,9 +40,13 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
     if (!Number.isFinite(value) || value < 0) throw new Error('Invalid ground opportunity clock');
   if (typeof context.weaponFrame.canStartWeaponAction !== 'boolean' || typeof context.comboActive !== 'boolean') throw new Error('Invalid ground opportunity readiness');
   if (context.weaponFrame.activeWeapon !== 'hammer' && context.weaponFrame.activeWeapon !== 'sword') throw new Error('Ground opportunities require an armed weapon frame');
-  const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memory, dt, 'after-swap-tick');
+  const observation = context.observation
+    ? retainSimGrifballCombatObservation(state, botId, scriptedBots, context.observation, dt)
+    : resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memory, dt, 'after-swap-tick');
   if (!observation) return null;
   const self = state.combatants.find(c => c.id === botId)!, target = state.combatants.find(c => c.id === observation.targetId)!;
+  if (context.observation && (self.isJumping || self.pos.y > .01 || self.vel.y !== 0 || self.dashRemaining > 0)) return null;
+  if (context.observation && target.controller === 'ai' && target.id !== state.localPlayerId && !context.targetMemory) return null;
   const behavior = resolveBehaviorTuning(state.settings), feints = { ...context.feints };
   const point = (v: { x: number; y: number; z: number }) => new THREE.Vector3(v.x, v.y, v.z);
   const commands: ScriptedCombatCommand[] = [];
@@ -50,18 +56,18 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
   let lungeObservation: { distance: number } | null = null;
   const lungeDistance = observation.prediction.targetAirborne ? observation.range.combatDistanceToTarget : observation.prediction.distanceToTarget;
   const frame = resolveAIGroundAttackOpportunityForCombatant({ state, self, botId,
-    target: { ...observeSimTacticalWeaponTarget(state, target), pos: point(target.pos), vel: point(target.vel), maxHp: target.maxHp,
+    target: { ...observeSimTacticalWeaponTarget(state, target, context.targetMemory), pos: point(target.pos), vel: point(target.vel), maxHp: target.maxHp,
       isCrouching: target.isCrouching, playerName: target.id, modelType: target.modelType },
     frame: { pos: point(self.pos), vel: point(self.vel), aiState: memory.aiState, timer: memory.timer, weaponState },
-    activeWeapon, canStartWeaponAction, targetAirborne: observation.prediction.targetAirborne, targetProtected: target.invulnerabilityTimer > 0,
-    enemyInKillRange: observation.range.enemyInKillRange, selfGrounded: true, slideActive: false, cooldownMultiplier: memory.cooldownMultiplier,
+    activeWeapon, canStartWeaponAction, targetAirborne: observation.prediction.targetAirborne, targetProtected: context.observation?.targetProtected ?? target.invulnerabilityTimer > 0,
+    enemyInKillRange: observation.range.enemyInKillRange, selfGrounded: observation.range.selfGrounded, slideActive: self.slideActive, cooldownMultiplier: memory.cooldownMultiplier,
     swordForbidden: tuning.weaponPrioritization <= 0, swapLockoutRemaining: context.weaponFrame.observedSwapLockout,
     swapFeintActive: (feints.swapRemaining ?? 0) > 0, comboActive: context.comboActive, feintChance: tuning.feintChance,
     lungeDistanceToTarget: lungeDistance, hasVerticalLungeLine: !observation.prediction.targetAirborne || tuning.movementComplexity >= 60,
     minLungeRange: resolveAICombatDangerZone(state.settings, target.weapon) * tuning.spacingFactor * .85,
     maxLungeRange: Math.min(18, state.settings.swordLungeDistance ?? 14.5),
     combatDistanceToTarget: observation.range.combatDistanceToTarget, distanceToTarget: observation.prediction.distanceToTarget,
-    resolvedAiReach: (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor),
+    resolvedAiReach: context.observation?.resolvedAiReach ?? (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor),
     aggressiveLungeMult: tuning.aggressiveLungeMult, tunedAnticipationFactor: tuning.tunedAnticipationFactor, playstyleFactor: tuning.playstyleFactor,
     tuning: behavior, random: context.random,
     // A stationary commit emits zero steering; real simulation movement applies
