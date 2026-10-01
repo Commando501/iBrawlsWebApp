@@ -3303,3 +3303,18 @@ The focused adaptive/scheduler bundle passes 163/163 (output/m7-adaptive-tuning-
 The broader 100-file bundle passes 9,302/9,302 in 152.52 seconds (output/m7-adaptive-tuning-regressions.log; exact file list in output/m7-adaptive-tuning-test-files.json). Final TypeScript and isolated client/server builds pass (output/m7-adaptive-tuning-typecheck.log and output/m7-adaptive-tuning-build.log; Vite 69 seconds, existing chunk-size warning).
 
 Player-model sampling, coordinator scheduling, complete AI/lifecycle ownership, autonomous opposed completion, known contested-opening/revival/map failures, frozen-baseline/held-out quality/generalization, final-source performance and human review remain open. No browser, aggregate or opposed rerun is claimed. M7 is not yet human-only.
+
+
+## 2026-10-01 - share engagement player-model sampling
+
+Live engagement observations now delegate their position and approach-speed policy to one shared sampler. It samples the local player first when targeted and the acting bot afterward; remote/AI targets do not gain extra observations from opponents. The live local observation callback still suppresses observer-mode sampling. Existing model creation options, position throttle and strict distance < 15 speed gate remain unchanged.
+
+The headless adapter validates and retains the current actor/tick observation, then uses its retained distance with current actor/local positions and velocities. The caller explicitly supplies match time, observer mode and the same model context used by combat feedback. It mutates only those models and does not advance AI/psychological/coordinator clocks. This is an engagement-boundary component, not a replacement for target selection or automatic full-runtime composition.
+
+Forty-eight new controls cover the 14.999/15/15.001 distance boundary, .249/.25/.5-second sampling boundary, AI/local targets, observer mode, live/headless model equality, independent speed/confidence assertions, retained distance with moved actors, shared combat-feedback confidence, invalid/stale ownership and inactive/carrier refusal. Four scheduled paired traces run 90 frames each (360 frames per uninterrupted/restored host), cover both roster orders and 30/60 Hz, and compare complete state/events/models through binary checkpoints at frames 1, 20 and 45. They verify position throttling across two observers while approach speed samples each eligible engagement. Combat is idle in these traces; no autonomous quality claim is made.
+
+The focused sampler/model/live-observation bundle passes 70/70 (output/m7-engagement-observations-focused.log; 1.03 seconds). Deliberately changing the strict speed gate to an inclusive boundary fails all twelve selected boundary controls (output/m7-engagement-observations-negative.log; 36 intentionally filtered). Source was restored. Both repository test commands register the new simulator file.
+
+The broader 102-file bundle passes 9,355/9,355 in 147.01 seconds (output/m7-engagement-observations-regressions.log; exact file list in output/m7-engagement-observations-test-files.json). TypeScript and isolated client/server builds pass (output/m7-engagement-observations-typecheck.log and output/m7-engagement-observations-build.log; Vite 64 seconds, existing chunk-size warning).
+
+Coordinator scheduling, complete target/AI/lifecycle composition, autonomous opposed completion, known contested-opening/revival/map failures, frozen-baseline/held-out quality/generalization, final-source performance and human review remain open. No browser, aggregate or opposed rerun is claimed. M7 is not yet human-only.
