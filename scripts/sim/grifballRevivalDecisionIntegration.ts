@@ -1,5 +1,6 @@
 import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, type OpposedDecisionCase } from './grifballOpposedDecisionIntegration';
 import { validateRevivalActivity, verifiedRevivalAttacks } from './grifballRevivalActivity';
+import { compactExecutionTrace, compactExecutionTraces } from './grifballParityEvidence';
 
 export const REVIVAL_DECISION_CASES = OPPOSED_DECISION_CASES;
 /** Continue autonomous contests through death, team respawn and fresh decisions.
@@ -11,6 +12,16 @@ export function runRevivalDecisionTrace(spec: OpposedDecisionCase) {
     failures: [...trace.failures, ...activity.failures].slice(0, 64) };
 }
 export const runRevivalDecisionIntegration = () => REVIVAL_DECISION_CASES.map(runRevivalDecisionTrace);
+
+/** Coverage needs adjacent lifecycle/commitment frames. Calculate it before
+ * sampling; retained frames alone deliberately cannot certify that history. */
+export function summarizeRevivalDecisionTraces(traces: readonly ReturnType<typeof runRevivalDecisionTrace>[]) {
+  const revivalAttackWitnesses = revivalAttackCoverage(traces);
+  const revivalDecisionTraces = compactExecutionTraces(traces.map(({ dashSamples, ...trace }) => ({
+    ...trace, dashEvidence: compactExecutionTrace({ frames: dashSamples ?? [], failures: trace.activity.dash.failures }),
+  })));
+  return { revivalAttackWitnesses, revivalDecisionTraces };
+}
 
 interface RevivalAttackTrace extends Pick<ReturnType<typeof runOpposedDecisionTrace>, 'attacks' | 'revivals' | 'deaths' | 'frames'> {
   name: string; failureCount: number;

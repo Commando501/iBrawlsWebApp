@@ -28,7 +28,7 @@ import { runMobilityDecisionIntegration, LANDING_TURNOVER_CASES, runLandingTurno
 import { jumpCoverage } from './grifballJumpCoverage';
 import { runMatchDecisionIntegration } from './grifballMatchDecisionIntegration';
 import { runRoundDecisionIntegration } from './grifballRoundDecisionIntegration';
-import { runRevivalDecisionIntegration, revivalAttackCoverage } from './grifballRevivalDecisionIntegration';
+import { runRevivalDecisionIntegration, summarizeRevivalDecisionTraces } from './grifballRevivalDecisionIntegration';
 import { runOpposedDecisionIntegration } from './grifballOpposedDecisionIntegration';
 import { runPressureDecisionIntegration } from './grifballPressureDecisionIntegration';
 import { runPassDecisionIntegration } from './grifballPassDecisionIntegration';
@@ -301,10 +301,7 @@ export function runExecutionParity() {
   const jumpWitnesses = { mobility: jumpCoverage(mobilityDecisionTraces, 'mobility'), match: jumpCoverage(matchDecisionTraces, 'match') };
   const missingJumpWitnesses = jumpWitnesses.mobility.missing.length + jumpWitnesses.match.missing.length;
   const roundDecisionTraces = compactExecutionTraces(runRoundDecisionIntegration());
-  const revivalDecisionTraces = compactExecutionTraces(runRevivalDecisionIntegration().map(({ dashSamples, ...trace }) => ({
-    ...trace, dashEvidence: compactExecutionTrace({ frames: dashSamples ?? [], failures: trace.activity.dash.failures }),
-  })));
-  const revivalAttackWitnesses = revivalAttackCoverage(revivalDecisionTraces);
+  const { revivalDecisionTraces, revivalAttackWitnesses } = summarizeRevivalDecisionTraces(runRevivalDecisionIntegration());
   const opposedDecisionTraces = compactExecutionTraces(runOpposedDecisionIntegration());
   const pressureDecisionTraces = compactExecutionTraces(runPressureDecisionIntegration());
   const liveDecisionTraces = [...decisionIntegrationTraces, ...passDecisionTraces, ...pressureDecisionTraces, ...opposedDecisionTraces, ...revivalDecisionTraces, ...roundDecisionTraces, ...matchDecisionTraces, ...mobilityDecisionTraces, ...landingTurnoverTraces, ...mapRoutingTraces, ...mapContestTraces, ...mapMatchTraces, ...passContestTraces, ...passMatchTraces, ...mapPassMatchTraces, ...rosterContestTraces, ...tankContestTraces, ...earnedTankTraces, ...passRecoveryTraces, ...rosterMatchTraces];

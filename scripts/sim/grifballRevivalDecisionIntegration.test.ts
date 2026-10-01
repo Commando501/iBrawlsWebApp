@@ -1,9 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { REVIVAL_DECISION_CASES, runRevivalDecisionTrace, revivalAttackCoverage } from './grifballRevivalDecisionIntegration';
+import { REVIVAL_DECISION_CASES, runRevivalDecisionTrace, revivalAttackCoverage, runRevivalDecisionIntegration, summarizeRevivalDecisionTraces } from './grifballRevivalDecisionIntegration';
 import { validateRevivalActivity, verifiedRevivalAttacks } from './grifballRevivalActivity';
 import { MOBILITY_DECISION_CASES } from './grifballMobilityDecisionIntegration';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
+import { PARITY_FRAME_SAMPLE_LIMIT } from './grifballParityEvidence';
+
+test('revival report verifies full history before sampling and preserves actual failures', () => {
+  const full = runRevivalDecisionIntegration();
+  const {revivalDecisionTraces: sampled, revivalAttackWitnesses: coverage} = summarizeRevivalDecisionTraces(full);
+  assert.equal(full.length, 24);
+  assert.deepEqual(coverage.missing, []);
+  assert.equal(new Set(coverage.witnesses.map(w => w.group)).size, 8);
+  assert.deepEqual(coverage, revivalAttackCoverage(full));
+  assert.deepEqual(sampled.map(t=>({name:t.name, count:t.failureCount, failures:t.failures})),
+    full.map(t=>({name:t.name, count:t.failureCount, failures:t.failures})));
+  for (const trace of sampled) {
+    assert.equal(trace.frameCount, 600);
+    assert.ok(trace.frames.length <= PARITY_FRAME_SAMPLE_LIMIT);
+    assert.equal(trace.frameEvidence.fullTraceSHA256.length, 64);
+    assert.ok(trace.dashEvidence.frameCount > trace.dashEvidence.frames.length);
+    assert.ok(!Object.hasOwn(trace, 'dashSamples'));
+  }
+  // The old report order loses all eight real groups: required adjacent frames
+  // are absent from the bounded sample. Never fall back to trusting requests.
+  assert.equal(revivalAttackCoverage(sampled).missing.length, 8);
+  const withoutProof = full.map(t => ({...t, attacks:[]}));
+  assert.equal(summarizeRevivalDecisionTraces(withoutProof).revivalAttackWitnesses.missing.length, 8);
+});
 
 let dashWitness: ReturnType<typeof runOpposedDecisionTrace> | undefined;
 function defensiveRevivalWitness() {

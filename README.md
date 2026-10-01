@@ -860,3 +860,5 @@ Current M7 execution acceptance is **failing**. The October 1 v76 aggregate reco
 Revival attack evidence requires an observed dead-to-alive transition and a living, ready actor entering a fresh weapon commitment. Both per-trace activity and original-carrier matrix coverage use those verified commitments; a recorded request alone cannot satisfy acceptance. The original 600-frame combat requirements remain unchanged.
 
 Defensive revival corruption tests validate the complete fixed mobility matrix and isolate a real post-revival defensive step. All 19 rejection checks remain, and defensive movement cannot replace the separate original-carrier attack inventory or the 600-frame revival deadline.
+
+Execution reports verify revival attack coverage against full histories before sampling their retained frames. Sampling cannot replace the adjacent death, revival and commitment observations required by the validator; recorded failures remain attached to each sampled trace.
