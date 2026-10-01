@@ -224,6 +224,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mapMobilityTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 16560);
   assert.equal(new Set(details.mapMobilityTraces.map((t: any) => t.mapId)).size, 8);
   assert.equal(details.mobilityDecisionTraces.length, 32);
+  assert.ok(details.mobilityDecisionTraces.some((t: any) => t.landingReassignments.some((r: any) => r.landing === 1286 && r.reassignedAt === 1287 && r.carrierId === 'cover')));
   assert.deepEqual(details.dashWitnesses.missing, []);
   assert.ok(details.dashWitnesses.groundedSteps > 0 && details.dashWitnesses.cancellations > 0);
   assert.ok(details.mobilityDecisionTraces.every((t: any) => t.dash.failureCount === 0 && t.dashEvidence.frameCount > 0));
@@ -260,7 +261,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v69');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v70');
   assert.deepEqual(details.dashWitnesses.missing, []);
   assert.ok(details.dashWitnesses.airborneSteps > 0);
   assert.ok(details.dashWitnesses.airborneLandings > 0);

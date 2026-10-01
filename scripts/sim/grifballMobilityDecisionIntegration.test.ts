@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MOBILITY_DECISION_CASES, runMobilityDecisionTrace } from './grifballMobilityDecisionIntegration';
+import { MOBILITY_DECISION_CASES, runMobilityDecisionTrace, validateMobilityDecisionTrace } from './grifballMobilityDecisionIntegration';
+import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { jumpCoverage, type JumpCoverageTrace } from './grifballJumpCoverage';
 import { dashDecisionCoverage } from './grifballDashDecisionValidation';
 
@@ -32,4 +33,32 @@ test('autonomous dash matrix covers ground commitments, airborne landings and ta
 for (const seed of [1, 5]) for (const reverse of [false, true]) test(`autonomous jump flight repeats: ${reverse}/${seed}`, () => {
   const spec = { mode: 'contested' as const, team: 'blue' as const, main: true, reverse, seed };
   assert.deepEqual(runMobilityDecisionTrace(spec), runMobilityDecisionTrace(spec));
+});
+test('landing across carrier death requires verified turnover and next-tick reassignment', () => {
+  const raw = runOpposedDecisionTrace({ mode: 'contested', team: 'red', reverse: false, main: true, seed: 8 }, 'mobility');
+  assert.equal(raw.failureCount, 0);
+  const valid = validateMobilityDecisionTrace(structuredClone(raw));
+  assert.equal(valid.failureCount, 0, JSON.stringify(valid.failures));
+  assert.deepEqual(valid.landingReassignments, [{ landing: 1286, carrierId: 'cover', reassignedAt: 1287 }]);
+  const corruptions = [
+    (t: typeof raw) => { t.frames[1286].tick++; },
+    (t: typeof raw) => { t.frames[1285].phase = 'countdown'; },
+    (t: typeof raw) => { t.frames[1284].ball.state = 'loose'; },
+    (t: typeof raw) => { t.frames[1284].assignments = t.frames[1284].assignments.filter(a => a.id !== 'main_ai'); },
+    (t: typeof raw) => { t.frames[1284].actors.find(a => a.id === 'cover')!.hp = 0; },
+    (t: typeof raw) => { t.frames[1285].actors.find(a => a.id === 'cover')!.hp = 1; },
+    (t: typeof raw) => { t.deaths = t.deaths.filter(d => d.tick !== 1286); },
+    (t: typeof raw) => { t.impacts = t.impacts.filter(i => i.tick !== 1286); },
+    (t: typeof raw) => { t.frames[1285].ball.state = 'held'; },
+    (t: typeof raw) => { t.frames[1285].ball.holderId = 'cover'; },
+    (t: typeof raw) => { t.frames[1286].actors.find(a => a.id === 'main_ai')!.hp = 0; },
+    (t: typeof raw) => { t.frames[1286].assignments = t.frames[1286].assignments.filter(a => a.id !== 'main_ai'); },
+    (t: typeof raw) => { t.frames[1286].assignments.find(a => a.id === 'main_ai')!.target = 'cover'; },
+  ];
+  for (const corrupt of corruptions) {
+    const trace = structuredClone(raw); corrupt(trace);
+    const result = validateMobilityDecisionTrace(trace);
+    assert.ok(result.failures.some(f => f.tick === 1286 && f.field.startsWith('landing retains an assignment')));
+    assert.deepEqual(result.landingReassignments, []);
+  }
 });

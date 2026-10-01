@@ -77,9 +77,11 @@ test('flight evidence checks impulse, commitment, trajectory, landing budget and
     }
     assert.ok(validateMobilityDecisionTrace(changed).failureCount > 0, reason);
   }
-  const interrupted = traces.find(t => t.interruptedFlights.length)!;
-  assert.ok(interrupted, 'matrix retains an observed airborne death');
-  const death = interrupted.interruptedFlights[0];
+  // A late airborne death may correctly remain unrevived at the recording cap.
+  // Revival corruption controls need a witnessed revival from the validated matrix.
+  const interrupted = traces.find(t => t.interruptedFlights.some(f => f.revival !== null))!;
+  assert.ok(interrupted, 'matrix retains an observed airborne death followed by revival');
+  const death = interrupted.interruptedFlights.find(f => f.revival !== null)!;
   assert.ok(death.revival);
   for (const reason of ['death-event', 'lethal-impact', 'revival-time', 'corpse-motion', 'dead-attack', 'weapon', 'respawn-budget']) {
     const changed = structuredClone(interrupted);

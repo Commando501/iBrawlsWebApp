@@ -27,6 +27,7 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
   const flights: { launch: number; landing: number; apex: number }[] = [];
   const interruptedFlights: { launch: number; death: number; revival: number | null }[] = [];
   const partialFlights: { launch: number; landing: number | null; observedThrough: number }[] = [];
+  const landingReassignments: { landing: number; carrierId: string; reassignedAt: number }[] = [];
   for (const jump of trace.mainJumpImpacts) {
     const start = mainAt(jump.tick);
     // At 60 Hz, .08s windup + .04s strike takes eight updates, including
@@ -91,7 +92,24 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
     if (!landing && !interrupted && endsBeforeLanding) partialFlights.push({ launch: jump.tick, landing: null, observedThrough: trace.ticks });
     if (landing) {
       const landed = mainAt(landing);
-      check(landing, 'landing retains tactical assignment', trace.frames[landing - 1].assignments.some(a => a.id === 'main_ai'), true);
+      const frame = trace.frames[landing - 1], previous = trace.frames[landing - 2], next = trace.frames[landing];
+      const retained = frame.assignments.some(a => a.id === 'main_ai');
+      const carrierId = previous?.ball.state === 'held' ? previous.ball.holderId : null;
+      // End-of-frame carrier reconciliation invalidates stale orders after combat.
+      // A landing at that boundary must have its order rebuilt on the next AI tick.
+      const reassignedAfterDeath = !retained && !!carrierId && carrierId !== 'main_ai'
+        && previous.tick === landing - 1 && frame.tick === landing && next?.tick === landing + 1
+        && previous.phase === 'playing' && frame.phase === 'playing' && next?.phase === 'playing'
+        && previous.assignments.some(a => a.id === 'main_ai')
+        && previous.actors.some(a => a.id === carrierId && a.hp > 0)
+        && frame.actors.some(a => a.id === carrierId && a.hp === 0)
+        && trace.deaths.some(d => d.id === carrierId && d.tick === landing)
+        && trace.impacts.some(i => i.tick === landing && i.victims.includes(carrierId))
+        && frame.ball.state === 'loose' && frame.ball.holderId === null
+        && next.actors.some(a => a.id === 'main_ai' && a.hp > 0)
+        && next.assignments.some(a => a.id === 'main_ai' && a.target !== carrierId);
+      check(landing, 'landing retains an assignment or rebuilds it immediately after verified carrier death', retained || reassignedAfterDeath, true);
+      if (reassignedAfterDeath) landingReassignments.push({ landing, carrierId, reassignedAt: next.tick });
       const resumed = trace.mainJumpRequests.some(r => r.accepted && r.tick >= landing && r.tick < landing + 30) || trace.frames.slice(landing, landing + 30).some(f => {
         const actor = f.actors.find(a => a.id === 'main_ai')!;
         return actor.hp > 0 && Math.hypot(actor.pos[0] - landed.pos[0], actor.pos[2] - landed.pos[2]) > .5;
@@ -103,6 +121,6 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
       }
     }
   }
-  return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights, interruptedFlights, partialFlights };
+  return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights, interruptedFlights, partialFlights, landingReassignments };
 }
 export const runMobilityDecisionIntegration = () => MOBILITY_DECISION_CASES.map(runMobilityDecisionTrace);
