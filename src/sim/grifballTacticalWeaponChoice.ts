@@ -1,3 +1,4 @@
+import type { SimComboWeaponFrame } from './grifballComboInput';
 import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import { remainingDecisionSwapTime, type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import { evaluateTacticalWeaponChoice, type TacticalWeaponActor } from '../game/aiTacticalWeaponChoice';
@@ -35,12 +36,17 @@ export function resolveSimGrifballTacticalWeaponChoice(state: SimState, plan: Gr
   tuning: AssignedCombatTuning & { weaponSwapIQ: number; weaponPrioritization: number; pressureAggression: number },
   memories: Readonly<Record<string, TacticalAIMemory>>, context: {
     observation?: SimGrifballCombatObservation;
+    /** Locals after feint reversion, before tactical/combo execution. */
+    weaponFrame?: Readonly<Pick<SimComboWeaponFrame, 'activeWeapon' | 'weaponState' | 'canStartWeaponAction'>>;
     random: () => number;
     scoreContext: AIMatchScoreContext;
     recentLungeMemory?: AILungeMemory | null;
     playerModel?: PlayerModelSnapshot | null;
   }, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   if (typeof context.random !== 'function') throw new Error('Tactical weapon decisions require a caller-owned random stream');
+  if (context.weaponFrame && (!['hammer', 'sword'].includes(context.weaponFrame.activeWeapon) ||
+    typeof context.weaponFrame.canStartWeaponAction !== 'boolean' || typeof context.weaponFrame.weaponState !== 'string'))
+    throw new Error('Invalid tactical weapon frame');
   if (!Object.hasOwn(memories, botId)) return null;
   const observation = context.observation
     ? retainSimGrifballCombatObservation(state, botId, scriptedBots, context.observation, dt)
@@ -51,12 +57,12 @@ export function resolveSimGrifballTacticalWeaponChoice(state: SimState, plan: Gr
   const observed = observeSimTacticalWeaponTarget(state, target, memories[target.id]);
   const actor = (c: SimCombatant): TacticalWeaponActor => ({ id: c.id, team: c.team, pos: c.pos,
     hp: c.alive ? c.hp : 0, maxHp: c.maxHp, respawnTimer: c.respawnTimer, activeWeapon: c.weapon });
-  const canStartWeaponAction = canStartAIWeaponAction({ ...memories[botId], swapCooldownTimer: remainingDecisionSwapTime(self.weaponReadyTimer, dt, clockPhase) });
-  const decision = evaluateTacticalWeaponChoice({ settings: state.settings, self: actor(self), actors: state.combatants.map(actor),
+  const canStartWeaponAction = context.weaponFrame?.canStartWeaponAction ?? canStartAIWeaponAction({ ...memories[botId], swapCooldownTimer: remainingDecisionSwapTime(self.weaponReadyTimer, dt, clockPhase) });
+  const decision = evaluateTacticalWeaponChoice({ settings: state.settings, self: { ...actor(self), activeWeapon: context.weaponFrame?.activeWeapon ?? self.weapon }, actors: state.combatants.map(actor),
     target: observed, difficulty: scriptedBots[botId], pressureAggression: tuning.pressureAggression,
     scoreContext: context.scoreContext, random: context.random,
     context: { distanceToTarget: observation.prediction.distanceToTarget, combatDistanceToTarget: observation.range.combatDistanceToTarget,
-      canStartWeaponAction, weaponState: self.weaponState === 'idle' ? 'ready' : observeSimTacticalWeaponTarget(state, self).weaponState,
+      canStartWeaponAction, weaponState: context.weaponFrame?.weaponState ?? (self.weaponState === 'idle' ? 'ready' : observeSimTacticalWeaponTarget(state, self).weaponState),
       weaponSwapIQ: tuning.weaponSwapIQ, weaponPrioritization: tuning.weaponPrioritization,
       recentLungeMemory: context.recentLungeMemory, playerModel: context.playerModel } });
   return { target: observed, prediction: observation.prediction, range: observation.range, decision };

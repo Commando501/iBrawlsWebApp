@@ -1,7 +1,7 @@
 import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import { remainingDecisionSwapTime, type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import * as THREE from 'three';
-import { resolveAIComboOrchestrationForCombatant, type AIComboOrchestrationFrame } from '../components/grifball/aiComboOrchestrationRuntime';
+import { resolveAIComboOrchestrationForCombatant, type AIComboOrchestrationFrame, type AIComboOrchestrationResult } from '../components/grifball/aiComboOrchestrationRuntime';
 import { resolveAICombatDangerZone, type AICombatWeapon, type PlayerModelSnapshot } from '../game/aiCombatDecision';
 import { type BotComboState } from '../game/aiComboEngine';
 import { advanceAIWeaponSwapFeint, tickFeintCooldown } from '../game/aiMatchContext';
@@ -15,6 +15,10 @@ import { normalizeYaw } from './physics';
 import { isMixedPlayer, type SimState } from './simState';
 import { type ScriptedCombatCommand, type ScriptedCombatInput } from './scriptedCombatInput';
 
+export type SimComboWeaponFrame = Pick<AIComboOrchestrationResult, 'activeWeapon' | 'weaponState' | 'canStartWeaponAction'> & {
+  observedSwapLockout: number; currentSwapLockout: number; readinessRemaining: number;
+};
+
 export interface SimWeaponFeintMemory { cooldownRemaining?: number; swapRemaining?: number }
 
 /** Run the production combo owner against this engine's target and clocks.
@@ -26,7 +30,11 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     weaponSwapIQ: number; weaponPrioritization: number; spacingFactor: number;
   }, memories: Readonly<Record<string, TacticalAIMemory>>, context: {
     observation?: SimGrifballCombatObservation;
-    comboState: BotComboState | null; tacticalWeapon: AICombatWeapon | null; swapFeintActive: boolean;
+    comboState: BotComboState | null;
+    /** A resolver runs after feint expiry and before combo arbitration. Its
+     * immutable frame retains readiness/lockout captured before reversion. */
+    tacticalWeapon: AICombatWeapon | null | ((frame: Readonly<SimComboWeaponFrame>) => AICombatWeapon | null);
+    swapFeintActive: boolean;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
     /** Explicit ownership of this pre-combo feint clock boundary. The active
      * flag must describe the supplied pre-tick memory. Adopt returned memory. */
@@ -73,6 +81,11 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
       ...(feints.weaponSwapFeintTimers.has(botId) ? { swapRemaining: feints.weaponSwapFeintTimers.get(botId)! } : {}),
     };
   }
+  const tacticalWeapon = typeof context.tacticalWeapon === 'function'
+    ? context.tacticalWeapon(Object.freeze({ activeWeapon, weaponState, canStartWeaponAction,
+      observedSwapLockout, currentSwapLockout: lockout, readinessRemaining: readiness })) : context.tacticalWeapon;
+  if (tacticalWeapon !== null && tacticalWeapon !== 'hammer' && tacticalWeapon !== 'sword')
+    throw new Error('Invalid tactical weapon choice at combo boundary');
   const assignment = plan.assignments.get(botId);
   const interception = !!state.match.ball.holderId && assignment?.tuning?.enabled === true &&
     assignment.defense?.targetId === state.match.ball.holderId &&
@@ -82,8 +95,9 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     target: { ...observed, pos: point(target.pos), vel: point(target.vel), maxHp: target.maxHp,
       isCrouching: target.isCrouching, playerName: target.id, modelType: target.modelType },
     frame: { pos: point(self.pos), vel: point(self.vel), ...memories[botId], weaponState },
-    activeWeapon, canStartWeaponAction, tacticalWeapon: context.tacticalWeapon,
-    preserveReadyStrike: interception && target.id === state.match.ball.holderId && observation.range.enemyInKillRange,
+    activeWeapon, canStartWeaponAction, tacticalWeapon,
+    preserveReadyStrike: interception && target.id === state.match.ball.holderId && observation.range.enemyInKillRange &&
+      observation.range.selfGrounded && !self.slideActive && self.dashRemaining <= 0,
     swapFeintActive, targetProtected: context.observation?.targetProtected ?? target.invulnerabilityTimer > 0,
     targetAirborne: observation.prediction.targetAirborne,
     hasVerticalLungeLine: !observation.prediction.targetAirborne || tuning.movementComplexity >= 60,
