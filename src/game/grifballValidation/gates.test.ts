@@ -250,10 +250,13 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.passRecoveryTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 19200);
   assert.equal(details.passRecoveryTraces.filter((t: any) => t.initialRecovery.outcome === 'interception').length, 16);
   assert.equal(details.passRecoveryTraces.filter((t: any) => t.initialRecovery.outcome === 'reception').length, 16);
-  assert.equal(details.earnedTankTraces.length, 32);
+  assert.equal(details.earnedTankTraces.length, 40);
   assert.ok(details.earnedTankTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-earned-tank-contest' && t.frameCount === 300));
-  assert.equal(details.earnedTankTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 9600);
-  assert.equal(new Set(details.earnedTankTraces.map((t: any) => t.scenario.opening)).size, 4);
+  assert.equal(details.earnedTankTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 12000);
+  assert.equal(new Set(details.earnedTankTraces.map((t: any) => t.scenario.opening)).size, 5);
+  assert.deepEqual(details.earnedTankWitnesses, {required:40,completed:40,errors:[]});
+  assert.equal(details.earnedTankTraces.filter((t: any) => t.resolution?.outcome === 'paired-kill').length, 8);
+  assert.equal(details.earnedTankTraces.filter((t: any) => t.resolution?.outcome === 'runner-interruption').length, 8);
   assert.equal(details.tankContestTraces.length, 64);
   assert.ok(details.tankContestTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-tank-contest' && t.frameCount === 300));
   assert.equal(details.tankContestTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 19200);
@@ -337,7 +340,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v76');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v77');
   assert.equal(details.plannedMatchTraces.length, 8);
   assert.equal(details.plannedMatchTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 18144);
   assert.deepEqual(details.plannedMatchWitnesses, { required: 8, completed: 8, errors: [] });

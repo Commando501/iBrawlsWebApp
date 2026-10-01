@@ -14,7 +14,7 @@ import { runAirborneFlightParity } from './grifballAirborneFlightParity';
 import { runShieldedFlightParity } from './grifballShieldedFlightParity';
 import { runRosterMatch } from './grifballRosterMatch';
 import { runTankContest } from './grifballTankContest';
-import { runEarnedTankContest } from './grifballEarnedTankContest';
+import { runEarnedTankContest, earnedTankResolutionCoverage } from './grifballEarnedTankContest';
 import { runRosterContest } from './grifballRosterContest';
 import { runMapPassMatch } from './grifballMapPassMatch';
 import { runPassMatch, postResetPassCoverage } from './grifballPassMatch';
@@ -293,6 +293,7 @@ export function runExecutionParity() {
   const rosterMatchTraces = runRosterMatch();
   const tankContestTraces = runTankContest();
   const earnedTankTraces = runEarnedTankContest();
+  const earnedTankWitnesses = earnedTankResolutionCoverage(earnedTankTraces);
   const mapMobilityFailures = mapMobilityTraces.filter(t => t.failureCount);
   const matchDecisionTraces = compactExecutionTraces(runMatchDecisionIntegration());
   const jumpWitnesses = { mobility: jumpCoverage(mobilityDecisionTraces, 'mobility'), match: jumpCoverage(matchDecisionTraces, 'match') };
@@ -309,13 +310,14 @@ export function runExecutionParity() {
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
-  return gate('execution-parity', plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+  return gate('execution-parity', earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+    `Tank coverage: ${earnedTankWitnesses.errors.length} errors. ` +
     `Dash coverage misses ${dashWitnesses.missing.length} required groups. ` +
     `Revival attack coverage misses ${revivalAttackWitnesses.missing.length} required groups. ` +
     `Jump coverage misses ${missingJumpWitnesses} required groups. ` +
     `Post-reset passing misses ${resetPassCoverage.missing.length} required groups. ` +
     `${failures.length}/${actionTraces.length} action traces differ. ${decisionFailures.length}/${liveDecisionTraces.length} live decision traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} map mobility traces fail. ${plannedMatchWitnesses.errors.length} planned-match coverage failures. ${PARITY_GAPS.length} gaps; legacy training remains uncertified.`,
-    { protocol: 'live-functions-vs-headless-step-v76', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    { protocol: 'live-functions-vs-headless-step-v77', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
       plannedMatchTraces, plannedMatchWitnesses,
       plannedMatchScope: 'Eight independent own-state unopposed matches with a passive local player and two scripted teammates, mirrored teams, both roster orders and passing enabled/disabled. Production frame owners and the opt-in simulator planner independently choose objective actions through two goals, one physical reset, renewed pickup and match end plus five terminal ticks. Every tick compares phase, ball, scores, motion, heading, health, equipment, shield and revival clocks; separately restored simulator state/planner continue after reset. No pass is selected. Failed, missing, duplicate or truncated required cases fail coverage. This does not certify opposing combat choices, complete opposed mixed matches, general maps or quality.',
       revivalAttackWitnesses,
@@ -379,8 +381,8 @@ export function runExecutionParity() {
       rosterMatchTraces,
       tankContestScope: '64 live-only five-second tanking contests / 19200 frames. Authored visible recovery, 3 HP, 1.5 hammer range/radius (4.5 radius shared-blast control), 1.2-second recovery, safety-first and low double threshold on an empty court. Eight openings cover actual paired attacks and intended-victim impacts, ready/short recovery, late coverage, shared blast, high threshold, absent spare and disabled module; mirrored teams/orders and main/ordinary initial carriers. Positive cases independently check physical/planned separation, distinct living nonattacking reserve within coverage time, reciprocal target/partner references, ready attackers, recovery timing and live damage. Every frame validates shared combat/objective/respawn invariants. Three exact repeats. Initial recovery is authored, not earned by a prior live swing; main-AI tank attackers, default tuning, general in-motion formation safety, maps, full matches, headless parity and held-out quality remain outside this slice.',
       tankContestTraces,
-      earnedTankScope: '32 live-only five-second contests / 9600 frames with default combat settings. An authored mid-fight start has two pending .75-second respawns, a carrier finishing punch recovery, and a ready opponent descending from .8 units with its air-jump budget spent. Safety-first is the only positive-case tactical override. The opponent autonomously attacks and damages the carrier before its resulting recovery is exploited by two revived tanks; both swing and reach live impact, and one kills the one-HP target. Physical/planned default blast separation, reserve coverage, target consumption, timing, expiry and credit are checked. Mirrored teams/orders include main-AI tank attackers. Default roles, late arrival and shared-blast controls refuse the first opening. Four exact repeats. This is bounded decision integration, not all-ready emergence frequency, arbitrary formation safety, full-match quality, headless parity or calibrated performance.',
-      earnedTankTraces,
+      earnedTankScope: '40 live-only five-second contests / 12000 frames with default combat settings and authored initial health/lifecycle state. Two tanks respawn after .75 seconds while a descending opponent earns recovery through an autonomous carrier hit. Eight original one-HP cases require the earlier runner kill to interrupt already committed tanks without corpse damage or stolen credit. Eight added two-HP opponent cases require an actual paired kill after the runner punch. Both outcomes are required across teams, orders and main/ordinary tank identities; missing, duplicate, failed or substituted witnesses fail coverage. Default roles, late arrival and shared-blast controls refuse the first opening. Physical/planned blast separation, reserve coverage, target consumption, windup, expiry, respawn health and credit remain checked. Five exact repeats. This does not certify all-ready emergence frequency, arbitrary formation safety, quality, headless parity or calibrated performance.',
+      earnedTankTraces, earnedTankWitnesses,
       mapPassMatchTraces,
       passMatchTraces,
       passContestTraces,

@@ -63,7 +63,7 @@ export interface OpposedDecisionCase {
   team: 'blue' | 'red'; reverse: boolean; main: boolean; seed?: number;
 }
 export type TankContestOpening = 'opening' | 'ready' | 'late-cover' | 'shared-blast' | 'disabled' | 'short-window' | 'threshold' | 'no-reserve';
-export type EarnedTankOpening = 'opening' | 'default-roles' | 'late-arrival' | 'shared-blast';
+export type EarnedTankOpening = 'opening' | 'durable-opponent' | 'default-roles' | 'late-arrival' | 'shared-blast';
 export interface RosterContestOptions { teamSize: 3 | 4; tactics: Partial<TeamTactics>; tankOpening?: TankContestOpening; earnedTankOpening?: EarnedTankOpening }
 export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
   (['punch-first', 'hammer-first', 'contested'] as const).flatMap(mode =>
@@ -162,6 +162,9 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapPassMatch && [...state.otherPlayers.values()].some(c => !isMapBodyClear(map, c.pos))) throw new Error('Map pass fixture starts inside an obstacle');
   const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get(defenderId)!;
+  // Keep the original one-HP runner-counter case and independently exercise
+  // the paired impact against an opponent that survives that earlier punch.
+  if (earnedTank && rosterOptions!.earnedTankOpening === 'durable-opponent') defender.hp = defender.maxHp = 2;
   // Author only the initial visible recovery; all later decisions and phases are live.
   if (tankContest && !earnedTank && rosterOptions!.tankOpening !== 'ready') defender.weaponState = 'recovering';
   if (tankContest && !earnedTank && rosterOptions!.tankOpening === 'short-window') defender.weaponTimer = 1.19;
@@ -339,7 +342,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           const spawn = map.teamSpawns?.[c.team!]?.[0];
           if (mapped || earnedTank) check('respawn uses supplied team layout', atTeamSpawn(c), true);
           else check('team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify(spawn ? [spawn.x, spawn.y, spawn.z] : []));
-          check('respawn full base health', c.hp, state.settings.maxHP ?? 1);
+          check('respawn full base health', c.hp,
+            earnedTank && rosterOptions!.earnedTankOpening === 'durable-opponent' && c.id === defenderId ? 2 : state.settings.maxHP ?? 1);
           check('respawn weapon ready', c.weaponState, 'ready');
           check('respawn grounded', !!c.isJumping, false);
           check('respawn jump plan cleared', !!c.hammerJumpPlanned, false);

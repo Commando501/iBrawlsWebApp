@@ -30,6 +30,14 @@ test('v76 retains independent planned-match evidence without changing older inve
   assert.deepEqual(validateSampledParityEvidence(previous), ['plannedMatchTraces: missing or empty family']);
 });
 
+test('v77 retains the sampled inventory while earned tank outcomes use their separate coverage contract', () => {
+  const current=sampledReport('live-functions-vs-headless-step-v77');
+  assert.equal(Object.keys(current).length-1,48);
+  assert.deepEqual(SAMPLED_PARITY_FAMILIES[current.protocol as keyof typeof SAMPLED_PARITY_FAMILIES],
+    SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v76']);
+  assert.deepEqual(validateSampledParityEvidence(current),[]);
+});
+
 for (const corruption of ['missing', 'empty', 'metadata', 'later-metadata', 'renamed', 'extra', 'count',
   'fractional-count', 'retained-count', 'hash', 'kind', 'no-frames', 'too-many-frames', 'truncated-count'] as const)
   test(`sampled report audit rejects ${corruption} without rerunning gameplay`, () => {
