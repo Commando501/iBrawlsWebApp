@@ -49,3 +49,63 @@ export function compactExecutionTrace<T extends FrameTrace>(trace: T) {
 }
 
 export const compactExecutionTraces = <T extends FrameTrace>(traces: readonly T[]) => traces.map(compactExecutionTrace);
+
+// Keep the evidence inventory explicit: counting only arrays whose first trace
+// has metadata can hide an empty family or a family with stripped metadata.
+const V74_SAMPLED_FAMILIES = [
+  'passContestTraces', 'mapContestTraces', 'mapRoutingTraces', 'mapMobilityTraces',
+  'mobilityDecisionTraces', 'matchDecisionTraces', 'roundDecisionTraces', 'revivalDecisionTraces',
+  'opposedDecisionTraces', 'pressureDecisionTraces', 'passDecisionTraces', 'decisionIntegrationTraces',
+  'traces', 'botTraces', 'lungeTraces', 'sampledContactTraces', 'geometryTraces', 'motionTraces',
+  'movingContactTraces', 'multiActorTraces', 'spawnTraces', 'mixedSpawnTraces', 'mixedContactTraces',
+  'playerLungeTraces', 'mixedLifecycleTraces', 'opposedFlightTraces', 'carrierFlightTraces',
+  'airborneCarrierFlightTraces', 'turningFlightTraces', 'shieldedFlightTraces', 'airborneFlightTraces',
+  'objectiveTraces', 'frameObjectiveTraces', 'passInputTraces', 'chargeCombatTraces',
+  'carrierCrowdTraces', 'carrierRecoveryTraces', 'runnerCombatTraces', 'playerRunnerTraces',
+  'airborneRunnerTraces', 'focusFireTraces', 'roundFrameTraces', 'roundCombatTraces',
+  'roundFlightTraces', 'roundPlayerFlightTraces', 'fullRosterFrameTraces',
+] as const;
+
+export const SAMPLED_PARITY_FAMILIES = {
+  'live-functions-vs-headless-step-v74': V74_SAMPLED_FAMILIES,
+  'live-functions-vs-headless-step-v75': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces'],
+} as const;
+
+/** Structural audit of retained evidence, including saved reports. This does not
+ * rerun gameplay, verify a full-history hash from samples, or grant acceptance. */
+export function validateSampledParityEvidence(details: unknown): string[] {
+  if (!details || typeof details !== 'object') return ['Missing parity details'];
+  const record = details as Record<string, unknown>;
+  const protocol = record.protocol;
+  if (typeof protocol !== 'string' || !Object.hasOwn(SAMPLED_PARITY_FAMILIES, protocol))
+    return [`Unsupported sampled-evidence protocol: ${String(protocol)}`];
+  const expected: readonly string[] = SAMPLED_PARITY_FAMILIES[protocol as keyof typeof SAMPLED_PARITY_FAMILIES];
+  const errors: string[] = [];
+  for (const [name, value] of Object.entries(record)) {
+    // Legacy compatibility intentionally retains full histories as diagnostics.
+    if (name !== 'legacyCompatibility' && !expected.includes(name) && Array.isArray(value) &&
+      value.some(trace => trace && typeof trace === 'object' && ('frames' in trace || 'frameEvidence' in trace)))
+      errors.push(`${name}: unregistered frame family`);
+  }
+  for (const name of expected) {
+    const traces = record[name];
+    if (!Array.isArray(traces) || traces.length === 0) {
+      errors.push(`${name}: missing or empty family`);
+      continue;
+    }
+    traces.forEach((trace, index) => {
+      const path = `${name}[${index}]`;
+      if (!trace || typeof trace !== 'object') { errors.push(`${path}: missing trace`); return; }
+      const { frames, frameCount, frameEvidence } = trace;
+      if (!Number.isSafeInteger(frameCount) || frameCount <= 0)
+        errors.push(`${path}: invalid full frame count`);
+      if (!Array.isArray(frames) || frames.length === 0 || frames.length > PARITY_FRAME_SAMPLE_LIMIT || frames.length > frameCount)
+        errors.push(`${path}: invalid retained frames`);
+      if (!frameEvidence || frameEvidence.kind !== 'sampled-frames-v1' ||
+        !Array.isArray(frames) || frameEvidence.retainedCount !== frames.length ||
+        typeof frameEvidence.fullTraceSHA256 !== 'string' || !/^[a-f0-9]{64}$/.test(frameEvidence.fullTraceSHA256))
+        errors.push(`${path}: invalid frame evidence`);
+    });
+  }
+  return errors;
+}

@@ -1,7 +1,64 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactExecutionTrace, PARITY_FRAME_SAMPLE_LIMIT } from './grifballParityEvidence';
+import { compactExecutionTrace, PARITY_FRAME_SAMPLE_LIMIT, SAMPLED_PARITY_FAMILIES, validateSampledParityEvidence } from './grifballParityEvidence';
 import { FOCUS_FIRE_CASES, runFocusFireTrace } from './grifballFocusFireParity';
+
+function sampledReport(protocol: keyof typeof SAMPLED_PARITY_FAMILIES = 'live-functions-vs-headless-step-v75'): Record<string, any> {
+  return { protocol, ...Object.fromEntries(SAMPLED_PARITY_FAMILIES[protocol].map(name =>
+    [name, [compactExecutionTrace({ frames: [{ tick: 1 }, { tick: 2 }], differenceCount: 0 })]])) };
+}
+
+test('sampled report inventories distinguish the v74 and v75 additions', () => {
+  const previous = sampledReport('live-functions-vs-headless-step-v74'), current = sampledReport();
+  assert.equal(Object.keys(previous).length - 1, 46);
+  assert.equal(Object.keys(current).length - 1, 47);
+  assert.ok(previous.sampledContactTraces);
+  assert.equal(previous.objectiveInputTraces, undefined);
+  assert.ok(current.objectiveInputTraces);
+  assert.deepEqual(validateSampledParityEvidence(previous), []);
+  assert.deepEqual(validateSampledParityEvidence(current), []);
+  previous.protocol = current.protocol;
+  assert.deepEqual(validateSampledParityEvidence(previous), ['objectiveInputTraces: missing or empty family']);
+});
+
+for (const corruption of ['missing', 'empty', 'metadata', 'later-metadata', 'renamed', 'extra', 'count',
+  'fractional-count', 'retained-count', 'hash', 'kind', 'no-frames', 'too-many-frames', 'truncated-count'] as const)
+  test(`sampled report audit rejects ${corruption} without rerunning gameplay`, () => {
+    const report = sampledReport(), name = 'sampledContactTraces';
+    const trace = report[name][0];
+    if (corruption === 'missing') delete report[name];
+    if (corruption === 'empty') report[name] = [];
+    if (corruption === 'metadata') delete trace.frameEvidence;
+    if (corruption === 'later-metadata') report[name].push({ ...trace, frameEvidence: undefined });
+    if (corruption === 'renamed') { report.replacementTraces = report[name]; delete report[name]; }
+    if (corruption === 'extra') report.unregisteredTraces = report[name];
+    if (corruption === 'count') trace.frameCount = NaN;
+    if (corruption === 'fractional-count') trace.frameCount = 2.5;
+    if (corruption === 'retained-count') trace.frameEvidence.retainedCount++;
+    if (corruption === 'hash') trace.frameEvidence.fullTraceSHA256 = 'not-a-hash';
+    if (corruption === 'kind') trace.frameEvidence.kind = 'unknown';
+    if (corruption === 'no-frames') { trace.frames = []; trace.frameEvidence.retainedCount = 0; }
+    if (corruption === 'too-many-frames') {
+      trace.frames = Array.from({ length: 33 }, (_, tick) => ({ tick }));
+      trace.frameCount = trace.frameEvidence.retainedCount = 33;
+    }
+    if (corruption === 'truncated-count') trace.frameCount = 1;
+    const errors = validateSampledParityEvidence(report);
+    assert.ok(errors.length > 0);
+    assert.ok(errors.some(error => error.includes(corruption === 'extra' ? 'unregisteredTraces' : name)), errors.join('\n'));
+  });
+
+test('sampled report audit rejects unsupported versions and preserves diagnostic verdicts', () => {
+  for (const value of [null, undefined, {}, { protocol: 'live-functions-vs-headless-step-v76' }, { protocol: 'toString' }])
+    assert.ok(validateSampledParityEvidence(value).length > 0);
+  const report = { check: { verdict: 'inconclusive' }, details: sampledReport() };
+  report.details.legacyCompatibility = [{ frames: Array.from({ length: 240 }, (_, tick) => ({ tick })), differenceCount: 10 }];
+  report.details.sampledContactTraces[0].differenceCount = 1;
+  const before = structuredClone(report);
+  // Evidence shape can be valid while gameplay disagrees: acceptance is separate.
+  assert.deepEqual(validateSampledParityEvidence(report.details), []);
+  assert.deepEqual(report, before);
+});
 
 test('compaction bounds retained frames without discarding failures or changing the full trace', () => {
   const source = { name: 'failure', differenceCount: 2, differences: [{ tick: 501, field: 'health' }, { tick: 701, field: 'ownership' }],

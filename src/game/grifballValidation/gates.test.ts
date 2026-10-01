@@ -14,6 +14,7 @@ import { emptyTeamEvaluation } from '../grifballEvaluation';
 import { importLabRun, labRunReport } from './labReport';
 import { runExecutionParity, PARITY_TRACE_CASES } from '../../../scripts/sim/grifballExecutionParity';
 import { writeParityEvidence } from '../../../scripts/sim/grifballValidationArtifacts';
+import { validateSampledParityEvidence } from '../../../scripts/sim/grifballParityEvidence';
 import type { SuitePlan } from './types';
 const code = { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] };
 async function fixture(matches = false) {
@@ -297,15 +298,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.playerLungeTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
-  const sampledFamilies = Object.values(details).filter((value: any) => Array.isArray(value) && value[0]?.frameEvidence) as any[][];
-  // Includes grounded/airborne pickup and mouse-turn flight families (v62-v64).
-  assert.equal(sampledFamilies.length, 45);
-  for (const traces of sampledFamilies) for (const trace of traces) {
-    assert.ok(trace.frameCount >= trace.frames.length);
-    assert.ok(trace.frames.length <= 32);
-    assert.equal(trace.frameEvidence.retainedCount, trace.frames.length);
-    assert.match(trace.frameEvidence.fullTraceSHA256, /^[a-f0-9]{64}$/);
-  }
+  assert.deepEqual(validateSampledParityEvidence(details), []);
   assert.equal(details.focusFireTraces.length, 256);
   assert.equal(details.focusFireTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 30720);
   assert.ok(details.focusFireTraces.every((t: any) => t.differenceCount === 0));
