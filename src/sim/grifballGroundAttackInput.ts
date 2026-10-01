@@ -1,3 +1,4 @@
+import { remainingDecisionSwapTime, type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import type { AIBehaviorState } from '../types';
 import { resolveAIGroundAttackCommitment } from '../game/aiGroundAttackCommitment';
 import { canStartAIWeaponAction } from '../game/aiWeaponTiming';
@@ -16,7 +17,7 @@ export function resolveSimGrifballGroundAttackInput(state: SimState, botId: stri
     aiState: AIBehaviorState | undefined;
     timer: number | undefined;
     cooldownMultiplier: number;
-  }, dt = 1 / 60) {
+  }, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   const actor = resolveSimGrifballGroundActor(state, botId, scriptedBots, dt);
   if (!actor || actor.hasBall || actor.weapon === 'ball' ||
     state.match.ball.state === 'held' && state.match.ball.holderId === botId) return null;
@@ -25,7 +26,7 @@ export function resolveSimGrifballGroundAttackInput(state: SimState, botId: stri
     weaponReady: actor.weaponState === 'idle', activeWeapon: actor.weapon, settings: state.settings,
     // Live swap readiness ticks before the decision; AI cooldown does not.
     canStartWeaponAction: canStartAIWeaponAction({ ...opportunity,
-      swapCooldownTimer: Math.max(0, actor.weaponReadyTimer - dt) }),
+      swapCooldownTimer: remainingDecisionSwapTime(actor.weaponReadyTimer, dt, clockPhase) }),
   });
   if (!commitment) return null;
   const action = { ...idleAction(), aim: actor.yaw, crouch: actor.isCrouching, attackPrimary: true };

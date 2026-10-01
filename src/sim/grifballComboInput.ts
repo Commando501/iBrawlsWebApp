@@ -1,3 +1,4 @@
+import { remainingDecisionSwapTime, type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import * as THREE from 'three';
 import { resolveAIComboOrchestrationForCombatant, type AIComboOrchestrationFrame } from '../components/grifball/aiComboOrchestrationRuntime';
 import { resolveAICombatDangerZone, type AICombatWeapon, type PlayerModelSnapshot } from '../game/aiCombatDecision';
@@ -22,10 +23,10 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
   }, memories: Readonly<Record<string, TacticalAIMemory>>, context: {
     comboState: BotComboState | null; tacticalWeapon: AICombatWeapon | null; swapFeintActive: boolean;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
-  }, dt = 1 / 60) {
+  }, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   if (typeof context.random !== 'function') throw new Error('Combo decisions require a caller-owned random stream');
   if (!Object.hasOwn(memories, botId)) return null;
-  const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt);
+  const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memories[botId], dt, clockPhase);
   if (!observation) return null;
   const self = state.combatants.find(c => c.id === botId)!, target = state.combatants.find(c => c.id === observation.targetId)!;
   if (target.controller === 'ai' && !isMixedPlayer(state, target) && !Object.hasOwn(memories, target.id)) return null;
@@ -34,7 +35,7 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
   const commands: ScriptedCombatCommand[] = [];
   const aiContext = { comboState: new Map(context.comboState ? [[botId, { ...context.comboState }]] : []) };
   let activeWeapon = self.weapon, weaponState = observeSimTacticalWeaponTarget(state, self).weaponState as AIComboOrchestrationFrame['weaponState'];
-  let lockout = Math.max(0, self.swapLockoutTimer - dt), readiness = Math.max(0, self.weaponReadyTimer - dt);
+  let lockout = remainingDecisionSwapTime(self.swapLockoutTimer, dt, clockPhase), readiness = remainingDecisionSwapTime(self.weaponReadyTimer, dt, clockPhase);
   let canStartWeaponAction = canStartAIWeaponAction({ ...memories[botId], swapCooldownTimer: readiness });
   const assignment = plan.assignments.get(botId)!;
   const interception = !!state.match.ball.holderId && assignment.tuning?.enabled === true &&

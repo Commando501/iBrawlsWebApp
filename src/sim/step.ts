@@ -19,12 +19,13 @@ import { resolveSimSettings } from './factory';
 import { type SimState } from './simState';
 import { type ActionsById, idleAction } from './actions';
 import { createRng, type Rng } from './rng';
-import { stepCombatantMovement } from './physics';
+import { stepCombatantMovement, tickMovementCooldowns } from './physics';
 import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, tickWeaponSwapTimers, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 import { validateScriptedObjectiveInput, type ScriptedObjectiveInput } from './scriptedObjectiveInput';
-import { validateScriptedCombatInput, type ScriptedCombatInput } from './scriptedCombatInput';
+import { validateScriptedCombatInput, type ScriptedCombatInput, type ScriptedCombatCommand } from './scriptedCombatInput';
+import { validateScriptedActorDecisionOwner, validateScriptedActorDecision, type ScriptedActorDecisionOwner, type ScriptedActorDecisionRecord } from './scriptedActorDecision';
 import { beginScriptedObjectivePlanning, validateScriptedObjectivePlanner, type ScriptedObjectivePlanner, type ScriptedObjectivePlannerFrame } from './scriptedObjectivePlanner';
 
 /** Canonical fixed timestep. */
@@ -34,6 +35,7 @@ export interface StepEvents extends ObjectiveEvents {
   kills: KillEvent[];
   /** Present only for explicit scripted planning; handoffs are not autonomous successes. */
   plannerFrame?: ScriptedObjectivePlannerFrame;
+  actorDecisionFrame?: { version: 'scripted-actor-decision-v1'; decisions: ScriptedActorDecisionRecord[] };
 }
 
 export interface StepOptions {
@@ -52,6 +54,9 @@ export interface StepOptions {
   scriptedMeleeFeedback?: ScriptedMeleeFeedback;
   /** Explicit post-flight AI memory/observation owner. */
   scriptedLungeFeedback?: ScriptedLungeFeedback;
+  /** Own-state combat/fallback policy at each active actor's turn. May follow
+   * scriptedPlanner objective handoffs; cannot share precomputed packet owners. */
+  scriptedActorDecisions?: ScriptedActorDecisionOwner;
 }
 
 /**
@@ -65,6 +70,9 @@ export function stepSimulation(
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
+  validateScriptedActorDecisionOwner(state, options.scriptedActorDecisions, settings, dt);
+  if (options.scriptedActorDecisions && (options.scriptedCombat || options.scriptedObjective))
+    throw new Error('Scheduled actor decisions cannot share precomputed combat or objective packets');
   if ((options.scriptedMeleeFeedback || options.scriptedLungeFeedback) && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
   validateScriptedMeleeFeedback(state, options.scriptedMeleeFeedback, settings);
   validateScriptedLungeFeedback(state, options.scriptedLungeFeedback, settings);
@@ -79,11 +87,19 @@ export function stepSimulation(
   if (options.scriptedCombat && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Scripted combat requires a positive finite timestep');
   if (options.scriptedObjective && options.scriptedPlanner) throw new Error('Choose either scripted objective inputs or a scripted planner');
   validateScriptedObjectivePlanner(state, options.scriptedPlanner, settings, dt);
+  if (options.scriptedActorDecisions && options.scriptedPlanner) {
+    for (const [id, difficulty] of Object.entries(options.scriptedActorDecisions.scriptedBots))
+      if (Object.hasOwn(options.scriptedPlanner.scriptedBots, id) && options.scriptedPlanner.scriptedBots[id] !== difficulty)
+        throw new Error(`Objective and combat decision owners disagree on difficulty: ${id}`);
+  }
   if (options.scriptedCombat && options.scriptedPlanner) throw new Error('Scripted combat requires explicit movement ownership instead of the objective-only planner');
   const scriptedCombat = validateScriptedCombatInput(state, options.scriptedCombat, actionsById, settings);
   const scriptedMovement = validateScriptedObjectiveInput(state, options.scriptedObjective, actionsById, settings)
-    ?? (options.scriptedPlanner ? Object.create(null) : undefined);
-  const resolvedActions = options.scriptedPlanner ? { ...actionsById } : actionsById;
+    ?? (options.scriptedPlanner || options.scriptedActorDecisions ? Object.create(null) : undefined);
+  const resolvedActions = options.scriptedPlanner || options.scriptedActorDecisions ? { ...actionsById } : actionsById;
+  const scheduledCombat: Record<string, readonly ScriptedCombatCommand[]> = Object.create(null);
+  const actorDecisions: ScriptedActorDecisionRecord[] = [];
+  const ownsDecision = (id: string) => !!options.scriptedActorDecisions && Object.hasOwn(options.scriptedActorDecisions.scriptedBots, id);
   const rng: Rng = createRng(0);
   rng.setState(state.rngState);
 
@@ -151,13 +167,35 @@ export function stepSimulation(
   // Capture the pre-objective phase: countdown completion resumes AI on the next frame.
   // This is explicit per actor; existing committed-action and legacy profiles keep their behavior.
   const phasePaused = new Set(state.match.phase !== 'playing'
-    ? state.combatants.filter(c => c !== player && (mixedObjectiveFrame && c.pauseDuringInactiveGrifball || planner?.owns(c.id))).map(c => c.id) : []);
+    ? state.combatants.filter(c => c !== player && (mixedObjectiveFrame && c.pauseDuringInactiveGrifball || planner?.owns(c.id) || ownsDecision(c.id))).map(c => c.id) : []);
 
   // Phase 1 — movement.
   for (const c of state.combatants) {
     if (c === player) continue;
+    const scheduled = ownsDecision(c.id);
+    const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
+    if (decisionActive) {
+      tickMovementCooldowns(c, dt);
+      if (!swapTimersAdvanced.has(c.id)) { tickWeaponSwapTimers(c, dt); swapTimersAdvanced.add(c.id); }
+    }
     const planned = planner?.resolve(c);
     if (planned) { resolvedActions[c.id] = planned.action; scriptedMovement![c.id] = planned.movement; }
+    if (scheduled) {
+      if (!decisionActive) actorDecisions.push({ id: c.id, kind: 'inactive' });
+      else if (planned) actorDecisions.push({ id: c.id, kind: 'objective' });
+      else {
+        const owner = options.scriptedActorDecisions!;
+        const view = settings === state.settings ? state : { ...state, settings };
+        const decision = validateScriptedActorDecision(view, owner, c.id,
+          owner.resolve({ state: view, actorId: c.id, dt, clockPhase: 'after-swap-tick' }), settings);
+        actorDecisions.push({ id: c.id, kind: decision.kind, ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
+        if (decision.kind === 'handled') {
+          resolvedActions[c.id] = decision.action;
+          if (decision.movement) scriptedMovement![c.id] = decision.movement;
+          if (decision.commands) scheduledCombat[c.id] = decision.commands;
+        }
+      }
+    }
     if (phasePaused.has(c.id)) {
       if (c.alive) {
         c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
@@ -165,7 +203,7 @@ export function stepSimulation(
       }
       continue;
     }
-    stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id]);
+    stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive);
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);
@@ -173,7 +211,7 @@ export function stepSimulation(
       // Live AI commits at its own roster turn. A later actor's flight (or
       // planner observation) must see this attack/swap immediately, while
       // skeletal melee damage still waits for the post-objective animation pass.
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', scheduledCombat[c.id] ?? scriptedCombat?.[c.id], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
     }
   }
 
@@ -228,5 +266,6 @@ export function stepSimulation(
   state.tick += 1;
   state.rngState = rng.getState();
 
-  return { ...objective, kills, ...(planner ? { plannerFrame: planner.frame } : {}) };
+  return { ...objective, kills, ...(planner ? { plannerFrame: planner.frame } : {}),
+    ...(options.scriptedActorDecisions ? { actorDecisionFrame: { version: 'scripted-actor-decision-v1', decisions: actorDecisions } } : {}) };
 }

@@ -90,10 +90,28 @@ for (const profile of ['live-roster-v2', 'live-mixed-v1'] as const) for (const i
             triggerCombatantAttack: (_self, _weapon, swipe) => { commits++; f.attack(swipe); },
             triggerCombatantLunge: () => assert.fail('close stationary target must not induce a lunge'), recordCombatantObservation: () => {} });
         });
-        const before = structuredClone({ sim, memories, simCombo });
-        const input = resolveSimGrifballComboInput(sim, makePlan(sim), id, owners, tuning, memories,
-          { comboState: simCombo, tacticalWeapon: null, swapFeintActive: false, random: simRng.next })!;
-        assert.ok(input); assert.deepEqual({ sim, memories, simCombo }, before);
+        const advanceHeadless = (current: typeof sim, memory: typeof memories, combo: BotComboState | null, rng: ReturnType<typeof createRng>) => {
+          let input!: NonNullable<ReturnType<typeof resolveSimGrifballComboInput>>;
+          const decide = (clockPhase: 'before-swap-tick' | 'after-swap-tick') => {
+            const before = structuredClone({ current, memory, combo });
+            input = resolveSimGrifballComboInput(current, makePlan(current), id, owners, tuning, memory,
+              { comboState: combo, tacticalWeapon: null, swapFeintActive: false, random: rng.next }, dt, clockPhase)!;
+            assert.ok(input); assert.deepEqual({ current, memory, combo }, before);
+            memory[id] = { ...memory[id], aiState: input.frame.aiState, timer: Math.max(0, (input.frame.timer ?? 0) - dt) };
+            return { kind: 'handled' as const, action: input.action, commands: input.scriptedCombat.commands[id] };
+          };
+          if (profile === 'live-mixed-v1') {
+            const events = stepSimulation(current, {}, { settings: current.settings, scriptedActorDecisions: {
+              version: 'scripted-actor-decision-v1', scriptedBots: owners, resolve: ({ clockPhase }) => decide(clockPhase),
+            } });
+            assert.deepEqual(events.actorDecisionFrame!.decisions, [{ id, kind: 'handled' }]);
+          } else {
+            decide('before-swap-tick');
+            stepSimulation(current, { [id]: input.action }, { settings: current.settings, scriptedCombat: input.scriptedCombat });
+          }
+          return input;
+        };
+        const input = advanceHeadless(sim, memories, simCombo, simRng);
         for (const command of input.scriptedCombat.commands[id]) if (command.kind === 'melee') {
           assert.equal(command.swipe, combo !== 'mixup' && seed === 7, 'fixed seeds exercise both hammer choices and retain sword slash');
         }
@@ -101,16 +119,10 @@ for (const profile of ['live-roster-v2', 'live-mixed-v1'] as const) for (const i
         assert.deepEqual(input.comboState, f.state.aiMatchContext.comboState.get(id) ?? null);
         assert.equal(simRng.getState(), liveRng.getState());
         liveMemory = { ...liveMemory, aiState: liveFrame.aiState, timer: Math.max(0, (liveFrame.timer ?? 0) - dt) };
-        memories[id] = { ...memories[id], aiState: input.frame.aiState, timer: Math.max(0, (input.frame.timer ?? 0) - dt) };
         simCombo = input.comboState;
-        stepSimulation(sim, { [id]: input.action }, { settings: sim.settings, scriptedCombat: input.scriptedCombat });
         if (restored) {
-          const own = resolveSimGrifballComboInput(restored.state, makePlan(restored.state), id, owners, tuning, restored.memories,
-            { comboState: restored.combo, tacticalWeapon: null, swapFeintActive: false, random: restoredRng.next })!;
-          assert.deepEqual(own, input);
-          restored.combo = own.comboState;
-          restored.memories[id] = { ...restored.memories[id], aiState: own.frame.aiState, timer: Math.max(0, (own.frame.timer ?? 0) - dt) };
-          stepSimulation(restored.state, { [id]: own.action }, { settings: restored.state.settings, scriptedCombat: own.scriptedCombat });
+          const own = advanceHeadless(restored.state, restored.memories, restored.combo, restoredRng);
+          assert.deepEqual(own, input); restored.combo = own.comboState;
           assert.deepEqual(restored.state, sim); assert.deepEqual(restored.memories, memories); assert.equal(restoredRng.getState(), simRng.getState());
         }
         if (tick === 2) { restored = JSON.parse(JSON.stringify({ state: sim, memories, combo: simCombo })); restoredRng.setState(simRng.getState()); }

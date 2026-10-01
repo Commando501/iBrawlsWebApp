@@ -1,3 +1,4 @@
+import { type ScriptedDecisionClockPhase } from './scriptedActorDecision';
 import * as THREE from 'three';
 import { resolveAICombatRangeFrame } from '../components/grifball/aiCombatRangeRuntime';
 import { resolveAITargetPredictionFrame } from '../components/grifball/aiTargetPredictionRuntime';
@@ -23,7 +24,7 @@ export interface AssignedCombatTuning {
  * null itself means no supported assigned target, never an idle command. */
 export function resolveSimGrifballAssignedCombatInput(state: SimState, plan: GrifballTeamPlanState,
   botId: string, scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning,
-  memory: Omit<Parameters<typeof resolveSimGrifballGroundAttackInput>[3], 'enemyInKillRange'>, dt = 1 / 60) {
+  memory: Omit<Parameters<typeof resolveSimGrifballGroundAttackInput>[3], 'enemyInKillRange'>, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   const actor = resolveSimGrifballGroundActor(state, botId, scriptedBots, dt);
   if (!actor || actor.hasBall || actor.weapon === 'ball' ||
     state.match.ball.state === 'held' && state.match.ball.holderId === botId) return null;
@@ -52,7 +53,7 @@ export function resolveSimGrifballAssignedCombatInput(state: SimState, plan: Gri
     activeWeapon: actor.weapon, attackRange: state.settings.attackRange, attackRadius: state.settings.attackRadius,
     resolvedAiReach: (state.settings.attackRange + state.settings.attackRadius * .75) * (.8 + .4 * tuning.playstyleFactor) });
   const input = resolveSimGrifballGroundAttackInput(state, botId, scriptedBots,
-    { ...memory, enemyInKillRange: range.enemyInKillRange }, dt);
+    { ...memory, enemyInKillRange: range.enemyInKillRange }, dt, clockPhase);
   if (input) input.action.aim = prediction.yaw - Math.PI;
   const point = (v: THREE.Vector3) => ({ x: v.x, y: v.y, z: v.z });
   return { targetId: target.id, range, input, prediction: {

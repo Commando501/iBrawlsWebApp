@@ -55,6 +55,12 @@ export function rightDir(yaw: number, out: THREE.Vector3 = new THREE.Vector3()):
   return out.set(Math.cos(yaw), 0, -Math.sin(yaw));
 }
 
+/** Cooldowns sampled by a scheduled roster decision before physical movement. */
+export function tickMovementCooldowns(c: SimCombatant, dt: number): void {
+  if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
+  if (c.invulnerabilityTimer > 0) c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
+}
+
 /**
  * Advance one combatant's movement by `dt`. Mutates `c.pos`, `c.vel`, `c.yaw`, and the
  * movement-mechanic timers in place. Dead combatants are skipped (respawn owns them).
@@ -65,7 +71,8 @@ export function stepCombatantMovement(
   action: ActionInput,
   settings: UniversalSettings,
   dt: number,
-  objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent
+  objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent,
+  cooldownsAdvanced = false
 ): void {
   if (!c.alive) return;
   const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
@@ -76,8 +83,7 @@ export function stepCombatantMovement(
   }
 
   // Timers tick down regardless of action.
-  if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
-  if (c.invulnerabilityTimer > 0) c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
+  if (!cooldownsAdvanced) tickMovementCooldowns(c, dt);
 
   // Flight retains its launch velocity. Local mouse look still changes the view;
   // roster/legacy facing remains committed. The weapon FSM owns the timer/end.
