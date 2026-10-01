@@ -398,6 +398,8 @@ State streaming pauses validation ticks when its 64-batch transfer queue is full
 
 Live player and roster sword lunges tolerate 1e-9 units of numerical overshoot at their strict 16-unit travel cap. This prevents browser/Node rounding from ending the same flight on different ticks; contact is still resolved first and the elapsed timeout is unchanged. The opt-in live roster/mixed simulator profiles use the same boundary rule, with independent stopping-tick expectations and captured-pose regressions.
 
+Escorts retain their assigned flank when a threat is within 1e-9 units of the carrier's route centerline. A threat with a meaningful lateral offset still determines the intercept side. This keeps lead and cover spacing stable when equivalent browser/Node observations differ only by numerical roundoff.
+
 Tactical target observations preserve committed weapon phases during AI decision cooldown. An opponent winding up or striking is no longer reported as recovering merely because its next decision is delayed. Ready or missing weapon phases retain the existing cooldown fallback. Regression checks cover main and ordinary roster actors and selection between attacking and genuinely recovering targets.
 
 Dash trail particles use cosmetic randomness, so scene availability and particle emission no longer advance the seeded gameplay random stream. This changes historical seeded match outcomes; validation evidence must identify the source version. A focused regression checks identical dash motion and subsequent gameplay draws with and without a scene, including emitted and skipped trails.

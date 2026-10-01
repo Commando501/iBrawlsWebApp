@@ -6,9 +6,62 @@ import { observeGrifballSpace } from './aiGrifballSpace';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan, resetGrifballTeamPlan, type GrifballTacticalPlayer, type GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import { buildGrifballSpaceGeometry, isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { defaultGrifballTactics, validateGrifballTactics, TACTICS_FIELDS } from './grifballTacticsConfig';
-import { createSnapshotRouters, planGrifballRunner, tickRunnerMemory } from './aiGrifballRunner';
+import { createRunnerEscortPlanner, createSnapshotRouters, planGrifballRunner, tickRunnerMemory } from './aiGrifballRunner';
 
 const p = (id: string, team: string, x: number, z: number): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true, space: observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, id === 'runner' ? 'ball' : 'hammer', 'ready') });
+
+// Winter tick 5245: the same centerline threat produces lateral projections
+// -6.66e-16 and +7.77e-16 in the two hosts. Escort slots must not flip sides.
+const winterEscortPoses = [
+  { carrier: { x: -45.5391318150339, z: -.09351286985509971 },
+    target: { x: -46.572921518664714, z: .28235791734031307 },
+    heading: { x: -.9398088214825641, z: .3417007156321948 } },
+  { carrier: { x: -45.5391318150339, z: -.09351286985510078 },
+    target: { x: -46.572921518664714, z: .2823579173403149 },
+    heading: { x: -.9398088214825632, z: .34170071563219706 } },
+];
+
+function centerlineEscort(capture: typeof winterEscortPoses[number], sign: number, slot: number) {
+  const s = scene(), team = sign === 1 ? 'red' : 'blue', enemy = team === 'red' ? 'blue' : 'red';
+  const carrier = p('runner', team, sign * capture.carrier.x, sign * capture.carrier.z);
+  carrier.scripted = false;
+  carrier.heading = { x: sign * capture.heading.x, z: sign * capture.heading.z };
+  const bot = p('escort', team, -17 * sign, 2.6 * sign);
+  // Three supports keep the ordinary lead/cover slots distinct from rear cover.
+  s.players = [carrier, bot, p('ally-1', team, 20 * sign, 5), p('ally-2', team, 20 * sign, -5),
+    p('threat', enemy, sign * capture.target.x, sign * capture.target.z)];
+  const tuning = { ...defaultGrifballTactics().defaults, safetyFirst: false, escortLaneWidth: 2.5735153765656893 };
+  const routers = createSnapshotRouters(s);
+  const play = planGrifballRunner(s, carrier, tuning,
+    tickRunnerMemory(undefined, carrier, s.goals[enemy]!, 0), routers);
+  const order = createRunnerEscortPlanner(s, carrier, play, tuning, routers)(bot, slot === 0 ? 'lead' : 'cover', slot);
+  const lateral = (order.destination.x - carrier.pos.x) * -play.heading.z +
+    (order.destination.z - carrier.pos.z) * play.heading.x;
+  return { order, lateral, width: tuning.escortLaneWidth };
+}
+
+for (const sign of [1, -1]) for (const slot of [0, 1]) {
+  test(`captured centerline threat preserves escort side ${sign}/${slot}`, () => {
+    const results = winterEscortPoses.map(pose => centerlineEscort(pose, sign, slot));
+    for (const result of results) {
+      assert.equal(result.order.targetId, 'threat');
+      assert.equal(result.order.kind, 'intercept');
+      assert.ok(Math.abs(result.lateral - (slot ? -1 : 1) * result.width) < 1e-9);
+    }
+    assert.ok(Math.hypot(results[0].order.destination.x - results[1].order.destination.x,
+      results[0].order.destination.z - results[1].order.destination.z) < 1e-9);
+  });
+}
+
+for (const slot of [0, 1]) test(`escort respects real threat side outside centerline tolerance ${slot}`, () => {
+  for (const lateral of [-.5, -2e-9, -1e-12, 0, 1e-12, 2e-9, .5]) {
+    const result = centerlineEscort({ carrier: { x: 0, z: 0 }, target: { x: 2, z: lateral },
+      heading: { x: 1, z: 0 } }, 1, slot);
+    const side = Math.abs(lateral) <= 1e-9 ? slot ? -1 : 1 : Math.sign(lateral);
+    assert.equal(result.order.targetId, 'threat');
+    assert.ok(Math.abs(result.lateral - side * result.width) < 1e-9, `lateral ${lateral}`);
+  }
+});
 
 for (const team of ['blue', 'red'] as const)
   for (const scenario of ['reachable', 'weapon-range-only', 'blocked', 'recovering', 'spent-budget', 'human', 'already-close'] as const)

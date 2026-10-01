@@ -168,7 +168,12 @@ export function createRunnerEscortPlanner(snapshot: GrifballTacticalSnapshot, ca
       .sort((a, b) => a.eta - b.eta || a.p.id.localeCompare(b.p.id));
     const target = threats[0]?.p;
     let side = slot % 2 ? -1 : 1;
-    if (target) side = ((target.pos.x - routePoint.x) * -heading.z + (target.pos.z - routePoint.z) * heading.x) < 0 ? -1 : 1;
+    if (target) {
+      const lateral = (target.pos.x - routePoint.x) * -heading.z + (target.pos.z - routePoint.z) * heading.x;
+      // A centerline threat has no preferred flank. Preserve the slot's side
+      // when coordinate roundoff changes the sign of an effectively zero offset.
+      if (Math.abs(lateral) > 1e-9) side = lateral < 0 ? -1 : 1;
+    }
     const desired = target ? offset(routePoint, direction(routePoint, target.pos), tuning.escortLaneWidth) : offset(routePoint, heading, 0, side * tuning.escortLaneWidth);
     // Keep the carrier's corridor clear even when a threat is directly on its centerline.
     const lateral = (desired.x - carrier.pos.x) * -heading.z + (desired.z - carrier.pos.z) * heading.x;
