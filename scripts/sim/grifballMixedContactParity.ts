@@ -36,9 +36,11 @@ export interface MixedContactMovement {
   melee?: GroundMotion;
   meleeStartZ?: number;
 }
+export type MixedContactVertical = Record<'lunger' | 'target' | 'melee' | 'extra', { height: number; velocityY: number }>;
 /** Committed intents, independently advanced live and headless through mixed contact. */
-export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: number, movement?: MixedContactMovement) {
+export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: number, movement?: MixedContactMovement, vertical?: MixedContactVertical) {
   if (movement && spec.motion) throw new Error('Ground movement requires a grounded mixed-contact case');
+  if (vertical && (movement || spec.motion)) throw new Error('Relative-height setup cannot combine motion fixtures');
   const id = (role: MixedContactCase['mainRole']) => spec.mainRole === role ? 'main_ai' : role;
   const f = lungeFixture(id('lunger'), spec.observer, id('target'));
   const { state, sim, bot, target } = f;
@@ -69,6 +71,12 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
     a.pos.y = b.pos.y = 2;
     a.vel.y = b.vel.y = spec.motion === 'rising' ? 3 : -3;
     a.isJumping = b.isJumping = true;
+  }
+  if (vertical) for (const [index, role] of (['lunger', 'target', 'melee', 'extra'] as const).entries()) {
+    const [a, b] = pairs[index], pose = vertical[role];
+    a.pos.y = b.pos.y = pose.height;
+    a.vel.y = b.vel.y = pose.velocityY;
+    a.isJumping = b.isJumping = pose.height > 0 || pose.velocityY !== 0;
   }
   const targetHp = spec.kind === 'same-frame-two' || spec.kind === 'double-flight-two' ? 2
     : spec.kind === 'trade-survivors' || spec.kind === 'double-flight-three' ? 3 : 1;
@@ -108,7 +116,7 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
       for (const c of state.otherPlayers.values()) if (c.hp > 0) {
         tickCombatantInvulnerability(c, 1 / 60);
         c.aiTimer = Math.max(0, (c.aiTimer ?? 0) - 1 / 60);
-        if (spec.motion) f.gravityPrelude(c);
+        if (spec.motion || vertical) f.gravityPrelude(c);
         const ground = motionFor(c.id);
         if (ground) stepLiveGroundMotion(f, c, ground, tick);
         if (c.isLunging) f.flightFor(c, target);
@@ -168,8 +176,9 @@ export function runMixedContactParityTrace(spec: MixedContactCase, snapshotAt?: 
         phase: c.weaponState, outcome: c.lungeOutcome, kills: kills.get(c.id) ?? 0, deaths: deaths.get(c.id) ?? 0,
         ...(motionFor(c.id) ? { dashRemaining: c.dashRemaining, dashCooldown: c.dashCooldownTimer } : {}) })) });
   }
-  // Moving contacts have a separate geometry/timing oracle in their trace wrapper.
-  if (movement) return { name: Object.values(spec).join('/'), scenario: spec, movement,
+  // Moving and relative-height contacts have independent oracles in their wrappers.
+  if (movement || vertical) return { name: Object.values(spec).join('/'), scenario: spec,
+    ...(movement ? { movement } : {}), ...(vertical ? { vertical } : {}),
     ticks: 120, ...record.result(), frames };
   // Authored distances guarantee contacts on frames 6/7/8; melee impacts occur on 7.
   // These expectations are independent of agreement between the two engines.
