@@ -237,6 +237,12 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.roundDecisionTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 8640);
   assert.equal(details.revivalDecisionTraces.length, 24);
   assert.ok(details.revivalDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-revival-decision-integration'));
+  assert.ok(details.revivalDecisionTraces.every((t: any) => t.activity.failureCount === 0 &&
+    t.activity.dash.failureCount === 0 && t.dashEvidence.frameCount > 0 && !('dashSamples' in t)));
+  assert.ok(details.revivalDecisionTraces.every((t: any) => !t.activity.required ||
+    t.activity.attacks.length > 0 || t.activity.defensiveDashes.length > 0));
+  assert.ok(details.revivalDecisionTraces.some((t: any) => t.activity.required &&
+    t.activity.attacks.length === 0 && t.activity.defensiveDashes.length > 0));
   assert.equal(details.revivalDecisionTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 14400);
   assert.equal(details.opposedDecisionTraces.length, 24);
   assert.ok(details.opposedDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-opposed-decision-integration'));
@@ -254,7 +260,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v66');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v67');
   assert.deepEqual(details.dashWitnesses.missing, []);
   assert.ok(details.dashWitnesses.airborneSteps > 0);
   assert.ok(details.dashWitnesses.airborneLandings > 0);

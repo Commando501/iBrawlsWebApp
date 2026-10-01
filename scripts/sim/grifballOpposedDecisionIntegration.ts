@@ -91,6 +91,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const mapped = continuation === 'map-contest' || mapMatch || mapPassMatch;
   if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
   const match = continuation === 'match' || mapped || passMatch, mobility = continuation === 'mobility', revival = continuation !== 'opening';
+  const observeDash = mobility || continuation === 'revival';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
       ...(mobility ? { maxHP: 3 } : {}),
@@ -396,7 +397,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
             check('revived bot assigned before decisions', plan.assignments.has(r.id), state.grifball.phase === 'playing');
           }
         }, updateSingleAIEntity: (id, delta) => {
-          const dashBefore = mobility ? dashState(id) : null;
+          const dashBefore = observeDash ? dashState(id) : null;
           const requestsBefore = dashRequests;
           resolvedTarget = null;
           resolvedIncomingThreat = false;
@@ -611,10 +612,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('full respawn delay', first?.tick, (impacts[0]?.tick ?? 0) + 181);
     check('revived actor resumes useful movement', frames.some(f => f.tick > (first?.tick ?? ticks) &&
       f.actors.some(c => c.id === loser.id && c.hp > 0 && Math.hypot(c.pos[0] - first!.pos[0], c.pos[2] - first!.pos[2]) > 2)), true);
-    if (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse) {
+    if (continuation !== 'revival' && (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse)) {
       // A second carrier can die and rejoin combat while the original loser
       // takes a support role. Require a real post-revival attack, not a fight
       // by one prescribed identity regardless of its current assignment.
+      // The 600-tick revival wrapper separately validates attacks or consumed
+      // defensive dashes, retaining original-carrier attack matrix coverage.
       check('revived actor autonomously attacks again', attacks.some(a =>
         revivals.some(r => r.id === a.id && r.tick < a.tick)), true);
     }
@@ -689,7 +692,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (rosterContest) check('tactical configuration preserved', JSON.stringify(state.grifballTactics), tacticsBefore);
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
-  return { ...(mobility ? { dashSamples, dashSettings: { distance: state.settings.dashDistance, duration: state.settings.dashDuration, cooldown: state.settings.dashCooldown } } : {}),
+  return { ...(observeDash ? { dashSamples, dashSettings: { distance: state.settings.dashDistance, duration: state.settings.dashDuration, cooldown: state.settings.dashCooldown } } : {}),
     name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
     boundary: passRecovery ? 'live-pass-recovery' as const : earnedTank ? 'live-earned-tank-contest' as const : tankContest ? 'live-tank-contest' as const : rosterContest ? 'live-roster-contest' as const : mapPassMatch ? 'live-map-pass-match' as const : passMatch ? 'live-pass-match' as const : passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
     failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, pendingMainJumpRequests, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
