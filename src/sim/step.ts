@@ -11,6 +11,7 @@
  * sequence) therefore reproduces an identical state hash across runs and restarts.
  */
 
+import { validateScriptedMeleeFeedback, createScriptedMeleeFeedback, type ScriptedMeleeFeedback } from './scriptedMeleeFeedback';
 import { type UniversalSettings } from '../types';
 import { resolveRunnerThrowAllowed } from '../game/runnerBallSettings';
 import { resolveSimSettings } from './factory';
@@ -46,6 +47,8 @@ export interface StepOptions {
   scriptedPlanner?: ScriptedObjectivePlanner;
   /** Ordered commands from an explicitly owned ground combat decision. */
   scriptedCombat?: ScriptedCombatInput;
+  /** Caller-owned stationary hit-to-combo feedback, opt-in independently of movement. */
+  scriptedMeleeFeedback?: ScriptedMeleeFeedback;
 }
 
 /**
@@ -59,6 +62,9 @@ export function stepSimulation(
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
+  if (options.scriptedMeleeFeedback && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
+  validateScriptedMeleeFeedback(state, options.scriptedMeleeFeedback, settings);
+  const meleeFeedback = options.scriptedMeleeFeedback ? createScriptedMeleeFeedback(state, options.scriptedMeleeFeedback, settings) : undefined;
   if (options.scriptedCombat && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Scripted combat requires a positive finite timestep');
   if (options.scriptedObjective && options.scriptedPlanner) throw new Error('Choose either scripted objective inputs or a scripted planner');
   validateScriptedObjectivePlanner(state, options.scriptedPlanner, settings, dt);
@@ -154,11 +160,11 @@ export function stepSimulation(
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
     if (c === player || flightAdvanced?.has(c.id)) continue;
-    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete', scriptedCombat?.[c.id]);
+    if (!phasePaused.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete', scriptedCombat?.[c.id], meleeFeedback);
     // Mixed execution advances paused animations below. The roster-only profile
     // has one combined weapon phase: suppress new input, not committed clocks.
     else if (!mixedObjectiveFrame && planner?.owns(c.id))
-      stepCombatantWeapons(state, c, { ...idleAction(), aim: c.yaw }, settings, dt, kills);
+      stepCombatantWeapons(state, c, { ...idleAction(), aim: c.yaw }, settings, dt, kills, 'complete', undefined, meleeFeedback);
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
@@ -191,7 +197,7 @@ export function stepSimulation(
 
   if (mixedObjectiveFrame) {
     for (const c of state.combatants) if (c !== player && !flightAdvanced?.has(c.id))
-      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation');
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback);
     reconcileSimCarrier(state, settings);
   }
 

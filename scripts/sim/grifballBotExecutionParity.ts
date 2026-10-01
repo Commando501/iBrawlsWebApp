@@ -22,7 +22,8 @@ import type { SimCombatExecution } from '../../src/sim/simState';
 import { groundMotionAction, groundMotionIntent, stepLiveGroundMotion, type GroundMotion } from './grifballGroundMotion';
 
 const noop = () => {};
-export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target', sourceMap?: CustomMapData) {
+export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target', sourceMap?: CustomMapData,
+  tryStartComboOnHit?: Parameters<typeof applyBotMeleeImpactForState>[0]['tryStartComboOnHit']) {
   if (id === targetId) throw new Error('Parity actors must have distinct IDs');
   const map = structuredClone(sourceMap ?? defaultGrifballMap());
   const sim = createMatch({ seed: 27, teamSizes: { blue: 1, red: 1 }, settings, map });
@@ -55,7 +56,7 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
   const actions = createCombatantActionCallbacksForState({ getState: () => state, getRefs: () => refs, spawnPoints: [],
     getRosterAI: () => [...state.otherPlayers.values()], getActiveCustomMap: () => map, getOptimalSpawnPoint: () => new THREE.Vector3(),
     recordCombatantObservation: noop, onMainAIHammerSwing: noop, playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
-  const impact = (botId: string) => applyBotMeleeImpactForState({ state, botId, ...effects });
+  const impact = (botId: string) => applyBotMeleeImpactForState({ state, botId, ...effects, tryStartComboOnHit });
   const visuals = (dt: number) => updateRosterCombatantVisualsForState({ state, refs, dt, applyBotMeleeImpact: impact, renderSwordLungeTrailVfx: noop });
   const weaponFrame = (dt: number) => updateWeaponAnimationFrameForState({ state, refs, dt, mainAI: state.otherPlayers.get('main_ai'),
     getPlayerSwordLockTarget: () => null, ...impacts });

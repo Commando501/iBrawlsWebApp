@@ -49,6 +49,7 @@ export function createPlayerFrameCallbacksForState({
   recordPlayerDamageDealt,
   recordBotPsychKill,
   recordBotCalibrationDeath,
+  tryStartComboOnHit,
   evaluatePlayerKillMedals,
   executeTrade,
   applyOutgoingMultiplayerHitLocally,
@@ -108,6 +109,7 @@ export function createPlayerFrameCallbacksForState({
   recordPlayerDamageDealt: (targetWasCountering: boolean) => void;
   recordBotPsychKill: (botId: string, victimId: string, wasLungeKill: boolean) => void;
   recordBotCalibrationDeath: (botId: string) => void;
+  tryStartComboOnHit: NonNullable<Parameters<typeof applyBotMeleeImpactForState>[0]['tryStartComboOnHit']>;
   evaluatePlayerKillMedals: (victimId: string) => MedalInfo[];
   executeTrade: (reason: CombatTradeReason) => void;
   applyOutgoingMultiplayerHitLocally: (targetId: string, damage?: number) => void;
@@ -144,6 +146,7 @@ export function createPlayerFrameCallbacksForState({
       playJump,
       recordBotPsychKill,
       recordBotCalibrationDeath,
+      tryStartComboOnHit,
     });
 
   const updatePhysics = (dt: number) => {

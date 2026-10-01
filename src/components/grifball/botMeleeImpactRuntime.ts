@@ -28,6 +28,7 @@ export function applyBotMeleeImpactForState({
   playJump = () => {},
   recordBotPsychKill,
   recordBotCalibrationDeath,
+  tryStartComboOnHit,
 }: {
   state: GrifballRuntimeState;
   botId: string;
@@ -39,6 +40,7 @@ export function applyBotMeleeImpactForState({
   playJump?: () => void;
   recordBotPsychKill: (botId: string, victimId: string, wasLungeKill: boolean) => void;
   recordBotCalibrationDeath: (botId: string) => void;
+  tryStartComboOnHit?: (botId: string, targetId: string, weapon: 'hammer' | 'sword', opts?: { targetRecovering?: boolean }) => void;
 }): void {
   if (state.isMultiplayer) return;
   const bot = state.otherPlayers?.get(botId);
@@ -47,6 +49,11 @@ export function applyBotMeleeImpactForState({
   const weapon = bot.activeWeapon === 'sword' ? 'sword' : (bot.activeWeapon === 'ball' ? 'ball' : 'hammer');
   const isHammer = weapon === 'hammer';
   const isBall = weapon === 'ball';
+  const recordComboHit = (targetId: string) => {
+    if (isBall || bot.controller !== 'ai') return;
+    const melee = weapon === 'sword' || bot.weaponState === 'melee_down' || bot.weaponState === 'melee_swing';
+    tryStartComboOnHit?.(botId, targetId, weapon, melee ? { targetRecovering: true } : undefined);
+  };
   const forward = isBall
     ? resolvePunchLungeDistance(state.settings)
     : (isHammer
@@ -124,6 +131,7 @@ export function applyBotMeleeImpactForState({
     } else {
       playSwing();
       recordBotDamageTagForState({ state, botId, targetId: 'player', isMultiplayer: state.isMultiplayer });
+      recordComboHit('player');
     }
   }
 
@@ -161,6 +169,7 @@ export function applyBotMeleeImpactForState({
     } else {
       playSwing();
       recordBotDamageTagForState({ state, botId, targetId: otherId, isMultiplayer: state.isMultiplayer });
+      recordComboHit(otherId);
     }
   });
 }

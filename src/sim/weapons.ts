@@ -26,6 +26,7 @@
 import { type UniversalSettings } from '../types';
 import { resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
 import type { ScriptedCombatCommand } from './scriptedCombatInput';
+import type { RosterMeleeHitFeedback } from './scriptedMeleeFeedback';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
@@ -268,17 +269,23 @@ function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: Universa
 }
 
 /** Roster bots use a planar, body-centered splash, including sword and side-swipe. */
-function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[]): void {
+function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], feedback?: RosterMeleeHitFeedback): void {
   const reach = c.weapon === 'ball' ? resolvePunchLungeDistance(settings)
     : strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
   const radius = c.weapon === 'ball' ? GRIFBALL_PUNCH_RADIUS : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
   const fwd = forwardDir(c.yaw);
-  for (const victim of state.combatants) {
+  // Live roster impacts visit the local player before the roster, regardless of storage order.
+  const victims = state.combatExecution === 'live-mixed-v1'
+    ? [...state.combatants].sort((a, b) => Number(isMixedPlayer(state, b)) - Number(isMixedPlayer(state, a))) : state.combatants;
+  for (const victim of victims) {
     if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;
     const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
     const targetRadius = usesRosterLifecycle(state) ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
     if (Math.hypot(victim.pos.x - c.pos.x - fwd.x * reach, cy - c.pos.y - 1.2,
-      victim.pos.z - c.pos.z - fwd.z * reach) <= targetRadius) strike(state, c, victim, settings, events);
+      victim.pos.z - c.pos.z - fwd.z * reach) <= targetRadius) {
+      strike(state, c, victim, settings, events);
+      if (victim.hp > 0) feedback?.(c, victim);
+    }
   }
 }
 
@@ -289,7 +296,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
  * weaponTimer remains remaining time for existing observation consumers.
  */
 function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
-  settings: UniversalSettings, dt: number, events: KillEvent[], canAttack: boolean): void {
+  settings: UniversalSettings, dt: number, events: KillEvent[], canAttack: boolean, feedback?: RosterMeleeHitFeedback): void {
   const enter = (phase: SimCombatant['weaponState'], duration: number) => {
     c.weaponState = phase; c.weaponPhaseElapsed = 0; c.weaponTimer = duration;
   };
@@ -334,13 +341,13 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       if (c.alive && elapsed >= duration) recover();
     } else if (elapsed >= duration) {
       enter('active', strikeDuration());
-      if (c.attackKind === 'slash') resolveRosterHit(state, c, settings, events);
+      if (c.attackKind === 'slash') resolveRosterHit(state, c, settings, events, feedback);
     }
   } else if (c.weaponState === 'active') {
     const duration = strikeDuration();
     c.weaponTimer = Math.max(0, duration - elapsed);
     if (elapsed >= duration) {
-      if (roster) { if (c.attackKind !== 'slash') resolveRosterHit(state, c, settings, events); }
+      if (roster) { if (c.attackKind !== 'slash') resolveRosterHit(state, c, settings, events, feedback); }
       else if (c.attackKind === 'punch') resolvePlayerPunch(state, c, settings, events);
       else {
         resolveHammerStrike(state, c, settings, events);
@@ -528,7 +535,8 @@ export function stepCombatantWeapons(
   dt: number,
   events: KillEvent[],
   stage: 'complete' | 'intent' | 'animation' = 'complete',
-  scriptedCommands?: readonly ScriptedCombatCommand[]
+  scriptedCommands?: readonly ScriptedCombatCommand[],
+  feedback?: RosterMeleeHitFeedback
 ): void {
   if (scriptedCommands && (!usesRosterLifecycle(state) || isMixedPlayer(state, c)))
     throw new Error('Scripted combat commands require a roster actor in an explicit live roster profile');
@@ -572,7 +580,7 @@ export function stepCombatantWeapons(
           }
           if (c.weapon !== command.weapon) continue;
           c.weaponState = 'idle';
-          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true);
+          stepLiveAttack(state, c, { ...action, attackPrimary: !command.swipe, attackSecondary: command.swipe }, settings, 0, events, true, feedback);
           decisionReady = false;
         }
       }
@@ -622,12 +630,12 @@ export function stepCombatantWeapons(
   // Mixed frames commit the roster's requested action before objectives, but
   // advance skeletal melee afterward. Existing complete-step callers are unchanged.
   if (stage === 'intent') {
-    if (c.weaponState === 'idle') stepLiveAttack(state, c, action, settings, 0, events, canAttack);
+    if (c.weaponState === 'idle') stepLiveAttack(state, c, action, settings, 0, events, canAttack, feedback);
     return;
   }
 
   if ((combatExecutionForActor(state, c) === 'live-player-v1' || isRosterExecution(combatExecutionForActor(state, c))) && !(c.weaponState === 'recovering' && c.attackKind === 'none')) {
-    stepLiveAttack(state, c, action, settings, dt, events, stage !== 'animation' && canAttack);
+    stepLiveAttack(state, c, action, settings, dt, events, stage !== 'animation' && canAttack, feedback);
     return;
   }
 

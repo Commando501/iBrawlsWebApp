@@ -1116,6 +1116,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     recordPlayerDamageDealt,
     recordBotPsychKill,
     recordBotCalibrationDeath,
+    tryStartComboOnHit,
     evaluatePlayerKillMedals,
     executeTrade,
     applyOutgoingMultiplayerHitLocally,
