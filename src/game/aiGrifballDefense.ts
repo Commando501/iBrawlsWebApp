@@ -170,6 +170,18 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
       routeLength(a.botId, interception(a).point) - routeLength(b.botId, interception(b).point) : 0) ||
       routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId);
   });
+  if (emergency) {
+    const arrival = (a: GrifballAssignment) => estimateSpaceAttackTime(
+      players.find(p => p.id === a.botId)!, anchor, routeLength(a.botId, anchor));
+    const deadline = routeLength(carrier.id, goal) / Math.max(.1, carrier.space?.speed ?? 5.8);
+    // Keep a viable goal-side challenger. Override only a missed scoring deadline,
+    // rather than shuffling viable assignments for small readiness differences.
+    if (Number.isFinite(deadline) && arrival(rest[0]) > deadline) {
+      const timely = rest.filter(a => arrival(a) <= deadline)
+        .sort((a, b) => arrival(a) - arrival(b) || a.botId.localeCompare(b.botId))[0];
+      if (timely) { rest.splice(rest.indexOf(timely), 1); rest.unshift(timely); }
+    }
+  }
   if (!carrierSafety) {
     const primary = rest.shift()!, intercept = interception(primary);
     const containment = toward(projected, goal, containmentDepth);

@@ -482,6 +482,63 @@ test('1v1 last defender holds coverage then contests a goal emergency', () => {
   const a = blue(run(s))[0]; assert.equal(a.defense?.emergency, true);
   assert.equal(selectGrifballAssignmentThreat(a, s.players[0].pos, s.players), 'runner');
 });
+
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const delay of ['recovery', 'airborne'] as const)
+  test(`goal emergency assigns the ready defender before delayed closer defenders: ${mirror}/${reverse}/${delay}`, () => {
+    const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+    s.players = [p('safety', 'blue', -47), p('delayed', 'blue', -46, 1), p('ready', 'blue', -40, 2),
+      p('distant', 'blue', -36, -6), p('runner', 'red', -43), p('escort-left', 'red', -40, -8), p('escort-right', 'red', -40, 8)];
+    s.players.find(a => a.id === 'runner')!.vel.x = -5.8;
+    for (const actor of s.players.filter(a => ['safety', 'delayed'].includes(a.id))) {
+      if (delay === 'recovery') { actor.space!.phase = 'recovering'; actor.space!.attackIn = 4; }
+      else actor.space!.mobileIn = 4;
+    }
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1; actor.vel.x *= -1;
+    }
+    if (reverse) s.players.reverse();
+    const state = run(s), ready = state.assignments.get('ready')!;
+    assert.equal(ready.defense?.emergency, true);
+    assert.equal(ready.defense?.mode, 'intercept', 'the only timely challenger must not be sent to mark an escort');
+    assert.equal(ready.defense.targetId, 'runner');
+    assert.equal(selectGrifballAssignmentThreat(ready, s.players.find(a => a.id === 'ready')!.pos, s.players), 'runner');
+    assert.equal([...state.assignments.values()].filter(a => a.team === ready.team && a.defense?.mode === 'last-defender').length, 1);
+  });
+for (const allLate of [false, true])
+  test(`goal emergency retains its goal-side challenger unless a missed deadline can be rescued: allLate=${allLate}`, () => {
+    const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+    s.players = [p('safety', 'blue', -47), p('goal-side', 'blue', -46, 1), p('quicker', 'blue', -40, 2),
+      p('runner', 'red', -43), p('escort', 'red', -40, 8)];
+    s.players.find(a => a.id === 'runner')!.vel.x = -5.8;
+    s.players.find(a => a.id === 'goal-side')!.space!.attackIn = allLate ? 4 : .3;
+    s.players.find(a => a.id === 'quicker')!.space!.attackIn = allLate ? 3 : .1;
+    const state = run(s);
+    assert.equal(state.assignments.get('goal-side')!.defense?.mode, 'intercept');
+    assert.notEqual(state.assignments.get('quicker')!.defense?.mode, 'intercept');
+  });
+
+for (const cause of ['blocked-route', 'unknown-readiness'] as const)
+  test(`goal emergency excludes an unusable challenger: ${cause}`, () => {
+    const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+    s.players = [p('safety', 'blue', -47), p('delayed', 'blue', -46, 1), p('ready', 'blue', -40, 2),
+      p('runner', 'red', -43), p('escort', 'red', -40, 8)];
+    s.players.find(a => a.id === 'runner')!.vel.x = -5.8;
+    for (const actor of s.players.filter(a => ['safety', 'delayed'].includes(a.id))) actor.space!.attackIn = 4;
+    assert.equal(run(s).assignments.get('ready')!.defense?.mode, 'intercept', 'control must offer the faster challenger');
+    if (cause === 'blocked-route') {
+      // A changed layout needs its own static navigation-cache identity.
+      s.geometry = { ...s.geometry!, key: 'emergency-ready-sealed' };
+      s.geometry!.blockers = [
+        { kind: 'box', x: -41.5, z: 2, hx: .2, hz: 1.5 }, { kind: 'box', x: -38.5, z: 2, hx: .2, hz: 1.5 },
+        { kind: 'box', x: -40, z: .5, hx: 1.5, hz: .2 }, { kind: 'box', x: -40, z: 3.5, hx: 1.5, hz: .2 },
+      ];
+      assert.equal(createSpaceRouter(s.geometry!, s.players.find(a => a.id === 'ready')!.pos)(s.players.find(a => a.id === 'runner')!.pos, true).status, 'blocked');
+    } else delete s.players.find(a => a.id === 'ready')!.space;
+    const state = run(s);
+    assert.equal(state.assignments.get('delayed')!.defense?.mode, 'intercept');
+    assert.notEqual(state.assignments.get('ready')!.defense?.mode, 'intercept');
+  });
+
 test('numbers, pressure preference and reachable reinforcements control containment', () => {
   const s = scene(); s.players.push(p('extra1', 'red', 4), p('extra2', 'red', 5));
   assert.ok(blue(run(s)).some(a => a.defense?.mode === 'contain'));
