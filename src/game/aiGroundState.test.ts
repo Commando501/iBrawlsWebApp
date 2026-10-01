@@ -15,7 +15,7 @@ const reference = process.env.M7_GROUND_REFERENCE
   ? (await import(referencePath)).resolveAIGroundState : undefined;
 type Fixture = ReturnType<typeof fixture>;
 type Case = { name: string; setup: (f: Fixture) => void; state: string; events?: string[];
-  forward?: number; timer?: number; draws?: number; check?: (f: Fixture) => void };
+  forward?: number; vertical?: number; timer?: number; draws?: number; check?: (f: Fixture) => void };
 const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
 function fixture(id: string, sign: number, dt: number) {
   const settings = createMatch({ seed: 5, teamSizes: { blue: 1, red: 1 } }).settings;
@@ -126,7 +126,14 @@ const cases: Case[] = [
   { name: 'cooldown crouch retreat', setup: f => { state(f, 'COOLDOWN'); f.input.isCrouching = true; }, state: 'COOLDOWN', forward: -.675, timer: 1, draws: 0 },
   { name: 'cooldown expiry after movement', setup: f => { state(f, 'COOLDOWN'); f.input.frame.timer = 0; }, state: 'SIDE_STEPPING', forward: -1.5, timer: .7 },
   { name: 'opportunistic jump precedes ground state', setup: f => { distance(f, 7); f.rolls.push(0); f.setJump(); },
+    state: 'APPROACHING', forward: 4, vertical: 15, events: ['jump'], draws: 1, check: f => assert.equal(f.input.frame.weaponState, 'swing_up') },
+  { name: 'rejected ground jump preserves the prior vertical velocity', setup: f => { distance(f, 7); f.rolls.push(0); },
+    state: 'APPROACHING', forward: 4, events: ['jump'], draws: 1, check: f => assert.equal(f.input.frame.weaponState, 'ready') },
+  { name: 'deferred ground jump retains the prior vertical velocity until impact', setup: f => { distance(f, 7); f.rolls.push(0);
+    f.input.startOffensiveHammerJump = () => { f.record('jump'); return true; }; },
     state: 'APPROACHING', forward: 4, events: ['jump'], draws: 1, check: f => assert.equal(f.input.frame.weaponState, 'swing_up') },
+  { name: 'sword cannot request a ground hammer jump or spend its draw', setup: f => { distance(f, 7); f.rolls.push(0); f.setJump(); f.input.activeWeapon = 'sword'; },
+    state: 'APPROACHING', forward: 4, draws: 0, check: f => assert.equal(f.input.frame.weaponState, 'ready') },
   { name: 'low complexity still consumes preceding jump draw', setup: f => { distance(f, 7); f.rolls.push(0); f.input.movementComplexity = 10; }, state: 'APPROACHING', draws: 1 },
   { name: 'protected target still consumes preceding jump draw', setup: f => { distance(f, 7); f.rolls.push(0); f.input.targetIsProtected = true; }, state: 'APPROACHING', draws: 1 },
 ];
@@ -142,7 +149,7 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
     if (c.timer !== undefined) close(f.input.frame.timer!, c.timer);
     if (c.forward !== undefined) close(f.input.frame.pos.z, sign * dt * c.forward);
     if (c.draws !== undefined) assert.equal(f.draws(), c.draws);
-    close(f.input.frame.vel.y, .7); // saved before ground movement, including a newly selected jump
+    close(f.input.frame.vel.y, c.vertical ?? .7); // preserve a new launch; otherwise restore the earlier vertical motion
     c.check?.(f);
     if (reference) {
       const old = fixture(id, sign, dt); c.setup(old);

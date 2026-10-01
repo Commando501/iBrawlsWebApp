@@ -64,7 +64,7 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
       sway: 0, standoff: 1, pendingPostEvasionCharge: false, draws: 0 });
     const lm = memory(), sm = memory(), rm = memory();
     const nav = {}, replayNav = {};
-    let restored = JSON.parse(JSON.stringify(sim)), attacks = 0, jumps = 0, groundCalls = 0, maximumSide = 0;
+    let restored = JSON.parse(JSON.stringify(sim)), attacks = 0, jumps = 0, groundCalls = 0, maximumSide = 0, maximumHeight = 0;
     const liveFrame = { pos: bot.pos, vel: bot.vel, dashDir: new THREE.Vector3(0, 0, sign), aiState: lm.aiState,
       timer: lm.timer, weaponState: bot.weaponState!, dashRemaining: actor.dashRemaining, dashCooldownTimer: actor.dashCooldownTimer,
       slideActive: false, slideDistanceTraveled: 0, slideCooldownTimer: 0, isSprinting: false };
@@ -174,12 +174,18 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
       assert.equal(actor.aiSlideDistanceTraveled ?? 0, liveFrame.slideDistanceTraveled);
       assert.equal(actor.hammerJumpsInAir, bot.aiHammerJumpsInAir ?? 0);
       maximumSide = Math.max(maximumSide, Math.abs(actor.pos.x));
+      maximumHeight = Math.max(maximumHeight, actor.pos.y);
       if (kind.startsWith('wall') && actor.pos.y < 3)
         assert.ok(!(Math.abs(actor.pos.x) < 1.5 && Math.abs(actor.pos.z - sign * 6) < .5), 'ground route must not enter the wall');
       if (tick === 1 && ['airborne', 'pending-dash'].includes(kind)) assert.equal(groundCalls, 0, 'recovery/dash must skip ground policy');
     }
     if (['charge', 'pressure'].includes(kind)) { assert.ok(attacks > 0); assert.ok(target.hp < 20, 'ground attacks must cause actual damage'); }
-    if (kind === 'ground-jump') assert.ok(jumps > 0);
+    if (kind === 'ground-jump') {
+      if (weapon === 'hammer') {
+        assert.ok(jumps > 0); assert.ok(maximumHeight > 4, 'selected hammer jump must produce real upward flight');
+        assert.equal(actor.pos.y, 0, 'jump must complete and land'); assert.equal(actor.hammerJumpsInAir, 0);
+      } else { assert.equal(jumps, 0, 'sword must not request a hammer jump'); assert.equal(maximumHeight, 0); }
+    }
     assert.ok(groundCalls > 0);
     if (kind.startsWith('wall')) assert.ok(maximumSide > 1.5, 'route must actually go around the wall');
   });

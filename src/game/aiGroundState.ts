@@ -94,8 +94,13 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
   const { pos, vel, dashDir } = frame;
   let { aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer, slideActive,
     slideDistanceTraveled, slideCooldownTimer, isSprinting } = frame;
-  if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
+  let groundJumpVelocity: number | undefined;
+  if (activeWeapon === 'hammer' && weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
+    const previousVerticalVelocity = vel.y;
     if (startOffensiveHammerJump(lookHeading)) {
+      // Ordinary bots launch immediately. Main AI only schedules its impulse
+      // for impact, so retain the existing vertical motion when it did not change.
+      if (vel.y !== previousVerticalVelocity) groundJumpVelocity = vel.y;
       weaponState = 'swing_up';
     }
   }
@@ -418,8 +423,8 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
     }
   }
 
-  // Restore vertical velocity after FSM horizontal movement calculations
-  vel.y = savedVelY;
+  // Horizontal steering must not erase a launch selected during this ground turn.
+  vel.y = groundJumpVelocity ?? savedVelY;
 
   return Object.assign(frame, { aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer,
     slideActive, slideDistanceTraveled, slideCooldownTimer, isSprinting });
