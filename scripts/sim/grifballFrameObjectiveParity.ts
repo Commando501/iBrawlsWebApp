@@ -30,14 +30,15 @@ export const FRAME_OBJECTIVE_CASES: FrameObjectiveCase[] = [false, true].flatMap
 export interface ChargeCombatCase { releaseAt: number | null; shield: boolean; moving: boolean; recovery?: 'hold' | 'repress' }
 export interface CarrierRecoveryCase { motion: 'stationary' | 'cross' | 'retreat'; escortHp: 1 | 3; attackAt: 1 | 12 }
 export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; pickup: 'tie' | 'nearer-escort'; recovery?: CarrierRecoveryCase }
-export interface RunnerCombatCase { airborne?: { runnerHeight: number; runnerVelocityY: number; attackerHeight: number; attackerVelocityY: number }; secondAttack?: 'slash' | 'lunge'; motion?: 'retreat' | 'cross' | 'approach'; mainAttacker?: boolean; attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
+export interface RunnerCombatCase { airborne?: { runnerHeight: number; runnerVelocityY: number; attackerHeight: number; attackerVelocityY: number }; secondAttack?: 'slash' | 'lunge'; motion?: 'retreat' | 'cross' | 'approach'; mainAttacker?: boolean; mainRunner?: boolean; attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
 export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase, crowd?: CarrierCrowdCase, runnerCombat?: RunnerCombatCase) {
   if (runnerCombat && (spec.goal || charge || crowd)) throw new Error('Runner combat requires an off-goal runner');
   if (runnerCombat?.airborne && (!spec.player || runnerCombat.attack !== 'lunge' || runnerCombat.counter || runnerCombat.secondAttack))
     throw new Error('Airborne runner flight requires one committed attacker and local movement without a counter');
   if (crowd && (charge || spec.goal)) throw new Error('Carrier crowd fixture requires an off-goal runner without pass input');
   if (crowd?.recovery?.motion && crowd.recovery.motion !== 'stationary' && !spec.player) throw new Error('Moving recovery requires a local player runner');
-  const f = lungeFixture(runnerCombat?.mainAttacker ? 'main_ai' : 'attacker', false), { state, sim, bot, target, refs, map } = f;
+  if (runnerCombat?.mainRunner && (spec.player || runnerCombat.mainAttacker)) throw new Error('Main runner requires a distinct roster attacker');
+  const f = lungeFixture(runnerCombat?.mainAttacker ? 'main_ai' : 'attacker', false, runnerCombat?.mainRunner ? 'main_ai' : 'target'), { state, sim, bot, target, refs, map } = f;
   const [attacker, runner] = sim.combatants;
   attacker.id = bot.id; attacker.controller = 'ai'; runner.id = target.id;
   sim.combatExecution = 'live-mixed-v1'; sim.localPlayerId = 'player';
@@ -93,7 +94,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     collectors[0][0].hp = collectors[0][0].maxHp = collectors[0][1].hp = collectors[0][1].maxHp = crowd.recovery.escortHp;
   }
   if (runnerCombat?.secondAttack) {
-    if (!spec.player || runnerCombat.attack === 'none') throw new Error('Moving focus fire requires a local carrier and two attacks');
+    if (runnerCombat.attack === 'none') throw new Error('Moving focus fire requires two attacks');
     const [support, simSupport] = addParityActor(f, 'support', attackerTeam, attacker.pos.x, attacker.pos.z);
     support.yaw = bot.yaw; simSupport.yaw = attacker.yaw;
     support.activeWeapon = simSupport.weapon = 'sword';
