@@ -73,6 +73,6 @@ export function resolveSimGrifballCombatPriorities(state: ComboArgs[0], botId: s
     [ai.weaponSwapFeintTimers, combo.weaponFeintMemory!.swapRemaining]] as const) {
     if (value === undefined) map.delete(botId); else map.set(botId, value);
   }
-  return { decision, combo, evasion, weaponFrame: evasion?.weaponFrame ?? combo.weaponFrame,
+  return { actorId: botId, tick: state.tick, decision, combo, evasion, weaponFrame: evasion?.weaponFrame ?? combo.weaponFrame,
     mode: combo.frame.mode, targetId: combo.targetId };
 }
