@@ -104,6 +104,8 @@ export interface SimCombatant {
   dashRemaining: number;
   dashDir: Vec3;
   slideActive: boolean;
+  /** Explicit ground AI slide distance; absent in legacy snapshots. */
+  aiSlideDistanceTraveled?: number;
   slideCooldownTimer: number;
   isSprinting: boolean;
 

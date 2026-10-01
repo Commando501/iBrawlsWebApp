@@ -565,7 +565,7 @@ export function stepCombatantWeapons(
   feedback?: RosterMeleeHitFeedback,
   lungeFeedback?: RosterLungeFeedback,
   swapTimersAdvanced = false,
-  engagement?: { beforeAttack?: () => void; sequentialOpportunities?: boolean }
+  engagement?: { beforeAttack?: () => void; sequentialOpportunities?: boolean; groundReadyOverride?: boolean }
 ): void {
   if (engagement && (stage !== 'intent' || !scriptedCommands || state.combatExecution !== 'live-mixed-v1' || isMixedPlayer(state, c)))
     throw new Error('Engagement commits require scheduled roster command intent');
@@ -654,6 +654,10 @@ export function stepCombatantWeapons(
         }
       }
       applyMobility();
+      // A later ground priority may retain ready locals after an accepted swap
+      // or an attack committed in this turn. Merely attempting a refused command
+      // must not authorize replacing an attack that was already in progress.
+      if (engagement) engagement.groundReadyOverride = decisionReady || committedHere;
     }
 
     // Weapon swap (hammer <-> sword): blocked while carrying the ball, mid-action, or on lockout.

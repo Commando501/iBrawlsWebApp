@@ -1,3 +1,4 @@
+import { validateScriptedAIGroundOwner, type ScriptedAIGroundOwner, type ScriptedAIGroundFeedback } from './scriptedAIGround';
 import type { UniversalSettings } from '../types';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { ActionInput } from './actions';
@@ -11,7 +12,7 @@ export type ScriptedDecisionClockPhase = 'before-swap-tick' | 'after-swap-tick';
 export const remainingDecisionSwapTime = (remaining: number, dt: number, phase: ScriptedDecisionClockPhase) =>
   Math.max(0, remaining - (phase === 'after-swap-tick' ? 0 : dt));
 
-export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand; dash?: ScriptedAIDashDecision }
+export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand; dash?: ScriptedAIDashDecision; ground?: ScriptedAIGroundOwner }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -34,6 +35,7 @@ export interface ScriptedActorDecisionRecord {
   motionPhase?: 'after-engagement-gravity';
   mobility?: ScriptedAIMobilityCommand['kind'];
   dash?: ScriptedAIDashFeedback;
+  ground?: ScriptedAIGroundFeedback;
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -70,6 +72,10 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   if (action.aimPitch !== undefined && !Number.isFinite(action.aimPitch)) throw new Error(`Invalid actor pitch: ${id}`);
   if (action.attackSecondary && state.combatants.find(c => c.id === id)?.weapon === 'sword')
     throw new Error(`Scheduled sword lunges require target-locked commands: ${id}`);
+  const ground = decision.ground === undefined ? undefined : validateScriptedAIGroundOwner(decision.ground, engagementPrepared,
+    decision.movement !== undefined || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash ||
+    action.attackPrimary || action.attackSecondary || action.swapWeapon || action.pickup || action.passCharge !== 0 ||
+    !!decision.commands?.length && !['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? ''));
   const actions = { [id]: action };
   const otherMovement = decision.movement !== undefined;
   const incompatibleCommands = (decision.commands?.length ?? 0) > 0 && !['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '');
@@ -84,5 +90,5 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
   }, actions, settings, engagementPrepared ? { actorId: id, mobility: !!mobility, dash: !!dash } : undefined)![id];
-  return { kind: 'handled', action: { ...action }, ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
+  return { kind: 'handled', action: { ...action }, ...(ground ? { ground } : {}), ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

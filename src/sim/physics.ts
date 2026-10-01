@@ -1,3 +1,4 @@
+import type { ScriptedAIGroundFeedback } from './scriptedAIGround';
 /**
  * Headless movement integration — a port of the player/AI movement core from
  * `GrifballGame.updatePhysics` (lines ~5740–5937). One {@link ActionInput} drives one
@@ -78,7 +79,8 @@ export function stepCombatantMovement(
   objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent,
   cooldownsAdvanced = false,
   engagementPrepared = false,
-  dashDecision?: ScriptedAIDashDecision
+  dashDecision?: ScriptedAIDashDecision,
+  ground?: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback }
 ): ScriptedAIDashFeedback | undefined {
   if (!c.alive) return;
   const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
@@ -116,6 +118,7 @@ export function stepCombatantMovement(
   c.yaw = normalizeYaw(action.aim);
   // Live local inputs allow crouching in flight; other profiles keep grounded-only stance.
   c.isCrouching = action.crouch && (engagementPrepared || playerView || !c.isJumping);
+  const savedVelY = c.vel.y;
   if (engagementPrepared && finishSimAIEngagementMotion(state, c, settings, dt)) return;
   if (engagementPrepared && c.dashRemaining > 0 && dashDecision) {
     const frame: AIDashMotionFrame = { pos: c.pos, vel: c.vel, dashDir: c.dashDir, aiState: dashDecision.aiState,
@@ -128,6 +131,7 @@ export function stepCombatantMovement(
     finishAIHorizontalMotion(c, frame);
     return { pendingPostEvasionCharge: frame.pendingPostEvasionCharge, aiState: frame.aiState };
   }
+  if (engagementPrepared && ground) { ground.completed = ground.execute(savedVelY); return; }
   const isRunner = c.hasBall || c.weapon === 'ball';
 
   // Dash trigger (tap): only when grounded-ready and off cooldown.

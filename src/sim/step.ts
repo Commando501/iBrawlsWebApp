@@ -1,3 +1,4 @@
+import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGroundFeedback } from './scriptedAIGround';
 /**
  * `stepSimulation` — one fixed simulation tick (dt = 1/60 s). The legacy profiles
  * use actions → movement → weapons/damage → passes → grifball
@@ -175,8 +176,9 @@ export function stepSimulation(
   for (const c of state.combatants) {
     if (c === player) continue;
     let engagementPrepared = false;
+    let groundOwner: ScriptedAIGroundOwner | undefined;
     let dashDecision: ScriptedAIDashDecision | undefined;
-    let engagementCommit: { beforeAttack?: () => void; sequentialOpportunities?: boolean } | undefined;
+    let engagementCommit: { beforeAttack?: () => void; sequentialOpportunities?: boolean; groundReadyOverride?: boolean } | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -211,7 +213,7 @@ export function stepSimulation(
           throw new Error(`Engagement decisions require a scripted AI dash owner: ${c.id}`);
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
-          dashDecision = decision.dash;
+          dashDecision = decision.dash; groundOwner = decision.ground;
           if (['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = { sequentialOpportunities: decision.commandVersion === 'scripted-combat-v6' };
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
@@ -243,7 +245,10 @@ export function stepSimulation(
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id), engagementCommit);
       if (c.isLunging) continue;
     }
-    const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision);
+    const groundExecution: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback } | undefined = groundOwner
+      ? { execute: savedVelY => executeScriptedAIGround(state, c, settings, dt, savedVelY, groundOwner!, !!engagementCommit?.groundReadyOverride) } : undefined;
+    const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision, groundExecution);
+    if (groundExecution?.completed) actorDecisions[actorDecisions.length - 1].ground = groundExecution.completed;
     if (dashFeedback) actorDecisions[actorDecisions.length - 1].dash = dashFeedback;
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
