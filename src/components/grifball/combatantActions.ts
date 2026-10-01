@@ -1,4 +1,5 @@
 import { simulationTimestamp } from '../../game/simulationRandom';
+import { resolveAIWeaponSwapTimers } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type UniversalSettings } from '../../types';
@@ -145,12 +146,9 @@ export const swapCombatantWeaponAction = ({
   self.activeWeapon = type;
   recordWeaponSwap(self.id, type);
   if (setLockout) {
-    if (settings.weaponSwapLockout > 0) {
-      self.swapLockoutTimer = settings.weaponSwapLockout;
-    }
-    if (settings.weaponReadyTime > 0) {
-      self.swapCooldownTimer = settings.weaponReadyTime;
-    }
+    const timers = resolveAIWeaponSwapTimers(settings, self.swapLockoutTimer ?? 0, self.swapCooldownTimer ?? 0);
+    self.swapLockoutTimer = timers.lockout;
+    self.swapCooldownTimer = timers.readiness;
   }
   if (weaponMeshes && weaponMeshes.hammer && weaponMeshes.sword) {
     weaponMeshes.hammer.visible = type === 'hammer';

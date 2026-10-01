@@ -1,4 +1,5 @@
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
+import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
 import { resolveAICombatDangerZone, type AILungeOutcome } from '../../game/aiCombatDecision';
 import {
@@ -921,12 +922,8 @@ export function createAISingleEntityUpdaterForState({
         teamAssignment?.tuning?.enabled === true && teamAssignment.defense?.targetId === s.grifball.ball.holderId &&
         (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.mode === 'last-defender' || teamAssignment.defense.emergency);
       const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
-        if (tacticalWeapon === activeWeapon) return;
-        // A new weapon choice must not erase the strike we committed to stop the runner.
-        if (carrierInterception && ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState)) return;
-        if (tacticalWeapon === 'sword' && swordForbidden) return;
-        if (tacticalWeapon === 'hammer' && hammerForbidden) return;
-        if (!force && (self.swapLockoutTimer ?? 0) > 0) return;
+        if (!canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon: tacticalWeapon, weaponState,
+          carrierInterception, swordForbidden, hammerForbidden, force, swapLockoutTimer: self.swapLockoutTimer ?? 0 })) return;
         swapCombatantWeapon(self, tacticalWeapon, true);
         activeWeapon = tacticalWeapon;
         weaponState = 'ready';

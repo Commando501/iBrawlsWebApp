@@ -24,6 +24,7 @@
  */
 
 import { type UniversalSettings } from '../types';
+import { resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
@@ -547,8 +548,14 @@ export function stepCombatantWeapons(
     // A swap makes the new weapon un-ready for `weaponReadyTime` before it can fire.
     if (action.swapWeapon && !c.isLunging && c.weapon !== 'ball' && c.weaponState === 'idle' && c.swapLockoutTimer <= 0) {
       c.weapon = c.weapon === 'hammer' ? 'sword' : 'hammer';
-      c.swapLockoutTimer = settings.weaponSwapLockout ?? 1.0;
-      c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
+      if (isRosterExecution(combatExecutionForActor(state, c))) {
+        const timers = resolveAIWeaponSwapTimers(settings, c.swapLockoutTimer, c.weaponReadyTimer);
+        c.swapLockoutTimer = timers.lockout;
+        c.weaponReadyTimer = timers.readiness;
+      } else {
+        c.swapLockoutTimer = settings.weaponSwapLockout ?? 1.0;
+        c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
+      }
       if (isMixedPlayer(state, c) && c.weapon === 'sword' && c.playerSwordLungeRecovery) {
         const recovery = c.playerSwordLungeRecovery;
         c.weaponPhaseElapsed = recovery.elapsed;
