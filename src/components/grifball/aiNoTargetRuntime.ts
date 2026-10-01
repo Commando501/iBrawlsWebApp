@@ -5,16 +5,16 @@ import { type GrifballAwarenessPoint } from './grifballAITeamAwareness';
 import {
   resolveSupportGrifballAIObjectiveMovementForCombatant,
   type GrifballAIObjectiveFrame,
+  type GrifballAIObjectiveState,
 } from './grifballAIObjectiveMovement';
 import { type GrifballCombatantRef } from './grifballObjectiveRuntime';
 import {
   resolveNoTargetSpawnGuardForCombatant,
 } from './aiSpawnGuardRuntime';
-import { type GrifballRuntimeState } from './runtimeState';
 
 export type AINoTargetResolutionMode = 'airborne' | 'support_objective' | 'spawn_guard';
 
-export function resolveNoTargetAIFrameForCombatant({
+export function resolveNoTargetAIFrameForCombatant<TSelf extends Pick<Combatant, 'isLunging' | 'isJumping' | 'aiHammerJumpsInAir' | 'aiDashRemaining'>>({
   state,
   botId,
   self,
@@ -34,11 +34,11 @@ export function resolveNoTargetAIFrameForCombatant({
   getCombatantRef,
   getEnemyGoalPos,
 }: {
-  state: GrifballRuntimeState;
+  state: GrifballAIObjectiveState & { arenaRadius: number };
   botId: string;
-  self: Combatant;
+  self: TSelf;
   frame: GrifballAIObjectiveFrame;
-  mainAI: Combatant | undefined;
+  mainAI: Pick<Combatant, 'hp' | 'aiState' | 'pos'> | undefined;
   alliesList: GrifballAwarenessPoint[];
   spatialIQ: number;
   edgeInset: number;
@@ -46,7 +46,7 @@ export function resolveNoTargetAIFrameForCombatant({
   activeCustomMap: CustomMapData | null;
   gravityAcceleration: number;
   finishSwordLungeTargetDead: () => void;
-  recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
+  recoverCombatantAltitude: (self: TSelf, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
   getOptimalSpawnPoint: (excludePositions: THREE.Vector3[]) => THREE.Vector3;
   getCombatantTeam: (id: string) => string | undefined;

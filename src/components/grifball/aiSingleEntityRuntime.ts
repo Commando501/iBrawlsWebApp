@@ -678,6 +678,9 @@ export function createAISingleEntityUpdaterForState({
             // Reload/recovery mirrors the player's configured mechanic settings exactly
             // (multiplier 1) - see cooldownMult below.
             finishSwordLunge(1, 'target_dead', undefined);
+            // The no-target frame was captured before cancellation. Retain the
+            // new reload locals through airborne/support recovery and final sync.
+            Object.assign(noTargetFrame, { aiState: state, timer, weaponState });
           },
           recoverCombatantAltitude,
           constrainCombatantToArena,

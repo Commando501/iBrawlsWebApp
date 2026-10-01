@@ -4,7 +4,7 @@ import {
   scorePosition,
 } from '../../game/aiSpatialStrategy';
 import { type AIBehaviorState, type Combatant, type CustomMapData } from '../../types';
-import { type GrifballRuntimeState } from './runtimeState';
+import type { GrifballAIObjectiveState } from './grifballAIObjectiveMovement';
 
 export interface AISpawnGuardFrame {
   pos: THREE.Vector3;
@@ -26,9 +26,9 @@ export function resolveNoTargetSpawnGuardForCombatant({
   getOptimalSpawnPoint,
   constrainCombatantToArena,
 }: {
-  state: GrifballRuntimeState;
+  state: GrifballAIObjectiveState & { arenaRadius: number };
   botId: string;
-  mainAI: Combatant | undefined;
+  mainAI: Pick<Combatant, 'hp' | 'aiState' | 'pos'> | undefined;
   frame: AISpawnGuardFrame;
   spatialIQ: number;
   edgeInset: number;

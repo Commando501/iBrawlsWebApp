@@ -425,6 +425,14 @@ function resolveLungeHit(
   }
 }
 
+/** Intent clocks are independent of flight resolution. No-target recovery uses
+ * this boundary before cancelling flight, so cancellation cannot cause contact. */
+export function tickWeaponIntentTimers(c: SimCombatant, dt: number, swapTimersAdvanced = false): void {
+  if (!swapTimersAdvanced) tickWeaponSwapTimers(c, dt);
+  if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
+  if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
+}
+
 /** Committed roster flight: one locked target, one contact, elapsed timeout and AI cooldown. */
 function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback): void {
   c.lungeTimer += dt;
@@ -582,9 +590,7 @@ export function stepCombatantWeapons(
   }
 
   if (stage !== 'animation') {
-    if (!swapTimersAdvanced) tickWeaponSwapTimers(c, dt);
-    if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
-    if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
+    tickWeaponIntentTimers(c, dt, swapTimersAdvanced);
 
     if (scriptedCommands) {
       // The AI owner already checked its decision cooldown. Preserve live swap

@@ -13,6 +13,7 @@ import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGro
  */
 
 import { prepareSimAIEngagementMotion } from './aiEngagementMotion';
+import { executeScriptedAINoTarget, type ScriptedAINoTargetOwner } from './scriptedAINoTarget';
 import { beginAICoordinationFrame } from '../game/aiCoordinationFrame';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import { validateScriptedCoordination, type ScriptedCoordination } from './scriptedCoordination';
@@ -26,7 +27,7 @@ import { type SimState } from './simState';
 import { type ActionsById, idleAction } from './actions';
 import { createRng, type Rng } from './rng';
 import { stepCombatantMovement, tickMovementCooldowns, normalizeYaw } from './physics';
-import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, tickWeaponSwapTimers, type KillEvent } from './weapons';
+import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, tickWeaponSwapTimers, tickWeaponIntentTimers, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 import { validateScriptedObjectiveInput, type ScriptedObjectiveInput } from './scriptedObjectiveInput';
@@ -190,6 +191,7 @@ export function stepSimulation(
     if (c === player) continue;
     let engagementPrepared = false;
     let groundOwner: ScriptedAIGroundOwner | undefined;
+    let noTargetOwner: ScriptedAINoTargetOwner | undefined;
     let dashDecision: ScriptedAIDashDecision | undefined;
     let engagementCommit: { beforeAttack?: () => void; sequentialOpportunities?: boolean; groundReadyOverride?: boolean } | undefined;
     const scheduled = ownsDecision(c.id);
@@ -231,6 +233,7 @@ export function stepSimulation(
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
           dashDecision = decision.dash; groundOwner = decision.ground;
+          noTargetOwner = decision.noTarget;
           if (['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = { sequentialOpportunities: decision.commandVersion === 'scripted-combat-v6' };
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
@@ -249,6 +252,14 @@ export function stepSimulation(
         c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
         c.vel.x = c.vel.y = c.vel.z = 0;
       }
+      continue;
+    }
+    if (noTargetOwner) {
+      tickWeaponIntentTimers(c, dt, swapTimersAdvanced.has(c.id));
+      const feedback = executeScriptedAINoTarget(state, c, settings, dt, noTargetOwner);
+      actorDecisions[actorDecisions.length - 1].noTarget = feedback;
+      resolvedActions[c.id] = { ...act(c.id), aim: c.yaw, pickup: feedback.pickupRequested };
+      completeTurn(actorDecisions[actorDecisions.length - 1]);
       continue;
     }
     // Scripted policy commits before movement. In particular a newly accepted

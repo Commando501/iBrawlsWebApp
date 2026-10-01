@@ -4,7 +4,7 @@ import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { getGrifballSpaceWaypoint } from '../../game/aiGrifballSpace';
 import { resolveDirectionalSpeedMultiplier, resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { getYawForHeading } from '../../game/yaw';
-import { type AIBehaviorState, type WeaponState } from '../../types';
+import { type AIBehaviorState, type WeaponState, type Combatant } from '../../types';
 import { type GrifballAwarenessPoint } from './grifballAITeamAwareness';
 import { type GrifballCombatantRef } from './grifballObjectiveRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -23,6 +23,12 @@ export interface GrifballAIObjectiveFrame {
 
 type CombatantLike = any;
 type GroundConstraint = (pos: THREE.Vector3, vel: THREE.Vector3) => void;
+
+export type GrifballAIObjectiveState = Pick<GrifballRuntimeState, 'settings' | 'grifball' |
+  'playerHP' | 'playerRespawnTimer' | 'isObserverMode' | 'localPlayerTeam' | 'playerPos' | 'playerInvulnerabilityTimer'> & {
+  aiMatchContext: Pick<GrifballRuntimeState['aiMatchContext'], 'grifballTeamPlan'>;
+  otherPlayers: ReadonlyMap<string, Pick<Combatant, 'id' | 'hp' | 'respawnTimer' | 'team' | 'pos' | 'invulnerabilityTimer'>>;
+};
 
 const settleAsApproaching = (
   frame: GrifballAIObjectiveFrame,
@@ -56,7 +62,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   constrainCombatantToArena,
   getEnemyGoalPos,
 }: {
-  state: GrifballRuntimeState;
+  state: GrifballAIObjectiveState;
   botId: string;
   self: CombatantLike;
   frame: GrifballAIObjectiveFrame;
@@ -142,7 +148,7 @@ export function resolveSupportGrifballAIObjectiveMovementForCombatant({
   getCombatantRef,
   getEnemyGoalPos,
 }: {
-  state: GrifballRuntimeState;
+  state: GrifballAIObjectiveState;
   botId: string;
   self: CombatantLike;
   frame: GrifballAIObjectiveFrame;

@@ -3374,3 +3374,31 @@ The focused gate/coordinator/scheduler bundle passes 123/123 in 1.07 seconds (ou
 The broader 107-file regression bundle passes 9,684/9,684 in 136.02 seconds (output/m7-coordinated-attack-regressions.log; exact file list in output/m7-coordinated-attack-test-files.json). TypeScript and isolated client/server builds pass (output/m7-coordinated-attack-typecheck.log and output/m7-coordinated-attack-build.log; Vite 66 seconds, existing chunk-size warning).
 
 Remaining automatic work includes no-target recovery and full target/combo/evasion/ground/lifecycle composition, autonomous opposed completion, known contested-opening/revival/map failures, frozen-baseline/held-out quality/generalization and final-source performance. Human review follows that work. No browser, aggregate or opposed rerun is claimed. M7 is not yet human-only.
+
+## 2026-10-01 - share no-target cancellation and recovery
+
+The exclusive scripted-ai-no-target-v1 owner executes the live no-target branch before engagement gravity or ordinary movement. It cancels committed sword flight with target_dead and the full configured reload, cancels dash, then resolves airborne recovery, objective-support retry or spawn guarding. Authored map spawns retain precedence over the supplied fallback ring. The owner receives explicit AI memory, team plan, player models and observer/spatial settings; completed memory is returned for adoption before later roster actors. Model feedback is written to the owned context immediately. Conflicting movement/command owners and invalid contexts reject.
+
+This uncovered and fixes a live cached-frame bug: the no-target frame was constructed before lunge cancellation, so its old AI state/timer/weapon state could overwrite the fresh reload during airborne or support recovery. The cancellation callback now refreshes that frame. The simulator separately ticks intent clocks before cancellation without resolving flight, preventing a lost-target lunge from making one final contact or spending its newly assigned reload immediately.
+
+Forty-four new controls include twenty-four paired 90-frame traces (2,160 frames per uninterrupted/restored host), covering main and ordinary bots, 30/60 Hz, dash cancellation, airborne/landing lunge cancellation, altitude recovery and support retries. Each turn compares physical movement, AI memory and models with the live functions; structured-clone checkpoints preserve Maps and non-finite planner values. Further controls check actual cancellation before contact, full reload, later-actor visibility, conflicting owners and invalid requests. Four added live updater controls cover both bot identities on ground and in air. These are controlled no-target traces, not autonomous opposed matches.
+
+The focused bundle passes 186/186 in 2.23 seconds (output/m7-no-target-focused.log). Removing the live cached-frame fix causes two failures in the eight-test live cooldown bundle (output/m7-no-target-negative-reload.log; 0.528 seconds). Replacing the clock-only boundary with ordinary weapon intent execution fails the selected cancellation/contact control (output/m7-no-target-negative-contact.log; 43 intentionally filtered, 0.582 seconds). Both mutations were restored.
+
+The final 110-file regression bundle passes 9,742/9,742 in 149.09 seconds (output/m7-no-target-regressions.log; exact file list in output/m7-no-target-test-files.json). TypeScript and isolated client/server builds pass (output/m7-no-target-typecheck.log and output/m7-no-target-build.log; Vite 57.77 seconds, existing chunk-size warning). Both repository test commands register the new test file. No current-source browser, aggregate quality or autonomous opposed rerun is claimed.
+
+### Remaining-work checkpoint
+
+M7 is still in automated integration and acceptance. The shared policy/execution adapters and validation infrastructure are substantially built, but their component checks do not yet establish complete autonomous match behavior or improvement against the frozen baseline. The existing Quick CI workflow is a regression gate, explicitly not M7 acceptance. Historical performance/browser runs must be repeated against the final source.
+
+Planning estimate after this slice: 10-14 further substantial slices across seven workstreams, not a guaranteed countdown:
+
+- Complete autonomous per-turn orchestration, remaining clocks/priorities/model/calibration ownership: 2-3.
+- Complete death, respawn, round/match reset and checkpoint ownership: 1.
+- Establish genuine opposed full-match completion: 1-2.
+- Resolve and rerun known contested-opening, map, revival and dash cases: 2-3.
+- Produce frozen-baseline and held-out quality/generalization evidence: 2.
+- Run final-source serial performance acceptance: 1.
+- Complete final repository/browser/CLI-Lab acceptance verification and reports: 1-2.
+
+The main uncertainty is how many behavioral fixes autonomous matches and baseline comparisons uncover. Human-only readiness requires these automated gates to pass with retained current-source evidence. Human testing then assesses tactical readability, escort/spacing feel, fairness and enjoyment, with any discovered bugs returned to implementation.

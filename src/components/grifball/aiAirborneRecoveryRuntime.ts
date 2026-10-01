@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type Combatant } from '../../types';
 
-export function recoverAirborneCombatantForFrame({
+export function recoverAirborneCombatantForFrame<TSelf extends Pick<Combatant, 'isJumping' | 'aiHammerJumpsInAir'>>({
   self,
   pos,
   vel,
@@ -10,12 +10,12 @@ export function recoverAirborneCombatantForFrame({
   recoverCombatantAltitude,
   constrainCombatantToArena,
 }: {
-  self: Combatant;
+  self: TSelf;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   dt: number;
   gravityAcceleration: number;
-  recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
+  recoverCombatantAltitude: (self: TSelf, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 }): boolean {
   if (!self.isJumping && pos.y <= 0.01 && Math.abs(vel.y) <= 0.01) {
