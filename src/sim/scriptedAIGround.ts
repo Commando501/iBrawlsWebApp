@@ -8,6 +8,18 @@ import type { AIBehaviorState, UniversalSettings } from '../types';
 import type { SimCombatant, SimState } from './simState';
 import type { TacticalAIMemory } from './grifballTacticalWeaponChoice';
 import { observeSimTacticalWeaponTarget } from './grifballTacticalWeaponChoice';
+import { resolveAIGroundAttackOpportunityForCombatant, type AIGroundAttackOpportunityResult } from '../components/grifball/aiGroundAttackOpportunityRuntime';
+import { canApplyAITacticalWeaponSwap, resolveAIWeaponSwapTimers } from '../game/aiTacticalWeaponSwap';
+import { startSimRosterLunge } from './weapons';
+
+type OpportunityInput = Parameters<typeof resolveAIGroundAttackOpportunityForCombatant>[0];
+/** Observations retained from before earlier priorities, plus caller-owned memory
+ * effects. Shared range/readiness/navigation locals come from the ground policy. */
+export type ScriptedAIGroundOpportunity = Pick<OpportunityInput,
+  'targetAirborne' | 'enemyInKillRange' | 'selfGrounded' | 'swordForbidden' |
+  'swapLockoutRemaining' | 'swapFeintActive' | 'comboActive' | 'lungeDistanceToTarget' |
+  'hasVerticalLungeLine' | 'combatDistanceToTarget' | 'aggressiveLungeMult' | 'tuning' |
+  'startWeaponSwapFeintTimer' | 'getTargetPlayerModel' | 'recordCombatantObservation'> & { hammerForbidden: boolean };
 
 type EngineFields = 'settings' | 'frame' | 'target' | 'botHP' | 'botId' | 'dt' | 'savedVelY' |
   'startOffensiveHammerJump' | 'playDash' | 'triggerCombatantAttack';
@@ -18,6 +30,7 @@ export interface ScriptedAIGroundRequest {
   /** Current turn's cached decision locals, after earlier priorities and timer tick. */
   memory: Pick<AIGroundStateInput['frame'], 'aiState' | 'timer' | 'weaponState' | 'isSprinting'>;
   policy: ScriptedAIGroundPolicy;
+  opportunity?: ScriptedAIGroundOpportunity;
 }
 export interface ScriptedAIGroundOwner {
   version: 'scripted-ai-ground-v1';
@@ -30,7 +43,8 @@ export interface ScriptedAIGroundFeedback {
   timer: number | undefined;
   weaponState: AIGroundStateInput['frame']['weaponState'];
   standoffTimer: number;
-  actions: ('hammer-jump' | 'attack-hammer' | 'attack-sword' | 'dash')[];
+  actions: ('hammer-jump' | 'attack-hammer' | 'attack-sword' | 'dash' | 'swap-sword' | 'lunge')[];
+  opportunity?: AIGroundAttackOpportunityResult;
 }
 
 const states = ['APPROACHING', 'SIDE_STEPPING', 'DANCING_FORWARD', 'DANCING_BACKWARD', 'CHARGE_ATTACK',
@@ -46,6 +60,19 @@ export function validateScriptedAIGroundOwner(owner: ScriptedAIGroundOwner, prep
 
 function validateRequest(state: SimState, actor: SimCombatant, request: ScriptedAIGroundRequest) {
   const p = request?.policy, m = request?.memory;
+  const o = request?.opportunity;
+  if (o) {
+    for (const key of ['targetAirborne', 'enemyInKillRange', 'selfGrounded', 'swordForbidden', 'hammerForbidden',
+      'swapFeintActive', 'comboActive', 'hasVerticalLungeLine'] as const)
+      if (typeof o[key] !== 'boolean') throw new Error(`Invalid ground opportunity flag: ${key}`);
+    for (const key of ['swapLockoutRemaining', 'lungeDistanceToTarget', 'combatDistanceToTarget', 'aggressiveLungeMult'] as const)
+      if (!Number.isFinite(o[key]) || o[key] < 0) throw new Error(`Invalid ground opportunity observation: ${key}`);
+    for (const key of ['startWeaponSwapFeintTimer', 'getTargetPlayerModel', 'recordCombatantObservation'] as const)
+      if (typeof o[key] !== 'function') throw new Error(`Invalid ground opportunity callback: ${key}`);
+    for (const key of ['weaponSwapFeintDelay', 'lungeChanceAirborneBase', 'lungeChanceAirborneAnticipation',
+      'lungeChanceGroundBase', 'lungeChanceGroundAnticipation', 'lungeFakeoutForwardTimer'] as const)
+      if (!o.tuning || !Number.isFinite(o.tuning[key])) throw new Error(`Invalid ground opportunity tuning: ${key}`);
+  }
   if (!p || !m || typeof m.isSprinting !== 'boolean' || m.aiState !== undefined && !states.includes(m.aiState) || !Number.isFinite(m.timer) ||
     !['ready', 'swing_up', 'swing_down', 'melee_up', 'melee_down', 'slashing', 'recovering'].includes(m.weaponState))
     throw new Error('Invalid ground decision memory');
@@ -86,8 +113,9 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
     actor.id === state.localPlayerId || actor.controller !== 'ai' || !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 ||
     actor.isLunging || actor.hasBall || actor.weapon === 'ball' || actor.dashRemaining > 0 || actor.isJumping || actor.pos.y > .01)
     throw new Error('Ground execution requires a recovered armed AI');
-  const request = owner.resolve({ state, actorId: actor.id, dt, motionPhase: 'after-engagement-recovery' });
-  const target = validateRequest(state, actor, request), policy = request.policy;
+  const view = settings === state.settings ? state : { ...state, settings };
+  const request = owner.resolve({ state: view, actorId: actor.id, dt, motionPhase: 'after-engagement-recovery' });
+  const target = validateRequest(state, actor, request), policy = { ...request.policy };
   if (!readyFromThisTurn && request.memory.weaponState === 'ready' && actor.weaponState !== 'idle')
     throw new Error('Ground readiness cannot replace a pre-existing attack');
   const observed = observeSimTacticalWeaponTarget(state, target, request.targetMemory);
@@ -114,6 +142,55 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
       if (timestampWeapon === 'hammer') actor.lastHammerAttackTimeMs = now; else actor.lastSwordAttackTimeMs = now;
     }
   };
+  let opportunity: AIGroundAttackOpportunityResult | undefined;
+  if (request.opportunity) {
+    const o = request.opportunity;
+    opportunity = resolveAIGroundAttackOpportunityForCombatant({ ...o, state: { settings }, self: actor, frame,
+      botId: actor.id, target: { ...observed, pos: point(target.pos), vel: point(target.vel), maxHp: target.maxHp,
+        isCrouching: target.isCrouching, playerName: target.id, modelType: target.modelType },
+      activeWeapon: policy.activeWeapon, canStartWeaponAction: policy.canStartWeaponAction,
+      targetProtected: policy.targetIsProtected, slideActive: frame.slideActive, cooldownMultiplier: policy.cooldownMult,
+      feintChance: policy.feintChance, minLungeRange: policy.minLungeRange, maxLungeRange: policy.maxLungeRange,
+      distanceToTarget: policy.distanceToTarget, resolvedAiReach: policy.resolvedAiReach,
+      tunedAnticipationFactor: policy.tunedAnticipationFactor, playstyleFactor: policy.playstyleFactor,
+      random: atPose(policy.random), tryFeintRoll: atPose(policy.tryFeintRoll), commitFeint: atPose(policy.commitFeint),
+      startWeaponSwapFeintTimer: atPose(o.startWeaponSwapFeintTimer), getTargetPlayerModel: atPose(o.getTargetPlayerModel),
+      recordCombatantObservation: atPose(o.recordCombatantObservation),
+      constrainCombatantToArena: () => {
+        actor.grounded = constrainCombatantToArenaBounds({ pos: frame.pos, vel: frame.vel,
+          activeCustomMap: state.map, arenaRadius: state.map.arenaRadius }).grounded || frame.pos.y <= .0001;
+      },
+      triggerCombatantAttack: (_self, weapon) => { syncPose(); actions.push(`attack-${weapon}`); swing(weapon); },
+      applyTacticalWeapon: requestedWeapon => {
+        if (canApplyAITacticalWeaponSwap({ activeWeapon: policy.activeWeapon, requestedWeapon,
+          weaponState: frame.weaponState, swapLockoutTimer: actor.swapLockoutTimer,
+          swordForbidden: o.swordForbidden, hammerForbidden: o.hammerForbidden })) {
+          actor.weapon = requestedWeapon; policy.activeWeapon = requestedWeapon; frame.weaponState = 'ready';
+          if (actor.weaponState === 'recovering' && actor.attackKind !== 'swipe') actor.attackKind = requestedWeapon === 'sword' ? 'slash' : 'strike';
+          const timers = resolveAIWeaponSwapTimers(settings, actor.swapLockoutTimer, actor.weaponReadyTimer);
+          actor.swapLockoutTimer = timers.lockout; actor.weaponReadyTimer = timers.readiness;
+          if (settings.weaponReadyTime > 0) policy.canStartWeaponAction = false;
+          actions.push('swap-sword');
+        }
+        return { activeWeapon: policy.activeWeapon, canStartWeaponAction: policy.canStartWeaponAction, weaponState: frame.weaponState };
+      },
+      triggerCombatantLunge: (_self, direction) => {
+        syncPose(); startSimRosterLunge(state, actor, settings, target.id, direction);
+        frame.vel.copy(point(actor.vel)); actions.push('lunge');
+      },
+    });
+    if (opportunity.mode !== 'continue') {
+      syncPose();
+      // Live stationary commits sync decision locals; lunge returns leave the
+      // remaining FSM and horizontal finish untouched, including launch velocity.
+      if (opportunity.mode === 'sync_return') actor.isSprinting = frame.isSprinting;
+      return { aiState: opportunity.aiState, timer: opportunity.timer, weaponState: opportunity.weaponState,
+        standoffTimer: policy.psychState.standoffTimer, actions, opportunity };
+    }
+    if (opportunity.activeWeapon === 'ball') throw new Error('Ground opportunity cannot equip the ball');
+    policy.activeWeapon = opportunity.activeWeapon; policy.canStartWeaponAction = opportunity.canStartWeaponAction;
+    policy.feintLungeFakeout = opportunity.feintLungeFakeout;
+  }
   const result = resolveAIGroundState({ ...policy, settings, frame, target: observed,
     botId: actor.id, botHP: actor.hp, dt, savedVelY,
     random: atPose(policy.random), tryFeintRoll: atPose(policy.tryFeintRoll), commitFeint: atPose(policy.commitFeint),
@@ -150,5 +227,5 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
   finishAIHorizontalMotion(actor, frame);
   Object.assign(actor.pos, frame.pos); Object.assign(actor.vel, frame.vel);
   return { aiState: result.aiState, timer: result.timer, weaponState: result.weaponState,
-    standoffTimer: policy.psychState.standoffTimer, actions };
+    standoffTimer: policy.psychState.standoffTimer, actions, ...(opportunity ? { opportunity } : {}) };
 }

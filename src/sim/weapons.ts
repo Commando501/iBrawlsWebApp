@@ -772,6 +772,16 @@ function beginAttack(
   c.weaponTimer = windupForKind(kind, settings);
 }
 
+/** Commit an already-arbitrated roster lunge without advancing any turn clocks
+ * or travelling on its launch frame. Used by deferred ground opportunities. */
+export function startSimRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings,
+  targetId: string, direction: SimCombatant['lungeDir']): void {
+  if (!usesRosterLifecycle(state) || isMixedPlayer(state, c) || c.weapon !== 'sword')
+    throw new Error('Ground lunge requires an armed roster actor');
+  c.lungeTargetId = targetId; c.lungeAimDirection = { ...direction };
+  startLunge(c, settings, state); c.lastAttackTick = state.tick;
+}
+
 function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimState): void {
   if (state && isMixedPlayer(state, c)) {
     const target = findCombatant(state, c.lungeTargetId ?? '');

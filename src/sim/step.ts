@@ -246,14 +246,23 @@ export function stepSimulation(
       if (c.isLunging) continue;
     }
     const groundExecution: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback } | undefined = groundOwner
-      ? { execute: savedVelY => executeScriptedAIGround(state, c, settings, dt, savedVelY, groundOwner!, !!engagementCommit?.groundReadyOverride) } : undefined;
+      ? { execute: savedVelY => {
+        // Spend intent clocks once even when a ground lunge returns early. An
+        // empty command list leaves retained policy readiness with its owner.
+        if (!intentBeforeMovement)
+          stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', [], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
+        return executeScriptedAIGround(state, c, settings, dt, savedVelY, groundOwner!, !!engagementCommit?.groundReadyOverride);
+      } } : undefined;
     const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision, groundExecution);
     if (groundExecution?.completed) actorDecisions[actorDecisions.length - 1].ground = groundExecution.completed;
     if (dashFeedback) actorDecisions[actorDecisions.length - 1].dash = dashFeedback;
+    // Ground opportunities run inside movement after recovery. A fresh lunge
+    // owns the remainder of this turn, just like an early combo lunge.
+    if (groundExecution?.completed?.actions.includes('lunge')) continue;
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);
-    } else if (mixedObjectiveFrame && !intentBeforeMovement) {
+    } else if (mixedObjectiveFrame && !intentBeforeMovement && !groundExecution?.completed) {
       // Live AI commits at its own roster turn. A later actor's flight (or
       // planner observation) must see this attack/swap immediately, while
       // skeletal melee damage still waits for the post-objective animation pass.

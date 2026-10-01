@@ -114,3 +114,91 @@ const conflicts: [string, (f: Fixture) => void][] = [
 for (const [name, mutate] of conflicts) test(`ground refuses ${name} before calling its owner`, () => {
   const f = fixture(); mutate(f); assert.throws(f.step); assert.equal(f.calls(), 0); assert.equal(f.draws(), 0);
 });
+
+function opportunity(f: Fixture) {
+  f.request.opportunity = { targetAirborne: false, enemyInKillRange: false, selfGrounded: true,
+    swordForbidden: false, hammerForbidden: false, swapLockoutRemaining: 0, swapFeintActive: false, comboActive: false,
+    lungeDistanceToTarget: 6, hasVerticalLungeLine: true, combatDistanceToTarget: 6, aggressiveLungeMult: 1,
+    tuning: resolveBehaviorTuning(f.state.settings), startWeaponSwapFeintTimer: () => {},
+    getTargetPlayerModel: () => null, recordCombatantObservation: () => {} };
+  return f.request.opportunity;
+}
+for (const id of ['main_ai', 'ordinary']) {
+  test(`stationary opportunity stops FSM and exposes zero movement to later actors: ${id}`, () => {
+    const f = fixture(id); opportunity(f).enemyInKillRange = true;
+    f.request.policy.isCoordAttackBlocked = () => assert.fail('stationary commit must not enter FSM');
+    const events = f.step();
+    assert.equal(f.actor.pos.z, 0); assert.equal(f.actor.vel.z, 0);
+    assert.equal(f.actor.weaponPhaseElapsed, 1 / 60);
+    assert.equal(events.actorDecisionFrame!.decisions[0].ground!.opportunity!.mode, 'sync_return');
+    assert.deepEqual(events.actorDecisionFrame!.decisions[0].ground!.actions, ['attack-hammer']);
+  });
+  test(`lunge opportunity starts without travelling or running ground callbacks: ${id}`, () => {
+    const f = fixture(id); opportunity(f);
+    f.actor.weapon = f.request.policy.activeWeapon = 'sword'; f.request.policy.random = () => 0;
+    f.request.policy.isCoordAttackBlocked = () => assert.fail('lunge must not enter FSM');
+    const events = f.step();
+    assert.equal(f.actor.isLunging, true); assert.equal(f.actor.pos.z, 0); assert.equal(f.actor.lungeTimer, 0);
+    assert.equal(f.actor.lastSwordAttackTimeMs, 1000 / 60);
+    assert.deepEqual(events.actorDecisionFrame!.decisions[0].ground!.actions, ['lunge']);
+    f.step(); assert.ok(f.actor.pos.z > 0); assert.equal(f.actor.lungeTimer, 1 / 60);
+  });
+  test(`zero direction lunge declines and still stops the FSM: ${id}`, () => {
+    const f = fixture(id); opportunity(f); f.target.pos = { ...f.actor.pos };
+    f.actor.weapon = f.request.policy.activeWeapon = 'sword'; f.request.policy.random = () => 0;
+    f.request.policy.isCoordAttackBlocked = () => assert.fail('declined lunge must return');
+    const result = f.step().actorDecisionFrame!.decisions[0].ground!;
+    assert.equal(result.opportunity!.mode, 'return'); assert.deepEqual(result.actions, []);
+    assert.equal(f.actor.isLunging, false); assert.equal(f.actor.pos.z, 0);
+  });
+  test(`swap delay enters FSM once with retained range and readiness: ${id}`, () => {
+    const f = fixture(id); const o = opportunity(f); let feints = 0;
+    f.state.settings.weaponReadyTime = .3; f.state.settings.weaponSwapLockout = .4;
+    f.request.memory.aiState = 'APPROACHING'; f.request.policy.feintChance = 1;
+    f.request.policy.tryFeintRoll = scale => scale === .5; f.request.policy.commitFeint = () => { feints++; };
+    o.startWeaponSwapFeintTimer = () => assert.equal(f.actor.weapon, 'sword');
+    const result = f.step().actorDecisionFrame!.decisions[0].ground!;
+    assert.deepEqual(result.actions, ['swap-sword']); assert.equal(feints, 1);
+    assert.equal(result.opportunity!.canStartWeaponAction, false); assert.equal(result.opportunity!.mode, 'continue');
+    assert.equal(f.actor.weaponReadyTimer, .3); assert.equal(f.actor.swapLockoutTimer, .4);
+    assert.ok(f.actor.pos.z > 0); assert.equal(f.actor.weaponState, 'idle');
+  });
+  test(`current lockout refuses a swap despite the retained unlocked observation: ${id}`, () => {
+    const f = fixture(id); opportunity(f); f.actor.swapLockoutTimer = .5;
+    f.request.memory.aiState = 'APPROACHING'; f.request.policy.feintChance = 1;
+    let feints = 0; f.request.policy.tryFeintRoll = scale => scale === .5; f.request.policy.commitFeint = () => { feints++; };
+    const result = f.step().actorDecisionFrame!.decisions[0].ground!;
+    assert.equal(f.actor.weapon, 'hammer'); assert.equal(feints, 1); assert.deepEqual(result.actions, []);
+    assert.equal(f.actor.swapLockoutTimer, .5 - 1 / 60);
+  });
+  test(`lunge fakeout passes its new state and speed to the FSM: ${id}`, () => {
+    const f = fixture(id); opportunity(f); f.actor.weapon = f.request.policy.activeWeapon = 'sword';
+    f.request.policy.feintChance = 1; f.request.policy.random = () => 0;
+    f.request.policy.tryFeintRoll = scale => scale === .55;
+    const result = f.step().actorDecisionFrame!.decisions[0].ground!;
+    assert.equal(result.opportunity!.feintLungeFakeout, true); assert.equal(f.actor.isLunging, false);
+    assert.ok(Math.abs(f.actor.pos.z - 6.2 * f.state.settings.speedForward / 100 / 60) < 1e-10);
+  });
+  test(`ground opportunity uses effective step settings: ${id}`, () => {
+    const f = fixture(id); opportunity(f).enemyInKillRange = true;
+    const settings = { ...f.state.settings, hammerSlamWindupTime: .9 };
+    f.decision.ground!.resolve = ({ state }) => { assert.equal(state.settings, settings); return f.request; };
+    stepSimulation(f.state, {}, { settings, scriptedActorDecisions: f.owner });
+    assert.equal(f.actor.weaponState, 'windup'); assert.ok(f.actor.weaponTimer > .8);
+  });
+}
+for (const [name, mutate] of [
+  ['nonfinite range', (o: NonNullable<ScriptedAIGroundRequest['opportunity']>) => { o.lungeDistanceToTarget = NaN; }],
+  ['missing model owner', (o: NonNullable<ScriptedAIGroundRequest['opportunity']>) => { o.getTargetPlayerModel = undefined as never; }],
+  ['bad readiness flag', (o: NonNullable<ScriptedAIGroundRequest['opportunity']>) => { o.selfGrounded = 1 as never; }],
+  ['bad tuning', (o: NonNullable<ScriptedAIGroundRequest['opportunity']>) => { o.tuning.lungeChanceGroundBase = Infinity; }],
+] as const) test(`ground opportunity rejects ${name} before effects`, () => {
+  const f = fixture(); mutate(opportunity(f)); assert.throws(f.step, /ground opportunity/);
+  assert.equal(f.draws(), 0); assert.equal(f.actor.weaponState, 'idle');
+});
+for (const id of ['main_ai', 'ordinary']) for (const prefix of [false, true]) test(`ground lunge intent clocks advance once ${id}/${prefix}`, () => {
+  const f = fixture(id); opportunity(f); f.actor.weapon = f.request.policy.activeWeapon = 'sword';
+  f.request.policy.random = () => 0; f.actor.hammerJumpWindowTimer = .7;
+  if (prefix) { f.decision.commandVersion = 'scripted-combat-v6'; f.decision.commands = [{ kind: 'swap', weapon: 'sword' }]; }
+  f.step(); assert.equal(f.actor.hammerJumpWindowTimer, .7 - 1 / 60); assert.equal(f.actor.lungeTimer, 0);
+});
