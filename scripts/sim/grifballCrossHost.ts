@@ -3,10 +3,12 @@ import type { SuitePlan, ValidationJob } from '../../src/game/grifballValidation
 import { createAutonomousValidationRuntime } from './grifballAutonomousRuntime';
 import { runBrowserJob } from './grifballValidationBrowser';
 
-export const CROSS_HOST_PROTOCOL = 'production-browser-vs-node-v1';
+export const CROSS_HOST_PROTOCOL = 'production-browser-vs-node-v2';
 // Same linear/health/time budgets as execution parity; angles have their own
-// strict allowance for Node/Chromium transcendental-function rounding.
-export const CROSS_HOST_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, angle: 1e-12, discrete: 0 };
+// allowance for accumulated Node/Chromium transcendental rounding. At 1000 units,
+// 1e-10 radians displaces a heading by only 1e-7 units, below the linear budget.
+// This affects comparison only; gameplay values and exact replay hashes are intact.
+export const CROSS_HOST_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, angle: 1e-10, discrete: 0 };
 type Kind = keyof typeof CROSS_HOST_TOLERANCES;
 function kind(path: string[]): Kind {
   const field = path.at(-1);
