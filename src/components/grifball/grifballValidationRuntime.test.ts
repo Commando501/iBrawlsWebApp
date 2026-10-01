@@ -120,12 +120,26 @@ test('scenario replay uses the same seeded stream and resets tactical memory', a
     const { runtime, state } = await setup('scenario', false, tick);
     for (let i = 0; i < 60; i++) runtime.step();
     const result = await runtime.done, memory = cloneLabState(state.aiMatchContext);
+    const captured = JSON.stringify(result.decisions);
+    state.aiMatchContext.grifballTeamPlan.stylePlans.blue.confidence = .987;
+    [...state.aiMatchContext.grifballTeamPlan.assignments.values()].find(v => v.team === 'blue')!.tuning!.defenseSafetyDepth = 15;
+    assert.equal(JSON.stringify(result.decisions), captured, 'diagnostics must not retain mutable planner references');
     assert.equal(result.termination, 'scenario-complete'); runtime.dispose(); return { result, memory };
   };
   const a = await run(), b = await run();
   assert.deepEqual(a.result.trace, b.result.trace); assert.deepEqual(a.result.metrics, b.result.metrics); assert.deepEqual(a.memory, b.memory);
   assert.deepEqual(a.result.decisions, b.result.decisions);
   assert.ok(a.result.decisions!.frames.at(-1)!.actors.some(actor => actor.role === 'retriever' && actor.reason && actor.destination));
+  const teams = a.result.decisions!.frames.at(-1)!.teams!;
+  assert.deepEqual(teams.map(t => t.team), ['blue', 'red']);
+  for (const team of teams) {
+    const style = a.memory.grifballTeamPlan.stylePlans[team.team];
+    const tuning = [...a.memory.grifballTeamPlan.assignments.values()].find(v => v.team === team.team)!.tuning!;
+    assert.equal(team.style!.pressure, style.pressure);
+    assert.equal(team.style!.confidence, style.confidence);
+    assert.equal(team.style!.adapting, style.adapting);
+    assert.deepEqual(team.defense, { pressure: tuning.defensePressure, lookahead: tuning.defenseLookahead, safetyDepth: tuning.defenseSafetyDepth });
+  }
 });
 
 test('decision diagnostics retain opening and recent event context without live references', async () => {

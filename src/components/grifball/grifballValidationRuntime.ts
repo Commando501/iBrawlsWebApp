@@ -1,6 +1,6 @@
 import { DeterministicTrace, LiveTimings, liveTimings, type BehaviorEvidence } from '../../game/grifballValidation/telemetry';
 import * as THREE from 'three';
-import { retainDecisionTrace, type DecisionTrace } from '../../game/grifballValidation/decisionTrace';
+import { captureDecisionTeams, retainDecisionTrace, type DecisionTrace } from '../../game/grifballValidation/decisionTrace';
 import type { Combatant } from '../../types';
 import { createOfflineBotCombatant } from '../../game/roster';
 import { seededRandom, withSimulationRandom } from '../../game/simulationRandom';
@@ -218,6 +218,7 @@ export class GrifballValidationRuntime implements TrialHandle {
       next.alive.join() !== previous.alive.join()) {
       this.decisions.frames.push({ frame: next, revision: s.aiMatchContext.grifballTeamPlan.revision,
         ball: [s.grifball.ball.pos.x, s.grifball.ball.pos.y, s.grifball.ball.pos.z],
+        teams: captureDecisionTeams(s.aiMatchContext.grifballTeamPlan),
         actors: [...(this.localInputEnabled ? [{ id: 'player', team: s.localPlayerTeam, position: [s.playerPos.x, s.playerPos.y, s.playerPos.z],
           velocity: [s.playerVel.x, s.playerVel.y, s.playerVel.z], hp: s.playerHP, weapon: s.activeWeapon, weaponState: s.pWeaponState,
           aiState: null, plannedTargetId: null, pressureTargetId: null, lungeTargetId: null, role: null, reason: null,

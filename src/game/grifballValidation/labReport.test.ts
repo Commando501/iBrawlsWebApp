@@ -6,7 +6,7 @@ import { appendLabResult, checkpointLabel, importLabRun, labRunReport, newLabRun
 import { trialCheck, type TrialResult } from './runner';
 import { LiveTimings } from './telemetry';
 import { RESERVED_VALIDATION_MAPS } from './maps';
-import type { DecisionTrace } from './decisionTrace';
+import type { DecisionTrace, DecisionTeam } from './decisionTrace';
 import { LOCAL_INPUT_PROTOCOL } from './localPlayerInput';
 const runtime: LabRuntimeIdentity = { kind: 'lab-browser', buildId: null, userAgent: 'test-browser', fixedHz: 60, model: 'v2-medium' };
 async function fixture() {
@@ -102,6 +102,32 @@ test('decision diagnostics import with shape checks and share a bounded report b
   for (const item of run.results) assert.equal(item.decisions!.frames.length + item.decisions!.droppedFrames, 61);
   assert.ok(reportBytes(run) < 8 * 1024 * 1024);
 });
+test('team decision diagnostics round-trip and reject malformed observation or tuning evidence', async () => {
+  const run = await fixture(), trace = decisions();
+  const teams: DecisionTeam[] = [
+    { team: 'blue', style: { pressure: .8, width: .3, confidence: .75, observations: 18, adapting: true,
+      aggression: .45, patience: .55, supportDistance: .45, reason: 'Observed nearby motion' },
+      defense: { pressure: .58, lookahead: 1.5, safetyDepth: 7 } },
+    { team: 'red', style: null, defense: null },
+  ];
+  for (const frame of trace.frames) frame.teams = structuredClone(teams);
+  const populated = appendLabResult(run, { ...result(run.plan.jobs[0].id), decisions: trace });
+  assert.deepEqual((await importLabRun(JSON.stringify(populated))).results[0].decisions, trace);
+  for (const change of [
+    (t: any) => { t.push(t[0]); }, (t: any) => { t[1].team = 'blue'; }, (t: any) => { t[0].team = 'unknown'; },
+    (t: any) => { t[0].style.pressure = null; }, (t: any) => { t[0].style.width = -1; },
+    (t: any) => { t[0].style.confidence = 1.1; }, (t: any) => { t[0].style.observations = 25; },
+    (t: any) => { t[0].style.observations = .5; }, (t: any) => { t[0].style.adapting = 'true'; },
+    (t: any) => { t[0].style.reason = {}; }, (t: any) => { delete t[0].style; },
+    (t: any) => { t[0].defense.lookahead = 0; }, (t: any) => { t[0].defense.safetyDepth = 16; },
+    (t: any) => { t[0].defense.pressure = null; }, (t: any) => { delete t[0].defense; },
+  ]) {
+    const altered = structuredClone(populated);
+    change(altered.results[0].decisions!.frames[0].teams);
+    await assert.rejects(importLabRun(JSON.stringify(altered)), /Malformed decision trace/);
+  }
+});
+
 test('report export/import recomputes verdicts, labels references and cannot certify acceptance', async () => {
   let run = await fixture();
   for (const job of run.plan.jobs) run = appendLabResult(run, result(job.id));
