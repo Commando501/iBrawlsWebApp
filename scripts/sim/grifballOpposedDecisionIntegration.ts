@@ -223,6 +223,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const targetLookups: { tick: number; id: string; target: string }[] = [];
   let dashRequests = 0;
   let resolvedTarget: string | null = null;
+  let resolvedIncomingThreat = false;
   const update = createAISingleEntityUpdaterForState({ stateRef: { current: state }, threeRef: { current: refs },
     mai: () => state.otherPlayers.get('main_ai'), resolveBotKnobs: () => knobs, resolveBotDerived: () => derived,
     resolveBotFlags: () => NEUTRAL_PERSONALITY_FLAGS, getMatchScoreContext, grifballEnemyGoalPos: goal,
@@ -231,6 +232,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     getBestTacticalTarget: (id: string, pos: THREE.Vector3, difficulty: string) => {
       const target = targets.getBestTacticalTarget(id, pos, difficulty);
       resolvedTarget = target?.id ?? null;
+      resolvedIncomingThreat = !!target?.isLunging;
       if (target) targetLookups.push({ tick, id, target: target.id });
       return target;
     },
@@ -238,6 +240,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       targetLookups.push({ tick, id, target });
       const found = targets.getTacticalTargetById(id, target);
       resolvedTarget = found?.id ?? null;
+      resolvedIncomingThreat = !!found?.isLunging;
       return found;
     },
     triggerCombatantAttack: (self, weapon, melee = false) => {
@@ -292,7 +295,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       direction: { ...c.aiDashDir }, jumping: !!c.isJumping,
       role: state.aiMatchContext.grifballTeamPlan.assignments.get(id)?.role ?? null };
   };
-  const dashSamples: { tick: number; id: string; requested: boolean; target: string | null; before: ReturnType<typeof dashState>; after: ReturnType<typeof dashState> }[] = [];
+  const dashSamples: { tick: number; id: string; requested: boolean; target: string | null; incomingThreat: boolean; before: ReturnType<typeof dashState>; after: ReturnType<typeof dashState> }[] = [];
   const tacticalSamples: { tick: number; holderId: string | null; assignments: { id: string; team: string; role: string; slot: number; destination: { x: number; z: number }; tanking: { mode: string; targetId: string | null; partnerId: string | null; recoveryId: string | null; doubleCommit: boolean } | null; escort: string | null }[] }[] = [];
   const mainJumpImpacts: { tick: number; launched: boolean; budget: number }[] = [];
   const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
@@ -396,8 +399,9 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           const dashBefore = mobility ? dashState(id) : null;
           const requestsBefore = dashRequests;
           resolvedTarget = null;
+          resolvedIncomingThreat = false;
           updates.push(id); update(id, delta);
-          if (dashBefore) dashSamples.push({ tick, id, requested: dashRequests > requestsBefore, target: resolvedTarget, before: dashBefore, after: dashState(id) });
+          if (dashBefore) dashSamples.push({ tick, id, requested: dashRequests > requestsBefore, target: resolvedTarget, incomingThreat: resolvedIncomingThreat, before: dashBefore, after: dashState(id) });
           if (passRecovery) recoveryIntents.push({ id, pickup: !!state.otherPlayers.get(id)!.pickupRequested });
         } }),
       updateGrifball: delta => {
