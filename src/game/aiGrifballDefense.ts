@@ -177,15 +177,26 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     primary.role = 'chaser';
   }
   const marks = enemies.filter(p => p !== carrier).sort((a, b) => distance(a.pos, goal) - distance(b.pos, goal) || a.id.localeCompare(b.id));
-  rest.forEach((a, i) => {
-    const target = marks[i];
-    const point = target ? toward(target.pos, goal, tuning.defenseContainMargin + (target.space?.reach ?? 3)) : toward(projected, goal, tuning.defenseSafetyDepth / 2);
+  const available = new Set(rest);
+  for (const target of marks) {
+    if (!available.size) break;
+    const point = toward(target.pos, goal, tuning.defenseContainMargin + (target.space?.reach ?? 3));
     // Do not abandon the threatened corridor to mark an irrelevant distant escort.
-    if (target && distance(point, anchor) <= 18) assign(a, 'mark', point, target);
-    else {
-      const d = Math.max(0.001, distance(anchor, goal)), side = (i % 2 ? -1 : 1) * tuning.lateralSpacing;
-      assign(a, 'recover', { x: safetyPoint.x - (goal.z - anchor.z) / d * side, z: safetyPoint.z + (goal.x - anchor.x) / d * side }, carrier);
-    }
+    if (distance(point, anchor) > 18) continue;
+    // Pair by reachable coverage distance, not by two unrelated sort orders
+    // that can make flank defenders cross through the carrier's lane.
+    const choices = [...available].map(a => {
+      const old = previous.get(a.botId)?.defense;
+      return { assignment: a, cost: routeLength(a.botId, point) -
+        (old?.mode === 'mark' && old.targetId === target.id ? tuning.reassignmentAdvantage : 0) };
+    }).filter(c => Number.isFinite(c.cost))
+      .sort((a, b) => a.cost - b.cost || a.assignment.botId.localeCompare(b.assignment.botId));
+    const marker = choices[0]?.assignment;
+    if (marker) { assign(marker, 'mark', point, target); available.delete(marker); }
+  }
+  [...available].forEach((a, i) => {
+    const d = Math.max(0.001, distance(anchor, goal)), side = (i % 2 ? -1 : 1) * tuning.lateralSpacing;
+    assign(a, 'recover', { x: safetyPoint.x - (goal.z - anchor.z) / d * side, z: safetyPoint.z + (goal.x - anchor.x) / d * side }, carrier);
   });
 }
 

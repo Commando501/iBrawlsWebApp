@@ -401,6 +401,67 @@ test('a carrier retreating away from the goal does not pull the safety into purs
   assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'front');
 });
 
+function flankDefenseScene(): GrifballTacticalSnapshot {
+  const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+  s.players = [p('safety', 'blue', -20), p('interceptor', 'blue', -2), p('left', 'blue', -6, -6),
+    p('right', 'blue', -6, 6), p('runner', 'red', 0), p('escort-left', 'red', 2, -6), p('escort-right', 'red', 1, 6)];
+  return s;
+}
+
+for (const mirror of [false, true]) for (const reverse of [false, true])
+  test(`defenders mark reachable escorts on their own flank: ${mirror}/${reverse}`, () => {
+    const s = flankDefenseScene();
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1;
+    }
+    if (reverse) s.players.reverse();
+    const orders = [...run(s).assignments.values()].filter(a => a.team === (mirror ? 'red' : 'blue'));
+    for (const id of ['left', 'right']) {
+      const order = orders.find(a => a.botId === id)!;
+      assert.equal(order.defense?.mode, 'mark');
+      assert.equal(order.defense.targetId, `escort-${id}`, 'do not cross the carrier lane to exchange flank marks');
+      assert.ok(order.destination.z * s.players.find(p => p.id === id)!.pos.z > 0);
+    }
+    assert.equal(orders.find(a => a.defense?.mode === 'intercept')!.botId, 'interceptor');
+    assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'safety');
+  });
+
+test('marking retains an incumbent through a small distance reversal', () => {
+  const s = flankDefenseScene(), state = run(s);
+  s.players.find(p => p.id === 'left')!.pos.z = .2;
+  s.players.find(p => p.id === 'right')!.pos.z = -.2;
+  assert.equal(blue(run(s)).find(a => a.botId === 'left')!.defense!.targetId, 'escort-right',
+    'without history the other mark must actually be nearer');
+  updateGrifballTeamPlan(state, s, 1);
+  for (const id of ['left', 'right']) assert.equal(blue(state).find(a => a.botId === id)!.defense!.targetId, `escort-${id}`);
+});
+
+test('an unreachable incumbent cannot reserve an escort mark', () => {
+  const s = flankDefenseScene(), state = run(s);
+  s.geometry!.blockers = [
+    { kind: 'box', x: -7.5, z: -6, hx: .2, hz: 1.5 },
+    { kind: 'box', x: -4.5, z: -6, hx: .2, hz: 1.5 },
+    { kind: 'box', x: -6, z: -7.5, hx: 1.5, hz: .2 },
+    { kind: 'box', x: -6, z: -4.5, hx: 1.5, hz: .2 },
+  ];
+  updateGrifballTeamPlan(state, s, 1);
+  const orders = blue(state);
+  assert.equal(orders.find(a => a.botId === 'left')!.defense!.mode, 'recover');
+  const marks = orders.filter(a => a.defense?.mode === 'mark');
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0].botId, 'right');
+  assert.equal(marks[0].defense!.targetId, 'escort-right', 'cover the most advanced reachable escort first');
+});
+
+test('an irrelevant distant escort cannot consume the only available marker', () => {
+  const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+  s.players = [p('safety', 'blue', -20), p('interceptor', 'blue', -2), p('marker', 'blue', -6, 6),
+    p('runner', 'red', 0), p('distant', 'red', -30, 20), p('nearby', 'red', 2, 6)];
+  const order = blue(run(s)).find(a => a.botId === 'marker')!;
+  assert.equal(order.defense?.mode, 'mark');
+  assert.equal(order.defense.targetId, 'nearby');
+});
+
 test('defenders intercept a visible cut, reserve one safety and assign distinct marks deterministically', () => {
   const s = scene(); s.players[3].vel = { x: -3, z: 3 };
   const state = run(s), orders = blue(state);
