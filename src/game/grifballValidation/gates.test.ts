@@ -135,6 +135,48 @@ test('quality rejects censoring, absent pairs/opportunities, tuning overlap and 
   const r = results(p); r[0].termination = 'simulation-cap';
   assert.equal((qualityGate(p, r, check, protocol).details as any).completion.fraction, (r.length - 1) / r.length);
 });
+test('quality excludes failed completed trials instead of accepting their favorable metrics', async () => {
+  const p = await fixture(true), r = results(p), check = { ...passedNull, evidence: [...passedNull.evidence] };
+  assert.equal(qualityGate(p, r, check, protocol).check.verdict, 'pass');
+  r[0].check = { ...r[0].check, verdict: 'fail', summary: 'illegal state observed' };
+  const g = qualityGate(p, r, check, protocol), d = g.details as any;
+  assert.equal(g.check.verdict, 'inconclusive');
+  assert.equal(d.completion.completed, r.length - 1);
+  assert.equal(d.estimate.seeds, 2);
+  assert.equal(d.strata[0].measures.goalMargin.unavailable[0].reason, 'failed-trial');
+  assert.equal(d.strata[0].measures.goalMargin.unavailable[0].jobId, r[0].jobId);
+});
+
+test('quality diagnoses zero opportunities without discarding a valid zero rate or its primary outcome', async () => {
+  const p = await fixture(true), r = results(p), check = { ...passedNull, evidence: [...passedNull.evidence] };
+  const j = p.jobs[0], team = r[0].metrics![j.focalTeam];
+  team.completedPossessions = team.pressuredCarrierSeconds = 0; team.goals = 0;
+  const g = qualityGate(p, r, check, protocol), d = g.details as any, measures = d.strata[0].measures;
+  assert.equal(g.check.verdict, 'inconclusive');
+  assert.equal(d.estimate.seeds, 3, 'a shutout remains a complete primary outcome');
+  assert.equal(measures.goalsPerPossession.estimate.seeds, 2);
+  assert.deepEqual(measures.goalsPerPossession.unavailable, [{ jobId: j.id, seed: j.seed, mirrored: j.mirrored,
+    variant: j.variant, reason: 'no-opportunity', numerator: 0, denominator: 0, denominatorName: 'completedPossessions', team: j.focalTeam }]);
+  assert.equal(measures.uncoveredFraction.unavailable[0].denominatorName, 'pressuredCarrierSeconds');
+  assert.deepEqual(measures.sharedExposureFraction.unavailable, [], 'zero numerator with positive exposure remains measurable');
+  assert.equal(measures.sharedExposureFraction.estimate.seeds, 3);
+  assert.match(g.check.summary, /goalsPerPossession/);
+});
+
+for (const reason of ['missing-trial', 'incomplete-trial', 'missing-metrics', 'invalid-metric'] as const)
+  test(`quality distinguishes ${reason} from a missing opportunity`, async () => {
+    const p = await fixture(true), r = results(p), j = p.jobs[0];
+    if (reason === 'missing-trial') r.shift();
+    else if (reason === 'incomplete-trial') r[0].termination = 'simulation-cap';
+    else if (reason === 'missing-metrics') r[0].metrics = null;
+    else r[0].metrics![j.focalTeam].completedPossessions = NaN;
+    const g = qualityGate(p, r, { ...passedNull, evidence: [...passedNull.evidence] }, protocol), d = g.details as any;
+    assert.equal(g.check.verdict, 'inconclusive');
+    assert.equal(d.strata[0].measures.goalsPerPossession.unavailable[0].reason, reason);
+    assert.equal(d.strata[0].measures.goalsPerPossession.unavailable[0].jobId, j.id);
+    assert.equal(d.strata[0].measures.goalsPerPossession.estimate.seeds, 2);
+  });
+
 test('performance enforces calibration, absolute/paired budgets and rejects noise before making speed claims', async () => {
   const original = await fixture();
   const p = await createSuitePlan({ ...original.manifest, performance: { plannerRefreshP95Ms: 4, calibrationId: 'pilot-1' } }, code);

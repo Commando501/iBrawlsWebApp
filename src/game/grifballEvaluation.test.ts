@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createEvaluationJobs, emptyTeamEvaluation, GrifballEvaluationTracker, summarizeEvaluation, type EvaluationReport, type EvaluationRequest, type EvaluationRun } from './grifballEvaluation';
+import { createEvaluationJobs, emptyTeamEvaluation, evaluationMetricInputs, evaluationValue, GrifballEvaluationTracker, summarizeEvaluation, type EvaluationMetric, type EvaluationReport, type EvaluationRequest, type EvaluationRun } from './grifballEvaluation';
 import { defaultGrifballTactics, resolveTeamTactics } from './grifballTacticsConfig';
 import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
 
@@ -8,6 +8,23 @@ const request = (): EvaluationRequest => ({ scenario: 'escort', seed: 10, seeds:
   baseline: defaultGrifballTactics(), candidate: defaultGrifballTactics() });
 const report = (r = request()): EvaluationReport => ({ schemaVersion: 1, contractVersion: 1, status: 'complete', request: r, map: null, mapName: 'Test', arenaRadius: 60,
   mechanics: DEFAULT_ADMIN_SETTINGS, input: 'scripted-observer', totalRuns: createEvaluationJobs(r).length, runs: [] });
+for (const focalTeam of ['blue', 'red'] as const) test(`metric inputs retain rate definitions and denominator ownership for ${focalTeam}`, () => {
+  const run = runs(report())[0]; run.job.focalTeam = focalTeam;
+  const other = focalTeam === 'blue' ? 'red' : 'blue';
+  Object.assign(run.metrics[focalTeam], { goals: 2, completedPossessions: 4, turnovers: 1, pressuredCarrierSeconds: 8,
+    uncoveredCarrierSeconds: 2, relevantBotSeconds: 10, sharedExposureSeconds: 3, assignedBotSeconds: 120, roleChanges: 4, stuckSeconds: 6 });
+  Object.assign(run.metrics[other], { goals: 3, completedPossessions: 5 });
+  const expected: [EvaluationMetric, number, number | null, string | null, number][] = [
+    ['goalMargin', -1, null, null, -1], ['goalsPerPossession', 2, 4, 'completedPossessions', .5],
+    ['turnoversPerPossession', 1, 4, 'completedPossessions', .25], ['goalPrevention', 2, 5, 'completedPossessions', .4],
+    ['uncoveredFraction', 2, 8, 'pressuredCarrierSeconds', .25], ['sharedExposureFraction', 3, 10, 'relevantBotSeconds', .3],
+    ['roleChangesPerMinute', 240, 120, 'assignedBotSeconds', 2], ['stuckFraction', 6, 120, 'assignedBotSeconds', .05],
+  ];
+  for (const [key, numerator, denominator, denominatorName, value] of expected) {
+    assert.deepEqual(evaluationMetricInputs(run, key), { numerator, denominator, denominatorName, team: key === 'goalPrevention' ? other : focalTeam });
+    assert.equal(evaluationValue(run, key), value);
+  }
+});
 function runs(r: EvaluationReport): EvaluationRun[] {
   return createEvaluationJobs(r.request).map(job => ({ job, metrics: { blue: emptyTeamEvaluation(), red: emptyTeamEvaluation() },
     setup: { map: 'Test', mechanics: DEFAULT_ADMIN_SETTINGS, roster: [], holderId: null }, simulationCost: { samples: 120, meanMs: 1, maxMs: 2 } }));

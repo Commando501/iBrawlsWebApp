@@ -1,4 +1,4 @@
-import { EVALUATION_METRICS, evaluationValue, estimateSeedDeltas, type EvaluationMetric } from '../grifballEvaluation';
+import { EVALUATION_METRICS, evaluationMetricInputs, estimateSeedDeltas, type EvaluationMetric } from '../grifballEvaluation';
 import { gate, indexResults, nullControlRequired, type GateEvaluation, type GateProtocol } from './gates';
 import type { TrialResult } from './runner';
 import type { CheckResult, SuitePlan, ValidationJob } from './types';
@@ -7,7 +7,7 @@ export function qualityGate(plan: SuitePlan, results: readonly TrialResult[], nu
   if (!policy) return gate('quality', 'not-run', 'No frozen quality hypothesis or evidence minimum.', null);
   const indexed = indexResults(plan, results), cases = plan.cases.filter(c => c.specification.mode === 'match');
   const jobs = plan.jobs.filter(j => cases.some(c => c.specification.id === j.caseId));
-  const completed = jobs.filter(j => indexed.get(j.id)?.termination === 'match-end').length;
+  const completed = jobs.filter(j => indexed.get(j.id)?.termination === 'match-end' && indexed.get(j.id)?.check.verdict === 'pass').length;
   const censored = jobs.filter(j => indexed.get(j.id)?.termination === 'simulation-cap').length;
   const issues: string[] = [];
   if (nullCheck.verdict !== 'pass') issues.push('Identical-config control did not pass on a pinned runtime.');
@@ -18,24 +18,37 @@ export function qualityGate(plan: SuitePlan, results: readonly TrialResult[], nu
   const ledger = protocol?.quality;
   if (ledger && cases.some(c => ledger.tuningMapIds.includes(c.specification.mapId) || c.specification.seeds.some(s => ledger.tuningSeeds.includes(s)))) issues.push('Held-out inputs overlap tuning inputs.');
   const metricKeys = Object.keys(EVALUATION_METRICS) as EvaluationMetric[];
-  const metric = (job: ValidationJob, key: EvaluationMetric): number | null => {
+  const metric = (job: ValidationJob, key: EvaluationMetric) => {
     const r = indexed.get(job.id);
-    if (r?.termination !== 'match-end' || !r.metrics) return null;
-    const value = evaluationValue({ job, metrics: r.metrics }, key);
-    return value !== null && Number.isFinite(value) ? value : null;
+    if (!r) return { value: null, reason: 'missing-trial' };
+    if (r.check.verdict === 'fail') return { value: null, reason: 'failed-trial' };
+    if (r.termination !== 'match-end' || r.check.verdict !== 'pass') return { value: null, reason: 'incomplete-trial' };
+    if (!r.metrics) return { value: null, reason: 'missing-metrics' };
+    const terms = evaluationMetricInputs({ job, metrics: r.metrics }, key);
+    const { numerator, denominator } = terms;
+    if (!Number.isFinite(numerator) || denominator !== null && (!Number.isFinite(denominator) || denominator < 0))
+      return { value: null, reason: 'invalid-metric', ...terms };
+    if (denominator === 0) return { value: null, reason: 'no-opportunity', ...terms };
+    const value = denominator === null ? numerator : numerator / denominator;
+    return Number.isFinite(value) ? { value, reason: null, ...terms } : { value: null, reason: 'invalid-metric', ...terms };
   };
   const strata = cases.flatMap(c => c.specification.opponents.map(opponent => {
     const base = jobs.filter(j => j.caseId === c.specification.id && j.opponent === opponent && j.variant === 'baseline');
     const measures = Object.fromEntries(metricKeys.map(key => {
       const bySeed = new Map<number, number[]>();
+      const observations = new Map(jobs.filter(j => j.caseId === c.specification.id && j.opponent === opponent).map(j => [j.id, metric(j, key)]));
+      const unavailable = jobs.filter(j => observations.get(j.id)?.reason).map(j => {
+        const { value: _value, ...observation } = observations.get(j.id)!;
+        return { jobId: j.id, seed: j.seed, mirrored: j.mirrored, variant: j.variant, ...observation };
+      });
       for (const a of base) {
         const b = jobs.find(j => j.caseId === a.caseId && j.seed === a.seed && j.opponent === a.opponent && j.mirrored === a.mirrored && j.variant === 'candidate')!;
-        const x = metric(a, key), y = b ? metric(b, key) : null;
+        const x = observations.get(a.id)!.value, y = b ? observations.get(b.id)!.value : null;
         if (x === null || y === null) continue;
         const values = bySeed.get(a.seed) ?? []; values.push(y - x); bySeed.set(a.seed, values);
       }
       const seedDeltas = [...bySeed].filter(([, v]) => v.length === 2).map(([seed, v]) => ({ seed, delta: (v[0] + v[1]) / 2 }));
-      return [key, { estimate: estimateSeedDeltas(seedDeltas.map(v => v.delta), seedDeltas.length * 2), seedDeltas }];
+      return [key, { estimate: estimateSeedDeltas(seedDeltas.map(v => v.delta), seedDeltas.length * 2), seedDeltas, unavailable }];
     }));
     return { caseId: c.specification.id, map: c.specification.mapId, opponent, measures };
   }));
@@ -46,7 +59,9 @@ export function qualityGate(plan: SuitePlan, results: readonly TrialResult[], nu
   });
   const estimate = estimateSeedDeltas(seedDeltas.map(s => s.delta), seedDeltas.length * strata.length * 2);
   if (estimate.seeds < policy.minIndependentSeeds || estimate.seeds !== allSeeds.length) issues.push('Insufficient complete independent seed clusters.');
-  if (strata.some(s => metricKeys.some(key => s.measures[key].estimate.seeds < policy.minIndependentSeeds))) issues.push('Supporting metrics lack required opportunities.');
+  const insufficient = strata.flatMap(s => metricKeys.filter(key => s.measures[key].estimate.seeds < policy.minIndependentSeeds)
+    .map(key => `${s.caseId}/${s.map}/${s.opponent}/${key} (${s.measures[key].estimate.seeds}/${policy.minIndependentSeeds} seed clusters)`));
+  if (insufficient.length) issues.push(`Metrics lack required complete pairs: ${insufficient.join(', ')}. See each measure's unavailable jobs and reasons.`);
   const improved = estimate.low !== null && estimate.low > policy.minEffect;
   const regression = estimate.high !== null && estimate.high < -policy.minEffect;
   // A pooled win cannot establish transfer to a map/style that is flat, uncertain
@@ -67,5 +82,5 @@ export function qualityGate(plan: SuitePlan, results: readonly TrialResult[], nu
       generalization: { minimumMaps: 2, stratumLowerBound: 0, regressions: regressions.map(s => ({ caseId: s.caseId, map: s.map, opponent: s.opponent })),
         unresolved: unresolved.map(s => ({ caseId: s.caseId, map: s.map, opponent: s.opponent })) },
       primary: policy, completion: { completed, scheduled: jobs.length, censored, fraction: jobs.length ? completed / jobs.length : null },
-      estimate, seedDeltas, strata, issues });
+      estimate, seedDeltas, strata, issues, coverageVersion: 1 });
 }

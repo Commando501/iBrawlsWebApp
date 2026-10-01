@@ -133,19 +133,27 @@ export const EVALUATION_METRICS: Record<EvaluationMetric, string> = {
   goalPrevention: 'Non-scoring opponent possession fraction', uncoveredFraction: 'Uncovered / pressured carrier time',
   sharedExposureFraction: 'Shared exposure / threatened bot time', roleChangesPerMinute: 'Role changes / assigned bot minute', stuckFraction: 'Stuck / assigned bot time',
 };
-export function evaluationValue(run: Pick<EvaluationRun, 'job' | 'metrics'>, key: EvaluationMetric): number | null {
+/** Raw terms keep a zero observed rate distinct from a rate with no opportunity. */
+export function evaluationMetricInputs(run: Pick<EvaluationRun, 'job' | 'metrics'>, key: EvaluationMetric) {
   const team = run.metrics[run.job.focalTeam], other = run.metrics[run.job.focalTeam === 'blue' ? 'red' : 'blue'];
-  const ratio = (n: number, d: number) => d > 0 ? n / d : null;
+  const ratio = (numerator: number, denominatorName: keyof TeamEvaluationMetrics, opponent = false) => ({
+    numerator, denominator: (opponent ? other : team)[denominatorName], denominatorName,
+    team: opponent ? run.job.focalTeam === 'blue' ? 'red' as const : 'blue' as const : run.job.focalTeam,
+  });
   switch (key) {
-    case 'goalMargin': return team.goals - other.goals;
-    case 'goalsPerPossession': return ratio(team.goals, team.completedPossessions);
-    case 'turnoversPerPossession': return ratio(team.turnovers, team.completedPossessions);
-    case 'goalPrevention': return ratio(other.completedPossessions - other.goals, other.completedPossessions);
-    case 'uncoveredFraction': return ratio(team.uncoveredCarrierSeconds, team.pressuredCarrierSeconds);
-    case 'sharedExposureFraction': return ratio(team.sharedExposureSeconds, team.relevantBotSeconds);
-    case 'roleChangesPerMinute': return ratio(team.roleChanges * 60, team.assignedBotSeconds);
-    case 'stuckFraction': return ratio(team.stuckSeconds, team.assignedBotSeconds);
+    case 'goalMargin': return { numerator: team.goals - other.goals, denominator: null, denominatorName: null, team: run.job.focalTeam };
+    case 'goalsPerPossession': return ratio(team.goals, 'completedPossessions');
+    case 'turnoversPerPossession': return ratio(team.turnovers, 'completedPossessions');
+    case 'goalPrevention': return ratio(other.completedPossessions - other.goals, 'completedPossessions', true);
+    case 'uncoveredFraction': return ratio(team.uncoveredCarrierSeconds, 'pressuredCarrierSeconds');
+    case 'sharedExposureFraction': return ratio(team.sharedExposureSeconds, 'relevantBotSeconds');
+    case 'roleChangesPerMinute': return ratio(team.roleChanges * 60, 'assignedBotSeconds');
+    case 'stuckFraction': return ratio(team.stuckSeconds, 'assignedBotSeconds');
   }
+}
+export function evaluationValue(run: Pick<EvaluationRun, 'job' | 'metrics'>, key: EvaluationMetric): number | null {
+  const { numerator, denominator } = evaluationMetricInputs(run, key);
+  return denominator === null ? numerator : denominator > 0 ? numerator / denominator : null;
 }
 
 /** Pair within setup; average all sides/opponents within seed BEFORE estimating uncertainty. */
