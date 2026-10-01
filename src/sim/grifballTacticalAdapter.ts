@@ -78,10 +78,16 @@ export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSett
 export function createSimGrifballTacticalSnapshot(state: SimState, options: {
   scriptedBots: Readonly<Record<string, string>>;
   tactics?: GrifballTacticsConfig;
+  /** Current observed pickup input, supplied separately from control ownership.
+   * Omitted means unknown; this never issues an action or changes simulator state. */
+  pickupRequests?: Readonly<Record<string, boolean | undefined>>;
 }) {
   if (state.mode !== 'grifball') throw new Error('Tactical observations require Grifball mode.');
-  const scripted = (c: SimCombatant) => Object.prototype.hasOwnProperty.call(options.scriptedBots, c.id)
+  const scripted = (c: SimCombatant) => c.controller === 'ai' && !isNeuralNetDifficulty(state.settings.aiDifficulty)
+    && Object.prototype.hasOwnProperty.call(options.scriptedBots, c.id)
     && !isNeuralNetDifficulty(options.scriptedBots[c.id]);
+  const pickupRequested = (id: string) => options.pickupRequests && Object.prototype.hasOwnProperty.call(options.pickupRequests, id)
+    ? options.pickupRequests[id] : undefined;
   const roster = state.combatants.map(c => ({ id: c.id, team: c.team, controller: c.controller,
     difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, scripted: scripted(c) }));
   // Versioned execution aims along +sin/+cos; live model yaw is offset by PI.
@@ -100,7 +106,7 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
     tactics: options.tactics ?? defaultGrifballTactics(), roster,
     players: observedActors.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
       id: c.id, team: c.team, scripted: scripted(c), difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, pos: c.pos, vel: c.vel, height: c.pos.y,
-      heading: { x: headingSign * Math.sin(c.yaw), z: headingSign * Math.cos(c.yaw) }, pickupRequested: undefined,
+      heading: { x: headingSign * Math.sin(c.yaw), z: headingSign * Math.cos(c.yaw) }, pickupRequested: pickupRequested(c.id),
       space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c)),
     })),
     goals: { blue: state.goalPlates.find(p => p.team === 'blue')?.position ?? null, red: state.goalPlates.find(p => p.team === 'red')?.position ?? null },

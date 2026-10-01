@@ -61,6 +61,80 @@ function fixture() {
   return { sim, live, scriptedBots, goals };
 }
 
+for (const team of ['blue', 'red'] as const) for (const control of [
+  { name: 'request', request: true, distance: 1, yield: true },
+  { name: 'released', request: false, distance: 1, yield: false },
+  { name: 'unknown', request: undefined, distance: 1, yield: false },
+  { name: 'out-of-range', request: true, distance: 1.51, yield: false },
+]) test(`pickup observation preserves human handoff ${team}/${control.name}`, () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  for (const c of sim.combatants) {
+    if (team === 'red') c.team = c.team === 'blue' ? 'red' : 'blue';
+    c.vel = { x: 0, y: 0, z: 0 };
+    c.pos = { x: c.id === 'player' ? control.distance : c.team === team ? 4 : -15, y: 0, z: 0 };
+    if (c.id === 'player') {
+      live.localPlayerTeam = c.team; live.playerPos.set(c.pos.x, 0, 0); live.playerVel.set(0, 0, 0);
+      live.playerPickupRequested = control.request;
+    } else {
+      const bot = live.otherPlayers.get(c.id)!; bot.team = c.team;
+      bot.pos.set(c.pos.x, 0, 0); bot.vel.set(0, 0, 0);
+    }
+  }
+  const options = { scriptedBots, pickupRequests: { player: control.request } };
+  const a = createSimGrifballTacticalSnapshot(sim, options), b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+  assert.deepEqual(a, b);
+  const first = createGrifballTeamPlanState(), second = createGrifballTeamPlanState();
+  updateGrifballTeamPlan(first, a, 1 / 60); updateGrifballTeamPlan(second, b, 1 / 60);
+  assert.deepEqual(first, second);
+  assert.equal([...first.assignments.values()].filter(p => p.team === team && p.role === 'retriever').length, control.yield ? 0 : 1);
+  assert.equal(first.assignments.has('player'), false);
+});
+
+test('explicit scripted participants cannot authorize control of a remote actor', () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  const inputs = { ...scriptedBots, player: 'normal' };
+  const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots: inputs });
+  const b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+  assert.equal(a.players.find(p => p.id === 'player')!.scripted, false);
+  assert.deepEqual(a, b);
+});
+
+test('global neural selection revokes scripted ownership despite per-slot authorization', () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  sim.settings.aiDifficulty = live.settings.aiDifficulty = 'neural-net';
+  const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
+  const b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+  assert.ok(a.players.every(p => !p.scripted));
+  assert.deepEqual(a, b);
+  const plan = createGrifballTeamPlanState(); updateGrifballTeamPlan(plan, a, 1 / 60);
+  assert.equal(plan.assignments.size, 0);
+});
+
+test('per-slot neural selection stays outside scripted ownership', () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  const bot = sim.combatants.find(c => c.controller === 'ai')!;
+  scriptedBots[bot.id] = 'neural-net'; live.otherPlayers.get(bot.id)!.difficulty = 'neural-net';
+  const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
+  assert.equal(a.players.find(p => p.id === bot.id)!.scripted, false);
+  assert.deepEqual(a, createLiveGrifballTacticalSnapshot(live, goals, sim.map));
+});
+
+for (const execution of ['legacy-v1', 'live-mixed-v1'] as const)
+  test(`${execution}: pickup observations remain detached, explicit and do not execute controls`, () => {
+    const { sim, scriptedBots } = fixture();
+    sim.combatExecution = execution; sim.localPlayerId = 'player';
+    const before = JSON.stringify(sim), requests = { player: true };
+    const observed = () => createSimGrifballTacticalSnapshot(sim, { scriptedBots, pickupRequests: requests });
+    const first = observed();
+    requests.player = false;
+    assert.equal(first.players.find(p => p.id === 'player')!.pickupRequested, true);
+    assert.equal(observed().players.find(p => p.id === 'player')!.pickupRequested, false);
+    const inherited = createSimGrifballTacticalSnapshot(sim, { scriptedBots, pickupRequests: Object.create({ player: true }) });
+    assert.equal(inherited.players.find(p => p.id === 'player')!.pickupRequested, undefined);
+    assert.equal(createSimGrifballTacticalSnapshot(sim, { scriptedBots }).players.find(p => p.id === 'player')!.pickupRequested, undefined);
+    assert.equal(JSON.stringify(sim), before);
+  });
+
 test('equivalent ready-hammer live/headless fixtures produce identical versioned observations and team plans', () => {
   const { sim, live, scriptedBots, goals } = fixture();
   const headless = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
