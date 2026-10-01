@@ -916,8 +916,13 @@ export function createAISingleEntityUpdaterForState({
         timeRemaining: self.aiPostLungeDecisionTimer || 0,
       } : null;
   
+      const carrierInterception = s.settings.gameMode === 'grifball' && !!s.grifball.ball.holderId &&
+        teamAssignment?.tuning?.enabled === true && teamAssignment.defense?.targetId === s.grifball.ball.holderId &&
+        (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.emergency);
       const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
         if (tacticalWeapon === activeWeapon) return;
+        // A new weapon choice must not erase the strike we committed to stop the runner.
+        if (carrierInterception && ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState)) return;
         if (tacticalWeapon === 'sword' && swordForbidden) return;
         if (tacticalWeapon === 'hammer' && hammerForbidden) return;
         if (!force && (self.swapLockoutTimer ?? 0) > 0) return;
@@ -969,6 +974,8 @@ export function createAISingleEntityUpdaterForState({
         activeWeapon,
         canStartWeaponAction,
         tacticalWeapon: tacticalDecision.weapon,
+        preserveReadyStrike: carrierInterception && target.id === s.grifball.ball.holderId &&
+          enemyInKillRange && selfGrounded && !slideActive && dashRemaining <= 0,
         swapFeintActive,
         targetProtected: targetIsProtected,
         targetAirborne,

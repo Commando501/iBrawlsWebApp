@@ -55,6 +55,7 @@ export function resolveAIComboOrchestrationForCombatant({
   activeWeapon,
   canStartWeaponAction,
   tacticalWeapon,
+  preserveReadyStrike = false,
   swapFeintActive,
   targetProtected,
   targetAirborne,
@@ -88,6 +89,8 @@ export function resolveAIComboOrchestrationForCombatant({
   activeWeapon: Combatant['activeWeapon'];
   canStartWeaponAction: boolean;
   tacticalWeapon?: CombatantWeapon | null;
+  /** The assigned carrier interception has an immediate hit; do not spend it on a new weapon/combo setup. */
+  preserveReadyStrike?: boolean;
   swapFeintActive: boolean;
   targetProtected: boolean;
   targetAirborne: boolean;
@@ -139,6 +142,11 @@ export function resolveAIComboOrchestrationForCombatant({
     currentCanStartWeaponAction = applied.canStartWeaponAction;
     currentWeaponState = applied.weaponState;
   };
+
+  if (preserveReadyStrike && currentCanStartWeaponAction && currentWeaponState === 'ready' &&
+    !targetProtected && target.hp > 0 && !getBotComboState(aiContext, botId)) {
+    return result('continue', false);
+  }
 
   if (
     tacticalWeapon &&
