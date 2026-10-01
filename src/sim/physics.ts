@@ -80,7 +80,8 @@ export function stepCombatantMovement(
   cooldownsAdvanced = false,
   engagementPrepared = false,
   dashDecision?: ScriptedAIDashDecision,
-  ground?: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback }
+  ground?: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback },
+  evasionHold?: { held: boolean }
 ): ScriptedAIDashFeedback | undefined {
   if (!c.alive) return;
   const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
@@ -120,6 +121,10 @@ export function stepCombatantMovement(
   c.isCrouching = action.crouch && (engagementPrepared || playerView || !c.isJumping);
   const savedVelY = c.vel.y;
   if (engagementPrepared && finishSimAIEngagementMotion(state, c, settings, dt)) return;
+  if (engagementPrepared && evasionHold && c.dashRemaining <= 0) {
+    evasionHold.held = true;
+    return;
+  }
   if (engagementPrepared && c.dashRemaining > 0 && dashDecision) {
     const frame: AIDashMotionFrame = { pos: c.pos, vel: c.vel, dashDir: c.dashDir, aiState: dashDecision.aiState,
       dashRemaining: c.dashRemaining, slideActive: c.slideActive, slideCooldownTimer: c.slideCooldownTimer,

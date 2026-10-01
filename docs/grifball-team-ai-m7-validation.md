@@ -3430,3 +3430,30 @@ The first broad-run launch lacked its generated file list and fell into default 
 Remaining automatic work still includes composing the full combo/evasion/ground and committed-flight turn, AI clock/feedback ownership, lifecycle/reset handling, autonomous opposed completion, known behavioral cases, frozen-baseline/held-out quality/generalization and final-source performance/acceptance evidence. Human review follows these gates. M7 is not yet human-only.
 
 Final validation: the explicit 112-file regression bundle passes 9,879/9,879 in 131.56 seconds (output/m7-tactical-combo-regressions.log; exact file list in output/m7-tactical-combo-test-files.json). The isolated client/server build passes (output/m7-tactical-combo-build.log; Vite 18.29 seconds, existing chunk-size warning). No browser or full M7 acceptance rerun is claimed.
+
+
+## 2026-10-01 - preserve the evasion movement return
+
+The evasion adapter now carries the live no-dash movement return into the scheduled actor decision. Execution checks it after airborne recovery and before dash/ground movement. A main AI defensive hammer jump may remain grounded on its launch frame; it now retains its current horizontal velocity without walking or invoking the ground FSM. Ordinary bot jump recovery and active dash movement keep precedence. Animation/intent clocks and completeTurn still run, and the decision record reports evasionHeld only when the grounded return actually executed. Conflicting fallback inputs, no-target ownership, unprepared movement, carriers and committed-flight commands reject rather than silently overriding another movement owner.
+
+Thirty-seven added controls cover the two launch behaviors at 30/60 Hz, last-frame dash movement, omitted/false flags and fifteen invalid ownership combinations. Sixteen controlled paired 45-frame traces (720 frames per uninterrupted/restored host) compare live preparation/recovery with scheduled execution for grounded holds and airborne-to-landing transitions across both actor identities, mirrored velocities and both timesteps. The held evasion intent in these traces is authored, not an autonomous opposed match. Landing still clears velocity through the live gravity owner; the hold does not undo that reset.
+
+The focused two-file bundle passes 131/131 in 4.90 seconds (output/m7-evasion-hold-focused.log). Disabling the physical hold fails ten of twelve selected controls (two airborne launch controls pass, 119 others intentionally filtered; output/m7-evasion-hold-negative.log, 4.03 seconds). Source was restored. Existing repository test commands already include both changed test files.
+
+### Remaining-work status after this slice
+
+M7 is not yet at human-only testing. The suite, shared decision adapters and regression coverage are substantially implemented, but complete autonomous turn composition and match-quality acceptance remain unfinished. This slice resolves one integration defect inside that first workstream; it does not close an entire workstream. The planning estimate remains 10-14 substantial slices, not a guaranteed countdown:
+
+| Remaining workstream | Estimated slices |
+| --- | ---: |
+| Complete per-turn combat composition, including committed flight, clock priorities and model/calibration feedback | 2-3 |
+| Death, respawn, round/match reset and checkpoint ownership | 1 |
+| Genuine opposed full-match completion | 1-2 |
+| Known contested-opening, map, revival and dash failures | 2-3 |
+| Frozen-baseline and held-out quality/generalization evidence | 2 |
+| Final-source serial performance acceptance | 1 |
+| Final repository, browser and CLI/Lab verification and acceptance reports | 1-2 |
+
+Integration review also identified that live committed flight still passes through target/decision bookkeeping, while several headless adapters currently hand flight off. That behavior must be resolved explicitly during full-turn composition. The largest uncertainty remains behavioral fixes exposed by full matches and baseline comparisons. Human review follows successful current-source automated acceptance and covers spacing/escort feel, tactical readability, fairness and enjoyment. No browser or aggregate M7 acceptance result is claimed by this slice.
+
+Final validation: the unchanged explicit 112-file bundle passes 9,916/9,916 in 135.91 seconds (output/m7-evasion-hold-regressions.log; file list output/m7-tactical-combo-test-files.json). TypeScript and isolated client/server builds pass (output/m7-evasion-hold-typecheck.log and output/m7-evasion-hold-build.log; Vite 49.42 seconds, existing chunk-size warning). No full-repository, browser or aggregate acceptance rerun is claimed.

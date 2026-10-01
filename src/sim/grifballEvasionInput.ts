@@ -154,6 +154,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   return { targetId: target.id, frame: result, commands, commandVersion: airborne ? 'scripted-combat-v6' as const : 'scripted-combat-v5' as const,
     ...(airborneFrame ? { evasionFrame, airborneFrame } : {}),
     ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}),
+    holdAfterEvasion: result.isEvadingLunge && frame.dashRemaining <= 0,
     weaponFrame: { ...weaponFrame, weaponState: result.weaponState },
     motion: { pos: { ...frame.pos }, vel: { ...frame.vel }, dashDir: { ...frame.dashDir }, ...projected },
     needsMovement: true as const };

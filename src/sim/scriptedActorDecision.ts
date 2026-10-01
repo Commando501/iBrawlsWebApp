@@ -13,7 +13,10 @@ export type ScriptedDecisionClockPhase = 'before-swap-tick' | 'after-swap-tick';
 export const remainingDecisionSwapTime = (remaining: number, dt: number, phase: ScriptedDecisionClockPhase) =>
   Math.max(0, remaining - (phase === 'after-swap-tick' ? 0 : dt));
 
-export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand; dash?: ScriptedAIDashDecision; ground?: ScriptedAIGroundOwner; noTarget?: ScriptedAINoTargetOwner }
+export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand; dash?: ScriptedAIDashDecision; ground?: ScriptedAIGroundOwner; noTarget?: ScriptedAINoTargetOwner;
+  /** Live evasion returns after airborne recovery when no dash remains. Keep
+   * the retained velocity without walking or running the ground FSM. */
+  holdAfterEvasion?: boolean }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -48,6 +51,8 @@ export interface ScriptedActorDecisionRecord {
   dash?: ScriptedAIDashFeedback;
   ground?: ScriptedAIGroundFeedback;
   noTarget?: ScriptedAINoTargetFeedback;
+  /** True only when the grounded evasion return actually owned movement. */
+  evasionHeld?: true;
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -84,6 +89,16 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   for (const key of ['jump', 'dash', 'crouch', 'pickup', 'attackPrimary', 'attackSecondary', 'swapWeapon'] as const)
     if (typeof action[key] !== 'boolean') throw new Error(`Actor decision requires boolean ${key}: ${id}`);
   if (action.aimPitch !== undefined && !Number.isFinite(action.aimPitch)) throw new Error(`Invalid actor pitch: ${id}`);
+  if (decision.holdAfterEvasion !== undefined && typeof decision.holdAfterEvasion !== 'boolean')
+    throw new Error(`Invalid evasion movement hold: ${id}`);
+  if (decision.holdAfterEvasion) {
+    const actor = state.combatants.find(c => c.id === id);
+    if (!engagementPrepared || !actor || actor.isLunging || actor.hasBall || actor.weapon === 'ball' || state.match.ball.holderId === id ||
+      decision.noTarget || decision.movement !== undefined || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash ||
+      action.attackPrimary || action.attackSecondary || action.swapWeapon || action.pickup || action.passCharge !== 0 ||
+      decision.commands?.some(command => command.kind === 'lunge'))
+      throw new Error(`Evasion hold requires exclusive prepared engagement movement: ${id}`);
+  }
   const noTarget = decision.noTarget === undefined ? undefined : validateScriptedAINoTargetOwner(decision.noTarget,
     engagementPrepared || !!decision.ground || !!decision.dash || !!decision.mobility || !!decision.commands?.length ||
     decision.movement !== undefined || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash || action.crouch ||
@@ -108,5 +123,5 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
   }, actions, settings, engagementPrepared ? { actorId: id, mobility: !!mobility, dash: !!dash } : undefined)![id];
-  return { kind: 'handled', action: { ...action }, ...(noTarget ? { noTarget } : {}), ...(ground ? { ground } : {}), ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
+  return { kind: 'handled', action: { ...action }, ...(decision.holdAfterEvasion ? { holdAfterEvasion: true } : {}), ...(noTarget ? { noTarget } : {}), ...(ground ? { ground } : {}), ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

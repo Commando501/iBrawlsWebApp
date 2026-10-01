@@ -11,7 +11,7 @@ import { stepSimulation } from '../../src/sim/step';
 import { idleAction } from '../../src/sim/actions';
 
 for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const dt of [1 / 60, 1 / 30])
-  for (const kind of ['rising', 'falling', 'landing', 'altitude', 'wall', 'flight'] as const)
+  for (const kind of ['rising', 'falling', 'landing', 'altitude', 'wall', 'flight', 'evasion-hold', 'evasion-ground'] as const)
     test(`scheduled engagement motion ${id}/${sign}/${dt}/${kind}`, () => {
       const f = attachLungeRuntime(createBotParityFixture(id)), { bot, target, sim, state, map } = f;
       const [self, rival] = sim.combatants;
@@ -22,6 +22,10 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
       bot.isJumping = true; bot.aiHammerJumpsInAir = 1;
       self.pos = { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z }; self.vel = { x: bot.vel.x, y: bot.vel.y, z: bot.vel.z };
       self.isJumping = true; self.grounded = false; self.hammerJumpsInAir = 1;
+      if (kind === 'evasion-ground') {
+        bot.pos.y = self.pos.y = bot.vel.y = self.vel.y = 0;
+        bot.isJumping = self.isJumping = false; self.grounded = true;
+      }
       self.invulnerabilityTimer = rival.invulnerabilityTimer = self.weaponReadyTimer = self.swapLockoutTimer = bot.swapCooldownTimer = bot.swapLockoutTimer = 0;
       target.pos.set(30, 0, 30); rival.pos = { x: 30, y: 0, z: 30 };
       if (kind === 'flight') {
@@ -46,17 +50,21 @@ for (const id of ['main_ai', 'ordinary']) for (const sign of [-1, 1]) for (const
         if (bot.isLunging) f.flight(dt);
         else if (resolvePreGroundMovementRecoveryForCombatant({ self: bot, pos: bot.pos, vel: bot.vel, dt,
           movementComplexity: 0, swayTimer: 0, toTarget: target.pos.clone().sub(bot.pos),
-          recoverCombatantAltitude: recover, constrainCombatantToArena: constrain }) === 'continue') bot.vel.set(0, 0, 0);
+          recoverCombatantAltitude: recover, constrainCombatantToArena: constrain }) === 'continue' && !kind.startsWith('evasion-')) bot.vel.set(0, 0, 0);
         const advance = (current: typeof sim) => stepSimulation(current, {}, { settings: current.settings, dt,
           scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: { [id]: 'normal' }, prepare: () => 'engagement',
             resolve: ({ state: own, motionPhase }) => {
               assert.equal(motionPhase, 'after-engagement-gravity'); const actor = own.combatants.find(c => c.id === id)!;
               const actual = { pos: Object.values(actor.pos), vel: Object.values(actor.vel), jumping: actor.isJumping, budget: actor.hammerJumpsInAir };
               assert.deepEqual(actual, beforeDecision, `observation ${tick}`);
-              return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw, crouch: true } };
+              return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw, crouch: true }, holdAfterEvasion: kind.startsWith('evasion-') };
             } } });
         const events = advance(sim), restoredEvents = advance(restored);
         assert.deepEqual(restored, sim); assert.deepEqual(restoredEvents, events);
+        if (kind.startsWith('evasion-')) {
+          assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, bot.isJumping ? undefined : true);
+          if (tick === 45 && kind === 'evasion-ground') assert.equal(self.vel.x, sign * 2, 'grounded hold retains velocity without displacement');
+        }
         for (const axis of ['x', 'y', 'z'] as const) {
           assert.ok(Math.abs(self.pos[axis] - bot.pos[axis]) < 1e-8, `position ${tick}/${axis}`);
           assert.ok(Math.abs(self.vel[axis] - bot.vel[axis]) < 1e-8, `velocity ${tick}/${axis}`);

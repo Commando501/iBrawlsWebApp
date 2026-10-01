@@ -6,6 +6,7 @@ import { idleAction } from './actions';
 import { stepSimulation } from './step';
 import { stepCombatantWeapons } from './weapons';
 import { validateScriptedCombatInput } from './scriptedCombatInput';
+import { validateScriptedActorDecision, type ScriptedActorDecision } from './scriptedActorDecision';
 
 function fixture() {
   const state = createMatch({ seed: 7, teamSizes: { blue: 1, red: 2 }, combatExecution: 'live-mixed-v1',
@@ -32,6 +33,86 @@ function fixture() {
   const resolve = () => resolveSimGrifballEvasionInput(state, actor.id, authority, memories, context);
   return { state, actor, target, player, authority, memories, context, resolve, draws: () => draws };
 }
+
+for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 60, 1 / 30])
+  test(`defensive jump preserves the live recovery/ground hold handoff ${id}/${dt}`, () => {
+    const f = fixture(); f.actor.id = id;
+    const authority = { [id]: 'normal' }, memories = { [id]: f.memories.main_ai, target: f.memories.target };
+    f.actor.vel = { x: 2, y: 0, z: -1 }; f.actor.invulnerabilityTimer = .5;
+    let completed = false;
+    const events = stepSimulation(f.state, {}, { settings: f.state.settings, dt,
+      scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: authority, prepare: () => 'engagement',
+        resolve: ({ state }) => {
+          const decision = resolveSimGrifballEvasionInput(state, id, authority, memories, f.context, dt)!;
+          assert.equal(decision.holdAfterEvasion, true);
+          assert.deepEqual(decision.commands, [{ kind: 'hammer-jump', jumpType: 'defensive' }]);
+          return { kind: 'handled', action: { ...idleAction(), aim: .4 }, ...decision,
+            ground: { version: 'scripted-ai-ground-v1', resolve: () => assert.fail('evasion must not fall through to ground policy') } };
+        }, completeTurn: ({ record }) => {
+          completed = true;
+          assert.equal(record.evasionHeld, id === 'main_ai' ? true : undefined);
+          assert.equal(record.ground, undefined); assert.equal(record.dash, undefined);
+          assert.equal(f.actor.yaw, .4); assert.equal(f.actor.attackKind, 'strike');
+          if (id === 'main_ai') {
+            assert.deepEqual(f.actor.pos, { x: 0, y: 0, z: 0 });
+            assert.deepEqual(f.actor.vel, { x: 2, y: 0, z: -1 });
+            assert.equal(f.actor.hammerJumpPlanned, true); assert.equal(f.actor.isJumping, false);
+          } else {
+            assert.equal(f.actor.isJumping, true); assert.ok(f.actor.vel.y > 0);
+            assert.equal(f.actor.pos.y, 0, 'ordinary hammer jump sets launch velocity; the next gravity tick moves it');
+            assert.ok(f.actor.vel.x > 0 && f.actor.vel.x < 2);
+          }
+        } } });
+    assert.equal(completed, true);
+    assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, id === 'main_ai' ? true : undefined);
+    assert.ok(Math.abs(f.actor.invulnerabilityTimer - (.5 - dt)) < 1e-8);
+    assert.equal(f.actor.weaponState, 'windup', 'animation still runs after the movement return');
+  });
+
+test('active dash finishes its movement before a requested evasion hold can take over', () => {
+  const f = fixture(); f.actor.dashRemaining = .01; f.actor.dashDir = { x: 1, y: 0, z: 0 };
+  const events = stepSimulation(f.state, {}, { settings: f.state.settings,
+    scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: f.authority, prepare: () => 'engagement',
+      resolve: () => ({ kind: 'handled', action: idleAction(), holdAfterEvasion: true,
+        dash: { version: 'scripted-ai-dash-v1', aiState: 'APPROACHING', pendingPostEvasionCharge: false,
+          target: { targetWeaponState: 'ready', attackDistanceToTarget: 8, resolvedAiReach: 3, targetProtected: false,
+            spatialIQ: 80, weaponReady: true } },
+        ground: { version: 'scripted-ai-ground-v1', resolve: () => assert.fail('dash still owns this frame') } }) } });
+  assert.ok(f.actor.pos.x > 0); assert.equal(f.actor.dashRemaining, 0);
+  assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, undefined);
+  assert.ok(events.actorDecisionFrame!.decisions[0].dash);
+});
+
+test('omitted or declined hold retains ordinary prepared movement', () => {
+  for (const holdAfterEvasion of [undefined, false]) {
+    const f = fixture(); f.actor.vel.x = 2;
+    const events = stepSimulation(f.state, {}, { settings: f.state.settings,
+      scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: f.authority, prepare: () => 'engagement',
+        resolve: () => ({ kind: 'handled', action: idleAction(), holdAfterEvasion }) } });
+    assert.equal(f.actor.vel.x, 0); assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, undefined);
+  }
+});
+
+for (const conflict of ['unprepared', 'invalid-flag', 'flight', 'carrier', 'movement', 'walk', 'jump', 'dash',
+  'attackPrimary', 'attackSecondary', 'swapWeapon', 'pickup', 'pass', 'lunge', 'no-target'] as const)
+  test(`evasion hold rejects conflicting ownership: ${conflict}`, () => {
+    const f = fixture();
+    const decision: Extract<ScriptedActorDecision, { kind: 'handled' }> = { kind: 'handled', action: idleAction(), holdAfterEvasion: true };
+    if (conflict === 'invalid-flag') (decision as any).holdAfterEvasion = 'yes';
+    if (conflict === 'flight') f.actor.isLunging = true;
+    if (conflict === 'carrier') f.actor.hasBall = true;
+    if (conflict === 'movement') decision.movement = { x: 0, z: 1 };
+    if (conflict === 'walk') decision.action.moveX = 1;
+    if (['jump', 'dash', 'attackPrimary', 'attackSecondary', 'swapWeapon', 'pickup'].includes(conflict)) (decision.action as any)[conflict] = true;
+    if (conflict === 'pass') decision.action.passCharge = .5;
+    if (conflict === 'lunge') decision.commands = [{ kind: 'lunge' } as never];
+    if (conflict === 'no-target') decision.noTarget = {} as never;
+    const before = structuredClone(f.state);
+    assert.throws(() => validateScriptedActorDecision(f.state,
+      { version: 'scripted-actor-decision-v1', scriptedBots: f.authority, resolve: () => decision },
+      f.actor.id, decision, f.state.settings, conflict !== 'unprepared'), /evasion|Evasion/);
+    assert.deepEqual(f.state, before);
+  });
 
 for (const reason of ['legacy', 'combat-mode', 'paused', 'remote', 'local', 'neural', 'authority', 'dead', 'respawn', 'flight',
   'carrier', 'own-memory', 'target-memory', 'dead-target', 'friendly-target', 'missing-target', 'duplicate-target'] as const)

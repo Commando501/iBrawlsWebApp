@@ -193,6 +193,7 @@ export function stepSimulation(
     let groundOwner: ScriptedAIGroundOwner | undefined;
     let noTargetOwner: ScriptedAINoTargetOwner | undefined;
     let dashDecision: ScriptedAIDashDecision | undefined;
+    let evasionHold: { held: boolean } | undefined;
     let engagementCommit: { beforeAttack?: () => void; sequentialOpportunities?: boolean; groundReadyOverride?: boolean } | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
@@ -234,6 +235,7 @@ export function stepSimulation(
         if (decision.kind === 'handled') {
           dashDecision = decision.dash; groundOwner = decision.ground;
           noTargetOwner = decision.noTarget;
+          if (decision.holdAfterEvasion) evasionHold = { held: false };
           if (['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '') && decision.commands?.length) engagementCommit = { sequentialOpportunities: decision.commandVersion === 'scripted-combat-v6' };
           if (decision.mobility) {
             const mobility = decision.mobility, record = actorDecisions[actorDecisions.length - 1];
@@ -284,7 +286,8 @@ export function stepSimulation(
           stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', [], meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
         return executeScriptedAIGround(state, c, settings, dt, savedVelY, groundOwner!, !!engagementCommit?.groundReadyOverride);
       } } : undefined;
-    const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision, groundExecution);
+    const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision, groundExecution, evasionHold);
+    if (evasionHold?.held) actorDecisions[actorDecisions.length - 1].evasionHeld = true;
     if (groundExecution?.completed) actorDecisions[actorDecisions.length - 1].ground = groundExecution.completed;
     if (dashFeedback) actorDecisions[actorDecisions.length - 1].dash = dashFeedback;
     // Ground opportunities run inside movement after recovery. A fresh lunge
