@@ -107,7 +107,7 @@ for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (
             result = resolveSimGrifballGroundOpportunityInput(own, makePlan(own), id, owners, tuning, memory,
               { weaponFrame: { activeWeapon: actor.weapon, weaponState: 'ready', canStartWeaponAction: canStartAIWeaponAction({ ...memory, swapCooldownTimer: actor.weaponReadyTimer }),
                 observedSwapLockout: actor.swapLockoutTimer, currentSwapLockout: actor.swapLockoutTimer, readinessRemaining: actor.weaponReadyTimer },
-                comboActive: kind === 'combo', swapFeintActive: false, feints: {}, random: () => { if (replay) replayDraws++; else simDraws++; return draw(); } })!;
+                comboActive: kind === 'combo', feints: {}, random: () => { if (replay) replayDraws++; else simDraws++; return draw(); } })!;
             assert.deepEqual(own, before);
             return { kind: 'handled' as const, action: result.action, commands: result.scriptedCombat.commands[id], commandVersion: result.scriptedCombat.version, movement: result.movement };
           },

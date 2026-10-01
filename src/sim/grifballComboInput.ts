@@ -109,6 +109,12 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
   const scriptedCombat: ScriptedCombatInput = { version: weaponFeintMemory ? 'scripted-combat-v2' : 'scripted-combat-v1', scriptedBots, commands: { [botId]: commands } };
   const aim = normalizeYaw(observation.prediction.aim);
   return { targetId: target.id, frame, comboState: aiContext.comboState.get(botId) ?? null, lungeObservation,
+    // Continue branches must carry these locals through intervening evasion and
+    // recovery priorities. Re-reading engine weapon/clocks would lose queued
+    // reversion/swaps and the readiness sampled before spending AI reload.
+    weaponFrame: { activeWeapon: frame.activeWeapon, weaponState: frame.weaponState,
+      canStartWeaponAction: frame.canStartWeaponAction, observedSwapLockout,
+      currentSwapLockout: lockout, readinessRemaining: readiness },
     ...(weaponFeintMemory ? { weaponFeintMemory } : {}),
     // JSON persistence canonicalizes signed zero. Normalize the command before
     // flight freezes its heading so restored and uninterrupted state stay exact.

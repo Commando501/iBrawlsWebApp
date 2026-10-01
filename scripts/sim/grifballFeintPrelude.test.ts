@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBotParityFixture } from './grifballBotExecutionParity';
+import { resolveAIGroundAttackOpportunityForCombatant } from '../../src/components/grifball/aiGroundAttackOpportunityRuntime';
+import { resolveSimGrifballGroundOpportunityInput } from '../../src/sim/grifballGroundOpportunityInput';
+import { resolveBehaviorTuning } from '../../src/game/aiBehaviorTuning';
 import { resolveAIComboOrchestrationForCombatant } from '../../src/components/grifball/aiComboOrchestrationRuntime';
 import { resolveAICombatRangeFrame } from '../../src/components/grifball/aiCombatRangeRuntime';
 import { swapCombatantWeaponAction } from '../../src/components/grifball/combatantActions';
@@ -17,9 +20,9 @@ import { createRng } from '../../src/sim/rng';
 import { stepSimulation } from '../../src/sim/step';
 
 const dt = 1 / 60;
-for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (const combo of [false, true])
+for (const groundContinuation of [false, true]) for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (const combo of [false, true])
   for (const kind of ['ready', 'sword-up', 'sword-down', 'swipe-up', 'swipe-down', 'recovery', 'forbidden', 'hammer'] as const)
-    test(`scheduled feint ${id}/${mirror}/${combo}/${kind}`, () => {
+    test(`scheduled feint ground=${groundContinuation}/${id}/${mirror}/${combo}/${kind}`, () => {
       const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', weaponReadyTime: .08, weaponSwapLockout: .45 });
       const { sim, state, bot, target } = f, [self, rival] = sim.combatants;
       sim.combatExecution = 'live-mixed-v1'; sim.localPlayerId = 'player'; sim.match.phase = 'playing';
@@ -57,6 +60,7 @@ for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (
       let reverts = 0;
       for (let tick = 1; tick <= 120; tick++) {
         let liveFrame!: ReturnType<typeof resolveAIComboOrchestrationForCombatant>;
+        let liveGround: ReturnType<typeof resolveAIGroundAttackOpportunityForCombatant> | undefined;
         f.frame(false, false, () => {
           if (id !== 'main_ai') { bot.swapCooldownTimer = Math.max(0, (bot.swapCooldownTimer ?? 0) - dt); bot.swapLockoutTimer = Math.max(0, (bot.swapLockoutTimer ?? 0) - dt); }
           const range = resolveAICombatRangeFrame({ botPos: bot.pos, botVel: bot.vel, botIsCrouching: false, botIsJumping: false,
@@ -84,9 +88,32 @@ for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (
               return { activeWeapon, weaponState, canStartWeaponAction: ready };
             }, triggerCombatantAttack: (_self, _weapon, swipe) => f.attack(swipe),
             triggerCombatantLunge: () => assert.fail('stationary close encounter'), recordCombatantObservation: () => {} });
+          if (groundContinuation && liveFrame.mode === 'continue') {
+            // These authored close, grounded encounters have no evasion, dash or
+            // airborne recovery. Live spends AI reload between combo and ground.
+            liveGround = resolveAIGroundAttackOpportunityForCombatant({ state, self: bot, botId: id,
+              target: { ...target, weaponState: target.weaponState!, isLunging: false, isCrouching: false },
+              frame: { pos: bot.pos, vel: bot.vel, aiState: liveFrame.aiState, timer: (liveFrame.timer ?? 0) - dt, weaponState: liveFrame.weaponState },
+              activeWeapon: liveFrame.activeWeapon, canStartWeaponAction: liveFrame.canStartWeaponAction,
+              targetAirborne: false, targetProtected: false, ...range, slideActive: false, cooldownMultiplier: 1,
+              swordForbidden: false, swapLockoutRemaining: lockout,
+              swapFeintActive: (state.aiMatchContext.weaponSwapFeintTimers.get(id) ?? 0) > 0,
+              comboActive: liveFrame.comboActive, feintChance: 0, lungeDistanceToTarget: bot.pos.distanceTo(target.pos),
+              hasVerticalLungeLine: true, minLungeRange: resolveAICombatDangerZone(state.settings, target.activeWeapon) * .85,
+              maxLungeRange: Math.min(18, state.settings.swordLungeDistance), combatDistanceToTarget: range.combatDistanceToTarget,
+              distanceToTarget: bot.pos.distanceTo(target.pos), resolvedAiReach: state.settings.attackRange + state.settings.attackRadius * .75,
+              aggressiveLungeMult: 1, tunedAnticipationFactor: 0, playstyleFactor: .5, tuning: resolveBehaviorTuning(state.settings),
+              random: liveRng.next, constrainCombatantToArena: () => {}, triggerCombatantAttack: () => f.attack(),
+              applyTacticalWeapon: () => assert.fail('close target cannot trigger weapon feint'),
+              startWeaponSwapFeintTimer: () => assert.fail('feints disabled'), commitFeint: () => assert.fail('feints disabled'),
+              tryFeintRoll: () => assert.fail('feints disabled'), getTargetPlayerModel: () => null,
+              triggerCombatantLunge: () => assert.fail('close target cannot trigger lunge'), recordCombatantObservation: () => {} });
+          }
+
         });
         const advance = (current: typeof sim, memories: typeof memory, oldFeint: SimWeaponFeintMemory, oldCombo: BotComboState | null, random: ReturnType<typeof createRng>) => {
           let result!: NonNullable<ReturnType<typeof resolveSimGrifballComboInput>>;
+          let ground: ReturnType<typeof resolveSimGrifballGroundOpportunityInput> | undefined;
           stepSimulation(current, {}, { settings: current.settings, scriptedActorDecisions: {
             version: 'scripted-actor-decision-v1', scriptedBots: owners, resolve: ({ clockPhase }) => {
               const before = structuredClone({ current, memories, oldFeint, oldCombo });
@@ -94,18 +121,31 @@ for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (
                 { comboState: oldCombo, tacticalWeapon: null, swapFeintActive: (oldFeint.swapRemaining ?? 0) > 0,
                   weaponFeintMemory: oldFeint, random: random.next }, dt, clockPhase)!;
               assert.deepEqual({ current, memories, oldFeint, oldCombo }, before);
-              memories[id] = { ...memories[id], aiState: result.frame.aiState, timer: Math.max(0, (result.frame.timer ?? 0) - dt) };
-              return { kind: 'handled', action: result.action, commands: result.scriptedCombat.commands[id], commandVersion: result.scriptedCombat.version };
+              if (groundContinuation && result.frame.mode === 'continue') {
+                ground = resolveSimGrifballGroundOpportunityInput(current, makePlan(current), id, owners,
+                  { ...tuning, feintChance: 0, aggressiveLungeMult: 1 },
+                  { ...memories[id], aiState: result.frame.aiState, timer: (result.frame.timer ?? 0) - dt },
+                  { weaponFrame: result.weaponFrame, comboActive: result.frame.comboActive, feints: result.weaponFeintMemory!, random: random.next });
+                assert.ok(ground);
+              }
+              const finalFrame = ground?.frame ?? result.frame;
+              memories[id] = { ...memories[id], aiState: finalFrame.aiState,
+                timer: groundContinuation ? finalFrame.timer : Math.max(0, (result.frame.timer ?? 0) - dt) };
+              assert.deepEqual(current, before.current);
+              return { kind: 'handled', action: ground?.action ?? result.action, movement: ground?.movement,
+                commands: [...result.scriptedCombat.commands[id], ...(ground?.scriptedCombat.commands[id] ?? [])], commandVersion: result.scriptedCombat.version };
             },
           } });
-          return result;
+          return { ...result, ground };
         };
         const result = advance(sim, memory, feint, simCombo, rng); feint = result.weaponFeintMemory!; simCombo = result.comboState;
         assert.deepEqual(result.frame, liveFrame, `decision ${tick}`);
+        assert.deepEqual(result.ground?.frame, liveGround, `ground continuation ${tick}`);
         assert.deepEqual(simCombo, state.aiMatchContext.comboState.get(id) ?? null);
         assert.equal(feint.cooldownRemaining, state.aiMatchContext.feintCooldowns.get(id)); assert.equal(feint.swapRemaining, state.aiMatchContext.weaponSwapFeintTimers.get(id));
         assert.equal(rng.getState(), liveRng.getState());
-        liveMemory = { ...liveMemory, aiState: liveFrame.aiState, timer: Math.max(0, (liveFrame.timer ?? 0) - dt) };
+        const finalLiveFrame = liveGround ?? liveFrame;
+        liveMemory = { ...liveMemory, aiState: finalLiveFrame.aiState, timer: groundContinuation ? finalLiveFrame.timer : Math.max(0, (liveFrame.timer ?? 0) - dt) };
         assert.equal(self.weapon, bot.activeWeapon); assert.equal(rival.hp, target.hp, `damage ${tick}`);
         assert.equal(self.weaponReadyTimer, bot.swapCooldownTimer); assert.equal(self.swapLockoutTimer, bot.swapLockoutTimer);
         const phase = bot.weaponState === 'ready' ? 'idle' : ['swing_up', 'melee_up'].includes(bot.weaponState!) ? 'windup' : ['swing_down', 'melee_down'].includes(bot.weaponState!) ? 'active' : 'recovering';
@@ -124,5 +164,6 @@ for (const id of ['main_ai', 'bot_2']) for (const mirror of [false, true]) for (
       }
       assert.equal(reverts, kind === 'forbidden' || kind === 'hammer' || kind.startsWith('swipe') ? 0 : 1);
       assert.equal(feint.swapRemaining, undefined); assert.equal(feint.cooldownRemaining, undefined);
-      if (combo && kind === 'ready') assert.equal(target.hp, 19, 'combo follow-up must land after expiry and reload');
+      if (combo && kind === 'ready' && !groundContinuation) assert.equal(target.hp, 19, 'combo follow-up must land after expiry and reload');
+      if (groundContinuation && kind === 'ready') assert.ok(target.hp < 20, 'composed priorities must reach real contact after reload');
     });

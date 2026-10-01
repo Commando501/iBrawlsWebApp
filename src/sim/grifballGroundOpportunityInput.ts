@@ -29,14 +29,14 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
   scriptedBots: Readonly<Record<string, string>>, tuning: AssignedCombatTuning & {
     weaponPrioritization: number; spacingFactor: number; aggressiveLungeMult: number; feintChance: number;
   }, memory: TacticalAIMemory, context: {
-    weaponFrame: GroundOpportunityWeaponFrame; comboActive: boolean; swapFeintActive: boolean; feints: SimWeaponFeintMemory;
+    weaponFrame: GroundOpportunityWeaponFrame; comboActive: boolean; feints: SimWeaponFeintMemory;
     random: () => number; playerModel?: PlayerModelSnapshot | null;
   }, dt = 1 / 60) {
   if (typeof context.random !== 'function') throw new Error('Ground opportunities require a caller-owned random stream');
   for (const value of [context.weaponFrame.observedSwapLockout, context.weaponFrame.currentSwapLockout, context.weaponFrame.readinessRemaining,
     context.feints.cooldownRemaining ?? 0, context.feints.swapRemaining ?? 0])
     if (!Number.isFinite(value) || value < 0) throw new Error('Invalid ground opportunity clock');
-  if (typeof context.weaponFrame.canStartWeaponAction !== 'boolean' || typeof context.comboActive !== 'boolean' || typeof context.swapFeintActive !== 'boolean') throw new Error('Invalid ground opportunity readiness');
+  if (typeof context.weaponFrame.canStartWeaponAction !== 'boolean' || typeof context.comboActive !== 'boolean') throw new Error('Invalid ground opportunity readiness');
   if (context.weaponFrame.activeWeapon !== 'hammer' && context.weaponFrame.activeWeapon !== 'sword') throw new Error('Ground opportunities require an armed weapon frame');
   const observation = resolveSimGrifballAssignedCombatInput(state, plan, botId, scriptedBots, tuning, memory, dt, 'after-swap-tick');
   if (!observation) return null;
@@ -56,7 +56,7 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
     activeWeapon, canStartWeaponAction, targetAirborne: observation.prediction.targetAirborne, targetProtected: target.invulnerabilityTimer > 0,
     enemyInKillRange: observation.range.enemyInKillRange, selfGrounded: true, slideActive: false, cooldownMultiplier: memory.cooldownMultiplier,
     swordForbidden: tuning.weaponPrioritization <= 0, swapLockoutRemaining: context.weaponFrame.observedSwapLockout,
-    swapFeintActive: context.swapFeintActive, comboActive: context.comboActive, feintChance: tuning.feintChance,
+    swapFeintActive: (feints.swapRemaining ?? 0) > 0, comboActive: context.comboActive, feintChance: tuning.feintChance,
     lungeDistanceToTarget: lungeDistance, hasVerticalLungeLine: !observation.prediction.targetAirborne || tuning.movementComplexity >= 60,
     minLungeRange: resolveAICombatDangerZone(state.settings, target.weapon) * tuning.spacingFactor * .85,
     maxLungeRange: Math.min(18, state.settings.swordLungeDistance ?? 14.5),

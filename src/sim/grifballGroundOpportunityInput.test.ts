@@ -4,6 +4,7 @@ import { createMatch } from './factory';
 import { createGrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import { defaultGrifballTactics } from '../game/grifballTacticsConfig';
 import { createSimGrifballTacticalSnapshot } from './grifballTacticalAdapter';
+import { resolveSimGrifballComboInput } from './grifballComboInput';
 import { resolveSimGrifballGroundOpportunityInput } from './grifballGroundOpportunityInput';
 
 function fixture() {
@@ -25,16 +26,16 @@ function fixture() {
   const context: Parameters<typeof resolveSimGrifballGroundOpportunityInput>[6] = {
     weaponFrame: { activeWeapon: 'hammer', weaponState: 'ready', canStartWeaponAction: true,
       observedSwapLockout: 0, currentSwapLockout: 0, readinessRemaining: 0 },
-    swapFeintActive: false, comboActive: false, feints: {}, random: () => { draws++; return .01; },
+    comboActive: false, feints: {}, random: () => { draws++; return .01; },
   };
   const decide = () => resolveSimGrifballGroundOpportunityInput(state, plan, self.id, owners, tuning, memory, context);
   return { state, self, target, owners, plan, tuning, memory, context, decide, draws: () => draws };
 }
 
-for (const gate of ['sampled-feint', 'cooldown', 'observed-lockout', 'sword-forbidden', 'combo'] as const)
+for (const gate of ['active-feint', 'cooldown', 'observed-lockout', 'sword-forbidden', 'combo'] as const)
   test(`ground feint respects ${gate} without consuming RNG`, () => {
     const f = fixture();
-    if (gate === 'sampled-feint') f.context.swapFeintActive = true; // Timer has already expired this frame.
+    if (gate === 'active-feint') f.context.feints.swapRemaining = .1;
     if (gate === 'cooldown') f.context.feints.cooldownRemaining = 1;
     if (gate === 'observed-lockout') f.context.weaponFrame.observedSwapLockout = .1; // Current lockout was cleared by reversion.
     if (gate === 'sword-forbidden') f.tuning.weaponPrioritization = 0;
@@ -74,7 +75,7 @@ for (const unsupported of ['no-assignment', 'outside-area', 'remote', 'carrier',
     assert.equal(f.decide(), null); assert.equal(f.draws(), 0); assert.deepEqual(f.state, before);
   });
 
-for (const defect of ['rng', 'readiness-clock', 'observed-lockout', 'current-lockout', 'feint-clock', 'readiness', 'sampled-feint', 'weapon'] as const)
+for (const defect of ['rng', 'readiness-clock', 'observed-lockout', 'current-lockout', 'feint-clock', 'readiness', 'combo', 'weapon'] as const)
   test(`invalid ground opportunity ${defect} rejects before memory or RNG mutation`, () => {
     const f = fixture();
     if (defect === 'rng') f.context.random = undefined as never;
@@ -83,9 +84,46 @@ for (const defect of ['rng', 'readiness-clock', 'observed-lockout', 'current-loc
     if (defect === 'current-lockout') f.context.weaponFrame.currentSwapLockout = Infinity;
     if (defect === 'feint-clock') f.context.feints.swapRemaining = -1;
     if (defect === 'readiness') f.context.weaponFrame.canStartWeaponAction = 1 as never;
-    if (defect === 'sampled-feint') f.context.swapFeintActive = undefined as never;
+    if (defect === 'combo') f.context.comboActive = undefined as never;
     if (defect === 'weapon') f.context.weaponFrame.activeWeapon = 'ball';
     const before = structuredClone({ state: f.state, memory: f.memory, feints: f.context.feints });
     assert.throws(f.decide); assert.equal(f.draws(), 0);
     assert.deepEqual({ state: f.state, memory: f.memory, feints: f.context.feints }, before);
+  });
+
+for (const scenario of ['rearm', 'zero-delay', 'old-lockout', 'cooldown', 'close-strike', 'reload-crossing'] as const)
+  test(`feint expiry and combo hand off current weapon locals to ground: ${scenario}`, () => {
+    const f = fixture(), dt = 1 / 60;
+    f.self.weapon = 'sword'; f.state.settings.weaponReadyTime = scenario === 'zero-delay' ? 0 : .08;
+    if (scenario === 'old-lockout') f.self.swapLockoutTimer = .2;
+    if (scenario === 'close-strike' || scenario === 'reload-crossing') {
+      f.target.pos.z = 2;
+      f.plan.snapshot = createSimGrifballTacticalSnapshot(f.state, { scriptedBots: f.owners });
+    }
+    if (scenario === 'reload-crossing') { f.memory.aiState = 'COOLDOWN' as never; f.memory.timer = dt / 2; }
+    const memories = { [f.self.id]: f.memory, [f.target.id]: { ...f.memory, timer: 0 } };
+    const before = structuredClone(f.state);
+    const combo = resolveSimGrifballComboInput(f.state, f.plan, f.self.id, f.owners,
+      { ...f.tuning, weaponSwapIQ: 0 }, memories, { tacticalWeapon: 'sword', comboState: null, swapFeintActive: true,
+        weaponFeintMemory: { swapRemaining: dt / 2, cooldownRemaining: scenario === 'cooldown' ? 1 : 0 },
+        random: f.context.random }, dt, 'after-swap-tick')!;
+    assert.equal(combo.frame.mode, 'continue');
+    assert.deepEqual(combo.scriptedCombat.commands[f.self.id], [{ kind: 'revert-weapon-feint' }], 'pre-expiry activity blocks tactical reswap in combo');
+    assert.equal(combo.weaponFrame.activeWeapon, 'hammer'); assert.equal(combo.weaponFrame.currentSwapLockout, 0);
+    assert.equal(combo.weaponFrame.observedSwapLockout, scenario === 'old-lockout' ? .2 : 0);
+    assert.equal(combo.weaponFeintMemory?.swapRemaining, undefined);
+    const ground = resolveSimGrifballGroundOpportunityInput(f.state, f.plan, f.self.id, f.owners, f.tuning,
+      { ...f.memory, aiState: combo.frame.aiState, timer: (combo.frame.timer ?? 0) - dt },
+      { ...f.context, weaponFrame: combo.weaponFrame, comboActive: combo.frame.comboActive, feints: combo.weaponFeintMemory! })!;
+    const commands = [...combo.scriptedCombat.commands[f.self.id], ...ground.scriptedCombat.commands[f.self.id]];
+    const expected = scenario === 'rearm' ? ['revert-weapon-feint', 'swap']
+      : scenario === 'zero-delay' ? ['revert-weapon-feint', 'swap', 'lunge']
+      : scenario === 'close-strike' ? ['revert-weapon-feint', 'melee'] : ['revert-weapon-feint'];
+    assert.deepEqual(commands.map(c => c.kind), expected);
+    if (scenario === 'close-strike') assert.equal(ground.frame.activeWeapon, 'hammer');
+    if (scenario === 'reload-crossing') {
+      assert.equal(combo.weaponFrame.canStartWeaponAction, false, 'reload was not ready when sampled');
+      assert.ok(ground.frame.timer! < 0); assert.equal(ground.needsMovement, true);
+    }
+    assert.deepEqual(f.state, before, 'composed policy must not execute commands while deciding');
   });
