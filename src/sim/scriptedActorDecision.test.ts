@@ -213,6 +213,10 @@ test('engagement preparation refuses carriers and generic player jump ownership'
   f.owner.resolve = () => ({ kind: 'handoff', reason: 'fallback jump is also unowned' });
   assert.throws(() => stepSimulation(f.state, { ordinary: { ...idleAction(), jump: true } },
     { settings: f.state.settings, scriptedActorDecisions: f.owner }), /scripted AI jump owner/);
+  assert.throws(() => stepSimulation(f.state, { ordinary: { ...idleAction(), dash: true } },
+    { settings: f.state.settings, scriptedActorDecisions: f.owner }), /scripted AI dash owner/);
+  f.owner.resolve = () => ({ kind: 'handled', action: { ...idleAction(), dash: true } });
+  assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /scripted AI dash owner/);
 });
 
 test('landing preparation permits the same-turn ground attack and advances recovery clocks once', () => {
@@ -263,7 +267,7 @@ for (const defect of ['version', 'kind', 'direction', 'zero', 'length', 'nonfini
       return decision;
     };
     const before = { ...f.first.pos };
-    assert.throws(() => stepSimulation(f.state, {}, { scriptedActorDecisions: f.owner }), /AI mobility/);
+    assert.throws(() => stepSimulation(f.state, {}, { scriptedActorDecisions: f.owner }), /AI mobility|AI dash/);
     assert.deepEqual(f.first.pos, before, 'invalid command must not actuate the hop');
     assert.equal(f.first.isJumping, false);
   });
@@ -280,3 +284,73 @@ test('emergency hop execution preserves the validated packet and does not consum
   assert.equal(f.first.pos.x, 7.5 * dt); assert.equal(f.first.pos.y, 5.5 * dt);
   assert.equal(f.first.vel.x, 7.5 * (1 - 5 * dt)); assert.ok(f.first.isJumping);
 });
+
+for (const id of ['ordinary', 'main_ai']) for (const reason of ['eligible', 'target-ready', 'protected', 'far', 'low-iq', 'unready', 'no-intent', 'new-window'])
+  test(`dash completion uses current observations and clears intent: ${id}/${reason}`, () => {
+    const f = fixture(); f.owner.scriptedBots = { [id]: 'normal' }; f.owner.prepare = () => 'engagement';
+    const actor = f.state.combatants.find(c => c.id === id)!, target = id === 'ordinary' ? f.second : f.first;
+    actor.pos = { x: 0, y: 0, z: 0 }; target.pos = { x: 0, y: 0, z: 2 }; target.team = 'red'; actor.team = 'blue';
+    f.state.settings.dashDistance = .3; f.state.settings.dashDuration = 2.5 * dt;
+    actor.dashDir = { x: 1, y: 0, z: 0 }; actor.dashRemaining = f.state.settings.dashDuration;
+    actor.slideActive = true; actor.isSprinting = true;
+    let memory = { aiState: 'SIDE_STEPPING' as import('../types').AIBehaviorState | undefined, pendingPostEvasionCharge: reason !== 'no-intent' };
+    let last: typeof memory | undefined;
+    for (let tick = 1; tick <= 3; tick++) {
+      const final = tick === 3;
+      target.weaponState = reason === 'new-window' && !final || reason === 'target-ready' && final ? 'idle' : 'recovering';
+      target.weaponTimer = 100;
+      target.invulnerabilityTimer = reason === 'protected' && final ? 1 : 0;
+      target.pos.z = reason === 'far' && final ? 12 : 2;
+      f.owner.resolve = ({ state }) => {
+        const own = state.combatants.find(c => c.id === id)!, enemy = state.combatants.find(c => c.id === target.id)!;
+        return { kind: 'handled', action: { ...idleAction(), aim: own.yaw }, dash: { version: 'scripted-ai-dash-v1', ...memory,
+          target: { targetWeaponState: enemy.weaponState === 'recovering' ? 'recovering' : 'ready',
+            attackDistanceToTarget: Math.hypot(enemy.pos.x - own.pos.x, enemy.pos.z - own.pos.z), resolvedAiReach: 3,
+            targetProtected: enemy.invulnerabilityTimer > 0, spatialIQ: reason === 'low-iq' && final ? 34 : 80,
+            weaponReady: !(reason === 'unready' && final) } } };
+      };
+      const event = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner });
+      last = event.actorDecisionFrame!.decisions[0].dash!; assert.ok(last);
+      memory = { ...last };
+      assert.equal(actor.slideActive, false); assert.equal(actor.isSprinting, false);
+      if (!final) { assert.equal(memory.aiState, 'SIDE_STEPPING'); assert.equal(memory.pendingPostEvasionCharge, reason !== 'no-intent'); }
+    }
+    assert.equal(actor.dashRemaining, 0); assert.equal(last!.pendingPostEvasionCharge, false);
+    assert.equal(last!.aiState, reason === 'eligible' || reason === 'new-window' ? 'CHARGE_ATTACK' : 'SIDE_STEPPING');
+    assert.ok(Math.abs(actor.pos.x - .36) < 1e-10, 'the final partial timer still executes a full live movement frame');
+    assert.ok(Math.abs(actor.slideCooldownTimer - (f.state.settings.slideCooldown - 2 * dt)) < 1e-10, 'slide cancellation clock ticks once per following engagement');
+  });
+
+for (const defect of ['missing', 'handoff', 'version', 'state', 'pending', 'target', 'distance', 'reach', 'iq', 'protection', 'readiness', 'action', 'restart', 'cooldown', 'old-mobility-version', 'missing-start-observation', 'idle-with-dash', 'phase'])
+  test(`dash contract rejects unsupported ${defect}`, () => {
+    const f = fixture(); f.owner.scriptedBots = { ordinary: 'normal' }; f.owner.prepare = () => defect === 'phase' ? 'default' : 'engagement';
+    f.first.dashRemaining = .2; f.first.dashDir = { x: 1, y: 0, z: 0 };
+    if (['old-mobility-version', 'missing-start-observation', 'idle-with-dash'].includes(defect)) f.first.dashRemaining = 0;
+    if (defect === 'cooldown') { f.first.dashRemaining = 0; f.first.dashCooldownTimer = 1; }
+    f.owner.resolve = () => {
+      if (defect === 'handoff') return { kind: 'handoff', reason: 'dash still needs an owner' };
+      const decision: any = { kind: 'handled', action: idleAction(), dash: { version: 'scripted-ai-dash-v1', aiState: 'SIDE_STEPPING',
+        pendingPostEvasionCharge: true, target: { targetWeaponState: 'recovering', attackDistanceToTarget: 2, resolvedAiReach: 3,
+          spatialIQ: 80, targetProtected: false, weaponReady: true } } };
+      if (defect === 'missing') delete decision.dash;
+      if (defect === 'version') decision.dash.version = 'bad';
+      if (defect === 'state') decision.dash.aiState = 'bad';
+      if (defect === 'pending') decision.dash.pendingPostEvasionCharge = 1;
+      if (defect === 'target') decision.dash.target = null;
+      if (defect === 'distance') decision.dash.target.attackDistanceToTarget = NaN;
+      if (defect === 'reach') decision.dash.target.resolvedAiReach = -1;
+      if (defect === 'iq') decision.dash.target.spatialIQ = Infinity;
+      if (defect === 'protection') decision.dash.target.targetProtected = 1;
+      if (defect === 'readiness') decision.dash.target.weaponReady = 'true';
+      if (defect === 'action') decision.action.attackPrimary = true;
+      if (defect === 'restart' || defect === 'cooldown') decision.mobility = { version: 'scripted-ai-mobility-v2', kind: 'spatial-dodge', direction: { x: 0, z: 1 } };
+      if (defect === 'old-mobility-version' || defect === 'missing-start-observation') {
+        decision.mobility = { version: defect === 'old-mobility-version' ? 'scripted-ai-mobility-v1' : 'scripted-ai-mobility-v2', kind: 'spatial-dodge', direction: { x: 1, z: 0 } };
+        if (defect === 'missing-start-observation') delete decision.dash;
+      }
+      return decision;
+    };
+    const before = { ...f.first.pos }, remaining = f.first.dashRemaining;
+    assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: f.owner }), /AI dash|AI mobility/);
+    assert.deepEqual(f.first.pos, before); assert.equal(f.first.dashRemaining, remaining);
+  });

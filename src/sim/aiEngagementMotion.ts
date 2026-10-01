@@ -37,6 +37,10 @@ function motionFrame(state: SimState, actor: SimCombatant, settings: UniversalSe
 /** After objective handoff and before target/combat policy. Flights retain their
  * existing integration owner. The caller must finish recovery before walking. */
 export function prepareSimAIEngagementMotion(state: SimState, actor: SimCombatant, settings: UniversalSettings, dt: number): void {
+  // Live AI starts each decision with sprinting cleared, including airborne
+  // early returns. A later ground movement policy must explicitly enable it.
+  actor.isSprinting = false;
+  if (actor.slideCooldownTimer > 0) actor.slideCooldownTimer = Math.max(0, actor.slideCooldownTimer - dt);
   if (actor.isLunging) return;
   const f = motionFrame(state, actor, settings);
   integrateTargetEngagementGravityForCombatant({ self: f.self,

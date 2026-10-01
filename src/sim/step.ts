@@ -12,7 +12,7 @@
  */
 
 import { prepareSimAIEngagementMotion } from './aiEngagementMotion';
-import { applyScriptedAIMobility } from './scriptedAIMobility';
+import { applyScriptedAIMobility, type ScriptedAIDashDecision } from './scriptedAIMobility';
 import { validateScriptedLungeFeedback, createScriptedLungeFeedback, type ScriptedLungeFeedback } from './scriptedLungeFeedback';
 import { validateScriptedMeleeFeedback, createScriptedMeleeFeedback, type ScriptedMeleeFeedback } from './scriptedMeleeFeedback';
 import { type UniversalSettings } from '../types';
@@ -175,6 +175,7 @@ export function stepSimulation(
   for (const c of state.combatants) {
     if (c === player) continue;
     let engagementPrepared = false;
+    let dashDecision: ScriptedAIDashDecision | undefined;
     const scheduled = ownsDecision(c.id);
     const decisionActive = scheduled && c.alive && c.hp > 0 && c.respawnTimer <= 0 && !phasePaused.has(c.id);
     if (decisionActive) {
@@ -201,12 +202,17 @@ export function stepSimulation(
         const motionPhase = engagementPrepared ? 'after-engagement-gravity' as const : 'default' as const;
         const decision = validateScriptedActorDecision(view, owner, c.id,
           owner.resolve({ ...context, motionPhase }), settings, engagementPrepared);
+        if (engagementPrepared && !c.isLunging && c.dashRemaining > 0 && (decision.kind !== 'handled' || !decision.dash))
+          throw new Error(`Active engagement dash requires current AI dash observations: ${c.id}`);
         if (engagementPrepared && (decision.kind === 'handled' ? decision.action : act(c.id)).jump)
           throw new Error(`Engagement decisions require a scripted AI jump owner: ${c.id}`);
+        if (engagementPrepared && (decision.kind === 'handled' ? decision.action : act(c.id)).dash)
+          throw new Error(`Engagement decisions require a scripted AI dash owner: ${c.id}`);
         actorDecisions.push({ id: c.id, kind: decision.kind, ...(engagementPrepared ? { motionPhase: 'after-engagement-gravity' as const } : {}), ...(decision.kind === 'handoff' ? { reason: decision.reason } : {}) });
         if (decision.kind === 'handled') {
+          dashDecision = decision.dash;
           if (decision.mobility) {
-            applyScriptedAIMobility(c, decision.mobility, dt);
+            applyScriptedAIMobility(c, decision.mobility, dt, settings);
             actorDecisions[actorDecisions.length - 1].mobility = decision.mobility.kind;
           }
           resolvedActions[c.id] = decision.action;
@@ -233,7 +239,8 @@ export function stepSimulation(
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'intent', earlyCommands, meleeFeedback, lungeFeedback, swapTimersAdvanced.has(c.id));
       if (c.isLunging) continue;
     }
-    stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared);
+    const dashFeedback = stepCombatantMovement(state, c, act(c.id), settings, dt, scriptedMovement?.[c.id], decisionActive, engagementPrepared, dashDecision);
+    if (dashFeedback) actorDecisions[actorDecisions.length - 1].dash = dashFeedback;
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'complete', undefined, undefined, lungeFeedback, swapTimersAdvanced.has(c.id));
       flightAdvanced!.add(c.id);

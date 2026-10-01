@@ -1,3 +1,4 @@
+import { finishAIHorizontalMotion } from '../../game/aiDashMotion';
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
 import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
@@ -1652,21 +1653,7 @@ export function createAISingleEntityUpdaterForState({
   
       constrainCombatantToArena(pos, vel);
   
-      // Unified vertical handling for every combatant: while airborne we keep the
-      // integrated vel.y; once grounded (and not lunging) we zero it and clear the jump
-      // flag. (For the main AI vel === mai()!.vel, so this is the same data either way.)
-      if (state !== 'LUNGING' && !(self.isJumping || pos.y > 0.01)) {
-        vel.y = 0;
-        self.isJumping = false;
-      }
-  
-      const isAirborne = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;
-  
-      if (isAirborne && state !== 'LUNGING') {
-        // Heavily restrict horizontal movement in the air so they don't "walk across the air"
-        vel.x *= 0.05;
-        vel.z *= 0.05;
-      }
+      finishAIHorizontalMotion(self, { pos, vel, aiState: state });
   
       syncStateAndMesh();
     };

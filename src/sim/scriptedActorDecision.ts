@@ -2,7 +2,8 @@ import type { UniversalSettings } from '../types';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { ActionInput } from './actions';
 import type { SimState } from './simState';
-import { validateScriptedAIMobility, type ScriptedAIMobilityCommand } from './scriptedAIMobility';
+import { validateScriptedAIMobility, validateScriptedAIDashDecision, type ScriptedAIMobilityCommand,
+  type ScriptedAIDashDecision, type ScriptedAIDashFeedback } from './scriptedAIMobility';
 import { validateScriptedCombatInput, type ScriptedCombatCommand, type ScriptedCombatInput } from './scriptedCombatInput';
 import { validateScriptedObjectiveInput, type ObjectiveGroundIntent } from './scriptedObjectiveInput';
 
@@ -10,7 +11,7 @@ export type ScriptedDecisionClockPhase = 'before-swap-tick' | 'after-swap-tick';
 export const remainingDecisionSwapTime = (remaining: number, dt: number, phase: ScriptedDecisionClockPhase) =>
   Math.max(0, remaining - (phase === 'after-swap-tick' ? 0 : dt));
 
-export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand }
+export type ScriptedActorDecision = { kind: 'handled'; action: ActionInput; movement?: ObjectiveGroundIntent; commands?: readonly ScriptedCombatCommand[]; commandVersion?: ScriptedCombatInput['version']; mobility?: ScriptedAIMobilityCommand; dash?: ScriptedAIDashDecision }
   | { kind: 'handoff'; reason: string };
 export interface ScriptedActorDecisionOwner {
   version: 'scripted-actor-decision-v1';
@@ -32,6 +33,7 @@ export interface ScriptedActorDecisionRecord {
   reason?: string;
   motionPhase?: 'after-engagement-gravity';
   mobility?: ScriptedAIMobilityCommand['kind'];
+  dash?: ScriptedAIDashFeedback;
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -71,11 +73,14 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   const actions = { [id]: action };
   const mobility = decision.mobility === undefined ? undefined : validateScriptedAIMobility(state, id, decision.mobility,
     action, engagementPrepared, decision.movement !== undefined || (decision.commands?.length ?? 0) > 0);
+  const dash = decision.dash === undefined ? undefined : validateScriptedAIDashDecision(state, id, decision.dash,
+    action, engagementPrepared, mobility, decision.movement !== undefined || (decision.commands?.length ?? 0) > 0);
+  if (mobility?.kind === 'spatial-dodge' && !dash) throw new Error(`Spatial dodge requires AI dash observations: ${id}`);
   const movement = decision.movement === undefined ? undefined : validateScriptedObjectiveInput(state, {
     version: 'scripted-objective-v1', scriptedBots: owner.scriptedBots, movement: { [id]: decision.movement },
   }, actions, settings)![id];
   const commands = decision.commands === undefined ? undefined : validateScriptedCombatInput(state, {
     version: decision.commandVersion ?? 'scripted-combat-v1', scriptedBots: owner.scriptedBots, commands: { [id]: decision.commands },
   }, actions, settings)![id];
-  return { kind: 'handled', action: { ...action }, ...(mobility ? { mobility } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
+  return { kind: 'handled', action: { ...action }, ...(mobility ? { mobility } : {}), ...(dash ? { dash } : {}), ...(movement ? { movement } : {}), ...(commands ? { commands, commandVersion: decision.commandVersion } : {}) };
 }

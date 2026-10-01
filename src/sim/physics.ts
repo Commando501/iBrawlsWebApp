@@ -20,6 +20,8 @@
 
 import * as THREE from 'three';
 import { finishSimAIEngagementMotion } from './aiEngagementMotion';
+import { advanceAIDashMotion, finishAIHorizontalMotion, type AIDashMotionFrame } from '../game/aiDashMotion';
+import type { ScriptedAIDashDecision, ScriptedAIDashFeedback } from './scriptedAIMobility';
 import { type UniversalSettings } from '../types';
 import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
@@ -75,8 +77,9 @@ export function stepCombatantMovement(
   dt: number,
   objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent,
   cooldownsAdvanced = false,
-  engagementPrepared = false
-): void {
+  engagementPrepared = false,
+  dashDecision?: ScriptedAIDashDecision
+): ScriptedAIDashFeedback | undefined {
   if (!c.alive) return;
   const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
   if (playerView && action.aimPitch !== undefined) {
@@ -114,6 +117,17 @@ export function stepCombatantMovement(
   // Live local inputs allow crouching in flight; other profiles keep grounded-only stance.
   c.isCrouching = action.crouch && (engagementPrepared || playerView || !c.isJumping);
   if (engagementPrepared && finishSimAIEngagementMotion(state, c, settings, dt)) return;
+  if (engagementPrepared && c.dashRemaining > 0 && dashDecision) {
+    const frame: AIDashMotionFrame = { pos: c.pos, vel: c.vel, dashDir: c.dashDir, aiState: dashDecision.aiState,
+      dashRemaining: c.dashRemaining, slideActive: c.slideActive, slideCooldownTimer: c.slideCooldownTimer,
+      isSprinting: c.isSprinting, pendingPostEvasionCharge: dashDecision.pendingPostEvasionCharge };
+    advanceAIDashMotion(settings, frame, dt, dashDecision.target);
+    c.dashRemaining = frame.dashRemaining; c.slideActive = frame.slideActive;
+    c.slideCooldownTimer = frame.slideCooldownTimer; c.isSprinting = frame.isSprinting;
+    c.grounded = constrainAndStore(state, c) || c.pos.y <= .0001;
+    finishAIHorizontalMotion(c, frame);
+    return { pendingPostEvasionCharge: frame.pendingPostEvasionCharge, aiState: frame.aiState };
+  }
   const isRunner = c.hasBall || c.weapon === 'ball';
 
   // Dash trigger (tap): only when grounded-ready and off cooldown.

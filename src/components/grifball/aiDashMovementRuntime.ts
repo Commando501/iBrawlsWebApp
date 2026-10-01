@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { shouldCommitChargeAfterEvasion } from '../../game/aiSpatialStrategy';
+import { advanceAIDashMotion } from '../../game/aiDashMotion';
 import { type AIBehaviorState, type Combatant } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -41,31 +41,8 @@ export function resolveAIDashMovementForCombatant({
   spatialIQ: number;
   weaponReady: boolean;
 }): void {
-  if (frame.slideActive) {
-    frame.slideActive = false;
-    frame.slideCooldownTimer = state.settings.slideCooldown ?? 1.5;
-  }
-  frame.isSprinting = false;
-  frame.dashRemaining = Math.max(0, frame.dashRemaining - dt);
-  const speed = state.settings.dashDistance / (state.settings.dashDuration || 0.25);
-  frame.vel.copy(frame.dashDir).multiplyScalar(speed);
-  frame.pos.addScaledVector(frame.vel, dt);
-
-  if (frame.dashRemaining <= 0 && frame.pendingPostEvasionCharge) {
-    if (
-      shouldCommitChargeAfterEvasion({
-        targetWeaponState,
-        attackDistanceToTarget,
-        resolvedAiReach,
-        targetProtected,
-        spatialIQ,
-        weaponReady,
-      })
-    ) {
-      frame.aiState = 'CHARGE_ATTACK';
-    }
-    frame.pendingPostEvasionCharge = false;
-  }
+  advanceAIDashMotion(state.settings, frame, dt, { targetWeaponState, attackDistanceToTarget,
+    resolvedAiReach, targetProtected, spatialIQ, weaponReady });
 
   const scene = refs.scene;
   // Trail effects must not advance the seeded gameplay stream. Otherwise a

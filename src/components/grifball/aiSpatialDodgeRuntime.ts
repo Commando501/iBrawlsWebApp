@@ -1,5 +1,6 @@
 import { simulationRandom } from '../../game/simulationRandom';
 import { applyAIEmergencyHopMotion } from '../../game/aiEmergencyHop';
+import { startAISpatialDodgeMotion } from '../../game/aiDashMotion';
 import * as THREE from 'three';
 import {
   pickPerpendicularDodgeDirection,
@@ -74,9 +75,7 @@ export function startAISpatialDodgeForCombatant({
     playerModel,
     rng: random(),
   });
-  frame.dashDir.set(dodgePick.x, 0, dodgePick.z).normalize();
-  frame.dashRemaining = state.settings.dashDuration || 0.25;
-  frame.dashCooldownTimer = state.settings.dashCooldown || 2.0;
+  startAISpatialDodgeMotion(state.settings, frame, dodgePick);
   recordCombatantObservation(botId, (model) => observePlayerDash(model, frame.dashDir.x, frame.dashDir.z));
   playDash();
 
