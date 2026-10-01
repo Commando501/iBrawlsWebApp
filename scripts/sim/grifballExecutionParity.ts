@@ -24,7 +24,7 @@ import { runMapMatch } from './grifballMapMatch';
 import { runMapContest } from './grifballMapContest';
 import { runMapRouting } from './grifballMapRouting';
 import { runMapMobility } from './grifballMapMobility';
-import { runMobilityDecisionIntegration } from './grifballMobilityDecisionIntegration';
+import { runMobilityDecisionIntegration, LANDING_TURNOVER_CASES, runLandingTurnoverTrace, landingTurnoverCoverage } from './grifballMobilityDecisionIntegration';
 import { jumpCoverage } from './grifballJumpCoverage';
 import { runMatchDecisionIntegration } from './grifballMatchDecisionIntegration';
 import { runRoundDecisionIntegration } from './grifballRoundDecisionIntegration';
@@ -294,6 +294,8 @@ export function runExecutionParity() {
   const tankContestTraces = runTankContest();
   const earnedTankTraces = runEarnedTankContest();
   const earnedTankWitnesses = earnedTankResolutionCoverage(earnedTankTraces);
+  const landingTurnoverTraces = compactExecutionTraces(LANDING_TURNOVER_CASES.map(runLandingTurnoverTrace));
+  const landingTurnoverWitnesses = landingTurnoverCoverage(landingTurnoverTraces);
   const mapMobilityFailures = mapMobilityTraces.filter(t => t.failureCount);
   const matchDecisionTraces = compactExecutionTraces(runMatchDecisionIntegration());
   const jumpWitnesses = { mobility: jumpCoverage(mobilityDecisionTraces, 'mobility'), match: jumpCoverage(matchDecisionTraces, 'match') };
@@ -305,19 +307,22 @@ export function runExecutionParity() {
   const revivalAttackWitnesses = revivalAttackCoverage(revivalDecisionTraces);
   const opposedDecisionTraces = compactExecutionTraces(runOpposedDecisionIntegration());
   const pressureDecisionTraces = compactExecutionTraces(runPressureDecisionIntegration());
-  const liveDecisionTraces = [...decisionIntegrationTraces, ...passDecisionTraces, ...pressureDecisionTraces, ...opposedDecisionTraces, ...revivalDecisionTraces, ...roundDecisionTraces, ...matchDecisionTraces, ...mobilityDecisionTraces, ...mapRoutingTraces, ...mapContestTraces, ...mapMatchTraces, ...passContestTraces, ...passMatchTraces, ...mapPassMatchTraces, ...rosterContestTraces, ...tankContestTraces, ...earnedTankTraces, ...passRecoveryTraces, ...rosterMatchTraces];
+  const liveDecisionTraces = [...decisionIntegrationTraces, ...passDecisionTraces, ...pressureDecisionTraces, ...opposedDecisionTraces, ...revivalDecisionTraces, ...roundDecisionTraces, ...matchDecisionTraces, ...mobilityDecisionTraces, ...landingTurnoverTraces, ...mapRoutingTraces, ...mapContestTraces, ...mapMatchTraces, ...passContestTraces, ...passMatchTraces, ...mapPassMatchTraces, ...rosterContestTraces, ...tankContestTraces, ...earnedTankTraces, ...passRecoveryTraces, ...rosterMatchTraces];
   const decisionFailures = liveDecisionTraces.filter(t => t.failureCount);
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
-  return gate('execution-parity', earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+  return gate('execution-parity', landingTurnoverWitnesses.errors.length || earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+    `Landing coverage: ${landingTurnoverWitnesses.errors.length} errors. ` +
     `Tank coverage: ${earnedTankWitnesses.errors.length} errors. ` +
     `Dash coverage misses ${dashWitnesses.missing.length} required groups. ` +
     `Revival attack coverage misses ${revivalAttackWitnesses.missing.length} required groups. ` +
     `Jump coverage misses ${missingJumpWitnesses} required groups. ` +
     `Post-reset passing misses ${resetPassCoverage.missing.length} required groups. ` +
     `${failures.length}/${actionTraces.length} action traces differ. ${decisionFailures.length}/${liveDecisionTraces.length} live decision traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} map mobility traces fail. ${plannedMatchWitnesses.errors.length} planned-match coverage failures. ${PARITY_GAPS.length} gaps; legacy training remains uncertified.`,
-    { protocol: 'live-functions-vs-headless-step-v77', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    { protocol: 'live-functions-vs-headless-step-v78', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+      landingTurnoverTraces, landingTurnoverWitnesses,
+      landingTurnoverScope: 'Eight live-only 12-frame cases mirror teams, actor order and main/ordinary landing identity. An authored .17-unit descent lands during an autonomous full-windup carrier kill at tick 8. Independent gravity/velocity checks, real death/drop, end-of-frame order invalidation, next-tick reassignment and renewed ground movement are required. All cases must be present and successful. This controlled boundary supplements the unchanged fixed 32-case mobility matrix; it does not claim autonomous takeoff, a new independent-engine parity family, quality or broader airborne decisions.',
       plannedMatchTraces, plannedMatchWitnesses,
       plannedMatchScope: 'Eight independent own-state unopposed matches with a passive local player and two scripted teammates, mirrored teams, both roster orders and passing enabled/disabled. Production frame owners and the opt-in simulator planner independently choose objective actions through two goals, one physical reset, renewed pickup and match end plus five terminal ticks. Every tick compares phase, ball, scores, motion, heading, health, equipment, shield and revival clocks; separately restored simulator state/planner continue after reset. No pass is selected. Failed, missing, duplicate or truncated required cases fail coverage. This does not certify opposing combat choices, complete opposed mixed matches, general maps or quality.',
       revivalAttackWitnesses,

@@ -74,7 +74,9 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' | 'tank-contest' | 'earned-tank-contest' | 'pass-recovery' | 'map-roster-match' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean; releaseSpeed?: number }, rosterOptions?: RosterContestOptions) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' | 'tank-contest' | 'earned-tank-contest' | 'pass-recovery' | 'map-roster-match' | 'landing-turnover' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean; releaseSpeed?: number }, rosterOptions?: RosterContestOptions) {
+  const landingTurnover = continuation === 'landing-turnover';
+  if (landingTurnover && spec.mode !== 'contested') throw new Error('Landing turnover requires a four-actor contested opening');
   const rosterMatch = continuation === 'map-roster-match';
   const passRecovery = continuation === 'pass-recovery';
   const earnedTank = continuation === 'earned-tank-contest';
@@ -90,7 +92,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const mapMatch = continuation === 'map-match';
   const mapped = continuation === 'map-contest' || mapMatch || mapPassMatch;
   if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
-  const match = continuation === 'match' || mapped || passMatch, mobility = continuation === 'mobility', revival = continuation !== 'opening';
+  const match = continuation === 'match' || mapped || passMatch, mobility = continuation === 'mobility', revival = continuation !== 'opening' && !landingTurnover;
   const observeDash = mobility || continuation === 'revival';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
@@ -114,7 +116,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     state.grifballTactics = validateGrifballTactics(state.grifballTactics);
   }
   const tacticsBefore = JSON.stringify(state.grifballTactics);
-  const carrierId = spec.main && !earnedTank && !passRecovery ? 'main_ai' : 'carrier';
+  const carrierId = spec.main && !earnedTank && !passRecovery && !landingTurnover ? 'main_ai' : 'carrier';
   const defenderId = passRecovery && spec.main ? 'main_ai' : 'defender';
   if (revival && !mapped) map.teamSpawns = { blue: [{ x: -12, y: 0, z: 3 }], red: [{ x: 12, y: 0, z: -3 }] };
   const otherTeam = spec.team === 'blue' ? 'red' as const : 'blue' as const;
@@ -142,7 +144,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     }
     for (const s of seeds) [s.x, s.z] = positions[s.id];
   }
-  if (earnedTank && spec.main) seeds.find(s => s.id === 'escort')!.id = 'main_ai';
+  if ((earnedTank || landingTurnover) && spec.main) seeds.find(s => s.id === 'escort')!.id = 'main_ai';
   const initialRespawns = new Map<string, number>();
   if (earnedTank) map.teamSpawns![spec.team] = seeds.filter(s => ['escort', 'main_ai', 'support_1'].includes(s.id))
     .map(s => ({ x: s.x * sign, y: 0, z: s.z * sign }));
@@ -162,6 +164,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapPassMatch && [...state.otherPlayers.values()].some(c => !isMapBodyClear(map, c.pos))) throw new Error('Map pass fixture starts inside an obstacle');
   const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get(defenderId)!;
+  if (landingTurnover) {
+    // A short authored descent lands on the opening autonomous impact frame.
+    // No action, damage, assignment or subsequent motion is injected.
+    const landingActor = state.otherPlayers.get(spec.main ? 'main_ai' : 'escort')!;
+    landingActor.pos.y = .17; landingActor.isJumping = true; landingActor.aiHammerJumpsInAir = 1;
+  }
   // Keep the original one-HP runner-counter case and independently exercise
   // the paired impact against an opponent that survives that earlier punch.
   if (earnedTank && rosterOptions!.earnedTankOpening === 'durable-opponent') defender.hp = defender.maxHp = 2;
@@ -310,7 +318,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = rosterMatch ? 108000 : passRecovery ? 600 : tankContest ? 300 : rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 3600 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = landingTurnover ? 12 : rosterMatch ? 108000 : passRecovery ? 600 : tankContest ? 300 : rosterContest ? 1800 : mapPassMatch ? 108000 : passMatch ? 18000 : passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 3600 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -565,7 +573,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     }
     if (!passing && dropTick && tick === dropTick + 1) {
       check('enemy recovers loose-ball assignment', plan.assignments.get(defender.id)?.role, 'retriever');
-      if (spec.mode === 'contested') check('ally contests loose ball', plan.assignments.get('escort')?.role, 'retriever');
+      if (spec.mode === 'contested') check('ally contests loose ball', plan.assignments.get(landingTurnover && spec.main ? 'main_ai' : 'escort')?.role, 'retriever');
     }
     for (const c of state.otherPlayers.values()) {
       const latestRevival = revivals.filter(r => r.id === c.id).at(-1);

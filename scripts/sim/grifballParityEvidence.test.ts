@@ -38,6 +38,14 @@ test('v77 retains the sampled inventory while earned tank outcomes use their sep
   assert.deepEqual(validateSampledParityEvidence(current),[]);
 });
 
+test('v78 requires the separate controlled landing-turnover family', () => {
+  const current=sampledReport('live-functions-vs-headless-step-v78');
+  assert.equal(Object.keys(current).length-1,49);
+  assert.deepEqual(validateSampledParityEvidence(current),[]);
+  delete current.landingTurnoverTraces;
+  assert.deepEqual(validateSampledParityEvidence(current),['landingTurnoverTraces: missing or empty family']);
+});
+
 for (const corruption of ['missing', 'empty', 'metadata', 'later-metadata', 'renamed', 'extra', 'count',
   'fractional-count', 'retained-count', 'hash', 'kind', 'no-frames', 'too-many-frames', 'truncated-count'] as const)
   test(`sampled report audit rejects ${corruption} without rerunning gameplay`, () => {

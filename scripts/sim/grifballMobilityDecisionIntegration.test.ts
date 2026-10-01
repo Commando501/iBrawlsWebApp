@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MOBILITY_DECISION_CASES, runMobilityDecisionTrace, validateMobilityDecisionTrace } from './grifballMobilityDecisionIntegration';
-import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
+import { MOBILITY_DECISION_CASES, runMobilityDecisionTrace, LANDING_TURNOVER_CASES, runLandingTurnoverTrace, landingTurnoverRecovery, landingTurnoverCoverage } from './grifballMobilityDecisionIntegration';
 import { jumpCoverage, type JumpCoverageTrace } from './grifballJumpCoverage';
 import { dashDecisionCoverage } from './grifballDashDecisionValidation';
 
@@ -34,31 +33,55 @@ for (const seed of [1, 5]) for (const reverse of [false, true]) test(`autonomous
   const spec = { mode: 'contested' as const, team: 'blue' as const, main: true, reverse, seed };
   assert.deepEqual(runMobilityDecisionTrace(spec), runMobilityDecisionTrace(spec));
 });
-test('landing across carrier death requires verified turnover and next-tick reassignment', () => {
-  const raw = runOpposedDecisionTrace({ mode: 'contested', team: 'red', reverse: false, main: true, seed: 8 }, 'mobility');
-  assert.equal(raw.failureCount, 0);
-  const valid = validateMobilityDecisionTrace(structuredClone(raw));
-  assert.equal(valid.failureCount, 0, JSON.stringify(valid.failures));
-  assert.deepEqual(valid.landingReassignments, [{ landing: 1286, carrierId: 'cover', reassignedAt: 1287 }]);
-  const corruptions = [
-    (t: typeof raw) => { t.frames[1286].tick++; },
-    (t: typeof raw) => { t.frames[1285].phase = 'countdown'; },
-    (t: typeof raw) => { t.frames[1284].ball.state = 'loose'; },
-    (t: typeof raw) => { t.frames[1284].assignments = t.frames[1284].assignments.filter(a => a.id !== 'main_ai'); },
-    (t: typeof raw) => { t.frames[1284].actors.find(a => a.id === 'cover')!.hp = 0; },
-    (t: typeof raw) => { t.frames[1285].actors.find(a => a.id === 'cover')!.hp = 1; },
-    (t: typeof raw) => { t.deaths = t.deaths.filter(d => d.tick !== 1286); },
-    (t: typeof raw) => { t.impacts = t.impacts.filter(i => i.tick !== 1286); },
-    (t: typeof raw) => { t.frames[1285].ball.state = 'held'; },
-    (t: typeof raw) => { t.frames[1285].ball.holderId = 'cover'; },
-    (t: typeof raw) => { t.frames[1286].actors.find(a => a.id === 'main_ai')!.hp = 0; },
-    (t: typeof raw) => { t.frames[1286].assignments = t.frames[1286].assignments.filter(a => a.id !== 'main_ai'); },
-    (t: typeof raw) => { t.frames[1286].assignments.find(a => a.id === 'main_ai')!.target = 'cover'; },
-  ];
-  for (const corrupt of corruptions) {
-    const trace = structuredClone(raw); corrupt(trace);
-    const result = validateMobilityDecisionTrace(trace);
-    assert.ok(result.failures.some(f => f.tick === 1286 && f.field.startsWith('landing retains an assignment')));
-    assert.deepEqual(result.landingReassignments, []);
+const landingWitnesses: ReturnType<typeof runLandingTurnoverTrace>[] = [];
+for (const spec of LANDING_TURNOVER_CASES) test('controlled landing across carrier death: ' + JSON.stringify(spec), () => {
+  const raw=runLandingTurnoverTrace(spec), id=spec.main?'main_ai':'escort';
+  assert.equal(raw.failureCount,0,JSON.stringify(raw.failures));
+  assert.equal(raw.frames.length,12);
+  assert.deepEqual(raw.landingRecovery,{landing:8,carrierId:'carrier',reassignedAt:9});
+  landingWitnesses.push(raw);
+  for(const defect of ['next-tick','inactive','no-possession','no-prior-order','dead-carrier-before','living-carrier-after',
+    'missing-death','missing-impact','ball-still-held','dead-lander-next','no-next-order','stale-target','not-airborne-before',
+    'dead-lander','not-grounded','airborne-after','unreset-budget','retained-order','missing-frame']) {
+    const t=structuredClone(raw), before=t.frames[6], landed=t.frames[7], next=t.frames[8];
+    if(defect==='next-tick') next.tick++;
+    if(defect==='inactive') landed.phase='countdown';
+    if(defect==='no-possession') before.ball.state='loose';
+    if(defect==='no-prior-order') before.assignments=before.assignments.filter(a=>a.id!==id);
+    if(defect==='dead-carrier-before') before.actors.find(a=>a.id==='carrier')!.hp=0;
+    if(defect==='living-carrier-after') landed.actors.find(a=>a.id==='carrier')!.hp=1;
+    if(defect==='missing-death') t.deaths=[];
+    if(defect==='missing-impact') t.impacts=[];
+    if(defect==='ball-still-held') landed.ball.holderId='carrier';
+    if(defect==='dead-lander-next') next.actors.find(a=>a.id===id)!.hp=0;
+    if(defect==='no-next-order') next.assignments=next.assignments.filter(a=>a.id!==id);
+    if(defect==='stale-target') next.assignments.find(a=>a.id===id)!.target='carrier';
+    if(defect==='not-airborne-before') before.actors.find(a=>a.id===id)!.isJumping=false;
+    if(defect==='dead-lander') landed.actors.find(a=>a.id===id)!.hp=0;
+    if(defect==='not-grounded') landed.actors.find(a=>a.id===id)!.pos[1]=.1;
+    if(defect==='airborne-after') landed.actors.find(a=>a.id===id)!.isJumping=true;
+    if(defect==='unreset-budget') landed.actors.find(a=>a.id===id)!.jumpBudget=1;
+    if(defect==='retained-order') landed.assignments.push({...before.assignments.find(a=>a.id===id)!});
+    if(defect==='missing-frame') t.frames.splice(7,1);
+    assert.equal(landingTurnoverRecovery(t,id,8),null,defect);
   }
+});
+test('landing-turnover coverage requires every declared case and verified next-tick recovery',()=>{
+  assert.deepEqual(landingTurnoverCoverage(landingWitnesses),{required:8,completed:8,errors:[]});
+  for(const defect of ['missing','duplicate','failed','short','missing-recovery','wrong-carrier','late-reassignment','wrong-team']) {
+    const t=structuredClone(landingWitnesses), first=t[0];
+    if(defect==='missing')t.shift();
+    if(defect==='duplicate')t.push(first);
+    if(defect==='failed')first.failureCount=1;
+    if(defect==='short')first.ticks=11;
+    if(defect==='missing-recovery')first.landingRecovery=null;
+    if(defect==='wrong-carrier')first.landingRecovery!.carrierId='defender';
+    if(defect==='late-reassignment')first.landingRecovery!.reassignedAt=10;
+    if(defect==='wrong-team')first.scenario.team='red';
+    assert.ok(landingTurnoverCoverage(t).errors.length,defect);
+  }
+});
+for(const main of [false,true])test('controlled landing repeats: main='+main,()=>{
+  const spec={mode:'contested' as const,team:'red' as const,reverse:true,main};
+  assert.deepEqual(runLandingTurnoverTrace(spec),runLandingTurnoverTrace(spec));
 });

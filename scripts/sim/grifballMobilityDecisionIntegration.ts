@@ -6,6 +6,55 @@ import { validateDashDecisionTrace } from './grifballDashDecisionValidation';
 export const MOBILITY_DECISION_CASES: OpposedDecisionCase[] = Array.from({ length: 8 }, (_, i) => i + 1).flatMap(seed => (['blue', 'red'] as const)
   .flatMap(team => [false, true].map(reverse => ({ mode: 'contested' as const, team, reverse, main: true, seed }))));
 
+export const LANDING_TURNOVER_CASES: OpposedDecisionCase[] = (['blue', 'red'] as const).flatMap(team =>
+  [false, true].flatMap(reverse => [false, true].map(main => ({ mode: 'contested' as const, team, reverse, main }))));
+
+/** End-of-frame carrier death clears orders after movement. The living landing
+ * actor must regain an order on the immediately following production AI tick. */
+export function landingTurnoverRecovery(trace: Pick<ReturnType<typeof runOpposedDecisionTrace>, 'frames' | 'deaths' | 'impacts'>,
+  actorId: string, landing: number) {
+  const frame = trace.frames[landing - 1], previous = trace.frames[landing - 2], next = trace.frames[landing];
+  const carrierId = previous?.ball.state === 'held' ? previous.ball.holderId : null;
+  const before = previous?.actors.find(a => a.id === actorId), landed = frame?.actors.find(a => a.id === actorId);
+  if (!frame || !previous || !next || !before || !landed || !carrierId || carrierId === actorId ||
+    previous.tick !== landing - 1 || frame.tick !== landing || next.tick !== landing + 1 ||
+    [previous, frame, next].some(f => f.phase !== 'playing') ||
+    before.hp <= 0 || before.pos[1] <= 0 || !before.isJumping || landed.hp <= 0 || landed.pos[1] !== 0 ||
+    landed.vel[1] !== 0 || landed.isJumping || landed.jumpBudget !== 0 ||
+    frame.assignments.some(a => a.id === actorId) || !previous.assignments.some(a => a.id === actorId) ||
+    !previous.actors.some(a => a.id === carrierId && a.hp > 0) || !frame.actors.some(a => a.id === carrierId && a.hp === 0) ||
+    !trace.deaths.some(d => d.id === carrierId && d.tick === landing) ||
+    !trace.impacts.some(i => i.tick === landing && i.victims.includes(carrierId)) ||
+    frame.ball.state !== 'loose' || frame.ball.holderId !== null ||
+    !next.actors.some(a => a.id === actorId && a.hp > 0) ||
+    !next.assignments.some(a => a.id === actorId && a.target !== carrierId)) return null;
+  return { landing, carrierId, reassignedAt: next.tick };
+}
+
+/** Controlled descent; attacks, damage, movement and orders use live owners. */
+export function runLandingTurnoverTrace(spec: OpposedDecisionCase) {
+  const trace = runOpposedDecisionTrace(spec, 'landing-turnover');
+  const actorId = spec.main ? 'main_ai' : 'escort', landing = 8;
+  const check = (tick: number, field: string, actual: unknown, expected: unknown) => {
+    if (actual !== expected) { trace.failureCount++; trace.failures.push({tick,field,actual,expected}); }
+  };
+  for (let tick = 1; tick <= landing; tick++) {
+    const actor = trace.frames[tick - 1].actors.find(a => a.id === actorId)!;
+    const height = Math.max(0, .17 - 18 * tick * (tick + 1) / (2 * 60 * 60));
+    check(tick, 'controlled descent follows independent gravity', Math.abs(actor.pos[1] - height) < 1e-9, true);
+    check(tick, 'controlled descent integrates velocity once', Math.abs(actor.vel[1] - (height ? -18 * tick / 60 : 0)) < 1e-9, true);
+    check(tick, 'controlled descent retains airborne state until landing', actor.isJumping, tick < landing);
+  }
+  check(landing, 'carrier kill follows an autonomous full hammer commitment',
+    trace.attacks.some(a => a.id === 'defender' && a.tick === 1 && a.kind === 'swing') &&
+    trace.impacts.some(i => i.id === 'defender' && i.tick === landing && i.victims.includes('carrier')), true);
+  const landingRecovery = landingTurnoverRecovery(trace, actorId, landing);
+  check(landing, 'landing has verified turnover and immediate reassignment', !!landingRecovery, true);
+  const before = trace.frames[landing - 1].actors.find(a => a.id === actorId)!, next = trace.frames[landing].actors.find(a => a.id === actorId)!;
+  check(landing + 1, 'reassigned actor resumes real ground movement', Math.hypot(next.pos[0] - before.pos[0], next.pos[2] - before.pos[2]) > 0, true);
+  return { ...trace, boundary: 'live-landing-turnover' as const, landingRecovery };
+}
+
 /** Wounded opening contest with three-HP respawns. Every subsequent jump request,
  * strike, flight, landing and return to tactical play comes from live decisions. */
 export function runMobilityDecisionTrace(spec: OpposedDecisionCase) {
@@ -92,24 +141,13 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
     if (!landing && !interrupted && endsBeforeLanding) partialFlights.push({ launch: jump.tick, landing: null, observedThrough: trace.ticks });
     if (landing) {
       const landed = mainAt(landing);
-      const frame = trace.frames[landing - 1], previous = trace.frames[landing - 2], next = trace.frames[landing];
+      const frame = trace.frames[landing - 1];
       const retained = frame.assignments.some(a => a.id === 'main_ai');
-      const carrierId = previous?.ball.state === 'held' ? previous.ball.holderId : null;
       // End-of-frame carrier reconciliation invalidates stale orders after combat.
       // A landing at that boundary must have its order rebuilt on the next AI tick.
-      const reassignedAfterDeath = !retained && !!carrierId && carrierId !== 'main_ai'
-        && previous.tick === landing - 1 && frame.tick === landing && next?.tick === landing + 1
-        && previous.phase === 'playing' && frame.phase === 'playing' && next?.phase === 'playing'
-        && previous.assignments.some(a => a.id === 'main_ai')
-        && previous.actors.some(a => a.id === carrierId && a.hp > 0)
-        && frame.actors.some(a => a.id === carrierId && a.hp === 0)
-        && trace.deaths.some(d => d.id === carrierId && d.tick === landing)
-        && trace.impacts.some(i => i.tick === landing && i.victims.includes(carrierId))
-        && frame.ball.state === 'loose' && frame.ball.holderId === null
-        && next.actors.some(a => a.id === 'main_ai' && a.hp > 0)
-        && next.assignments.some(a => a.id === 'main_ai' && a.target !== carrierId);
-      check(landing, 'landing retains an assignment or rebuilds it immediately after verified carrier death', retained || reassignedAfterDeath, true);
-      if (reassignedAfterDeath) landingReassignments.push({ landing, carrierId, reassignedAt: next.tick });
+      const reassignedAfterDeath = landingTurnoverRecovery(trace, 'main_ai', landing);
+      check(landing, 'landing retains an assignment or rebuilds it immediately after verified carrier death', retained || !!reassignedAfterDeath, true);
+      if (reassignedAfterDeath) landingReassignments.push(reassignedAfterDeath);
       const resumed = trace.mainJumpRequests.some(r => r.accepted && r.tick >= landing && r.tick < landing + 30) || trace.frames.slice(landing, landing + 30).some(f => {
         const actor = f.actors.find(a => a.id === 'main_ai')!;
         return actor.hp > 0 && Math.hypot(actor.pos[0] - landed.pos[0], actor.pos[2] - landed.pos[2]) > .5;
@@ -124,3 +162,20 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
   return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights, interruptedFlights, partialFlights, landingReassignments };
 }
 export const runMobilityDecisionIntegration = () => MOBILITY_DECISION_CASES.map(runMobilityDecisionTrace);
+
+export function landingTurnoverCoverage(traces: readonly Pick<ReturnType<typeof runLandingTurnoverTrace>, 'scenario' | 'ticks' | 'failureCount' | 'landingRecovery'>[]) {
+  const key = (s: OpposedDecisionCase) => `${s.team}/${s.reverse}/${s.main}`;
+  const expected = new Set(LANDING_TURNOVER_CASES.map(key)), errors: string[] = [];
+  let completed = 0;
+  for (const name of expected) {
+    const found = traces.filter(t => key(t.scenario) === name);
+    if (found.length !== 1) { errors.push(`${name}: required exactly once`); continue; }
+    const t = found[0];
+    if (t.scenario.mode !== 'contested' || t.failureCount !== 0 || t.ticks !== 12 || t.landingRecovery?.landing !== 8 ||
+      t.landingRecovery.carrierId !== 'carrier' || t.landingRecovery.reassignedAt !== 9)
+      errors.push(`${name}: missing verified landing turnover`);
+    else completed++;
+  }
+  for (const t of traces) if (!expected.has(key(t.scenario))) errors.push(`${key(t.scenario)}: undeclared case`);
+  return {required:expected.size,completed,errors};
+}
