@@ -39,11 +39,16 @@ import { type SimState, type SimCombatant, findCombatant, isMixedPlayer } from '
 import { type ActionsById } from './actions';
 import { forwardDir } from './physics';
 import { inwardSpawnYaw } from './factory';
+import type { ScriptedObjectivePlanner } from './scriptedObjectivePlanner';
+import { resolveSimScriptedGrifballPass, type ScriptedPassFrame } from './grifballScriptedPass';
+import { getYawForHeading } from '../game/yaw';
 
 /** Height of the held ball above the carrier's feet (matches live runtime). */
 const CARRY_HEIGHT = 1.1;
 
 export interface ObjectiveEvents {
+  /** Present only for explicitly enabled scripted pass execution. */
+  scriptedPass?: ScriptedPassFrame;
   /** Countdown ended this tick — ball is now live. */
   startedPlaying: boolean;
   /** A goal was scored this tick (by this team). */
@@ -241,7 +246,8 @@ export function tickGrifballObjective(
   state: SimState,
   settings: UniversalSettings,
   dt: number,
-  actionsById: ActionsById = {}
+  actionsById: ActionsById = {},
+  scriptedPlanner?: ScriptedObjectivePlanner
 ): ObjectiveEvents {
   const events = NO_EVENTS();
   const g = state.match;
@@ -265,6 +271,18 @@ export function tickGrifballObjective(
     if (player) {
       if (!resolveRunnerThrowAllowed(settings)) { player.passCharging = false; player.passChargeTimer = 0; }
       else if (player.passCharging) player.passChargeTimer += dt;
+    }
+  }
+
+  if (scriptedPlanner?.passControl === 'scripted-pass-v1') {
+    const frame = events.scriptedPass = resolveSimScriptedGrifballPass(
+      settings === state.settings ? state : { ...state, settings }, scriptedPlanner, dt);
+    if (frame.kind === 'release') {
+      const carrier = findCombatant(state, frame.carrierId)!;
+      carrier.yaw = getYawForHeading(frame.direction.x, frame.direction.z) - Math.PI;
+      throwBall(g.ball, { x: carrier.pos.x, y: carrier.pos.y + CARRY_HEIGHT, z: carrier.pos.z }, { ...frame.direction, y: 0 }, frame.speed);
+      setSimCarrier(carrier, false, settings, state);
+      scriptedPlanner.plan.passFlight = { team: carrier.team, carrierId: carrier.id, receiverId: frame.receiverId };
     }
   }
 

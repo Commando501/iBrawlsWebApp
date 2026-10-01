@@ -12,6 +12,7 @@ import { SCRIPTED_OBJECTIVE_INPUT_VERSION, validateScriptedObjectiveInput, type 
 
 export const SCRIPTED_OBJECTIVE_PLANNER_VERSION = 'scripted-objective-planner-v1' as const;
 export const SCRIPTED_CARRIER_PUNCH_VERSION = 'scripted-carrier-punch-v1' as const;
+export const SCRIPTED_PASS_VERSION = 'scripted-pass-v1' as const;
 export interface ScriptedCarrierPunchControl {
   version: typeof SCRIPTED_CARRIER_PUNCH_VERSION;
   /** Caller-owned AI reload seconds, separate from mechanical weapon recovery.
@@ -31,6 +32,8 @@ export interface ScriptedObjectivePlanner {
   /** Explicitly owns grounded objective reloads and punch commands for these IDs.
    * Other carrier decisions retain the existing readiness/handoff contract. */
   punchControl?: ScriptedCarrierPunchControl;
+  /** Charge/recheck/release in the objective phase for IDs with owned AI reloads. */
+  passControl?: typeof SCRIPTED_PASS_VERSION;
 }
 export interface ScriptedObjectiveDecision {
   id: string;
@@ -52,6 +55,8 @@ export function validateScriptedObjectivePlanner(state: SimState, planner: Scrip
   validateScriptedObjectiveInput(state, { version: SCRIPTED_OBJECTIVE_INPUT_VERSION, scriptedBots: planner.scriptedBots, movement: {} }, {}, settings);
   if (!Number.isFinite(dt) || dt <= 0) throw new Error('Objective planning requires a positive finite timestep');
   if (!(planner.plan?.assignments instanceof Map)) throw new Error('Objective planning requires caller-owned team plan memory');
+  if (planner.passControl !== undefined && (planner.passControl !== SCRIPTED_PASS_VERSION || !planner.punchControl))
+    throw new Error('Scripted passing requires a supported version and owned AI reloads');
   for (const [id, difficulty] of Object.entries(planner.scriptedBots)) {
     const actors = state.combatants.filter(c => c.id === id);
     if (actors.length !== 1 || actors[0].controller !== 'ai' || id === state.localPlayerId || typeof difficulty !== 'string' ||
@@ -99,7 +104,8 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
     // only after a handled non-punch decision. Do not spend either clock twice.
     const ready = controlled ? planner.punchControl!.cooldowns[actor.id] <= 0 && Math.max(0, actor.weaponReadyTimer - dt) <= 0
       : planner.weaponReady?.[actor.id] ?? false;
-    const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, ready, dt, controlled) : null;
+    const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, ready, dt,
+      { punch: controlled, pass: controlled && planner.passControl === SCRIPTED_PASS_VERSION }) : null;
     const input = carrier ? decision?.input : resolveSimGrifballSupportInput(view, planner.plan, actor.id, planner.scriptedBots, dt);
     if (!input) {
       record({ kind: 'handoff', reason: decision?.decision.kind ?? 'combat-or-unsupported-state' }); return null;

@@ -160,6 +160,7 @@ export function stepSimulation(
   const throwingAllowed = resolveRunnerThrowAllowed(settings);
   for (const c of state.combatants) {
     if ((mixedObjectiveFrame && c === player) || phasePaused.has(c.id)) continue;
+    if (options.scriptedPlanner?.passControl && Object.hasOwn(options.scriptedPlanner.punchControl?.cooldowns ?? {}, c.id)) continue;
     if (!c.alive || !c.hasBall) continue;
     const a = act(c.id);
     if (!throwingAllowed) {
@@ -180,7 +181,7 @@ export function stepSimulation(
   const objective =
     state.mode === 'combat'
       ? tickCombat(state, settings, dt)
-      : tickGrifballObjective(state, settings, dt, objectiveActions);
+      : tickGrifballObjective(state, settings, dt, objectiveActions, options.scriptedPlanner);
 
   if (mixedObjectiveFrame) {
     for (const c of state.combatants) if (c !== player && !flightAdvanced?.has(c.id))
