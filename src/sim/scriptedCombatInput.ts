@@ -79,7 +79,7 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
           throw new Error(`Invalid or conflicting scripted hammer jump: ${id}`);
         attemptedJump = true; attacked = input.version !== 'scripted-combat-v5' && !sequential;
       } else if (command.kind === 'lunge') {
-        if (prepared && !flight && (engagement!.mobility || engagement!.dash || actor.dashRemaining > 0 || actor.slideActive))
+        if (prepared && !flight && (engagement!.mobility || engagement!.dash || !sequential && (actor.dashRemaining > 0 || actor.slideActive)))
           throw new Error(`Scripted lunge cannot share an evasion movement owner: ${id}`);
         const targets = state.combatants.filter(c => c.id === command.targetId), target = targets[0];
         const dir = command.direction;

@@ -58,6 +58,8 @@ export interface ScriptedActorDecisionRecord {
   /** True only when the grounded evasion return actually owned movement. */
   evasionHeld?: true;
   flightTargetId?: string;
+  /** Objective priority that completed before combat selection. */
+  objective?: { kind: 'support' | 'carrier'; reason?: string };
 }
 
 /** Configuration is validated before frame mutation. Runtime decisions cannot be
@@ -134,7 +136,7 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
   const otherMovement = decision.movement !== undefined;
   const incompatibleCommands = (decision.commands?.length ?? 0) > 0 && !['scripted-combat-v3', 'scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'].includes(decision.commandVersion ?? '');
   const mobility = decision.mobility === undefined ? undefined : validateScriptedAIMobility(state, id, decision.mobility,
-    action, engagementPrepared, otherMovement || incompatibleCommands, committedFlight);
+    action, engagementPrepared, otherMovement || incompatibleCommands, committedFlight, decision.commandVersion === 'scripted-combat-v6');
   const dash = decision.dash === undefined ? undefined : validateScriptedAIDashDecision(state, id, decision.dash,
     action, engagementPrepared, mobility, otherMovement || incompatibleCommands, committedFlight);
   if (mobility?.kind === 'spatial-dodge' && !dash) throw new Error(`Spatial dodge requires AI dash observations: ${id}`);

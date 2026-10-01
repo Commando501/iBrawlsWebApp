@@ -74,7 +74,7 @@ function validateRequest(state: SimState, actor: SimCombatant, request: Scripted
       if (!o.tuning || !Number.isFinite(o.tuning[key])) throw new Error(`Invalid ground opportunity tuning: ${key}`);
   }
   if (!p || !m || typeof m.isSprinting !== 'boolean' || m.aiState !== undefined && !states.includes(m.aiState) || !Number.isFinite(m.timer) ||
-    !['ready', 'swing_up', 'swing_down', 'melee_up', 'melee_down', 'slashing', 'recovering'].includes(m.weaponState))
+    !['ready', 'swing_up', 'swing_down', 'melee_up', 'melee_down', 'melee_recover', 'slashing', 'recovering'].includes(m.weaponState))
     throw new Error('Invalid ground decision memory');
   for (const key of ['distanceToTarget', 'attackDistanceToTarget', 'resolvedDangerZone', 'resolvedAiReach', 'guaranteedKillRange',
     'maxLungeRange', 'minLungeRange', 'stationarySwingReach', 'movementComplexity', 'playstyleFactor', 'tunedAnticipationFactor',

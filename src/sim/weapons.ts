@@ -665,7 +665,7 @@ export function stepCombatantWeapons(
           c.isJumping = jump.isJumping; c.hammerJumpsInAir = jump.aiHammerJumpsInAir;
           if (c.isJumping) c.grounded = false;
           decisionReady = false; committedHere = true;
-        } else if ((decisionReady || engagement?.sequentialOpportunities && committedHere && command.kind === 'melee' && command.weapon === 'hammer' && !command.swipe) && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee')) {
+        } else if ((decisionReady || engagement?.sequentialOpportunities && committedHere && command.kind === 'melee' && command.weapon === 'hammer' && !command.swipe) && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee' || engagement?.sequentialOpportunities && command.kind === 'lunge')) {
           if (command.kind === 'lunge') {
             const target = findCombatant(state, command.targetId);
             if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || target.team === c.team || target.invulnerabilityTimer > 0) continue;

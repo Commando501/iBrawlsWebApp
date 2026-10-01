@@ -3519,3 +3519,33 @@ There are seven remaining workstreams, estimated at 10-14 further substantial im
 The existing Quick CI gate is regression coverage, not M7 acceptance. Historical browser/performance results must be refreshed on final source. The main uncertainty is the behavioral fixes uncovered by full matches and baseline comparisons. Human-only readiness follows completion of these automated gates; human testing then assesses spacing and escort feel, tactical readability, fairness and enjoyment. Bugs discovered during that review can still require implementation work.
 
 Final validation: the explicit 115-file regression bundle passes 10,062/10,062 in 158.88 seconds (output/m7-flight-owner-regressions.log; exact file list output/m7-flight-owner-test-files.json). TypeScript and isolated client/server builds pass (output/m7-flight-owner-typecheck.log and output/m7-flight-owner-build.log; Vite 23.16 seconds, existing chunk-size warning). No full-repository, browser or aggregate M7 acceptance rerun is claimed.
+
+## 2026-10-01 - compose the scheduled actor owner
+
+The new frame-scoped createSimGrifballActorStepOptions factory connects the adaptive prelude, target selection, engagement observation, combat priorities, deferred ground movement, committed flight and no-target recovery. All stages share caller-owned AI context/memory and randomness. Construction does not advance simulation state or consume randomness; stale frame hooks reject reuse. The optional objective planner must share the actor roster and team plan. Objective completion now reports its support/carrier kind and reason, allowing support reloads and carrier punches to update the same combat memory before later turns.
+
+Integrated encounters exposed three movement-contract gaps: sequential combo lunges may preempt an existing dash/slide, emergency hops may occur during a slide, and a new spatial dodge may restart an airborne-held dash after its cooldown expires. The v6 path now preserves those live behaviors; earlier command contracts retain their restrictions, and active dash cooldowns still reject restart. Ground memory also accepts the live melee_recover weapon phase. A test fixture was corrected to clone its premade map before changing geometry, preventing cross-case contamination.
+
+Forty-four added controls cover twelve autonomous opposed encounters, no-target recovery, objective reloads, target switching, frame/configuration ownership, sequential motion preemption and explicit unsupported carrier handoffs. Encounter pairs use main/ordinary identities, 30/60 Hz and hammer/mixed/sword preferences; both sides choose targets, movement and attacks from their own current state. Full simulation, AI context/memory, RNG and decision events match across checkpoint restoration. The initial 300-frame continuation is retained; encounters may continue up to 25 simulated seconds to require actual damage. The sword-only 60 Hz cases first damage at frame 1210 (20.17 seconds). The original five-second probe did not produce damage: this remains a pacing concern for quality acceptance, not evidence that combat quality passes. No established M7 gate or known behavioral-case criterion was changed.
+
+The focused five-file bundle passes 329/329 (output/m7-actor-owner-focused.log, 10.72 seconds). Disabling objective reload adoption fails the two support-cooldown and two carrier-punch controls; the two non-cooldown reset controls still pass and 38 unrelated controls are filtered (output/m7-actor-owner-negative-feedback.log). Source was restored before final checks. Both repository test commands register the new actor-owner test file.
+
+This is actor-composition coverage, not complete autonomous-match acceptance. Airborne carriers or other unsupported carrier combat handoffs still throw rather than silently supplying idle behavior. Remaining accepted-action/model/calibration feedback and lifecycle/reset ownership must be completed before this owner can establish full-match parity. The existing production runtime remains available as the live comparison host.
+
+### Remaining-work status after this slice
+
+M7 is not yet ready for human-only testing. Seven automated workstreams remain, with a planning estimate of 9-13 substantial slices after this one:
+
+| Remaining workstream | Estimated slices | Exit evidence |
+| --- | ---: | --- |
+| Remaining actor handoffs and model/calibration feedback | 1-2 | Carrier handoffs and accepted-action/outcome feedback share correct live ownership |
+| Death, respawn, round/match reset and checkpoints | 1 | Correct resets and restored continuation across lifecycle boundaries |
+| Genuine opposed full-match completion | 1-2 | Objective-driven matches finish without authored combat or fallback success |
+| Known opening, map, revival and dash behavior cases | 2-3 | Outstanding cases pass their retained criteria; new pacing findings are assessed |
+| Frozen-baseline and held-out quality/generalization evidence | 2 | Mirrored comparisons and seed-cluster uncertainty support acceptable tactical outcomes |
+| Final-source serial performance acceptance | 1 | Retained absolute planner-cost and paired-ratio gates pass |
+| Final repository, browser and CLI/Lab verification | 1-2 | Final-source checks and acceptance reports agree |
+
+The range is an estimate, not a fixed countdown. Full-match and baseline comparisons may expose additional repair work; no exact human-only readiness date is justified yet. Regression counts do not close these acceptance gates. After they pass, human testing covers spacing/escort feel, tactical readability, fairness and enjoyment.
+
+Final validation: the explicit 116-file regression bundle passes 10,106/10,106 in 161.73 seconds (output/m7-actor-owner-regressions.log; exact file list output/m7-actor-owner-test-files.json). TypeScript and isolated client/server builds pass (output/m7-actor-owner-typecheck.log and output/m7-actor-owner-build.log; Vite 80 seconds, existing chunk-size warning). No full-repository, browser or aggregate M7 acceptance rerun is claimed.

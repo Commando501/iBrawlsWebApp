@@ -43,7 +43,8 @@ export function createScriptedAISpatialDodgeCommand(self: Pick<SimCombatant, 'po
 }
 
 export function validateScriptedAIMobility(state: SimState, id: string, command: ScriptedAIMobilityCommand,
-  action: ActionInput, engagementPrepared: boolean, hasOtherCommands: boolean, committedFlight = false): ScriptedAIMobilityCommand {
+  action: ActionInput, engagementPrepared: boolean, hasOtherCommands: boolean, committedFlight = false,
+  sequentialOpportunities = false): ScriptedAIMobilityCommand {
   const self = state.combatants.find(c => c.id === id);
   if (!command || !(command.version === 'scripted-ai-mobility-v1' && command.kind === 'emergency-hop' ||
     command.version === 'scripted-ai-mobility-v2' && ['emergency-hop', 'spatial-dodge'].includes(command.kind)))
@@ -54,8 +55,8 @@ export function validateScriptedAIMobility(state: SimState, id: string, command:
     throw new Error(`AI mobility requires a unit direction: ${id}`);
   if (!engagementPrepared || !self || !self.alive || self.hp <= 0 || self.respawnTimer > 0 ||
     self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === id || self.isLunging && !committedFlight ||
-    (command.kind === 'emergency-hop' && self.slideActive && self.dashRemaining <= 0) ||
-    (command.kind === 'spatial-dodge' && (self.dashCooldownTimer > 0 || self.dashRemaining > 0)))
+    (command.kind === 'emergency-hop' && self.slideActive && self.dashRemaining <= 0 && !sequentialOpportunities) ||
+    (command.kind === 'spatial-dodge' && (self.dashCooldownTimer > 0 || self.dashRemaining > 0 && !sequentialOpportunities)))
     throw new Error(`AI mobility requires an uncommitted armed engagement: ${id}`);
   // A later contract will own combined counter/hammer-jump priorities. Refuse
   // unimplemented combinations instead of silently changing their execution order.

@@ -212,7 +212,7 @@ export function stepSimulation(
     if (planned) { resolvedActions[c.id] = planned.action; scriptedMovement![c.id] = planned.movement; }
     if (scheduled) {
       if (!decisionActive) actorDecisions.push({ id: c.id, kind: 'inactive' });
-      else if (planned) actorDecisions.push({ id: c.id, kind: 'objective' });
+      else if (planned) actorDecisions.push({ id: c.id, kind: 'objective', objective: planned.objective });
       else {
         const owner = options.scriptedActorDecisions!;
         const view = settings === state.settings ? state : { ...state, settings };
@@ -228,7 +228,9 @@ export function stepSimulation(
         const motionPhase = engagementPrepared ? 'after-engagement-gravity' as const : 'default' as const;
         const decision = validateScriptedActorDecision(view, owner, c.id,
           owner.resolve({ ...context, motionPhase }), settings, engagementPrepared);
-        if (engagementPrepared && !c.isLunging && c.dashRemaining > 0 && (decision.kind !== 'handled' || !decision.dash))
+        const comboLunge = decision.kind === 'handled' && decision.commandVersion === 'scripted-combat-v6' &&
+          decision.commands?.some(command => command.kind === 'lunge');
+        if (engagementPrepared && !c.isLunging && c.dashRemaining > 0 && !comboLunge && (decision.kind !== 'handled' || !decision.dash))
           throw new Error(`Active engagement dash requires current AI dash observations: ${c.id}`);
         if (engagementPrepared && (decision.kind === 'handled' ? decision.action : act(c.id)).jump)
           throw new Error(`Engagement decisions require a scripted AI jump owner: ${c.id}`);

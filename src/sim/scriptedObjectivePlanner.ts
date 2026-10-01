@@ -120,7 +120,9 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
       ? resolvePunchCooldown(settings) : Math.max(0, planner.punchControl!.cooldowns[actor.id] - dt);
     const movement = input.scriptedObjective.movement[actor.id];
     record({ kind: carrier ? 'carrier' : 'support', ...(decision ? { reason: decision.decision.kind } : {}), action: { ...input.action }, movement: { ...movement } });
-    return { action: input.action, movement };
+    return { action: input.action, movement,
+      objective: { kind: carrier ? 'carrier' as const : 'support' as const,
+        ...(decision ? { reason: decision.decision.kind } : {}) } };
   };
   return { frame, owns, resolve };
 }
