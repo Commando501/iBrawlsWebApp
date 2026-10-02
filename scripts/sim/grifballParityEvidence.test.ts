@@ -157,8 +157,8 @@ test('real live/headless evidence retains health/credit results and can be repro
 });
 
 
-test('v81 requires complete-match evidence without changing prior protocol inventories', () => {
-  const report = sampledReport('live-functions-vs-headless-step-v81');
+for (const version of [81, 82]) test(`v${version} requires complete-match evidence without changing prior protocol inventories`, () => {
+  const report = sampledReport(`live-functions-vs-headless-step-v${version}` as keyof typeof SAMPLED_PARITY_FAMILIES);
   assert.equal(Object.keys(report).length - 1, 51);
   assert.deepEqual(validateSampledParityEvidence(report), []);
   delete report.completeMatchTraces;

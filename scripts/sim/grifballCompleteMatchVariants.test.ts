@@ -22,7 +22,7 @@ async function metadataFixture() {
 
 test('required complete-match inventory rejects missing, duplicate and foreign metadata', async () => {
   const traces = await metadataFixture();
-  assert.deepEqual(completeMatchCoverage(traces), { required: 8, completed: 8, errors: [] });
+  assert.deepEqual(completeMatchCoverage(traces), { required: 20, completed: 20, errors: [] });
   assert.ok(completeMatchCoverage(traces.slice(1)).errors.some(e => e.includes('missing case')), 'missing case');
   assert.ok(completeMatchCoverage([...traces, traces[0]]).errors.some(e => e.includes('duplicate')), 'duplicate case');
   traces[0].name = 'foreign';
@@ -30,7 +30,7 @@ test('required complete-match inventory rejects missing, duplicate and foreign m
 });
 
 for (const defect of ['cap', 'divergence', 'stripped-difference-count', 'replay', 'replay-interval', 'missing-replay',
-  'kill', 'revival', 'reset', 'goal', 'nonfinite', 'frames', 'seed', 'horizon', 'input', 'terminal-tick', 'runtime', 'sample', 'hash'] as const)
+  'kill', 'revival', 'reset', 'goal', 'nonfinite', 'frames', 'seed', 'opponent', 'frozen-seeds', 'frozen-opponents', 'horizon', 'input', 'terminal-tick', 'runtime', 'sample', 'hash'] as const)
   test(`complete-match coverage rejects ${defect}`, async () => {
     const traces = await metadataFixture(), trace = traces[0];
     if (defect === 'runtime') trace.runtimeCheck = null;
@@ -49,11 +49,37 @@ for (const defect of ['cap', 'divergence', 'stripped-difference-count', 'replay'
     if (defect === 'nonfinite') trace.goals = NaN;
     if (defect === 'frames') trace.frameCount--;
     if (defect === 'seed') trace.input.job.seed++;
+    if (defect === 'opponent') trace.input.job.opponent = 'patient';
+    if (defect === 'frozen-seeds') trace.input.fixture.specification.seeds.push(999);
+    if (defect === 'frozen-opponents') trace.input.fixture.specification.opponents.push('patient');
     if (defect === 'horizon') trace.input.job.simulationTicks++;
     if (defect === 'input') trace.input.job.inputHash = 'foreign';
     if (defect === 'terminal-tick') trace.endTick!--;
     assert.ok(completeMatchCoverage(traces).errors.length > 0, defect);
   });
+
+test('complete matches cover all supplied goal maps and bounded configuration variants in both mirrors', async () => {
+  assert.equal(COMPLETE_MATCH_CASES.length, 20);
+  assert.equal(new Set(COMPLETE_MATCH_CASES.map(completeMatchKey)).size, 20);
+  assert.deepEqual([...new Set(COMPLETE_MATCH_CASES.map(v => v.difficulty))].sort(), ['easy', 'hard', 'nightmare', 'normal']);
+  assert.deepEqual([...new Set(COMPLETE_MATCH_CASES.map(v => v.opponent ?? 'balanced'))].sort(), ['aggressive', 'balanced', 'patient']);
+  assert.deepEqual([...new Set(COMPLETE_MATCH_CASES.map(v => v.seed ?? 101))].sort(), [101, 102, 103, 104]);
+  for (const mapId of ['championship_stadium', 'forerunner_canyon', 'synthwave_grid_arena', 'rainy_industrial_streets', 'winter_glacier_rink'])
+    for (const mirrored of [false, true]) assert.ok(COMPLETE_MATCH_CASES.some(v =>
+      v.mapId === mapId && v.roster === 'scripted-4v4' && v.difficulty === 'normal' && v.mirrored === mirrored), `${mapId}/${mirrored}`);
+  for (const variant of COMPLETE_MATCH_CASES) {
+    assert.ok(COMPLETE_MATCH_CASES.some(v => completeMatchKey(v) === completeMatchKey({ ...variant, mirrored: !variant.mirrored })));
+    const { fixture, job } = await completeMatchInputs(variant);
+    assert.equal(job.seed, variant.seed ?? 101); assert.equal(job.opponent, variant.opponent ?? 'balanced');
+    assert.deepEqual(fixture.specification.seeds, [job.seed]); assert.deepEqual(fixture.specification.opponents, [job.opponent]);
+    assert.equal(fixture.specification.roster, variant.roster); assert.equal(fixture.specification.difficulty, variant.difficulty);
+    assert.equal(job.focalTeam, variant.mirrored ? 'red' : 'blue');
+    const rival = job.config.teams[variant.mirrored ? 'blue' : 'red']!;
+    assert.equal(rival.adaptationEnabled, false);
+    assert.equal(rival.styleAggression, job.opponent === 'aggressive' ? .85 : job.opponent === 'patient' ? .2 : .5);
+    assert.equal(rival.stylePatience, job.opponent === 'aggressive' ? .2 : job.opponent === 'patient' ? .8 : .5);
+  }
+});
 
 for (const mirrored of [false, true]) test(`local start and a real simulation cap stay explicit ${mirrored}`, async () => {
   const variant = COMPLETE_MATCH_CASES.find(v => v.roster === 'local-4v4' && v.mirrored === mirrored)!;

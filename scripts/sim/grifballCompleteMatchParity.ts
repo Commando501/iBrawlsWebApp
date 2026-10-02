@@ -7,23 +7,35 @@ import { createAutonomousValidationRuntime } from './grifballAutonomousRuntime';
 import { createParityFrameRecorder } from './grifballParityEvidence';
 import { observeSimTacticalWeaponTarget } from '../../src/sim/grifballTacticalWeaponChoice';
 
-type Variant = Pick<ValidationCase, 'mapId' | 'roster' | 'difficulty'> & { mirrored: boolean };
+type Variant = Pick<ValidationCase, 'mapId' | 'roster' | 'difficulty'> & {
+  mirrored: boolean; seed?: number; opponent?: ValidationJob['opponent'];
+};
 const variants = [
   { mapId: 'championship_stadium', roster: 'scripted-4v4', difficulty: 'normal' },
   { mapId: 'forerunner_canyon', roster: 'scripted-4v4', difficulty: 'normal' },
   { mapId: 'forerunner_canyon', roster: 'scripted-4v4', difficulty: 'hard' },
   { mapId: 'forerunner_canyon', roster: 'local-4v4', difficulty: 'normal' },
+  { mapId: 'synthwave_grid_arena', roster: 'scripted-4v4', difficulty: 'normal' },
+  { mapId: 'rainy_industrial_streets', roster: 'scripted-4v4', difficulty: 'normal' },
+  { mapId: 'winter_glacier_rink', roster: 'scripted-4v4', difficulty: 'normal' },
+  // Deliberately bounded configuration coverage, with both mirrors for each
+  // input. These development seeds are not held-out quality observations.
+  { mapId: 'synthwave_grid_arena', roster: 'scripted-3v4', difficulty: 'easy', seed: 102, opponent: 'aggressive' },
+  { mapId: 'rainy_industrial_streets', roster: 'local-4v4', difficulty: 'hard', seed: 103, opponent: 'patient' },
+  { mapId: 'winter_glacier_rink', roster: 'scripted-4v4', difficulty: 'nightmare', seed: 104, opponent: 'balanced' },
 ] satisfies Omit<Variant, 'mirrored'>[];
 export const COMPLETE_MATCH_CASES: readonly Variant[] = variants.flatMap(variant =>
   [false, true].map(mirrored => ({ ...variant, mirrored })));
-export const completeMatchKey = (v: Variant) => `${v.mapId}/${v.roster}/${v.difficulty}/${v.mirrored}`;
+export const completeMatchKey = (v: Variant) => `${v.mapId}/${v.roster}/${v.difficulty}/${v.mirrored}` +
+  ((v.seed ?? 101) === 101 && (v.opponent ?? 'balanced') === 'balanced' ? '' : `/seed-${v.seed ?? 101}/${v.opponent ?? 'balanced'}`);
 
 /** Development integration inputs. This separate horizon never reclassifies
  * standard pilot caps or claims held-out quality evidence. */
 export async function completeMatchInputs(variant: Variant) {
+  const { seed = 101, opponent = 'balanced', ...setup } = variant;
   const manifest = createSuiteManifest('standard');
-  manifest.cases = [{ ...manifest.cases.find(c => c.mode === 'match')!, ...variant,
-    id: `complete-${variant.mapId}-${variant.roster}-${variant.difficulty}`.replaceAll('_', '-'), seeds: [101],
+  manifest.cases = [{ ...manifest.cases.find(c => c.mode === 'match')!, ...setup,
+    id: `complete-${variant.mapId}-${variant.roster}-${variant.difficulty}`.replaceAll('_', '-'), seeds: [seed], opponents: [opponent],
     simulationSeconds: 900, watchdogSeconds: 1800 }];
   const plan = await createSuitePlan(manifest, { commit: null, dirty: null, workingTreeHash: null, scope: [] });
   return { fixture: plan.cases[0], job: plan.jobs.find(j => j.variant === 'candidate' && j.mirrored === variant.mirrored)! };
@@ -131,7 +143,7 @@ export async function runCompleteMatchTrace(fixture: FrozenCase, job: Validation
     }
     if (!differences.length) result = await host.runtime.done;
     return { protocol: 'autonomous-complete-match-v1' as const,
-      name: completeMatchKey({ ...fixture.specification, mirrored: job.mirrored }),
+      name: completeMatchKey({ ...fixture.specification, mirrored: job.mirrored, seed: job.seed, opponent: job.opponent }),
       input: { fixture, job }, ticks: state.tick, kills, revivals, goals, resets, continuations,
       termination: result?.termination ?? 'divergence', verdict: result?.check.verdict ?? 'fail', runtimeCheck: result?.check ?? null,
       endTick: result?.end?.tick ?? null, phase: state.match.phase, differenceCount: differences.length, differences,
@@ -141,13 +153,16 @@ export async function runCompleteMatchTrace(fixture: FrozenCase, job: Validation
 
 export type CompleteMatchTrace = Awaited<ReturnType<typeof runCompleteMatchTrace>>;
 export function completeMatchCoverage(traces: readonly CompleteMatchTrace[]) {
-  const errors: string[] = [], expected = new Set(COMPLETE_MATCH_CASES.map(completeMatchKey)), seen = new Set<string>();
+  const errors: string[] = [], expected = new Map(COMPLETE_MATCH_CASES.map(v => [completeMatchKey(v), v] as const)), seen = new Set<string>();
   for (const trace of traces) {
     const name = trace.name;
     if (!expected.has(name) || seen.has(name)) errors.push(`${name}: foreign or duplicate case`);
     seen.add(name);
     const { fixture, job } = trace.input;
-    if (name !== completeMatchKey({ ...fixture.specification, mirrored: job.mirrored }) || job.seed !== 101 ||
+    const required = expected.get(name), seed = required?.seed ?? 101, opponent = required?.opponent ?? 'balanced';
+    if (name !== completeMatchKey({ ...fixture.specification, mirrored: job.mirrored, seed: job.seed, opponent: job.opponent }) ||
+      job.seed !== seed || job.opponent !== opponent ||
+      !isDeepStrictEqual(fixture.specification.seeds, [seed]) || !isDeepStrictEqual(fixture.specification.opponents, [opponent]) ||
       job.variant !== 'candidate' || job.simulationTicks !== 54000 || job.inputHash !== fixture.inputHash ||
       fixture.mechanics.grifballGoalTarget !== 2 || fixture.specification.simulationSeconds !== 900)
       errors.push(`${name}: incompatible frozen inputs`);
@@ -169,7 +184,7 @@ export function completeMatchCoverage(traces: readonly CompleteMatchTrace[]) {
       if (trace.continuations.filter(c => c.reason === reason && c.verifiedTicks === 30).length !== 1)
         errors.push(`${name}: incomplete checkpoint ${reason}`);
   }
-  for (const name of expected) if (!seen.has(name)) errors.push(`${name}: missing case`);
+  for (const name of expected.keys()) if (!seen.has(name)) errors.push(`${name}: missing case`);
   return { required: expected.size, completed: traces.filter(t => t.termination === 'match-end' && t.differenceCount === 0).length, errors };
 }
 
