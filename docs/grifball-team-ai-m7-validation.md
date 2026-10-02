@@ -3746,3 +3746,42 @@ The remaining planning estimate after this integration is **6-7 substantial auto
 | Final repository, production browser and CLI/Lab acceptance verification | 1 | Current-source checks and saved/imported reports agree |
 
 This is a range, not a guaranteed countdown. Newly exposed behavior or performance defects may require additional repairs. Human-only testing begins after these automated gates pass; it covers spacing and escort feel, tactical readability, fairness and enjoyment. The fixed development matches and passing regression totals do not substitute for those gates.
+
+## 2026-10-01 - lone-defender runner containment
+
+The shared new-carrier targeting failure came from the last surviving defender continually moving its safety point away from an approaching runner. A truly lone assigned defender now holds its current goal-side position when the observed runner forecast crosses its ready weapon's reach. The existing strike-range counter then takes over. The hold requires an open path, a sufficiently closing runner, timely attack readiness and carrier landing, and the existing pressure/lookahead settings. Stale or blocked forecasts, unavailable defenders and a safety backing an earned tanking pair retain their prior coverage behavior.
+
+In all eight mirrored/order/main-identity contested openings, the defender now counters twice, kills the new carrier and recovers the ball within the original 150-frame window. The opening assertion checks that the first winner survives the initial exchange; it no longer incorrectly forbids that actor from dying to a legitimate later counter. Full-window possession, real impacts, deaths and credit remain checked. No match horizon or acceptance threshold was increased.
+
+Focused defense and opposed-opening tests pass **225/225** in 7.61 seconds (output/m7-runner-targeting-unit.log). Negative controls fail as intended: disabling the hold fails 16 opening/counter tests, while applying it to the single remaining safety after reserving a tanking pair fails the coordination boundary test. Source bytes were restored after each mutation (output/m7-runner-targeting-negative-hold.log and output/m7-runner-targeting-negative-coordination.log).
+
+The final map-contest, revival, jump-coverage and match-decision run reports **126 passes and two retained failures**, zero skips/TODOs, in 95.04 seconds (output/m7-runner-targeting-focused-final.log). All **40/40 map contests** and **24/24 revival cases** pass. Match decisions improve from 12 failures to **2/24**, and match dash/jump rejection coverage now has witnesses on both teams. The two failures are contested, forward-order main-AI cases, one per team: neither completes the required match by tick 9,000. Those cases and their terminal/lifecycle assertions remain failing. The earlier aggregate's 125/712 count is historical; this focused run does not recompute the aggregate or certify the remaining map/pass/roster matches.
+
+TypeScript and isolated production client/server builds pass (output/m7-runner-targeting-typecheck.log and output/m7-runner-targeting-build.log; Vite 48.01 seconds, server 56 ms, existing chunk-size warning). Final full-match and broad-regression results are recorded below. Concurrent correctness runs are not calibrated performance measurements.
+
+The final 122-file regression bundle passes **10,534/10,534**, zero failures/skips/TODOs, in 409.87 seconds (output/m7-runner-targeting-regressions-final.log; inventory output/m7-complete-test-files.json). The independent full-match matrix passes **8/8 with zero differences or coverage errors**, comparing 132,081 advanced ticks plus eight initial frames, with 683 kills/revivals and exact checkpoint continuations (output/m7-runner-targeting-complete-final.log and output/m7-runner-targeting-complete-final.json).
+
+| Map / roster / difficulty | Mirror | End tick | Kills / revivals | Goals / resets |
+| --- | --- | ---: | ---: | ---: |
+| championship_stadium / scripted-4v4 / normal | False | 18305 | 85 / 85 | 2 / 1 |
+| championship_stadium / scripted-4v4 / normal | True | 9024 | 39 / 39 | 3 / 2 |
+| forerunner_canyon / scripted-4v4 / normal | False | 16751 | 88 / 88 | 2 / 1 |
+| forerunner_canyon / scripted-4v4 / normal | True | 16611 | 93 / 93 | 2 / 1 |
+| forerunner_canyon / scripted-4v4 / hard | False | 18571 | 97 / 97 | 2 / 1 |
+| forerunner_canyon / scripted-4v4 / hard | True | 28243 | 145 / 145 | 2 / 1 |
+| forerunner_canyon / local-4v4 / normal | False | 13825 | 75 / 75 | 2 / 1 |
+| forerunner_canyon / local-4v4 / normal | True | 10751 | 61 / 61 | 2 / 1 |
+
+These passing development matches establish live/composed agreement for the fixed cases. They do not erase the two failing 9,000-tick decision cases or establish held-out tactical quality. No fresh aggregate, full-repository, browser, baseline-quality or calibrated-performance acceptance pass is claimed in this slice.
+
+After this repair, the planning estimate is **5-6 substantial automated slices** before human-only testing:
+
+| Remaining work | Estimated slices | Required result |
+| --- | ---: | --- |
+| Remaining match completion and broader execution coverage | 1-2 | Repair the retained failures, recheck map/pass/roster families, and close the outstanding map/configuration and movement/combat coverage scopes |
+| Frozen-baseline comparison | 1 | Paired mirrored comparisons establish tactical improvement against a fixed reference |
+| Held-out quality/generalization | 1 | Unseen seeds/scenarios and seed-cluster uncertainty support the result |
+| Final-source serial performance | 1 | Absolute planner cost and baseline-relative gates pass |
+| Final aggregate, repository, production browser and CLI/Lab validation | 1 | Final-source checks and saved/imported acceptance reports agree |
+
+These are substantial work packages, not a guaranteed number of commits. Match-completion and quality results remain the main sources of uncertainty. M1-M7 systems and the validation machinery are implemented, but M7 acceptance is still open. Human-only review follows the automated gates and covers spacing/escort feel, readability, fairness and enjoyment; human findings can still lead to fixes.

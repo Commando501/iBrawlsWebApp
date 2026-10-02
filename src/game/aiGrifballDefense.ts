@@ -148,7 +148,30 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
       advantage, reinforcementIn, emergency, transitioning: transition > 0 };
     a.reason = `${mode}: ${emergency ? 'contest the scoring threat' : transition > 0 ? 'recover shape after possession loss' : contain ? 'hold the goal side until pressure is safe' : expiredMotion ? 'pressure the stationary carrier and protect the goal' : 'cut the carrier route and protect the goal'}`;
   };
-  assign(safety, 'last-defender', emergency ? anchor : safetyPoint, carrier);
+  let safetyDestination = emergency ? anchor : safetyPoint;
+  let safetyCarrierETA = 0;
+  if (carrier?.space?.weapon === 'ball' && assignments.length === 1 && !emergency && !expiredMotion && !carrierRoute && tuning.defensePressure >= .4) {
+    const self = players.find(p => p.id === safety.botId)!;
+    const dx = self.pos.x - anchor.x, dz = self.pos.z - anchor.z;
+    const fx = projected.x - anchor.x, fz = projected.z - anchor.z;
+    const fraction = Math.max(0, Math.min(1, (dx * fx + dz * fz) / Math.max(.001, fx * fx + fz * fz)));
+    const crossing = { x: anchor.x + fx * fraction, z: anchor.z + fz * fraction };
+    // Do not keep moving the last defender's line away from an approaching
+    // runner. A ready defender already covering a reachable cut can hold it
+    // and let the existing strike-range counter take over, without tail chasing.
+    if (self.space?.phase === 'ready' && self.space.mobileIn <= 0 &&
+      dx * (goal.x - anchor.x) + dz * (goal.z - anchor.z) > 0 &&
+      dx * carrier.vel.x + dz * carrier.vel.z > .5 * distance(self.pos, anchor) &&
+      distance(self.pos, crossing) <= self.space.reach &&
+      self.space.attackIn <= fraction * tuning.defenseLookahead + tuning.defensePressure * .25 &&
+      carrier.space.mobileIn <= fraction * tuning.defenseLookahead &&
+      isSpaceSegmentOpen(snapshot.geometry!, self.pos, anchor)) {
+      safetyDestination = { ...self.pos };
+      safetyCarrierETA = fraction * tuning.defenseLookahead;
+    }
+  }
+  assign(safety, 'last-defender', safetyDestination, carrier, safetyCarrierETA);
+  if (safetyDestination !== safetyPoint && !emergency) safety.reason = 'last-defender: hold the goal-side cut against the approaching runner';
   safety.role = 'safety';
   const rest = defenders.filter(a => a !== safety);
   if (!carrier) {
@@ -159,7 +182,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     });
     return;
   }
-  // A lone defender preserves the goal side until the emergency range is reached.
+  // A lone defender keeps its goal-side line; no secondary pressure or marks.
   if (!rest.length) return;
   rest.sort((a, b) => {
     const aReachable = reachable.includes(a), bReachable = reachable.includes(b);

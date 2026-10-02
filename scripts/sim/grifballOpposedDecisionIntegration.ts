@@ -658,7 +658,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       check(failure, false, true);
     check('one recorded death', loser.deaths, 1);
     check('loser never kills', loser.kills, 0);
-    check('winner survives', winner.deaths, 0);
+    check('opening winner survives initial exchange', frames.find(f => f.tick === impacts[0]?.tick)?.actors.find(a => a.id === winner.id)?.deaths, 0);
     check('first impact owner', impacts[0]?.id, winner.id);
     check('first impact victim', JSON.stringify(impacts[0]?.victims), JSON.stringify([loser.id]));
     // The goal-side counter can commit on the first frame. Require prompt

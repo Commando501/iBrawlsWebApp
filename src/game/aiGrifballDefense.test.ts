@@ -80,6 +80,27 @@ test('a carrier recovery commitment returns to interception when the opening clo
   assert.equal(orders.filter(a => a.defense?.mode === 'last-defender').length, 1);
 });
 
+test('a safety backing an earned carrier attack is not treated as a lone defender', () => {
+  const s = carrierScreenScene(); s.tactics!.defaults.stylesEnabled = false;
+  s.tactics!.defaults.defenseLookahead = 1.5;
+  s.players.find(p => p.id === 'enemy')!.space!.attackIn = 2;
+  const control = structuredClone(s); control.tactics!.defaults.defenseEnabled = false;
+  const earned = blue(run(control)), primary = earned.find(a => a.tanking?.mode === 'engage' && a.tanking.attack)!;
+  assert.ok(primary, 'fixture has an earned primary attack');
+  const group = earned.filter(a => a === primary || a.tanking?.mode === 'punish' && a.tanking.partnerId === primary.botId);
+  assert.equal(group.length, 2, 'fixture has a coordinated pair');
+  s.players = s.players.filter(p => p.team !== 'blue' || p.id === 'back' || group.some(a => a.botId === p.id));
+  assert.equal(s.players.filter(p => p.team === 'blue').length, 3, 'pair plus one safety');
+  // Keep the earned pair while testing the defense layer's remaining coverage.
+  const orders = earned.filter(a => a.botId === 'back' || group.includes(a));
+  const routers = new Map(s.players.map(p => [p.id, createSpaceRouter(s.geometry!, p.pos)]));
+  applyGrifballDefense(s, orders, s.tactics!.defaults, routers, new Map(), 0);
+  const safety = orders.find(a => a.defense?.mode === 'last-defender')!;
+  assert.equal(orders.filter(a => a.tanking).length, 2, 'retain the earned pair');
+  assert.equal(safety.botId, 'back');
+  assert.doesNotMatch(safety.reason, /hold the goal-side cut/);
+});
+
 for (const cause of ['airborne-backup', 'reloading-backup', 'combined-delay', 'late-backup', 'sealed-backup', 'containment', 'emergency', 'ready-carrier', 'closing-window', 'turnover'] as const)
   test(`carrier tanking yields to defense when coverage is unavailable: ${cause}`, () => {
     const s = carrierScreenScene();
@@ -503,6 +524,61 @@ test('defenders intercept a visible cut, reserve one safety and assign distinct 
   const safety = orders.find(a => a.defense?.mode === 'last-defender')!;
   assert.equal(selectGrifballAssignmentThreat(safety, { x: -10, z: 0 }, [p('side', 'red', -10, 5)]), null);
 });
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const id of ['guard', 'main_ai'])
+  test(`lone ready defender holds an approaching goal-side cut: ${mirror}/${reverse}/${id}`, () => {
+    const s = scene(), sign = mirror ? -1 : 1, team = mirror ? 'red' : 'blue', enemy = mirror ? 'blue' : 'red';
+    s.tactics!.defaults.stylesEnabled = false;
+    s.tactics!.defaults.defenseLookahead = 1.5;
+    s.tactics!.defaults.defensePressure = .7;
+    s.players = [p(id, team, -6 * sign), p('runner', enemy, 0), p('distant-support', enemy, 15 * sign, 15)];
+    const self = s.players[0], carrier = s.players[1];
+    carrier.space!.weapon = 'ball'; carrier.vel.x = -5 * sign;
+    if (reverse) s.players.reverse();
+    const order = run(s).assignments.get(id)!;
+    assert.equal(order.defense?.mode, 'last-defender');
+    assert.equal(order.role, 'safety');
+    assert.deepEqual(order.destination, self.pos, 'hold the cut instead of moving it backward every refresh');
+    assert.ok(Math.abs(order.defense!.carrierETA - 1.2) < 1e-9, 'crossing time follows observed carrier velocity');
+    assert.match(order.reason, /hold the goal-side cut/);
+    assert.equal(selectGrifballAssignmentThreat(order, self.pos, s.players), null, 'keep the cut until strike reach');
+    carrier.pos.x = -4 * sign;
+    assert.equal(selectGrifballAssignmentThreat(order, self.pos, s.players), carrier.id, 'counter the arriving runner');
+  });
+
+for (const defect of ['stationary', 'retreating', 'lateral', 'behind', 'distant', 'wide', 'recovering', 'airborne', 'slow', 'cautious', 'blocked', 'not-carrier', 'late-landing'] as const)
+  test(`last defender does not hold an unsafe or unavailable cut: ${defect}`, () => {
+    const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+    s.tactics!.defaults.defenseLookahead = 1.5; s.tactics!.defaults.defensePressure = .7;
+    s.players = [p('guard', 'blue', -6), p('runner', 'red', 0)];
+    const [self, carrier] = s.players; carrier.space!.weapon = 'ball'; carrier.vel.x = -5;
+    if (defect === 'stationary') carrier.vel.x = 0;
+    if (defect === 'retreating') carrier.vel.x = 5;
+    if (defect === 'lateral') carrier.vel = { x: 0, z: 5 };
+    if (defect === 'behind') self.pos.x = 6;
+    if (defect === 'distant') self.pos.x = -25;
+    if (defect === 'wide') self.pos.z = 10;
+    if (defect === 'recovering') self.space!.phase = 'recovering';
+    if (defect === 'airborne') self.space!.mobileIn = .5;
+    if (defect === 'slow') self.space!.attackIn = 3;
+    if (defect === 'cautious') s.tactics!.defaults.defensePressure = .2;
+    if (defect === 'not-carrier') carrier.space!.weapon = 'hammer';
+    if (defect === 'late-landing') carrier.space!.mobileIn = 2;
+    if (defect === 'blocked') s.geometry = { key: 'blocked-cut', shape: 'rectangular', x: 52, z: 23,
+      blockers: [{ kind: 'box', x: -3, z: 0, hx: .5, hz: 3 }] };
+    assert.doesNotMatch(run(s).assignments.get('guard')!.reason, /hold the goal-side cut/);
+  });
+
+test('a lone defender abandons a stale moving forecast when the carrier is actually stationary', () => {
+  const s = scene(); s.tactics!.defaults.stylesEnabled = false;
+  s.tactics!.defaults.defenseLookahead = 1.5; s.tactics!.defaults.defensePressure = .7;
+  s.players = [p('guard', 'blue', -6), p('runner', 'red', 0)];
+  s.players[1].space!.weapon = 'ball'; s.players[1].vel.x = -5;
+  const state = run(s);
+  assert.match(state.assignments.get('guard')!.reason, /hold the goal-side cut/);
+  for (let i = 0; i < 9; i++) updateGrifballTeamPlan(state, s, .2);
+  assert.doesNotMatch(state.assignments.get('guard')!.reason, /hold the goal-side cut/);
+});
+
 test('1v1 last defender holds coverage then contests a goal emergency', () => {
   const s = scene(); s.players = [p('a', 'blue', -20), p('runner', 'red', 0)];
   assert.equal(blue(run(s))[0].defense?.mode, 'last-defender');

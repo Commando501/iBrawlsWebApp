@@ -97,6 +97,22 @@ for (const mode of ['punch-first', 'hammer-first', 'contested'] as const) {
   });
 }
 
+for (const team of ['blue', 'red'] as const) for (const reverse of [false, true]) for (const main of [false, true])
+  test(`lone defender holds a cut, counters and recovers after turnover: ${team}/${reverse}/${main}`, () => {
+    const trace = runOpposedDecisionTrace({ mode: 'contested', team, reverse, main });
+    assert.equal(trace.failureCount, 0, JSON.stringify(trace.failures));
+    assert.deepEqual(trace.pickups.map(p => p.id), ['defender', 'escort']);
+    const first = trace.frames.find(f => f.tick === trace.impacts[0].tick)!;
+    assert.equal(first.actors.find(a => a.id === 'defender')!.deaths, 0, 'opening winner survives the initial exchange');
+    const counter = trace.impacts.filter(i => i.id === 'escort' && i.victims.includes('defender'));
+    assert.ok(counter.length >= 2, 'a real counter must damage the carrier before the killing follow-up');
+    assert.ok(counter[0].tick > trace.pickups[0].tick && counter.at(-1)!.tick < trace.pickups[1].tick,
+      'possession and both counter impacts occur in order within the original opening');
+    const end = trace.frames.at(-1)!;
+    assert.equal(end.actors.find(a => a.id === 'defender')!.deaths, 1, 'legitimate follow-up can kill the opening winner');
+    assert.equal(end.actors.find(a => a.id === 'escort')!.kills, 1, 'counter earns exactly one kill');
+  });
+
 for (const recoveryId of ['defender', 'escort']) test('opening recovery validates the actual carrier: ' + recoveryId, () => {
   const opponent = recoveryId === 'defender' ? 'escort' : 'defender';
   const input = { defenderId: 'defender', contested: true, requireImpact: true, dropTick: 8,
