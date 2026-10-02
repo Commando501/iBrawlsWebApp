@@ -160,7 +160,8 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
     combos: ai.comboState, models: ai.playerModels, coordinator: ai.coordinator, pressure,
     get scoreContext() { return control.getScoreContext(state); } };
   return { dt, settings: state.settings,
-    scriptedCombatLearning: { version: 'scripted-combat-learning-v1', scriptedBots, matchContext: ai, isObserverMode: control.isObserverMode },
+    scriptedCombatLearning: { version: 'scripted-combat-learning-v1', scriptedBots, matchContext: ai,
+      isObserverMode: control.isObserverMode, lifecycle: { memories, pressure, spawnPoints: control.spawnPoints } },
     scriptedActorDecisions: actorDecisions, scriptedLungeFeedback: lunge,
     scriptedMeleeFeedback: { version: 'scripted-melee-feedback-v1', memories, knobs, random, combos: ai.comboState },
     ...(planner ? { scriptedPlanner: planner, scriptedCoordination: { version: 'scripted-coordination-v1', coordinator: ai.coordinator } } : {}),

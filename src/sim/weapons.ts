@@ -161,11 +161,14 @@ function applyHit(
   victim: SimCombatant,
   settings: UniversalSettings,
   events: KillEvent[],
-  initiatesTrade: boolean
+  initiatesTrade: boolean,
+  learning?: RosterCombatLearning
 ): boolean {
   const tradeBack = initiatesTrade && isTradeEligible(victim, settings, state.tick);
+  const targetWasLunging = victim.isLunging;
   strike(state, attacker, victim, settings, events);
   if (tradeBack) strike(state, victim, attacker, settings, events); // victim's team credits the trade kill
+  learning?.lifecycle?.impact(attacker, victim, 'melee', tradeBack, targetWasLunging);
   return attacker.alive;
 }
 
@@ -224,14 +227,15 @@ function resolveMeleeHit(
   state: SimState,
   attacker: SimCombatant,
   settings: UniversalSettings,
-  events: KillEvent[]
+  events: KillEvent[],
+  learning?: RosterCombatLearning
 ): void {
   const initiatesTrade = attacker.attackKind === 'slash'; // only sword slash trades
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
     if (inMeleeHitVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) {
-      if (!applyHit(state, attacker, v, settings, events, initiatesTrade)) break; // attacker traded out
+      if (!applyHit(state, attacker, v, settings, events, initiatesTrade, learning)) break; // attacker traded out
     }
   }
 }
@@ -241,12 +245,16 @@ function resolveHammerStrike(
   state: SimState,
   attacker: SimCombatant,
   settings: UniversalSettings,
-  events: KillEvent[]
+  events: KillEvent[],
+  learning?: RosterCombatLearning
 ): void {
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
-    if (inHammerStrikeVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) strike(state, attacker, v, settings, events);
+    if (inHammerStrikeVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) {
+      strike(state, attacker, v, settings, events);
+      learning?.lifecycle?.impact(attacker, v, 'melee');
+    }
   }
 }
 
@@ -264,10 +272,11 @@ function playerLookDirection(c: SimCombatant) {
   return { x: Math.sin(c.yaw) * planar, y: Math.sin(pitch), z: Math.cos(c.yaw) * planar };
 }
 
-function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[]): void {
+function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], learning?: RosterCombatLearning): void {
   for (const victim of state.combatants) {
     if (victim.alive && areHostile(c, victim) && victim.invulnerabilityTimer <= 0 && inPlayerPunchVolume(c, victim, settings)) {
       strike(state, c, victim, settings, events);
+      learning?.lifecycle?.impact(c, victim, 'melee');
     }
   }
 }
@@ -299,6 +308,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
     if (Math.hypot(victim.pos.x - impact.x, cy - impact.y, victim.pos.z - impact.z) <= targetRadius) {
       strike(state, c, victim, settings, events);
       learning?.meleeHit(c, victim);
+      learning?.lifecycle?.impact(c, victim, 'melee');
       if (victim.hp > 0) feedback?.(c, victim);
     }
   }
@@ -358,7 +368,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
     const duration = swingDuration();
     c.weaponTimer = Math.max(0, duration - elapsed);
     if (!roster && (c.attackKind === 'slash' || c.attackKind === 'swipe')) {
-      if (elapsed >= duration * .5 && previous < duration * .5) resolveMeleeHit(state, c, settings, events);
+      if (elapsed >= duration * .5 && previous < duration * .5) resolveMeleeHit(state, c, settings, events, learning);
       if (c.alive && elapsed >= duration) recover();
     } else if (elapsed >= duration) {
       enter('active', strikeDuration());
@@ -369,9 +379,9 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
     c.weaponTimer = Math.max(0, duration - elapsed);
     if (elapsed >= duration) {
       if (roster) { if (c.attackKind !== 'slash') resolveRosterHit(state, c, settings, events, feedback, learning); }
-      else if (c.attackKind === 'punch') resolvePlayerPunch(state, c, settings, events);
+      else if (c.attackKind === 'punch') resolvePlayerPunch(state, c, settings, events, learning);
       else {
-        resolveHammerStrike(state, c, settings, events);
+        resolveHammerStrike(state, c, settings, events, learning);
         // Live hammer-jump window is based on distance from the projected impact to feet.
         const aim = playerLookDirection(c), reach = strikeRange(settings);
         if (Math.hypot(aim.x * reach, MELEE_EYE_HEIGHT - (c.crouchAmount ?? 0) + aim.y * reach, aim.z * reach) <= (settings.hammerJumpTriggerRadius ?? 3.5)) {
@@ -438,7 +448,7 @@ export function tickWeaponIntentTimers(c: SimCombatant, dt: number, swapTimersAd
 }
 
 /** Committed roster flight: one selected target, one contact, elapsed timeout and AI cooldown. */
-function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback): void | 'trade_return' {
+function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback, learning?: RosterCombatLearning): void | 'trade_return' {
   c.lungeTimer += dt;
   const target = findCombatant(state, c.lungeTargetId!);
   const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>, actor = c, damageAlreadyRecorded = false) => {
@@ -467,6 +477,7 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     if (trade) {
       strike(state, target, c, settings, events);
       feedback?.impact(c, target, true);
+      learning?.lifecycle?.impact(c, target, 'lunge', true, targetWasLunging);
       if (target.alive && targetWasLunging && isMixedPlayer(state, target)) {
         // Incoming trades consume local flight into player recovery. The live
         // player keeps this frame's velocity until the next movement update.
@@ -481,7 +492,10 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
       }
       if (c.alive) finish('hit', c, !isMixedPlayer(state, target));
       else { c.isLunging = false; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0; }
-    } else { feedback?.impact(c, target, false); finish('hit'); }
+    } else {
+      feedback?.impact(c, target, false); finish('hit');
+      learning?.lifecycle?.impact(c, target, 'lunge');
+    }
     return trade ? 'trade_return' : undefined;
   }
   const start = c.lungeStartPos!;
@@ -492,9 +506,10 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
 }
 
 /** Independently resolved local-player flight for the opt-in mixed profile. */
-export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[]): void {
+export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], learning?: RosterCombatLearning): void {
   c.lungeTimer += dt;
   const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>) => {
+    learning?.localLungeEnd?.(c, outcome === 'hit');
     c.isLunging = false; c.lungeOutcome = outcome;
     c.playerSwordLungeRecovery = { elapsed: 0, duration: settings.swordLungeReload ?? 1.2 };
     // A reset may already have equipped the hammer. Finish the hidden sword without blocking the hammer.
@@ -522,6 +537,8 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
     const trade = c.invulnerabilityTimer <= 0 && (target.weapon === 'sword'
       ? settings.enableSwordTrade && (target.isLunging || primary || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
       : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primary || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350)));
+    const targetWasLunging = target.isLunging;
+    if (!trade) learning?.localLungeImpact?.(c, target, false);
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
@@ -537,6 +554,8 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
       target.isLunging = false; target.weaponState = 'idle'; target.weaponTimer = target.weaponPhaseElapsed = 0;
       target.attackKind = 'none';
     }
+    learning?.lifecycle?.impact(c, target, 'lunge', !!trade, targetWasLunging);
+    if (trade) learning?.localLungeImpact?.(c, target, true);
     finish('hit'); return;
   }
   const start = c.lungeStartPos!;
@@ -600,7 +619,7 @@ export function stepCombatantWeapons(
   if (stage === 'flight') {
     if (!usesRosterLifecycle(state) || isMixedPlayer(state, c) || !c.isLunging || scriptedCommands)
       throw new Error('Flight contact requires an existing roster flight without new commands');
-    return resolveRosterLunge(state, c, settings, dt, events, lungeFeedback);
+    return resolveRosterLunge(state, c, settings, dt, events, lungeFeedback, learning);
   }
   if (stage === 'animation' && c.isLunging) return;
   if (isMixedPlayer(state, c)) {
@@ -723,7 +742,7 @@ export function stepCombatantWeapons(
 
   // Active lunge flight: kill-on-contact, run down the lunge timer.
   if (c.isLunging) {
-    if (usesRosterLifecycle(state)) return resolveRosterLunge(state, c, settings, dt, events, lungeFeedback);
+    if (usesRosterLifecycle(state)) return resolveRosterLunge(state, c, settings, dt, events, lungeFeedback, learning);
     resolveLungeHit(state, c, settings, events);
     c.lungeTimer = Math.max(0, c.lungeTimer - dt);
     if (c.lungeTimer <= 0) {

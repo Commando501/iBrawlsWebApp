@@ -1,9 +1,10 @@
 import type { AIMatchContext } from '../game/aiMatchContext';
+import { createScriptedActorLifecycle, validateScriptedActorLifecycle, type ScriptedActorLifecycle, type RosterActorLifecycle } from './scriptedActorLifecycle';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import { notifyBotDamageTag } from '../game/aiBotCoordinator';
 import { getOrCreatePlayerModel, observePlayerHammerAttack, observePlayerWeaponSwap, observePlayerDash,
-  observePlayerDamageDealt, observePlayerDamageReceived } from '../game/aiPlayerModel';
-import { isSkillCalibrationEnabled, recordCalibrationDodgeAttempt } from '../game/aiSkillCalibration';
+  observePlayerDamageDealt, observePlayerDamageReceived, observePlayerCounter, observePlayerLungeEnd } from '../game/aiPlayerModel';
+import { isSkillCalibrationEnabled, recordCalibrationDodgeAttempt, recordCalibrationDodgeFailed } from '../game/aiSkillCalibration';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { UniversalSettings } from '../types';
 import { isMixedPlayer, type SimState, type SimCombatant } from './simState';
@@ -15,8 +16,12 @@ export interface ScriptedCombatLearning {
   scriptedBots: Readonly<Record<string, string>>;
   matchContext: AIMatchContext;
   isObserverMode: boolean;
+  lifecycle?: ScriptedActorLifecycle;
 }
 export interface RosterCombatLearning {
+  lifecycle?: RosterActorLifecycle;
+  localLungeImpact?(actor: SimCombatant, target: SimCombatant, trade: boolean): void;
+  localLungeEnd?(actor: SimCombatant, hit: boolean): void;
   hammerAttack(actor: SimCombatant): void;
   weaponSwap(actor: SimCombatant, weapon: 'hammer' | 'sword'): void;
   spatialDodge(actor: SimCombatant): void;
@@ -38,6 +43,7 @@ export function validateScriptedCombatLearning(state: SimState, control: Scripte
       typeof difficulty !== 'string' || isNeuralNetDifficulty(difficulty))
       throw new Error(`Invalid scripted learning authority: ${id}`);
   }
+  validateScriptedActorLifecycle(control);
 }
 
 export function createScriptedCombatLearning(state: SimState, control: ScriptedCombatLearning,
@@ -47,6 +53,20 @@ export function createScriptedCombatLearning(state: SimState, control: ScriptedC
   const model = (id: string) => getOrCreatePlayerModel(ai, id, { emaAlpha: tuning.playerModelEmaAlpha,
     defaultLungeDistance: tuning.defaultLungeDistance, defaultReactionTime: tuning.defaultReactionTime });
   return {
+    lifecycle: createScriptedActorLifecycle(state, control, settings),
+    localLungeImpact(actor, target, trade) {
+      if (!isMixedPlayer(state, actor) || control.isObserverMode) return;
+      if (trade) observePlayerCounter(model(actor.id), true);
+      else {
+        observePlayerDamageDealt(model(actor.id));
+        if (target.id === 'main_ai') recordCalibrationDodgeFailed(ai, target.id, tuning.calibrationWindowSize);
+      }
+    },
+    localLungeEnd(actor, hit) {
+      if (!isMixedPlayer(state, actor) || control.isObserverMode || !actor.lungeStartPos) return;
+      const start = actor.lungeStartPos;
+      observePlayerLungeEnd(model(actor.id), Math.hypot(actor.pos.x - start.x, actor.pos.y - start.y, actor.pos.z - start.z), hit);
+    },
     hammerAttack(actor) { if (owns(actor.id)) observePlayerHammerAttack(model(actor.id)); },
     weaponSwap(actor, weapon) { if (owns(actor.id)) observePlayerWeaponSwap(model(actor.id), weapon); },
     spatialDodge(actor) {

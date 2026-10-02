@@ -91,6 +91,9 @@ export function stepSimulation(
     throw new Error('Scheduled actor decisions cannot share precomputed combat or objective packets');
   if ((options.scriptedMeleeFeedback || options.scriptedLungeFeedback) && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Melee feedback requires a positive finite timestep');
   validateScriptedCombatLearning(state, options.scriptedCombatLearning, settings);
+  const lifecycleMemory = options.scriptedCombatLearning?.lifecycle?.memories;
+  if (lifecycleMemory && [options.scriptedLungeFeedback, options.scriptedMeleeFeedback].some(owner => owner && owner.memories !== lifecycleMemory))
+    throw new Error('Lifecycle and combat feedback must share AI memory');
   if (options.scriptedCombatLearning && options.scriptedLungeFeedback &&
     (options.scriptedCombatLearning.matchContext.playerModels !== options.scriptedLungeFeedback.models ||
       options.scriptedCombatLearning.matchContext.coordinator !== options.scriptedLungeFeedback.coordinator))
@@ -173,13 +176,14 @@ export function stepSimulation(
     tickRespawns(state, settings, dt, [player]);
     if (!wasDead) {
       stepCombatantMovement(state, player, act(player.id), settings, dt);
-      if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills);
+      if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills, learning);
     }
     // The live weapon-frame owner ticks main AI before local weapon animation
     // and roster revival/decisions, including while dead or phase-paused.
     const mainAI = mixedObjectiveFrame ? state.combatants.find(c => c !== player && c.id === 'main_ai') : undefined;
     if (mainAI) { tickWeaponSwapTimers(mainAI, dt); swapTimersAdvanced.add(mainAI.id); }
-    if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills);
+    if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills,
+      'complete', undefined, undefined, undefined, false, undefined, learning);
     else { delete player.playerSwordLungeRecovery; player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
   }
   if (options.scriptedCoordination)
@@ -187,11 +191,14 @@ export function stepSimulation(
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.
   if (rosterV2) {
-    const dead = options.scriptedPlanner?.punchControl
+    const dead = options.scriptedPlanner?.punchControl || learning?.lifecycle
       ? state.combatants.filter(c => c !== player && !c.alive) : [];
     tickRespawns(state, settings, dt, state.combatants.filter(c => c !== player));
     const cooldowns = options.scriptedPlanner?.punchControl?.cooldowns;
-    for (const c of dead) if (c.alive && cooldowns && Object.hasOwn(cooldowns, c.id)) cooldowns[c.id] = 0;
+    for (const c of dead) if (c.alive) {
+      learning?.lifecycle?.respawn(c);
+      if (cooldowns && Object.hasOwn(cooldowns, c.id)) cooldowns[c.id] = 0;
+    }
   }
   const planner = options.scriptedPlanner ? beginScriptedObjectivePlanning(state, options.scriptedPlanner, settings, dt, resolvedActions,
     swapTimersAdvanced, options.scriptedCoordination?.coordinator) : null;

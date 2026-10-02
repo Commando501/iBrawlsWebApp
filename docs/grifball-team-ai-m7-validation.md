@@ -3582,3 +3582,28 @@ Next: lifecycle ownership, including death/kill calibration and psychological fe
 The first 118-file regression run passed 10,331/10,335; its four failures were the previous adaptive-tuning tests explicitly expecting null carrier observations. Those assertions now require a valid observation with the actual equipped ball weapon, retaining all existing objective-priority, clock and persistence checks. The entire adaptive-tuning file passes 53/53 in 1.44 seconds (output/m7-carrier-adaptive.log).
 
 Final validation: the explicit 118-file regression bundle passes 10,335/10,335 in 139.00 seconds (output/m7-carrier-final-regressions.log; exact file list output/m7-carrier-test-files.json). TypeScript and isolated client/server builds pass (output/m7-carrier-typecheck.log and output/m7-carrier-build.log; Vite 89 seconds, existing chunk-size warning). No browser or aggregate M7 acceptance rerun is claimed.
+
+
+## 2026-10-01 - combat lifecycle feedback and reset boundaries
+
+The composed actor owner now attaches an explicit lifecycle sink to shared combat learning. Actual melee/lunge impacts record death calibration and post-kill psychological/calibration feedback before the next actor can observe them. Non-trade lunge kills apply that feedback after the flight finish callback, preserving ordinary-bot post-kill state. Trades retain the live absence of psychological/calibration kill samples. Main-slot death calibration and the live ordinary-lunge-victim state asymmetry are intentionally preserved, not silently standardized. Post-kill spawn prediction uses the production occupancy-aware spawn selector and current local/roster/remote positions.
+
+Actual revivals clear transient combat memory and combos before planning/decision begins; learned models, calibration, psychological history, feints and sway remain as the production respawn callback leaves them. Local strikes deliver AI death feedback, and local trades adopt surviving AI flight reloads. Local lunge hits, trades and endings now also record the production damage/counter/travel observations and main-slot pending-dodge failure. Round resets retain learning and combat memory; an explicit resetSimGrifballActorSession helper clears shared context, actor memory and objective reloads in place for use with a freshly created physical match. The helper does not load browser-persistent fingerprints. Legacy/RL defaults remain opt-out.
+
+The new lifecycle suite covers live melee/kill callbacks across main/ordinary actors and difficulty/pressure settings; lunge finish and trade order; local hit/trade/miss learning; actual local weapon animation; production respawn cleanup before a scheduled decision; round/fresh-session boundaries; and invalid ownership rejection before physical mutation. Eight paired continuations compare complete state, memory, context, RNG and events across real lethal impacts, revivals and round resets at 30/60 Hz. Initial contacts are authored to exercise those boundaries; later decisions use the composed policy. These controls are not autonomous full-match quality acceptance.
+
+The first focused run passed 64/65; its reset expectation conflated a newly created coordinator with the production reset coordinator, which explicitly retains undefined optional keys. The expectation now compares against the real reset helper. Expanded focused coverage passes 91/91 in 12.39 seconds (output/m7-lifecycle-focused.log). Type checking subsequently caught a misspelled countdown setting in a test fixture; it now uses grifballCountdownDuration. Both repository test commands register the suite.
+
+Remaining estimate after this lifecycle slice: **7-10 substantial slices** before only human testing remains. This is a planning range, not seven to ten guaranteed turns or small patches:
+
+| Remaining work | Estimated slices | Completion evidence |
+| --- | ---: | --- |
+| Complete opposed-match integration | 1-2 | Objective-driven matches reach real terminal results, including lifecycle and local/observer variants |
+| Known opening, map, revival and dash behavior cases | 2-3 | Retained failing behavior criteria pass without scripted successes or relaxed thresholds |
+| Frozen-baseline and held-out quality/generalization | 2 | Mirrored comparisons and seed-cluster uncertainty support tactical quality |
+| Final-source serial performance | 1 | Existing absolute planner-cost and paired-ratio gates pass |
+| Final repository, browser and CLI/Lab verification | 1-2 | Final-source checks and acceptance reports agree |
+
+M7 remains in automated integration and acceptance. Full matches can reveal additional repair work; regression totals alone do not reduce those remaining gates. Human-only testing begins after these gates close, and covers spacing/escort feel, tactical readability, fairness and enjoyment.
+
+Final validation: the explicit 119-file regression bundle passes 10,426/10,426 in 142.42 seconds (output/m7-lifecycle-regressions.log; exact list output/m7-lifecycle-test-files.json). Removing the actual revival callback fails all four selected respawn controls (87 filtered; output/m7-lifecycle-negative-respawn.log). Source was restored, and the final focused suite passes 91/91 in 12.36 seconds (output/m7-lifecycle-final-focused.log). TypeScript and isolated client/server builds pass (output/m7-lifecycle-typecheck.log and output/m7-lifecycle-build.log; Vite 18.62 seconds, server 18 ms, existing chunk-size warning). No browser, full-repository or aggregate M7 acceptance rerun is claimed.
