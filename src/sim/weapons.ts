@@ -356,7 +356,8 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       if (c.weapon === 'sword') c.lastSwordAttackTimeMs = now;
       else if (c.weapon === 'hammer') c.lastHammerAttackTimeMs = now;
     }
-    if (observeAttack && roster && c.weapon !== 'sword') learning?.hammerAttack(c);
+    if (observeAttack && (roster && c.weapon !== 'sword' || isMixedPlayer(state, c) && (kind === 'strike' || kind === 'punch')))
+      learning?.hammerAttack(c);
     enter('windup', swingDuration());
   }
   const previous = c.weaponPhaseElapsed ?? 0;

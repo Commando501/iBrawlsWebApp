@@ -1,10 +1,8 @@
-import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type DeathEvent, type Combatant } from '../../types';
 import { MAIN_AI_ID } from '../../game/roster';
 import {
   createReplayHeatmapCombatantSource,
-  queueReplayHeatmapDeathEventsForState,
   type ReplayHeatmapCombatantSource,
 } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -74,21 +72,12 @@ export function applyAISwordLungeHitForState({
       }
       playDeath();
 
-      const newDeath: DeathEvent = {
-        id: simulationRandom().toString(36).substring(2, 9),
-        attacker: attackerBot.playerName,
-        victim: state.settings.playerName || 'Blue (You)',
-        weapon: 'sword',
-      };
-      state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
-      queueReplayHeatmapDeathEventsForState({
-        state,
+      recordDeathEvent(attackerBot.playerName, state.settings.playerName || 'Blue (You)', undefined, 'sword', {
         attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
         victim: createReplayHeatmapCombatantSource('player', undefined, {
           team: state.localPlayerTeam,
           pos: state.playerPos,
         }),
-        weapon: 'sword',
       });
       recordBotPsychKill(attackerBot.id, 'player', true);
     }

@@ -67,7 +67,9 @@ export function createScriptedCombatLearning(state: SimState, control: ScriptedC
       const start = actor.lungeStartPos;
       observePlayerLungeEnd(model(actor.id), Math.hypot(actor.pos.x - start.x, actor.pos.y - start.y, actor.pos.z - start.z), hit);
     },
-    hammerAttack(actor) { if (owns(actor.id)) observePlayerHammerAttack(model(actor.id)); },
+    hammerAttack(actor) {
+      if (owns(actor.id) || isMixedPlayer(state, actor) && !control.isObserverMode) observePlayerHammerAttack(model(actor.id));
+    },
     weaponSwap(actor, weapon) { if (owns(actor.id)) observePlayerWeaponSwap(model(actor.id), weapon); },
     spatialDodge(actor) {
       if (!owns(actor.id)) return;

@@ -15,10 +15,11 @@ import { createOfflineBotCombatant } from '../../src/game/roster';
 import * as THREE from 'three';
 import { DEFAULT_ADMIN_SETTINGS } from '../../src/settings/gameplaySettings';
 
-async function inputs(roster: ValidationCase['roster'] = 'scripted-1v1', seed = 101, mirrored = false) {
+async function inputs(roster: ValidationCase['roster'] = 'scripted-1v1', seed = 101, mirrored = false, simulationSeconds?: number) {
   const manifest = createSuiteManifest('standard');
   manifest.cases = [{ ...(manifest.cases.find(c => c.mode === 'match' && c.roster === roster) ??
     manifest.cases.find(c => c.mode === 'match'))!, roster, seeds: [seed], mirrored }];
+  if (simulationSeconds !== undefined) manifest.cases[0].simulationSeconds = simulationSeconds;
   const plan = await createSuitePlan(manifest, { commit: null, dirty: null, workingTreeHash: null, scope: [] });
   const job = plan.jobs.find(j => j.variant === 'candidate' && j.mirrored === mirrored)!;
   return { fixture: plan.cases[0], job };
@@ -130,36 +131,53 @@ test('production full frame spends an AI respawn delay only once', async () => {
   } finally { live.runtime.dispose(); }
 });
 
-for (const roster of ['scripted-3v4', 'scripted-4v4', 'local-4v4'] as const)
-  test(`full-size production comparison retains the real termination ${roster}`, {
-    // Retain the full assertions while the next integration slice closes these
-    // observed divergences. TODO results are not acceptance passes.
-    todo: roster === 'scripted-4v4' ? 'Canyon combat diverges at tick 4403; ground-lunge memory sync needs investigation'
-      : roster === 'local-4v4' ? 'Local mixed combat diverges at tick 1676; target/model feedback needs investigation' : false,
-  }, async t => {
-    const { fixture, job } = await inputs(roster), live = createAutonomousValidationRuntime(fixture, job);
+const fullSizeCases = (['scripted-3v4', 'scripted-4v4', 'local-4v4'] as const).flatMap(roster =>
+  [101, 102].flatMap(seed => [false, true].map(mirrored => ({ roster, seed, mirrored, seconds: 120 }))));
+// Separate frozen extended fixture; the standard cap and its inconclusive verdict stay intact.
+fullSizeCases.push({ roster: 'local-4v4', seed: 101, mirrored: false, seconds: 300 });
+for (const { roster, seed, mirrored, seconds } of fullSizeCases)
+  test(`full-size production comparison retains the real termination ${roster}/${seed}/${mirrored}/${seconds}`, async t => {
+    const { fixture, job } = await inputs(roster, seed, mirrored, seconds), live = createAutonomousValidationRuntime(fixture, job);
     const { checkpoint } = createComposedValidationMatch(fixture, job), step = createComposedMatchStepper(fixture, job, checkpoint);
-    let kills = 0, goals = 0;
+    let restored = seconds === 300 ? structuredClone(checkpoint) : undefined;
+    let replay = restored ? createComposedMatchStepper(fixture, job, restored) : undefined;
+    let kills = 0, goals = 0, launches = 0, flightEnds = 0;
     try {
       while (checkpoint.state.tick < job.simulationTicks && checkpoint.state.match.phase !== 'matchEnd') {
+        const flights = new Set([...live.state.otherPlayers.values()].filter(a => a.isLunging).map(a => a.id));
         const event = step()!; live.runtime.step(); kills += event.kills.length; goals += Number(!!event.goal);
+        if (replay) {
+          assert.deepEqual(replay(), event); assert.deepEqual(restored, checkpoint, 'extended local restored continuation');
+          if (event.roundReset || checkpoint.state.tick === 6700) {
+            restored = structuredClone(checkpoint); replay = createComposedMatchStepper(fixture, job, restored);
+          }
+        }
         const state = checkpoint.state, tick = state.tick;
         assert.equal(state.match.phase, live.state.grifball.phase, `phase at ${tick}`);
         assert.equal(state.match.ball.holderId, live.state.grifball.ball.holderId, `holder at ${tick}`);
         for (const actor of live.state.otherPlayers.values()) {
           const sim = state.combatants.find(c => c.id === actor.id)!;
+          if (actor.hp > 0 && (actor.isLunging || flights.has(actor.id))) {
+            const memory = checkpoint.memories[actor.id];
+            assert.equal(memory.aiState, actor.aiState, `${tick}/${actor.id}/flight state writeback`);
+            near(memory.timer ?? 0, actor.aiTimer ?? 0, `${tick}/${actor.id}/flight reload writeback`);
+            near(memory.swayTimer, actor.aiSwayTimer ?? 0, `${tick}/${actor.id}/flight sway writeback`);
+            if (actor.isLunging && !flights.has(actor.id)) launches++;
+            if (!actor.isLunging && flights.has(actor.id)) flightEnds++;
+          }
           assert.equal(sim.hp, actor.hp, `${actor.id} hp at ${tick}`); assert.equal(sim.weapon, actor.activeWeapon, `${actor.id} weapon at ${tick}`);
           for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], actor.pos[axis], `${tick}/${actor.id}/${axis}`);
         }
         if (roster === 'local-4v4') for (const axis of ['x', 'y', 'z'] as const)
           near(state.combatants[0].pos[axis], live.state.playerPos[axis], `${tick}/player/${axis}`);
       }
+      if (seconds === 300) assert.equal(checkpoint.state.match.phase, 'matchEnd', 'extended local fixture must actually finish');
       const result = await live.runtime.done;
       assert.equal(result.end!.tick, checkpoint.state.tick);
       assert.equal(result.termination, checkpoint.state.match.phase === 'matchEnd' ? 'match-end' : 'simulation-cap');
       assert.equal(result.check.verdict, result.termination === 'match-end' ? 'pass' : 'inconclusive');
       assert.ok(kills > 0, 'full-size run must exercise real combat');
-      t.diagnostic(JSON.stringify({ roster, termination: result.termination, ticks: checkpoint.state.tick, kills, goals }));
+      t.diagnostic(JSON.stringify({ roster, seed, mirrored, seconds, termination: result.termination, ticks: checkpoint.state.tick, kills, goals, launches, flightEnds }));
     } finally { live.runtime.dispose(); }
   });
 

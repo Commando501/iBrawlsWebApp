@@ -1,3 +1,4 @@
+import { finishSimMixedArenaFrame } from './mixedArenaFrame';
 import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import { validateScriptedCombatLearning, createScriptedCombatLearning, type ScriptedCombatLearning } from './scriptedCombatLearning';
 import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGroundFeedback } from './scriptedAIGround';
@@ -49,6 +50,8 @@ export interface StepEvents extends ObjectiveEvents {
 }
 
 export interface StepOptions {
+  /** Opt-in final offline frame owner, after objectives and skeletal impacts. */
+  mixedArenaFrame?: true;
   /** Effective settings; defaults to the standard grifball sim settings. */
   settings?: UniversalSettings;
   /** Timestep override (defaults to {@link SIM_DT}). */
@@ -84,6 +87,8 @@ export function stepSimulation(
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
+  if (options.mixedArenaFrame !== undefined && (options.mixedArenaFrame !== true || state.combatExecution !== 'live-mixed-v1' || state.mode !== 'grifball'))
+    throw new Error('Mixed arena frame requires mixed execution in Grifball');
   if (state.localPlayerIsObserver !== undefined && (typeof state.localPlayerIsObserver !== 'boolean' ||
     state.combatExecution !== 'live-mixed-v1')) throw new Error('Observer ownership requires mixed execution');
   if (state.localPlayerIsObserver && state.combatants.some(c => c.id === state.localPlayerId && (c.alive || c.hp > 0)))
@@ -403,6 +408,7 @@ export function stepSimulation(
       else if (!flightAdvanced?.has(c.id))
         stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback, undefined, false, undefined, learning);
     }
+    if (options.mixedArenaFrame) finishSimMixedArenaFrame(state, lifecycleMemory);
     reconcileSimCarrier(state, settings);
   }
 

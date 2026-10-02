@@ -1259,6 +1259,8 @@ export function createAISingleEntityUpdaterForState({
           return;
         }
         if (groundAttackOpportunity.mode === 'return') {
+          // Launch skips further movement, but must retain this turn's AI clocks.
+          syncStateAndMesh();
           return;
         }
   
@@ -1288,11 +1290,12 @@ export function createAISingleEntityUpdaterForState({
           slideDistanceTraveled, slideCooldownTimer, isSprinting } = groundStateFrame);
       }
   
+      }
       constrainCombatantToArena(pos, vel);
-  
+
       finishAIHorizontalMotion(self, { pos, vel, aiState: state });
-  
+
+      // Flight completion also writes back its reload, pressure and AI clocks.
       syncStateAndMesh();
-    };
     };
 }

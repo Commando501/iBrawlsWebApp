@@ -79,7 +79,9 @@ export function createScriptedActorLifecycle(state: SimState, control: ScriptedC
         victimId: target.id, spawnX: spawn.x, spawnZ: spawn.z, lungeKill: kind === 'lunge', duration: tuning.postKillPressureDuration,
       });
       lifecycle.memories[actor.id].pressureTargetId = undefined;
-      if (actor.id !== 'main_ai') lifecycle.memories[actor.id].aiState = 'APPROACHING';
+      // A lunge's completed frame writes its selected reload/pressure state after
+      // post-kill bookkeeping; it must not lose the reload on objective handoff.
+      if (actor.id !== 'main_ai' && kind !== 'lunge') lifecycle.memories[actor.id].aiState = 'APPROACHING';
     },
     respawn(actor) {
       if (!owns(actor)) return;

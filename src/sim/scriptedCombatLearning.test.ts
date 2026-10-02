@@ -1,3 +1,5 @@
+import { triggerPlayerHammerSwingForState } from '../components/grifball/playerWeaponActions';
+import { recordLocalPlayerModelObservation } from '../components/grifball/playerModelObservations';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
@@ -214,3 +216,22 @@ for (const split of ['models', 'coordinator', 'authority']) test(`composed learn
   assert.throws(() => stepSimulation(f.state, {}, options), /must share/);
   assert.deepEqual(f.state, before);
 });
+
+for (const weapon of ['hammer', 'ball'] as const) for (const blocked of [false, true]) for (const observer of [false, true])
+  test(`local accepted primary attack learning matches live ${weapon}/${blocked}/${observer}`, () => {
+    const f = fixture(), { live } = liveFor(f); f.player.weapon = live.activeWeapon = weapon;
+    live.isObserverMode = observer; live.playerHP = 1; live.playerRespawnTimer = 0;
+    live.pWeaponState = 'ready'; live.pWeaponReady = true;
+    live.swapCooldownTimer = f.player.weaponReadyTimer = blocked ? 1 : 0;
+    const learning = createScriptedCombatLearning(f.state, { ...learningFor(f), isObserverMode: observer }, f.state.settings);
+    stepCombatantWeapons(f.state, f.player, { ...idleAction(), attackPrimary: true }, f.state.settings, 1 / 60,
+      [], 'complete', undefined, undefined, undefined, false, undefined, learning);
+    triggerPlayerHammerSwingForState({ state: live, recordHammerAttack: () => recordLocalPlayerModelObservation(live, observePlayerHammerAttack),
+      playSwing: noop, sendSync: noop });
+    assert.deepEqual(f.matchContext.playerModels, live.aiMatchContext.playerModels);
+    assert.equal(f.matchContext.playerModels.get('player')?.hammerAttacks ?? 0, blocked || observer ? 0 : 1);
+    const before = structuredClone(f.matchContext.playerModels);
+    stepCombatantWeapons(f.state, f.player, idleAction(), f.state.settings, 1 / 60, [], 'animation',
+      undefined, undefined, undefined, false, undefined, learning);
+    assert.deepEqual(f.matchContext.playerModels, before, 'later animation must not add another accepted action');
+  });

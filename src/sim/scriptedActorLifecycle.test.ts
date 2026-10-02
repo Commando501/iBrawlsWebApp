@@ -28,6 +28,8 @@ import { recordLocalPlayerLungeEndObservation, recordLocalPlayerDamageDealtObser
 import { executePlayerCombatantTradeForState } from '../components/grifball/tradeRuntime';
 import { recordPlayerMeleeKillForState } from '../components/grifball/playerMeleeDeathRuntime';
 import { tickGrifballObjective } from './grifball';
+import { withSimulationRandom } from '../game/simulationRandom';
+import { recordDeathEvent } from '../components/grifball/deathFeed';
 const noop = () => {};
 function fixture(id = 'ordinary') {
   const state = createMatch({ map: structuredClone(defaultGrifballMap()), seed: 33, combatExecution: 'live-mixed-v1', teamSizes: { blue: 2, red: 1 },
@@ -160,6 +162,8 @@ for (const main of ['attacker', 'victim', 'neither']) for (const hp of [1, 3]) f
         playExplosion: noop, playDeath: noop, spawnVoxelShockwaveParticles: noop,
         recordDeathEvent: () => ({ id: 'test', attacker: 'a', victim: 'v' }), ...callbacks });
     }
+    // The complete live updater now synchronizes its finish frame after impact callbacks.
+    if (!trade && l.bot.hp > 0) l.bot.aiState = 'COOLDOWN';
     assert.equal(f.target.hp, hp - 1); assert.equal(kills.length, hp === 1 ? trade ? 2 : 1 : 0);
     compareFeedback(f, l);
   });
@@ -330,3 +334,25 @@ for (const main of [false, true]) for (const outcome of ['hit', 'trade', 'miss']
     assert.deepEqual(f.matchContext.playerModels, l.live.aiMatchContext.playerModels);
     assert.deepEqual(f.matchContext.skillCalibration, l.live.aiMatchContext.skillCalibration);
   });
+
+for (const hp of [1, 3]) test(`AI lunge against local player keeps cosmetic IDs outside gameplay RNG ${hp}`, () => {
+  const f = fixture(), { live, bot } = liveFor(f);
+  live.playerHP = hp; live.settings.playerName = 'Local runner';
+  let draws = 0, feeds = 0, kills = 0;
+  withSimulationRandom(() => { draws++; return .5; }, 10, () => {
+    applyAISwordLungeHitForState({ state: live, attackerBot: bot, target: { id: 'player' } as any,
+      mainAi: undefined, cooldownMult: 1, finishSwordLunge: noop, recordPlayerDamageTaken: noop,
+      playExplosion: noop, playDeath: noop, spawnVoxelShockwaveParticles: noop,
+      recordBotCalibrationDeath: noop, recordBotPsychKill: () => { kills++; },
+      recordDeathEvent: (...args) => { feeds++; return recordDeathEvent(live, ...args); },
+    });
+  });
+  assert.equal(live.playerHP, hp - 1);
+  assert.equal(draws, 0, 'cosmetic death IDs must not alter later AI choices');
+  assert.equal(feeds, hp === 1 ? 1 : 0); assert.equal(kills, feeds);
+  if (hp === 1) {
+    assert.equal(live.lastDeaths[0].attacker, bot.playerName);
+    assert.equal(live.lastDeaths[0].victim, 'Local runner');
+    assert.equal(live.lastDeaths[0].weapon, 'sword');
+  }
+});

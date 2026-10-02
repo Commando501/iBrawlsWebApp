@@ -88,7 +88,7 @@ export function createComposedMatchStepper(fixture: FrozenCase, job: ValidationJ
       actions.player = { ...idleAction(), aim: input.yaw - Math.PI, moveZ: input.forward ? 1 : 0,
         attackPrimary: input.attack === 'primary', pickup: input.pickup };
     }
-    const events = stepSimulation(state, actions, createSimGrifballActorStepOptions(state, control));
+    const events = stepSimulation(state, actions, { ...createSimGrifballActorStepOptions(state, control), mixedArenaFrame: true });
     for (const kill of events.kills) {
       if (kill.attackerId === 'player') checkpoint.scorePlayer++;
       if (kill.attackerId === 'main_ai') checkpoint.scoreEnemy++;

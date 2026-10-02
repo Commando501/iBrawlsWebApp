@@ -3634,3 +3634,30 @@ After this slice, estimate **7-10 substantial automated slices** before human-on
 Only after those gates pass should the remaining work be human assessment of spacing/escort feel, readability, fairness and enjoyment. Passing regression counts and the new match harness do not close those gates.
 
 Final validation: the focused match suite reports 22 passes and two known failing TODOs in 69.84 seconds (output/m7-composed-match-final-focused.log). The explicit 120-file regression bundle reports **10,448 passes, two known failing TODOs, zero other failures** in 156.03 seconds (output/m7-composed-match-regressions.log; exact list output/m7-composed-match-test-files.json). TODOs remain open acceptance work despite the runner's zero exit code. Removing the offline AI timer guard fails both intended regressions (three selected controls pass, 19 filtered; output/m7-composed-match-negative-clock.log); source was restored before the broad run. TypeScript and isolated client/server builds pass (output/m7-composed-match-typecheck.log and output/m7-composed-match-build.log; Vite 83 seconds, server 37 ms, existing chunk-size warning). No full-repository, browser, final-source performance or aggregate M7 acceptance rerun is claimed.
+
+
+## 2026-10-01 - full-size match parity and flight state closure
+
+The two prior TODO comparisons are now ordinary assertions, expanded to 3v4, Canyon 4v4 and local 4v4 across seeds 101/102 and both mirrored sides. Full frames compare phase, possession, HP, weapon and actor positions; active and completing sword flights additionally compare AI state, reload and sway clocks. A separate frozen 300-second local fixture requires a real match end and exact independent checkpoint continuation. It does not extend or reclassify the standard 120-second caps.
+
+This pass found and repaired two production defects. Ground lunge launch returned without synchronizing cached AI clocks, and the normal sword-flight branch skipped final state/reload writeback because synchronization was nested inside the ground branch. Both now preserve the completed turn. Local sword deaths also generated cosmetic feed IDs from the gameplay RNG; they now use the shared death-feed callback, preserving the feed/heatmap behavior without shifting later AI decisions. The expanded local seed exposed the extra draw at tick 6714 and the resulting weapon divergence at tick 6879. A direct lethal/surviving-hit regression checks the gameplay stream and feed callback.
+
+The composed runtime now records accepted local hammer/ball primary-attack learning and explicitly opts into the final offline body-separation/arena-boundary pass. Body ordering and observer, local-death and main-respawn filters match the production owner. Other simulation profiles remain unchanged. Lunge post-kill learning still records psychological/calibration feedback, while final flight reload/pressure state survives writeback. This supersedes the earlier lifecycle entry's claim that ordinary post-kill APPROACHING state should survive a completed lunge.
+
+After this slice, the planning estimate is **7-9 substantial automated slices** across five remaining gates:
+
+| Remaining work | Estimated slices | Exit evidence |
+| --- | ---: | --- |
+| Broader complete-match integration | 1 | Full-size terminal coverage and remaining map/config variants; current Canyon caps stay open |
+| Retained opening, map, revival and dash behavior | 2-3 | Existing failure criteria pass without relaxed thresholds or authored successes |
+| Frozen baseline and held-out quality/generalization | 2 | Mirrored comparisons and seed-cluster uncertainty support tactical quality |
+| Final-source serial performance | 1 | Existing absolute planner-cost and paired-ratio gates pass |
+| Final repository, browser and CLI/Lab verification | 1-2 | Final-source checks and acceptance reports agree |
+
+This is an estimate, not a guaranteed count: new failures may require repairs. M7 is still in automated integration and acceptance. Human-only work begins after those gates close, covering spacing/escort feel, readability, fairness and enjoyment. Regression totals do not establish tactical quality.
+
+Focused validation passes **205/205, zero TODOs** across the match, lifecycle, learning and arena-frame suites (output/m7-match-closure-final-focused.log; 347.02 seconds while other validation ran concurrently). All four 3v4 seed/side jobs reach match ends at ticks 3401, 4851, 5742 and 4763. All eight standard Canyon/local 4v4 jobs retain simulation-cap/inconclusive outcomes at tick 7200 while agreeing physically with production. The separate extended local seed 101 job reaches match end at tick 9128, with 48 kills and two goals; its complete state/context/memory/RNG/event replay agrees through checkpoint restoration. An additional exploratory Canyon seed 101 run agrees physically through tick 18000 but remains playing; that diagnostic is not terminal or quality acceptance.
+
+TypeScript and isolated client/server builds pass (output/m7-match-closure-typecheck.log and output/m7-match-closure-build.log; Vite 22.92 seconds, server 32 ms, existing chunk-size warning). No browser, full-repository, final-source serial performance or aggregate M7 acceptance rerun is claimed.
+
+Final broad regression validation passes **10,480/10,480, zero failures and zero TODOs**, across the explicit 121-file bundle (output/m7-match-closure-regressions.log; 342.18 seconds; exact list output/m7-match-closure-test-files.json). Negative controls restore the old production flight owner (fails the reload comparison at tick 2317), restore the old local sword death path (fails gameplay-RNG isolation), and remove body separation (fails three participant comparisons). Source bytes were restored after each control. Logs are output/m7-match-closure-negative-flight.log, output/m7-match-closure-negative-rng.log and output/m7-match-closure-negative-body.log. These failures demonstrate regression sensitivity; they do not close the remaining M7 quality/performance gates.
