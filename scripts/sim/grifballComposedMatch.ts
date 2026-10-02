@@ -85,7 +85,8 @@ export function createComposedMatchStepper(fixture: FrozenCase, job: ValidationJ
     if (!control.isObserverMode) {
       const input = validationLocalInput(createSimGrifballTacticalSnapshot(state,
         { scriptedBots: control.scriptedBots, tactics: job.config }), state.tick);
-      actions.player = { ...idleAction(), aim: input.yaw - Math.PI, moveZ: input.forward ? 1 : 0,
+      const player = state.combatants.find(c => c.id === state.localPlayerId)!;
+      actions.player = { ...idleAction(), aim: input.forward || input.attack ? input.yaw - Math.PI : player.yaw, moveZ: input.forward ? 1 : 0,
         attackPrimary: input.attack === 'primary', pickup: input.pickup };
     }
     const events = stepSimulation(state, actions, { ...createSimGrifballActorStepOptions(state, control), mixedArenaFrame: true });

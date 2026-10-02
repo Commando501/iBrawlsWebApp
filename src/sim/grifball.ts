@@ -10,6 +10,7 @@
  * it reverts the weapon and clamps HP back down.
  */
 
+import type { BotCoordinatorState } from '../game/aiBotCoordinator';
 import { type UniversalSettings } from '../types';
 import {
   resolveRunnerHealDelay,
@@ -230,13 +231,23 @@ export function throwSimPass(
 
 /** End-of-frame repair after late skeletal damage. Does not advance ball physics,
  * healing, pickup, phase timers or scoring a second time. */
-export function reconcileSimCarrier(state: SimState, settings: UniversalSettings): boolean {
+export function reconcileSimCarrier(state: SimState, settings: UniversalSettings,
+  scriptedPlanner?: ScriptedObjectivePlanner, coordinator?: BotCoordinatorState): boolean {
   const ball = state.match.ball;
   if (state.mode !== 'grifball' || ball.state !== 'held' || !ball.holderId) return false;
   const holder = findCombatant(state, ball.holderId);
   if (holder && holder.alive && holder.hp > 0 && holder.respawnTimer <= 0) return false;
+  const holderId = ball.holderId;
   dropBall(ball, holder?.pos ?? ball.home);
   if (holder) setSimCarrier(holder, false, settings, state);
+  if (coordinator?.priorityTargetId === holderId) { coordinator.priorityTargetId = undefined; coordinator.priorityAge = 0; }
+  if (scriptedPlanner) {
+    const plan = scriptedPlanner.plan;
+    plan.passCharge = null; plan.passFlight = null; plan.passPlans = {}; plan.runnerPlans = {};
+    for (const [id, assignment] of plan.assignments)
+      if (id === holderId || assignment.carrierId === holderId) plan.assignments.delete(id);
+    plan.signature = ''; plan.untilRefresh = 0; plan.teamRefresh = {};
+  }
   return true;
 }
 
@@ -249,7 +260,8 @@ export function tickGrifballObjective(
   settings: UniversalSettings,
   dt: number,
   actionsById: ActionsById = {},
-  scriptedPlanner?: ScriptedObjectivePlanner
+  scriptedPlanner?: ScriptedObjectivePlanner,
+  coordinator?: BotCoordinatorState
 ): ObjectiveEvents {
   const events = NO_EVENTS();
   const g = state.match;
@@ -265,6 +277,13 @@ export function tickGrifballObjective(
     if (mixed) placeMixedObjectiveActors(state, settings);
     else placeCombatantsAtSpawns(state, settings);
     returnBallHome(g.ball);
+  }
+
+  // The live objective publishes possession before pass/drop/pickup/scoring,
+  // after a possible round reset. Later AI turns consume this exact focus.
+  if (coordinator) {
+    coordinator.priorityTargetId = g.ball.state === 'held' && g.ball.holderId ? g.ball.holderId : undefined;
+    coordinator.priorityAge = 0;
   }
 
   // Live pointer charging advances in the objective, after movement and AI.

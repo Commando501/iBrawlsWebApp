@@ -3661,3 +3661,48 @@ Focused validation passes **205/205, zero TODOs** across the match, lifecycle, l
 TypeScript and isolated client/server builds pass (output/m7-match-closure-typecheck.log and output/m7-match-closure-build.log; Vite 22.92 seconds, server 32 ms, existing chunk-size warning). No browser, full-repository, final-source serial performance or aggregate M7 acceptance rerun is claimed.
 
 Final broad regression validation passes **10,480/10,480, zero failures and zero TODOs**, across the explicit 121-file bundle (output/m7-match-closure-regressions.log; 342.18 seconds; exact list output/m7-match-closure-test-files.json). Negative controls restore the old production flight owner (fails the reload comparison at tick 2317), restore the old local sword death path (fails gameplay-RNG isolation), and remove body separation (fails three participant comparisons). Source bytes were restored after each control. Logs are output/m7-match-closure-negative-flight.log, output/m7-match-closure-negative-rng.log and output/m7-match-closure-negative-body.log. These failures demonstrate regression sensitivity; they do not close the remaining M7 quality/performance gates.
+
+
+## 2026-10-01 - complete-match variants and feedback boundary repair
+
+A new development matrix runs independent live and composed hosts through actual match endings: Stadium scripted 4v4 normal, Canyon scripted 4v4 normal/hard, and Canyon local 4v4 normal, each mirrored, at seed 101. Each frozen fixture has a separate 900-second horizon and requires a two-goal win, kills, revivals and a physical round reset. Standard 120-second caps are unchanged and remain inconclusive. These fixtures are development integration coverage, not held-out quality evidence. Both repository test commands register the matrix.
+
+Every frame checks phase, holder, roster/local HP, weapon and positions. Roster sway clocks are compared even across trade deaths. Independent full state/context/memory/RNG/event checkpoint continuations cover initial countdown, active play, first combat and round resets. This is bounded integration evidence; the aggregate v80 execution-parity report has not yet been promoted by these standalone tests.
+
+The longer hard/local runs exposed four feedback boundaries:
+
+- Objective possession refreshes the composed coordinator before pass/drop/pickup/scoring, after round reset. Late carrier death clears matching focus and invalidates carrier assignments/pass/runner plans.
+- Ready roster weapons ignore retained AI decision backoff as a mechanical lockout, while retaining swap readiness and leaving legacy training cooldown behavior unchanged.
+- Idle scripted local input preserves the last aim, including a committed hammer impact during the scored phase.
+- Production lunge trade deaths now save the completed turn's AI clocks. Previously the skipped writeback survived respawn and eventually shifted tactical crouch timing, movement and carrier punches.
+
+Focused controls cover possession timing, reset and selective late-death invalidation, ready-weapon threat observations and legacy cooldowns, and mirrored inactive local aim. TypeScript and isolated client/server builds pass (output/m7-complete-final-typecheck.log and output/m7-complete-final-build.log; Vite 35.83 seconds, server 50 ms, existing chunk-size warning). The initial 121-file regression run passed 10,488 checks and exposed one older test that treated an idle roster AI backoff timer as a mechanical attack lockout. That assertion was replaced with a direct live readiness/request comparison; all 23 post-lunge readiness controls pass, including real recovery, swap-delay boundaries and non-v2 contracts (output/m7-complete-readiness-rerun.log). Final match/regression results follow below.
+
+After this slice, the planning estimate is **6-8 further substantial automated slices**, grouped by exit gates:
+
+| Remaining work | Estimated slices | Exit evidence |
+| --- | ---: | --- |
+| Retained opening, map, revival and dash behavior | 2-3 | Existing behavior/coverage criteria pass without relaxed thresholds or authored successes |
+| Frozen baseline and held-out quality/generalization | 2 | Complete mirrored comparisons and seed-cluster uncertainty support tactical quality |
+| Final-source serial performance | 1 | Absolute planner cost and paired-ratio gates pass |
+| Aggregate acceptance integration and final repository/browser/CLI/Lab verification | 1-2 | Complete-match evidence is consumed by the gate; final-source checks and reports agree |
+
+This range assumes the remaining validation does not expose substantial new defects. The stable completion criterion is closure of these gates, not a predetermined number of tiny patches. Human-only testing starts afterward and covers spacing/escort feel, readability, fairness and enjoyment. Passing regression counts and long complete matches alone do not establish tactical quality or human-only readiness.
+
+
+The final eight-case matrix passes **8/8, zero failures/skips/TODOs**, in 642.53 seconds (output/m7-complete-variants-final.log). All eight jobs reach match-end. Exact measured outcomes:
+
+| Map / roster / difficulty | Mirror | End tick | Kills / revivals | Goals / resets | Restored frames |
+| --- | --- | ---: | ---: | ---: | ---: |
+| championship_stadium / scripted-4v4 / normal | False | 15968 | 74 / 74 | 3 / 2 | 150 |
+| championship_stadium / scripted-4v4 / normal | True | 10130 | 50 / 50 | 3 / 2 | 150 |
+| forerunner_canyon / scripted-4v4 / normal | False | 25532 | 131 / 131 | 3 / 2 | 150 |
+| forerunner_canyon / scripted-4v4 / normal | True | 12648 | 71 / 71 | 2 / 1 | 120 |
+| forerunner_canyon / scripted-4v4 / hard | False | 48475 | 262 / 262 | 3 / 2 | 150 |
+| forerunner_canyon / scripted-4v4 / hard | True | 25267 | 134 / 134 | 3 / 2 | 150 |
+| forerunner_canyon / local-4v4 / normal | False | 21625 | 124 / 124 | 2 / 1 | 120 |
+| forerunner_canyon / local-4v4 / normal | True | 12187 | 68 / 68 | 2 / 1 | 120 |
+
+The broad regression bundle is run separately from these eight long cases; the combined explicit 122-file inventory is output/m7-complete-test-files.json. No browser, full-repository, final-source serial performance or aggregate M7 acceptance pass is claimed.
+
+Final broad regression rerun: **10,489/10,489 passed**, zero failures/skips/TODOs, in 374.76 seconds (output/m7-complete-regressions-final.log). Together with the eight complete-match cases, this slice verifies **10,497 passing tests across 122 files**. The matrix spans 171,832 compared match frames, 914 kills/revivals and 1,110 exact restored frames. TypeScript was repeated after the readiness-test correction and passes; the isolated production client/server build also passes.

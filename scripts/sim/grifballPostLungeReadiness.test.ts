@@ -112,13 +112,20 @@ for (const execution of ['legacy-v1', 'live-roster-v1', 'live-player-v1', 'live-
     assert.equal(self.weaponState, 'idle');
     assert.ok(self.attackCooldown > 1);
   });
-test('an unrelated idle cooldown is not waived for v2 roster actors', () => {
-  const { sim } = lungeFixture('main_ai', true), self = sim.combatants[0];
+test('ready roster backoff matches live readiness without requiring an old lunge outcome', () => {
+  const f = lungeFixture('main_ai', true), { sim, bot, state } = f, self = sim.combatants[0];
   sim.combatExecution = 'live-roster-v2';
   Object.assign(self, { weapon: 'sword', weaponState: 'idle', attackKind: 'none', isLunging: false,
     attackCooldown: 1.2, weaponReadyTimer: 0 });
+  Object.assign(bot, { activeWeapon: 'sword', weaponState: 'ready', weaponTimer: 0, isLunging: false,
+    aiState: 'COOLDOWN', aiTimer: 1.2, swapCooldownTimer: 0 });
   delete self.lungeOutcome;
-  assert.equal(observeSimGrifballSpace(self, sim.settings, 'live-roster-v2').attackIn, 1.2 + sim.settings.swordSlashSpeed * .5);
-  stepCombatantWeapons(sim, self, { ...idleAction(), attackPrimary: true }, sim.settings, .1, []);
-  assert.equal(self.weaponState, 'idle');
+  const live = createLiveGrifballTacticalSnapshot(state, () => null, f.map).players.find(p => p.id === bot.id)!.space!;
+  assert.equal(observeSimGrifballSpace(self, sim.settings, 'live-roster-v2').attackIn, live.attackIn);
+  assert.equal(live.attackIn, sim.settings.swordSlashSpeed * .5);
+  // Explicit requests have already passed the AI readiness owner in both hosts.
+  f.frame(true);
+  stepCombatantWeapons(sim, self, { ...idleAction(), attackPrimary: true }, sim.settings, 1 / 60, []);
+  assert.equal(bot.weaponState, 'swing_up'); assert.equal(self.weaponState, 'windup');
+  assert.ok(self.attackCooldown > 1, 'mechanical execution preserves AI backoff for its decision owner');
 });

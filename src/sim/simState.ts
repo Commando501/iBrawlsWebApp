@@ -31,12 +31,13 @@ export const combatExecutionForActor = (state: SimState, c: SimCombatant): SimCo
   state.combatExecution === 'live-mixed-v1'
     ? isMixedPlayer(state, c) ? 'live-player-v1' : 'live-roster-v2' : state.combatExecution;
 
-/** Roster lunge completion readies the weapon; its remaining timer is AI backoff.
+/** Roster ready animation has no mechanical attack lockout; a retained timer
+ * can still represent AI backoff after lunge or recovery cancellation.
  * Explicit action requests have already passed decision selection. Preserve that
  * timer for decision consumers without inventing a mechanical weapon lockout. */
 export function weaponAttackCooldown(c: SimCombatant, execution: SimCombatExecution | undefined): number {
   return execution === 'live-roster-v2' && !c.isLunging && c.weaponState === 'idle'
-    && c.attackKind === 'none' && c.lungeOutcome !== undefined ? 0 : Math.max(0, c.attackCooldown);
+    ? 0 : Math.max(0, c.attackCooldown);
 }
 
 /**

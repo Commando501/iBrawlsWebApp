@@ -345,7 +345,9 @@ export function createAISingleEntityUpdaterForState({
               pushStatsUpdate,
             });
             if (lungeFlightResult === 'trade_return') {
-              if (self.hp > 0) syncStateAndMesh();
+              // Trade deaths retain this turn's completed AI clocks for respawn.
+              // Sync does not overwrite the death callback's HP or weapon state.
+              syncStateAndMesh();
               return;
             }
           } else {
@@ -1097,7 +1099,9 @@ export function createAISingleEntityUpdaterForState({
         });
   
         if (lungeFlightResult === 'trade_return') {
-          if (self.hp > 0) syncStateAndMesh();
+          // Trade deaths retain this turn's completed AI clocks for respawn.
+          // Sync does not overwrite the death callback's HP or weapon state.
+          syncStateAndMesh();
           return;
         }
       } else {

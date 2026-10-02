@@ -235,3 +235,17 @@ test('shared thrown-ball observations and recovery plans stay equal through sett
   assert.ok(seen.has('thrown')); assert.ok(seen.has('loose')); assert.ok(seen.has('idle'));
   assert.deepEqual(sim.match.ball, live.grifball.ball);
 });
+
+for (const kind of ['none', 'strike', 'slash'] as const) test(`ready roster threat ignores retained AI backoff (${kind})`, () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  sim.combatExecution = 'live-roster-v2';
+  const actor = sim.combatants.find(c => c.controller === 'ai')!;
+  actor.weaponState = 'idle'; actor.attackKind = kind; actor.attackCooldown = 1.2; actor.weaponReadyTimer = .15;
+  const bot = live.otherPlayers.get(actor.id)!; bot.swapCooldownTimer = .15;
+  const actual = createSimGrifballTacticalSnapshot(sim, { scriptedBots }).players.find(p => p.id === actor.id)!;
+  const expected = createLiveGrifballTacticalSnapshot(live, goals, sim.map).players.find(p => p.id === actor.id)!;
+  assert.deepEqual(actual.space, expected.space, 'ready animation keeps only mechanical swap readiness');
+  assert.equal(actor.attackCooldown, 1.2, 'observation preserves decision backoff');
+  assert.ok(observeSimGrifballSpace(actor, sim.settings, 'legacy-v1').attackIn > actual.space!.attackIn,
+    'legacy training retains its original mechanical cooldown');
+});

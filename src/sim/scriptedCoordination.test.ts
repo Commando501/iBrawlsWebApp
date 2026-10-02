@@ -8,6 +8,8 @@ import { createGrifballTeamPlanState, type GrifballAssignment, type GrifballTact
 import { createMatch } from './factory';
 import { stepSimulation } from './step';
 import { idleAction } from './actions';
+import { defaultGrifballTactics } from '../game/grifballTacticsConfig';
+import { tickGrifballObjective, reconcileSimCarrier } from './grifball';
 import { validateScriptedCoordination, type ScriptedCoordination } from './scriptedCoordination';
 
 const close = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-12, `${a} != ${b}`);
@@ -78,7 +80,7 @@ for (const reverse of [false, true]) for (const dt of [1 / 60, 1 / 30])
         scriptedPlanner: { version: 'scripted-objective-planner-v1', scriptedBots: f.owners, plan: host.plan },
         scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: f.owners,
           beginTurn: ({ actorId }) => {
-            close(host.coordinator.priorityAge, 1 + tick * dt);
+            close(host.coordinator.priorityAge, tick === 1 ? 1 + dt : dt);
             close(host.coordinator.recentTags.get('player')!.get('ordinary')!, 6 - tick * dt);
             assert.equal(host.coordinator.engagements.has('stale'), false);
             assert.ok(host.coordinator.tacticalEngagements.size > 0, 'fresh team engagement must exist before first actor');
@@ -103,7 +105,7 @@ for (const phase of ['countdown', 'scored', 'matchEnd'] as const)
       scriptedPlanner: { version: 'scripted-objective-planner-v1', scriptedBots: f.owners, plan: f.plan },
       scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: f.owners,
         beginTurn: () => assert.fail('inactive actor'), resolve: () => assert.fail('inactive actor') } });
-    close(f.coordinator.priorityAge, 1 + 1 / 60); assert.equal(f.coordinator.tacticalEngagements.size, 0);
+    close(f.coordinator.priorityAge, 0); assert.equal(f.coordinator.tacticalEngagements.size, 0);
     assert.equal(f.coordinator.engagements.size, 0);
   });
 
@@ -144,4 +146,48 @@ test('step validates a coordinator conflict before local movement', () => {
     scriptedLungeFeedback: { coordinator: createBotCoordinator() } as never,
   }), /share coordinator/);
   assert.deepEqual(f.state, before);
+});
+
+test('objective focus follows possession at the pre-pickup boundary and resets its age', () => {
+  const state = createMatch({ seed: 9, combatExecution: 'live-mixed-v1' });
+  const carrier = state.combatants[1], coordinator = createBotCoordinator();
+  state.match.phase = 'playing'; state.match.ball.pos = { ...carrier.pos };
+  carrier.invulnerabilityTimer = 0;
+  coordinator.priorityTargetId = 'old'; coordinator.priorityAge = 7;
+  const pickup = tickGrifballObjective(state, state.settings, 1 / 60, { [carrier.id]: { ...idleAction(), pickup: true } }, undefined, coordinator);
+  assert.equal(pickup.pickup, carrier.id);
+  assert.equal(coordinator.priorityTargetId, undefined, 'pickup is observed by the following objective frame');
+  assert.equal(coordinator.priorityAge, 0);
+  tickGrifballObjective(state, state.settings, 1 / 60, {}, undefined, coordinator);
+  assert.equal(coordinator.priorityTargetId, carrier.id);
+  coordinator.priorityAge = 7;
+  tickGrifballObjective(state, state.settings, 1 / 60, {}, undefined, coordinator);
+  assert.equal(coordinator.priorityAge, 0, 'possession continually refreshes combat focus');
+});
+
+test('round reset clears objective combat focus before fresh pickup', () => {
+  const state = createMatch({ seed: 9, combatExecution: 'live-mixed-v1' }), coordinator = createBotCoordinator();
+  state.match.phase = 'scored'; state.match.phaseTimer = state.settings.grifballRoundResetDelay!;
+  state.match.ball.state = 'held'; state.match.ball.holderId = state.combatants[1].id;
+  coordinator.priorityTargetId = state.match.ball.holderId; coordinator.priorityAge = 2;
+  const event = tickGrifballObjective(state, state.settings, 1 / 60, {}, undefined, coordinator);
+  assert.equal(event.roundReset, true); assert.equal(coordinator.priorityTargetId, undefined); assert.equal(coordinator.priorityAge, 0);
+});
+
+for (const matchingFocus of [false, true]) test(`late carrier death invalidates carrier plans and only its focus ${matchingFocus}`, () => {
+  const f = fixture(), holder = f.state.combatants.find(c => c.id === 'player')!;
+  const planner = { version: 'scripted-objective-planner-v1' as const, scriptedBots: f.owners,
+    tactics: defaultGrifballTactics(), plan: f.plan };
+  // Fixture ownership is explicit; no planner tick is needed to test late reconciliation.
+  const carrierOrder = assignment('ordinary', false); carrierOrder.carrierId = holder.id;
+  f.plan.assignments.set('ordinary', carrierOrder); f.plan.assignments.set('unrelated', assignment('unrelated', false));
+  f.plan.signature = 'stale'; f.plan.untilRefresh = 2; f.plan.teamRefresh = { blue: 2 };
+  f.coordinator.priorityTargetId = matchingFocus ? holder.id : 'other'; f.coordinator.priorityAge = 3;
+  holder.hp = 0; holder.alive = false;
+  assert.equal(reconcileSimCarrier(f.state, f.state.settings, planner, f.coordinator), true);
+  assert.equal(f.state.match.ball.holderId, null); assert.equal(holder.hasBall, false);
+  assert.equal(f.coordinator.priorityTargetId, matchingFocus ? undefined : 'other');
+  assert.equal(f.coordinator.priorityAge, matchingFocus ? 0 : 3);
+  assert.equal(f.plan.assignments.has('ordinary'), false); assert.equal(f.plan.assignments.has('unrelated'), true);
+  assert.equal(f.plan.signature, ''); assert.equal(f.plan.untilRefresh, 0); assert.deepEqual(f.plan.teamRefresh, {});
 });

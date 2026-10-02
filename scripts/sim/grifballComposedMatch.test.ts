@@ -208,3 +208,16 @@ for (const [roster, ticks] of [['scripted-4v4', 2200], ['local-4v4', 1600]] as c
       else assert.ok(pickupDuringSwing, 'trace must include possession during an active swing');
     } finally { live.runtime.dispose(); }
   });
+
+for (const mirrored of [false, true]) test(`inactive local input retains committed attack heading ${mirrored}`, async () => {
+  const { fixture, job } = await inputs('local-4v4', 101, mirrored);
+  const { checkpoint } = createComposedValidationMatch(fixture, job), state = checkpoint.state;
+  state.match.phase = 'scored'; state.match.phaseTimer = 0;
+  const player = state.combatants.find(c => c.id === state.localPlayerId)!;
+  player.yaw = mirrored ? -.7 : .7; player.weaponState = 'windup'; player.attackKind = 'strike';
+  player.weaponTimer = .2; player.weaponPhaseElapsed = .08;
+  const yaw = player.yaw, step = createComposedMatchStepper(fixture, job, checkpoint);
+  step();
+  near(player.yaw, yaw, 'idle scripted input must not rotate an already committed attack');
+  assert.ok(player.weaponPhaseElapsed! > .08, 'the committed animation continues during scored phase');
+});

@@ -399,7 +399,7 @@ export function stepSimulation(
   const objective =
     state.mode === 'combat'
       ? tickCombat(state, settings, dt)
-      : tickGrifballObjective(state, settings, dt, objectiveActions, options.scriptedPlanner);
+      : tickGrifballObjective(state, settings, dt, objectiveActions, options.scriptedPlanner, options.scriptedCoordination?.coordinator);
 
   if (mixedObjectiveFrame) {
     for (const c of state.combatants) if (c !== player) {
@@ -409,7 +409,7 @@ export function stepSimulation(
         stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation', undefined, meleeFeedback, undefined, false, undefined, learning);
     }
     if (options.mixedArenaFrame) finishSimMixedArenaFrame(state, lifecycleMemory);
-    reconcileSimCarrier(state, settings);
+    reconcileSimCarrier(state, settings, options.scriptedPlanner, options.scriptedCoordination?.coordinator);
   }
 
   // Phase 5 — respawns.
