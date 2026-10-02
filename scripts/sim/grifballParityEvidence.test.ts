@@ -157,12 +157,18 @@ test('real live/headless evidence retains health/credit results and can be repro
 });
 
 
-for (const version of [81, 82]) test(`v${version} requires complete-match evidence without changing prior protocol inventories`, () => {
+for (const version of [81, 82, 83]) test(`v${version} requires complete-match evidence without changing prior protocol inventories`, () => {
   const report = sampledReport(`live-functions-vs-headless-step-v${version}` as keyof typeof SAMPLED_PARITY_FAMILIES);
-  assert.equal(Object.keys(report).length - 1, 51);
+  assert.equal(Object.keys(report).length - 1, version === 83 ? 52 : 51);
   assert.deepEqual(validateSampledParityEvidence(report), []);
   delete report.completeMatchTraces;
   assert.deepEqual(validateSampledParityEvidence(report), ['completeMatchTraces: missing or empty family']);
+});
+
+test('v83 requires the autonomous mobility family', () => {
+  const report = sampledReport('live-functions-vs-headless-step-v83');
+  delete report.autonomousMobilityTraces;
+  assert.deepEqual(validateSampledParityEvidence(report), ['autonomousMobilityTraces: missing or empty family']);
 });
 
 for (const count of [1, 31, 32, 1000, 54001]) test(`streamed parity evidence hashes every frame and retains bounded endpoints (${count})`, () => {

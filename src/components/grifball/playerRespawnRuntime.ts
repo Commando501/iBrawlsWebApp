@@ -70,6 +70,7 @@ export function updatePlayerRespawnForState({
   state.playerPos.copy(spawnPos);
   state.yaw = getInwardSpawnYaw(spawnPos);
   state.playerVel.set(0, 0, 0);
+  state.isJumping = false;
   state.pitch = 0;
   state.playerInvulnerabilityTimer = state.settings.respawnInvulnerabilityDuration;
   state.playerSpawnTime = simulationTimestamp();

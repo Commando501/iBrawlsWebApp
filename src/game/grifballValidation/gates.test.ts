@@ -346,7 +346,10 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v82');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v83');
+  assert.deepEqual(details.autonomousMobilityWitnesses, { required: 72, completed: 72, errors: [] });
+  assert.equal(details.autonomousMobilityTraces.length, 72);
+  assert.ok(details.autonomousMobilityTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 901 && t.restoredFrames === 900));
   assert.deepEqual(details.completeMatchWitnesses, { required: 20, completed: 20, errors: [] });
   assert.equal(details.completeMatchTraces.length, 20);
   assert.ok(details.completeMatchTraces.every((t: any) => t.termination === 'match-end' && t.differenceCount === 0), 'all required independent matches must finish without differences');
