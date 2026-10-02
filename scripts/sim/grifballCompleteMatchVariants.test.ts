@@ -1,70 +1,81 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSuiteManifest } from '../../src/game/grifballValidation/profiles';
-import { createSuitePlan } from '../../src/game/grifballValidation/plan';
-import type { ValidationCase } from '../../src/game/grifballValidation/types';
-import { createComposedValidationMatch, createComposedMatchStepper } from './grifballComposedMatch';
+import { COMPLETE_MATCH_CASES, completeMatchKey, completeMatchInputs, completeMatchCoverage,
+  completeMatchFrame, compareCompleteMatchFrame, runCompleteMatchTrace, type CompleteMatchTrace } from './grifballCompleteMatchParity';
 import { createAutonomousValidationRuntime } from './grifballAutonomousRuntime';
+import { createComposedValidationMatch } from './grifballComposedMatch';
 
-// Development integration fixtures, not held-out quality evidence. A separate
-// frozen horizon requires an actual two-goal win; pilot caps remain unchanged.
-const variants: Pick<ValidationCase, 'mapId' | 'roster' | 'difficulty'>[] = [
-  { mapId: 'championship_stadium', roster: 'scripted-4v4', difficulty: 'normal' },
-  { mapId: 'forerunner_canyon', roster: 'scripted-4v4', difficulty: 'normal' },
-  { mapId: 'forerunner_canyon', roster: 'scripted-4v4', difficulty: 'hard' },
-  { mapId: 'forerunner_canyon', roster: 'local-4v4', difficulty: 'normal' },
-];
-const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) <= 1e-6, `${label}: ${a} != ${b}`);
-for (const variant of variants) for (const mirrored of [false, true])
-  test(`complete match variant ${variant.mapId}/${variant.roster}/${variant.difficulty}/${mirrored}`, async t => {
-    const manifest = createSuiteManifest('standard');
-    manifest.cases = [{ ...manifest.cases.find(c => c.mode === 'match')!, ...variant,
-      id: `complete-${variant.mapId}-${variant.roster}-${variant.difficulty}`.replaceAll('_', '-'), seeds: [101], mirrored,
-      simulationSeconds: 900, watchdogSeconds: 1800 }];
-    const plan = await createSuitePlan(manifest, { commit: null, dirty: null, workingTreeHash: null, scope: [] });
-    const fixture = plan.cases[0], job = plan.jobs.find(j => j.variant === 'candidate' && j.mirrored === mirrored)!;
-    const live = createAutonomousValidationRuntime(fixture, job);
-    const { checkpoint } = createComposedValidationMatch(fixture, job);
-    const step = createComposedMatchStepper(fixture, job, checkpoint);
-    let restored = structuredClone(checkpoint), replay = createComposedMatchStepper(fixture, job, restored), replayTicks = 30;
-    let kills = 0, revivals = 0, goals = 0, resets = 0, restoredTicks = 0;
-    try {
-      while (checkpoint.state.tick < job.simulationTicks && checkpoint.state.match.phase !== 'matchEnd') {
-        const dead = new Set(checkpoint.state.combatants.filter(c => !c.alive).map(c => c.id));
-        const event = step()!; live.runtime.step();
-        kills += event.kills.length; goals += Number(!!event.goal); resets += Number(event.roundReset);
-        revivals += checkpoint.state.combatants.filter(c => c.alive && dead.has(c.id)).length;
-        if (replayTicks > 0) {
-          assert.deepEqual(replay(), event); assert.deepEqual(restored, checkpoint, 'restored full frame');
-          replayTicks--; restoredTicks++;
-        }
-        const state = checkpoint.state, tick = state.tick;
-        assert.equal(state.match.phase, live.state.grifball.phase, `phase at ${tick}`);
-        assert.equal(state.match.ball.holderId, live.state.grifball.ball.holderId, `holder at ${tick}`);
-        for (const actor of live.state.otherPlayers.values()) {
-          const sim = state.combatants.find(c => c.id === actor.id)!;
-          assert.equal(sim.hp, actor.hp, `${tick}/${actor.id}/HP`);
-          assert.equal(sim.weapon, actor.activeWeapon, `${tick}/${actor.id}/weapon`);
-          near(checkpoint.memories[actor.id].swayTimer, actor.aiSwayTimer ?? 0, `${tick}/${actor.id}/sway clock including trade deaths`);
-          for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], actor.pos[axis], `${tick}/${actor.id}/${axis}`);
-        }
-        if (variant.roster === 'local-4v4') {
-          const player = state.combatants.find(c => c.id === state.localPlayerId)!;
-          assert.equal(player.hp, live.state.playerHP, `${tick}/local HP`);
-          assert.equal(player.weapon, live.state.activeWeapon, `${tick}/local weapon`);
-          for (const axis of ['x', 'y', 'z'] as const) near(player.pos[axis], live.state.playerPos[axis], `${tick}/local/${axis}`);
-        }
-        if (event.roundReset || tick === 180 || event.kills.length && kills === event.kills.length) {
-          restored = structuredClone(checkpoint); replay = createComposedMatchStepper(fixture, job, restored); replayTicks = 30;
-        }
-      }
-      const result = await live.runtime.done;
-      t.diagnostic(JSON.stringify({ ...variant, mirrored, ticks: checkpoint.state.tick, termination: result.termination,
-        kills, revivals, goals, resets, restoredTicks }));
-      assert.equal(result.termination, 'match-end', 'simulation caps do not satisfy complete-match coverage');
-      assert.equal(result.check.verdict, 'pass'); assert.equal(checkpoint.state.match.phase, 'matchEnd');
-      assert.equal(result.end!.tick, checkpoint.state.tick);
-      assert.ok(goals >= 2 && resets >= 1 && kills > 0 && revivals > 0 && restoredTicks >= 90,
-        'complete match must exercise goals, combat, respawn, round reset and checkpoint continuation');
-    } finally { live.runtime.dispose(); }
+// Full positive gameplay coverage runs once in the aggregate execution-parity
+// test, which also publishes it for the CLI. These are contract/negative controls.
+async function metadataFixture() {
+  return Promise.all(COMPLETE_MATCH_CASES.map(async variant => {
+    const input = structuredClone(await completeMatchInputs(variant));
+    return { protocol: 'autonomous-complete-match-v1', name: completeMatchKey(variant), input,
+      ticks: 300, frameCount: 301, goals: 2, resets: 1, kills: 1, revivals: 1,
+      termination: 'match-end', verdict: 'pass', runtimeCheck: { id: input.job.id, state: 'completed', verdict: 'pass', summary: 'synthetic metadata', evidence: [] }, endTick: 300, phase: 'matchEnd', differenceCount: 0, differences: [],
+      continuations: ['initial', 'countdown', 'first-kill', 'round-reset-1'].map((reason, i) =>
+        ({ reason, startTick: i * 60, verifiedTicks: 30 })),
+      frames: [{ tick: 0 }, { tick: 300 }], frameEvidence: { kind: 'sampled-frames-v1', retainedCount: 2,
+        fullTraceSHA256: 'a'.repeat(64), encoding: 'synthetic metadata control' } } as CompleteMatchTrace;
+  }));
+}
+
+test('required complete-match inventory rejects missing, duplicate and foreign metadata', async () => {
+  const traces = await metadataFixture();
+  assert.deepEqual(completeMatchCoverage(traces), { required: 8, completed: 8, errors: [] });
+  assert.ok(completeMatchCoverage(traces.slice(1)).errors.some(e => e.includes('missing case')), 'missing case');
+  assert.ok(completeMatchCoverage([...traces, traces[0]]).errors.some(e => e.includes('duplicate')), 'duplicate case');
+  traces[0].name = 'foreign';
+  assert.ok(completeMatchCoverage(traces).errors.some(e => e.includes('foreign')), 'foreign case');
+});
+
+for (const defect of ['cap', 'divergence', 'stripped-difference-count', 'replay', 'replay-interval', 'missing-replay',
+  'kill', 'revival', 'reset', 'goal', 'nonfinite', 'frames', 'seed', 'horizon', 'input', 'terminal-tick', 'runtime', 'sample', 'hash'] as const)
+  test(`complete-match coverage rejects ${defect}`, async () => {
+    const traces = await metadataFixture(), trace = traces[0];
+    if (defect === 'runtime') trace.runtimeCheck = null;
+    if (defect === 'sample') trace.frames.pop();
+    if (defect === 'hash') trace.frameEvidence.fullTraceSHA256 = 'bad';
+    if (defect === 'cap') trace.termination = 'simulation-cap';
+    if (defect === 'divergence') trace.differenceCount = 1;
+    if (defect === 'stripped-difference-count') trace.differences.push({ tick: 20, field: 'HP', live: 1, headless: 0 });
+    if (defect === 'replay') trace.continuations[0].verifiedTicks = 29;
+    if (defect === 'replay-interval') trace.continuations[0].startTick = 299;
+    if (defect === 'missing-replay') trace.continuations.pop();
+    if (defect === 'kill') trace.kills = 0;
+    if (defect === 'revival') trace.revivals = 0;
+    if (defect === 'reset') trace.resets = 0;
+    if (defect === 'goal') trace.goals = 1;
+    if (defect === 'nonfinite') trace.goals = NaN;
+    if (defect === 'frames') trace.frameCount--;
+    if (defect === 'seed') trace.input.job.seed++;
+    if (defect === 'horizon') trace.input.job.simulationTicks++;
+    if (defect === 'input') trace.input.job.inputHash = 'foreign';
+    if (defect === 'terminal-tick') trace.endTick!--;
+    assert.ok(completeMatchCoverage(traces).errors.length > 0, defect);
   });
+
+for (const mirrored of [false, true]) test(`local start and a real simulation cap stay explicit ${mirrored}`, async () => {
+  const variant = COMPLETE_MATCH_CASES.find(v => v.roster === 'local-4v4' && v.mirrored === mirrored)!;
+  const { fixture, job } = await completeMatchInputs(variant), host = createAutonomousValidationRuntime(fixture, job);
+  const { checkpoint } = createComposedValidationMatch(fixture, job);
+  try {
+    const frame = completeMatchFrame(host, checkpoint);
+    assert.deepEqual(compareCompleteMatchFrame(frame), []);
+    assert.equal(frame.headless.actors[0].shield, 0, 'initial local player has no respawn shield');
+    for (const field of ['hp', 'kills', 'shield', 'weaponPhase', 'alive'] as const) {
+      const bad = structuredClone(frame);
+      const actor = bad.headless.actors[0];
+      if (field === 'weaponPhase') actor.weaponPhase = 'recovering';
+      else if (field === 'alive') actor.alive = !actor.alive;
+      else actor[field] += 1;
+      assert.ok(compareCompleteMatchFrame(bad).some(d => d.field.endsWith('.' + field)), field);
+    }
+    const nonfinite = structuredClone(frame); nonfinite.headless.actors[0].pos.x = NaN;
+    assert.ok(compareCompleteMatchFrame(nonfinite).length > 0, 'nonfinite state');
+  } finally { host.runtime.dispose(); }
+  const trace = await runCompleteMatchTrace(fixture, { ...job, simulationTicks: 2 });
+  assert.equal(trace.termination, 'simulation-cap'); assert.equal(trace.ticks, 2);
+  assert.equal(trace.frameCount, 3); assert.equal(trace.differenceCount, 0);
+  assert.ok(completeMatchCoverage([trace]).errors.length > 0, 'a cap cannot satisfy complete-match coverage');
+});

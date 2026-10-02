@@ -232,9 +232,12 @@ test('CLI gate evidence imports as a separate reference and survives re-export w
 });
 test('corrected player traces agree while incomplete coverage and legacy differences remain explicit', async () => {
   const before = await fixture();
-  const report = runExecutionParity();
+  const report = await runExecutionParity();
   if (process.env.GRIFBALL_VALIDATION_PARITY_OUT) writeParityEvidence(process.env.GRIFBALL_VALIDATION_PARITY_OUT, report);
   assert.equal(report.check.verdict, 'inconclusive');
+  assert.ok(report.check.summary.length <= 500, 'aggregate parity summary fits the CLI report contract');
+  const persisted = aggregateSuiteReport(before, { planId: before.id, jobs: [], gates: [report.check] });
+  assert.equal(persisted.gates.find(g => g.id === 'execution-parity')!.verdict, report.check.verdict);
   const details = report.details as any;
   assert.deepEqual(await fixture(), before, 'parity must not mutate cached authored maps used by later plans');
   assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.ok(details.gaps.length);
@@ -343,7 +346,10 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v80');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v81');
+  assert.deepEqual(details.completeMatchWitnesses, { required: 8, completed: 8, errors: [] });
+  assert.equal(details.completeMatchTraces.length, 8);
+  assert.ok(details.completeMatchTraces.every((t: any) => t.termination === 'match-end' && t.differenceCount === 0), 'all required independent matches must finish without differences');
   assert.equal(details.airborneViewTraces.length, 576);
   assert.ok(details.airborneViewTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 60));
   assert.deepEqual(details.airborneViewWitnesses, {required:576,completed:576,errors:[]});

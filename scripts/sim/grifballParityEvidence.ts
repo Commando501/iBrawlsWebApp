@@ -50,6 +50,39 @@ export function compactExecutionTrace<T extends FrameTrace>(trace: T) {
 
 export const compactExecutionTraces = <T extends FrameTrace>(traces: readonly T[]) => traces.map(compactExecutionTrace);
 
+/** Long autonomous matches validate before recording. Hash every frame, but
+ * retain a bounded, progressively thinned history and the final/failing frame. */
+export function createParityFrameRecorder() {
+  const hash = createHash('sha256');
+  hash.update('[');
+  let count = 0, stride = 1, finished = false;
+  let samples: { index: number; frame: unknown }[] = [], last: unknown;
+  return {
+    add(frame: unknown) {
+      if (finished) throw new Error('Parity recorder already finished');
+      const encoded = JSON.stringify(frame, encodeScalar);
+      if (count) hash.update(',');
+      hash.update(encoded);
+      last = JSON.parse(encoded);
+      if (count % stride === 0) samples.push({ index: count, frame: last });
+      if (samples.length >= PARITY_FRAME_SAMPLE_LIMIT) {
+        stride *= 2;
+        samples = samples.filter(sample => sample.index % stride === 0);
+      }
+      count++;
+    },
+    finish() {
+      if (finished || !count) throw new Error('Parity recorder requires an unfinished nonempty trace');
+      finished = true; hash.update(']');
+      if (samples.at(-1)?.index !== count - 1) samples.push({ index: count - 1, frame: last });
+      return { frameCount: count, frames: samples.map(sample => sample.frame),
+        frameEvidence: { kind: 'sampled-frames-v1' as const, retainedCount: samples.length,
+          fullTraceSHA256: hash.digest('hex'),
+          encoding: 'JSON frame array in execution order; $number preserves nonfinite/signed-zero values; $undefined preserves missing values' } };
+    },
+  };
+}
+
 // Keep the evidence inventory explicit: counting only arrays whose first trace
 // has metadata can hide an empty family or a family with stripped metadata.
 const V74_SAMPLED_FAMILIES = [
@@ -74,6 +107,7 @@ export const SAMPLED_PARITY_FAMILIES = {
   'live-functions-vs-headless-step-v78': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces', 'landingTurnoverTraces'],
   'live-functions-vs-headless-step-v79': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces', 'landingTurnoverTraces', 'airborneViewTraces'],
   'live-functions-vs-headless-step-v80': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces', 'landingTurnoverTraces', 'airborneViewTraces'],
+  'live-functions-vs-headless-step-v81': [...V74_SAMPLED_FAMILIES, 'objectiveInputTraces', 'plannedMatchTraces', 'landingTurnoverTraces', 'airborneViewTraces', 'completeMatchTraces'],
 } as const;
 
 /** Structural audit of retained evidence, including saved reports. This does not

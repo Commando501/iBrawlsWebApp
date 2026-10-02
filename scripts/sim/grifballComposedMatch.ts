@@ -30,7 +30,7 @@ export function createComposedValidationMatch(fixture: FrozenCase, job: Validati
     return { pos: { x: p.x, y: p.y, z: p.z }, yaw: (p.spawnYaw ?? inwardSpawnYaw(p)) - Math.PI };
   };
   if (state.localPlayerIsObserver) Object.assign(player, { pos: { x: 0, y: 35, z: 30 }, alive: false, hp: 0 });
-  else Object.assign(player, spawn('blue'), { invulnerabilityTimer: fixture.mechanics.respawnInvulnerabilityDuration });
+  else Object.assign(player, spawn('blue'), { invulnerabilityTimer: 0 });
   state.combatants = [player, ...fixture.roster.map(actor => ({ ...structuredClone(template), id: actor.id,
     team: actor.slot.team, ...spawn(actor.slot.team), modelType: fixture.modelType,
     invulnerabilityTimer: fixture.mechanics.respawnInvulnerabilityDuration, pauseDuringInactiveGrifball: true }))];

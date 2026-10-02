@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactExecutionTrace, PARITY_FRAME_SAMPLE_LIMIT, SAMPLED_PARITY_FAMILIES, validateSampledParityEvidence } from './grifballParityEvidence';
+import { compactExecutionTrace, createParityFrameRecorder, PARITY_FRAME_SAMPLE_LIMIT, SAMPLED_PARITY_FAMILIES, validateSampledParityEvidence } from './grifballParityEvidence';
 import { FOCUS_FIRE_CASES, runFocusFireTrace } from './grifballFocusFireParity';
 
 function sampledReport(protocol: keyof typeof SAMPLED_PARITY_FAMILIES = 'live-functions-vs-headless-step-v75'): Record<string, any> {
@@ -154,4 +154,35 @@ test('real live/headless evidence retains health/credit results and can be repro
   assert.equal(compact.frames.length, 8);
   assert.equal((compact.frames.at(-1) as any).liveRunner.kills, 2);
   assert.deepEqual(compactExecutionTrace(runFocusFireTrace(spec)), compact);
+});
+
+
+test('v81 requires complete-match evidence without changing prior protocol inventories', () => {
+  const report = sampledReport('live-functions-vs-headless-step-v81');
+  assert.equal(Object.keys(report).length - 1, 51);
+  assert.deepEqual(validateSampledParityEvidence(report), []);
+  delete report.completeMatchTraces;
+  assert.deepEqual(validateSampledParityEvidence(report), ['completeMatchTraces: missing or empty family']);
+});
+
+for (const count of [1, 31, 32, 1000, 54001]) test(`streamed parity evidence hashes every frame and retains bounded endpoints (${count})`, () => {
+  const frames = Array.from({ length: count }, (_, tick) => ({ tick, value: tick % 2 ? -0 : tick, missing: undefined }));
+  const recorder = createParityFrameRecorder();
+  for (const frame of frames) recorder.add(frame);
+  const actual = recorder.finish(), expected = compactExecutionTrace({ frames });
+  assert.equal(actual.frameCount, count); assert.ok(actual.frames.length <= PARITY_FRAME_SAMPLE_LIMIT, 'bounded retention');
+  assert.equal((actual.frames[0] as any).tick, 0); assert.equal((actual.frames.at(-1) as any).tick, count - 1);
+  assert.equal(actual.frameEvidence.fullTraceSHA256, expected.frameEvidence.fullTraceSHA256);
+  assert.throws(() => recorder.add({ tick: count }), /finished/);
+  assert.throws(() => recorder.finish(), /unfinished/);
+});
+
+test('streaming trace hash detects an unsampled intermediate change', () => {
+  const run = (changed: boolean) => { const recorder = createParityFrameRecorder();
+    for (let tick = 0; tick < 1000; tick++) recorder.add({ tick, hp: changed && tick === 333 ? 0 : 1 });
+    return recorder.finish(); };
+  const first = run(false), second = run(true);
+  assert.deepEqual(first.frames, second.frames);
+  assert.notEqual(first.frameEvidence.fullTraceSHA256, second.frameEvidence.fullTraceSHA256);
+  assert.throws(() => createParityFrameRecorder().finish(), /nonempty/);
 });

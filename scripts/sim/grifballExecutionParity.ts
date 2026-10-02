@@ -1,3 +1,4 @@
+import { runCompleteMatchParity } from './grifballCompleteMatchParity';
 import { runAirborneViewParity, airborneViewCoverage } from './grifballAirborneViewParity';
 import { runPlannedMatchParity, plannedMatchCoverage } from './grifballPlannedMatchParity';
 import { runObjectiveInputParity } from './grifballObjectiveInputParity';
@@ -89,8 +90,8 @@ const noop = () => {};
 export const PARITY_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, discrete: 0 };
 export const PARITY_GAPS = ['Broader steering and airborne-carrier opposing player/roster flights, autonomous dash/steering decisions and broader moving/carrier mixed flight-melee groups; bounded four-roster rising/falling and assigned-walk/committed-dash flight-melee groups, mouse-view turns during grounded/rising/falling opposing flights with pickup, grounded and rising/falling roster mid-flight pickup, airborne flight against a moving local carrier, grounded local and AI carrier focus fire with counter/death ordering, opposing shields and airborne commitments are covered; nine relative-height/vertical-motion group profiles and four airborne local-carrier two-attacker profiles are covered; roster flight includes airborne, ballistic and assigned-walking/committed-dashing targets, trades and single-spawn revival',
   'Broader player pitch/crouch/model geometry; current melee is resolved at impact and lunge contact is sampled after movement, with between-sample misses and adjacent-sample hits pinned for local and roster actors; bounded grounded pitched melee, rising/falling/landing local pitched slash/slam/swipe with stance changes and model-size controls, and local lunge launch/contact boundaries are covered; grounded roster geometry and authored moving sword/hammer impacts are covered',
-  'Full movement/combat/objective execution across all authored maps; bounded mixed-eight movement, committed melee, scoring, reset and revival frame ordering is covered on goal-capable supplied maps; autonomous complete mixed matches remain open',
-  'Full AI decision-to-action integration and complete mixed player/roster execution; authored movement/attack intents do not certify autonomous choices'];
+  'Full movement/combat/objective execution across all authored maps; bounded mixed-eight movement, committed melee, scoring, reset and revival frame ordering is covered on goal-capable supplied maps; complete autonomous Stadium/Canyon normal/hard and local-input fixtures are covered; the remaining authored-map/config matrix is open',
+  'Broader autonomous decision coverage across seeds, styles and configurations remains open; the fixed eight complete-match fixtures independently exercise composed combat/objective choices and mixed player/roster execution'];
 export interface ParityDifference { tick: number; field: string; live: unknown; headless: unknown; tolerance: number }
 export interface ParityTraceOptions {
   combatExecution?: SimCombatExecution;
@@ -235,7 +236,8 @@ export const PARITY_TRACE_CASES: { name: string; actionTrace: string; options?: 
   { name: 'punch-rotated-aim', actionTrace: 'punch-hit-recovery', options: { targetHp: 20, aim: Math.PI / 2, targetPosition: { x: 2, y: 0, z: 0 } }, hits: 1 },
 ];
 
-export function runExecutionParity() {
+export async function runExecutionParity() {
+  const { traces: completeMatchTraces, coverage: completeMatchWitnesses } = await runCompleteMatchParity();
   const plannedMatchTraces = compactExecutionTraces(runPlannedMatchParity());
   const plannedMatchWitnesses = plannedMatchCoverage(plannedMatchTraces);
   const traces = compactExecutionTraces(PARITY_TRACE_CASES.map(c => ({ ...runExecutionParityTrace(c.actionTrace, c.options), name: c.name })));
@@ -312,16 +314,14 @@ export function runExecutionParity() {
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
-  return gate('execution-parity', airborneViewWitnesses.errors.length || landingTurnoverWitnesses.errors.length || earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
-    `View coverage: ${airborneViewWitnesses.errors.length} errors. ` +
-    `Landing coverage: ${landingTurnoverWitnesses.errors.length} errors. ` +
-    `Tank coverage: ${earnedTankWitnesses.errors.length} errors. ` +
-    `Dash coverage misses ${dashWitnesses.missing.length} required groups. ` +
-    `Revival attack coverage misses ${revivalAttackWitnesses.missing.length} required groups. ` +
-    `Jump coverage misses ${missingJumpWitnesses} required groups. ` +
-    `Post-reset passing misses ${resetPassCoverage.missing.length} required groups. ` +
-    `${failures.length}/${actionTraces.length} action traces differ. ${decisionFailures.length}/${liveDecisionTraces.length} live decision traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} map mobility traces fail. ${plannedMatchWitnesses.errors.length} planned-match coverage failures. ${PARITY_GAPS.length} gaps; legacy training remains uncertified.`,
-    { protocol: 'live-functions-vs-headless-step-v80', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+  return gate('execution-parity', completeMatchWitnesses.errors.length || airborneViewWitnesses.errors.length || landingTurnoverWitnesses.errors.length || earnedTankWitnesses.errors.length || plannedMatchWitnesses.errors.length || dashWitnesses.missing.length || failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses || revivalAttackWitnesses.missing.length ? 'fail' : 'inconclusive',
+    `Complete matches: ${completeMatchWitnesses.completed}/${completeMatchWitnesses.required}, ${completeMatchWitnesses.errors.length} errors. ` +
+    `Coverage errors: view ${airborneViewWitnesses.errors.length}, landing ${landingTurnoverWitnesses.errors.length}, tank ${earnedTankWitnesses.errors.length}, planned-match ${plannedMatchWitnesses.errors.length}. ` +
+    `Missing groups: dash ${dashWitnesses.missing.length}, revival ${revivalAttackWitnesses.missing.length}, jump ${missingJumpWitnesses}, reset-pass ${resetPassCoverage.missing.length}. ` +
+    `${failures.length}/${actionTraces.length} action mismatches; ${decisionFailures.length}/${liveDecisionTraces.length} decision failures; ${mapMobilityFailures.length}/${mapMobilityTraces.length} map-mobility failures. ${PARITY_GAPS.length} unresolved scopes; legacy training uncertified.`,
+    { protocol: 'live-functions-vs-headless-step-v81', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+      completeMatchTraces, completeMatchWitnesses,
+      completeMatchScope: 'Eight independent autonomous matches, seed 101 and mirrored sides: normal Stadium/Canyon 4v4, hard Canyon 4v4 and normal Canyon local 4v4. Frozen 900-second development horizon requires actual two-goal endings, combat, revivals and round resets. Every frame compares motion, facing, posture, health, weapon phase/timing, shields, respawn clocks, kill/death credits, ball and goals; exact checkpoint continuation covers countdown, first combat and round resets. All frames are validated and hashed before bounded retention. Standard caps remain inconclusive; no held-out quality or general-map/config acceptance claim.',
       airborneViewTraces, airborneViewWitnesses,
       airborneViewScope: '576 independently advanced local-player versus roster slash, hammer-slam and hammer-swipe cases: rising, falling or landing at impact; upward/downward pitch; crouch held/released or standing; medium/large target; main/ordinary identity; mirrored teams and player/mixed execution. Real keyboard stance, local motion and impact owners versus stepSimulation, checked against independent gravity, eye interpolation, reach, cone and splash-sphere arithmetic. Slash/swipe impact at tick 3; legal .05/.02 slam phases impact at tick 5. 60 frames each, 248 expected hits and 328 misses, 1152 JSON continuations across impact and stance release. Grounded stationary targets, authored attack and flight; no autonomous choices, moving target/view, airborne ball punches, obstacles or quality claim.',
       landingTurnoverTraces, landingTurnoverWitnesses,

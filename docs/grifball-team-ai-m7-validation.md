@@ -3706,3 +3706,43 @@ The final eight-case matrix passes **8/8, zero failures/skips/TODOs**, in 642.53
 The broad regression bundle is run separately from these eight long cases; the combined explicit 122-file inventory is output/m7-complete-test-files.json. No browser, full-repository, final-source serial performance or aggregate M7 acceptance pass is claimed.
 
 Final broad regression rerun: **10,489/10,489 passed**, zero failures/skips/TODOs, in 374.76 seconds (output/m7-complete-regressions-final.log). Together with the eight complete-match cases, this slice verifies **10,497 passing tests across 122 files**. The matrix spans 171,832 compared match frames, 914 kills/revivals and 1,110 exact restored frames. TypeScript was repeated after the readiness-test correction and passes; the isolated production client/server build also passes.
+
+## 2026-10-01 - aggregate complete-match evidence and expanded physical comparison
+
+Protocol v81 incorporates the eight complete autonomous matches into the aggregate execution-parity gate and its published CLI completion receipt. The long matrix now runs once through the aggregate gate; its previous standalone test file supplies contract and negative controls. The aggregate keeps broader execution defects and coverage gaps explicit. The separate 900-second development horizon does not reclassify standard simulation caps or supply held-out quality evidence.
+
+The reusable runner compares the initial state and every subsequent frame, including velocity, facing, posture, weapon phase and elapsed attack time, protection and respawn timers, individual kill/death credit, ball motion, goals and match lifecycle. Full state/context/memory/RNG/event checkpoint continuations remain exact. The expanded comparison exposed an initial local-player shield mismatch: the composed host now starts with zero shield, matching production; actual revival protection remains configured. Expired negative local respawn delays are compared as zero, their effective gameplay value. Ready/lunging weapons exclude unused attack-clock storage from comparison.
+
+A streaming recorder hashes every compared frame while retaining at most 32 samples including the first and final/failing frame. Tests verify the hash against full-array serialization, special values, bounded retention and unsampled changes. Coverage rejects missing, duplicate or foreign cases, caps, mismatches, missing/incomplete checkpoint continuations and invalid evidence. Sampled artifact validation is a structural audit, not independent reconstruction of unretained history.
+
+Focused recorder and coverage contracts pass **54/54** (output/m7-complete-gate-contracts.log). Windows executor/cancellation/watchdog tests pass **16/16** with process-control access (output/m7-complete-gate-execute.log); the restricted attempt could not terminate its owned child processes, so that attempt is not counted as passing. No matching test children remained afterward. TypeScript passes (output/m7-complete-gate-typecheck.log).
+
+The final four-file run completed in **6,361.05 seconds**, with **113 passing tests and one failing aggregate acceptance assertion**, zero skips/TODOs (output/m7-complete-gate-verified-tests.log). The assertion still requires an inconclusive execution gate; the actual verdict is **fail**. It has not been relaxed. All eight newly integrated complete matches pass with zero differences and zero coverage errors: 171,832 advanced ticks plus eight initial frames, 914 kills, and 1,110 exact restored frames. Their ending ticks match the preceding slice.
+
+The published v81 report (output/m7-complete-gate-verified/gates/execution-parity.json; 384,609,707 bytes) retains **zero mismatches across 10,645 action traces**, zero failures across 92 map-mobility traces, **125 failing decision traces out of 712**, and one missing match jump witness, `red/dash-rejection`. View, landing, tank and planned-match coverage have zero errors; dash, revival and reset-pass groups have no missing witnesses. The decision failures are distributed as follows:
+
+| Trace family | Failing / total | Reported problems |
+| --- | ---: | --- |
+| Opposed openings | 8 / 24 | New-carrier targeting and contesting |
+| Map contests | 40 / 40 | New-carrier targeting and contesting |
+| Map matches | 40 / 40 | Targeting and/or incomplete match lifecycle |
+| Match decisions | 12 / 24 | Incomplete match lifecycle |
+| Pass matches | 4 / 48 | Incomplete match lifecycle |
+| Map/pass matches | 3 / 40 | Incomplete match lifecycle |
+| Roster matches | 10 / 32 | Incomplete match lifecycle, including 108,000-tick caps |
+| Revival decisions | 8 / 24 | Missing attack or verified defensive dash after revival |
+
+These are failing cases across shared behavior families, not a count of independent root causes. They remain acceptance failures requiring diagnosis; neither caps nor missing terminal evidence are promoted to success. This slice completes evidence integration, not aggregate M7 acceptance. The next slice should begin with the shared new-runner targeting/contest failure, then address completion and revival/jump coverage using the retained criteria.
+
+The saved artifact passes the structural audit of all **51 evidence families**, complete-match coverage, and exact receipt/report agreement (output/m7-complete-gate-audit.log). Its 282-character summary passes the actual suite aggregator and preserves the failing execution and M7 verdicts (output/m7-complete-gate-receipt-audit.log); that receipt-only diagnostic does not execute standard-profile jobs. Brief debugger inspections and a one-second CPU profile confirmed progress during the long run; this run is correctness evidence, not calibrated performance evidence. No fresh full-repository, browser, production-build, quality or serial-performance acceptance pass is claimed.
+
+The remaining planning estimate after this integration is **6-7 substantial automated slices**:
+
+| Remaining work | Estimated slices | Required result |
+| --- | ---: | --- |
+| Opening, map/configuration, revival and dash behavior plus broader execution coverage | 2-3 | Retained criteria pass; outstanding coverage scopes are resolved with evidence |
+| Frozen-baseline and held-out quality/generalization | 2 | Mirrored paired comparisons and seed-cluster uncertainty support tactical quality |
+| Final-source serial performance | 1 | Calibrated absolute planner-cost and baseline-relative requirements pass |
+| Final repository, production browser and CLI/Lab acceptance verification | 1 | Current-source checks and saved/imported reports agree |
+
+This is a range, not a guaranteed countdown. Newly exposed behavior or performance defects may require additional repairs. Human-only testing begins after these automated gates pass; it covers spacing and escort feel, tactical readability, fairness and enjoyment. The fixed development matches and passing regression totals do not substitute for those gates.
