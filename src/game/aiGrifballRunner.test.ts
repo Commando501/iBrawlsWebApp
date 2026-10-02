@@ -95,6 +95,37 @@ function scene(): GrifballTacticalSnapshot {
     players: [p('runner', 'blue', 0, 0), p('a', 'blue', 3, 4), p('b', 'blue', 1, -4), p('c', 'blue', -3, 0), p('enemy', 'red', 30, 0)] };
 }
 
+for (const team of ['blue', 'red'] as const) for (const reverse of [false, true])
+  test(`runner coverage must reach the threatening opponent: ${team}/${reverse}`, () => {
+    const s = scene(), sign = team === 'blue' ? 1 : -1, enemy = team === 'blue' ? 'red' : 'blue';
+    const carrier = p('runner', team, 0, 0), threat = p('threat', enemy, 8.5 * sign, 0);
+    const escort = p('escort', team, -5.5 * sign, 0);
+    for (const actor of [threat, escort]) Object.assign(actor.space!, { reach: 7.7, speed: 5.2, attackIn: .12 });
+    const tuning = { ...defaultGrifballTactics().defaults, runnerLookahead: 3 };
+    const advance = (players: GrifballTacticalPlayer[]) => {
+      s.players = reverse ? [...players].reverse() : players;
+      return planGrifballRunner(s, carrier, tuning, tickRunnerMemory(undefined, carrier, s.goals[enemy]!, 0),
+        createSnapshotRouters(s)).candidates.find(c => c.action === 'advance')!;
+    };
+    const alone = advance([carrier, threat]), behind = advance([carrier, threat, escort]);
+    assert.equal(alone.risk, 1, 'runner route enters the ready hammer threat');
+    assert.ok(behind.supportETA < .3, 'escort can reach a route point quickly');
+    assert.equal(behind.risk, alone.risk, 'reaching the runner route does not establish timely pressure on its opponent');
+    escort.pos = { x: 6 * sign, z: 5 };
+    const covered = advance([carrier, threat, escort]);
+    assert.ok(covered.risk < alone.risk, 'timely pressure on the actual threat supplies coverage');
+    const flanker = p('flanker', enemy, 9 * sign, -7);
+    Object.assign(flanker.space!, { reach: 7.7, speed: 5.2, attackIn: .12 });
+    assert.ok(advance([carrier, threat, escort, flanker]).risk > covered.risk, 'covering one opponent does not cover a second threat');
+    for (const unavailable of ['recovering', 'airborne'] as const) {
+      const original = { ...escort.space! };
+      if (unavailable === 'recovering') Object.assign(escort.space!, { phase: 'recovering', attackIn: 3 });
+      else escort.space!.mobileIn = 3;
+      assert.equal(advance([carrier, threat, escort]).risk, alone.risk, unavailable);
+      escort.space = original;
+    }
+  });
+
 test('clear lane advances, reachable goal finishes, and escorts advance after breakthrough', () => {
   const s = scene(), state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2);
   assert.equal(state.runnerPlans.blue.selected.action, 'advance');

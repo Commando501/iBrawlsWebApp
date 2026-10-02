@@ -65,6 +65,10 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const goalHeading = direction(carrier.pos, goal), speed = Math.max(0.1, carrier.space!.speed);
   const allies = snapshot.players.filter(p => p.team === carrier.team && p.id !== carrier.id);
   const enemies = snapshot.players.filter(p => p.team !== carrier.team);
+  // Reaching the runner's route is not enough to cover it: the escort must
+  // be able to pressure the opponent threatening that route in time.
+  const threatSupport = new Map(enemies.map(enemy => [enemy.id, Math.min(Infinity, ...allies.map(ally =>
+    estimateSpaceAttackTime(ally, enemy.pos, routers.get(ally.id)!(enemy.pos, true).length)))]));
   const forcedProgress = memory.stalledSeconds >= tuning.runnerProgressTimeout;
   const evaluate = (action: RunnerAction, destination: FieldPoint): RunnerCandidate => {
     const route = router(destination), progress = goalDistance - fieldDistance(destination, goal);
@@ -73,13 +77,15 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
     for (const fraction of [0.25, 0.6, 1]) {
       const point = pointAlongRunnerRoute(carrier.pos, route, route.length * fraction);
       const arrival = route.length * fraction / speed;
-      let enemyETA = Infinity, allyETA = Infinity;
-      for (const enemy of enemies) enemyETA = Math.min(enemyETA, estimateSpaceAttackTime(enemy, point, routers.get(enemy.id)!(point, true).length));
+      let allyETA = Infinity;
       for (const ally of allies) allyETA = Math.min(allyETA, estimateSpaceAttackTime(ally, point, routers.get(ally.id)!(point, true).length));
       supportETA = Math.min(supportETA, allyETA);
-      const exposure = Math.max(0, Math.min(1, (arrival + tuning.runnerDangerMargin - enemyETA) / Math.max(0.25, tuning.runnerDangerMargin)));
-      // Coverage reduces risk, but an escort is never assumed to win its fight.
-      risk = Math.max(risk, exposure * (allyETA <= arrival + 0.25 ? 0.55 : 1));
+      for (const enemy of enemies) {
+        const enemyETA = estimateSpaceAttackTime(enemy, point, routers.get(enemy.id)!(point, true).length);
+        const exposure = Math.max(0, Math.min(1, (arrival + tuning.runnerDangerMargin - enemyETA) / Math.max(0.25, tuning.runnerDangerMargin)));
+        // Each threat needs its own coverage; an escort is never assumed to win.
+        risk = Math.max(risk, exposure * (threatSupport.get(enemy.id)! <= arrival + 0.25 ? 0.55 : 1));
+      }
     }
     const score = route.length > tuning.runnerLookahead * 1.75 ? -Infinity : progress * tuning.runnerProgressWeight - risk * tuning.runnerRiskWeight - route.length * 0.08;
     return { action, destination: { ...destination }, route, progress, risk, supportETA, score };
