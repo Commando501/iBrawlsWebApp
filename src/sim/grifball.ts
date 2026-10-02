@@ -113,7 +113,7 @@ export function setSimCarrier(
  * findBallPickup resolves equal distances in favour of the last candidate. */
 function mixedObjectiveActors(state: SimState): SimCombatant[] {
   const player = state.combatants.find(c => isMixedPlayer(state, c));
-  return [...(player ? [player] : []), ...state.combatants.filter(c => !isMixedPlayer(state, c) && c.controller === 'ai')];
+  return [...(player && !state.localPlayerIsObserver ? [player] : []), ...state.combatants.filter(c => !isMixedPlayer(state, c) && c.controller === 'ai')];
 }
 
 /** A live round reset repositions participants; individual death/recovery timers
@@ -136,7 +136,7 @@ function placeMixedObjectiveActors(state: SimState, settings: UniversalSettings)
     if (!isMixedPlayer(state, c)) { delete c.lastSwordAttackTimeMs; delete c.lastHammerAttackTimeMs; }
   }
   const player = state.combatants.find(c => isMixedPlayer(state, c));
-  if (player) setSimCarrier(player, false, settings, state);
+  if (player && !state.localPlayerIsObserver) setSimCarrier(player, false, settings, state);
   for (const c of state.combatants) if (c.controller === 'ai' && c.weapon === 'ball') { c.weapon = 'hammer'; c.hasBall = false; }
 }
 
@@ -270,7 +270,7 @@ export function tickGrifballObjective(
   // Live pointer charging advances in the objective, after movement and AI.
   if (mixed) {
     const player = state.combatants.find(c => isMixedPlayer(state, c));
-    if (player) {
+    if (player && !state.localPlayerIsObserver) {
       if (!resolveRunnerThrowAllowed(settings)) { player.passCharging = false; player.passChargeTimer = 0; }
       else if (player.passCharging) player.passChargeTimer += dt;
     }

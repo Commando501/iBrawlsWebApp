@@ -161,6 +161,9 @@ export interface SimState {
   combatExecution?: SimCombatExecution;
   /** Required for live-mixed-v1; preserved in JSON snapshots. */
   localPlayerId?: string;
+  /** Explicit mixed-profile observer camera; not a match participant. Omitted
+   * preserves existing local-player and training execution. */
+  localPlayerIsObserver?: boolean;
   /** v2 elapsed simulation milliseconds, persisted independently of render/wall time. */
   combatTimeMs?: number;
   /** Which game mode this match is. */

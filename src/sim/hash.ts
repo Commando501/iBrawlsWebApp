@@ -46,6 +46,7 @@ export function serializeState(state: SimState): string {
     // roles, commitment headings, phase clocks and weapon-specific trade history.
     ...(state.combatExecution === 'live-mixed-v1' ? [
       `execution=${state.combatExecution}:${state.localPlayerId ?? '-'}:${q(state.combatTimeMs ?? 0)}`,
+      ...(state.localPlayerIsObserver ? ['local-observer=true'] : []),
       ...state.combatants.map(c => JSON.stringify([c.id, c.weaponPhaseElapsed, c.modelType,
         c.lungeTargetId, c.lungeDir, c.lungeAimDirection, c.lungeStartPos, c.lungeOutcome,
         c.lastSwordAttackTimeMs, c.lastHammerAttackTimeMs, c.passInputHeld, c.passCharging])),

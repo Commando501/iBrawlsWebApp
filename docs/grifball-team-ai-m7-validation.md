@@ -3607,3 +3607,30 @@ Remaining estimate after this lifecycle slice: **7-10 substantial slices** befor
 M7 remains in automated integration and acceptance. Full matches can reveal additional repair work; regression totals alone do not reduce those remaining gates. Human-only testing begins after these gates close, and covers spacing/escort feel, tactical readability, fairness and enjoyment.
 
 Final validation: the explicit 119-file regression bundle passes 10,426/10,426 in 142.42 seconds (output/m7-lifecycle-regressions.log; exact list output/m7-lifecycle-test-files.json). Removing the actual revival callback fails all four selected respawn controls (87 filtered; output/m7-lifecycle-negative-respawn.log). Source was restored, and the final focused suite passes 91/91 in 12.36 seconds (output/m7-lifecycle-final-focused.log). TypeScript and isolated client/server builds pass (output/m7-lifecycle-typecheck.log and output/m7-lifecycle-build.log; Vite 18.62 seconds, server 18 ms, existing chunk-size warning). No browser, full-repository or aggregate M7 acceptance rerun is claimed.
+
+
+## 2026-10-01 - first composed complete-match integration
+
+The new composed-grifball-match-v1 harness initializes its own simulation, actor memories, shared learning/plan context and random stream from frozen validation jobs. It does not copy production positions or decisions. Checkpoints preserve those owned fields, kill-score context and first-tick initialization. Restoring rebuilds navigation caches. An explicit mixed-profile observer camera cannot act, revive, reserve a round-reset spawn or enter tactical observations; its ownership is included in the simulation hash. Existing omitted/false observer behavior is preserved.
+
+Full-frame comparisons found a real production bug: general match timers decremented offline AI respawn/protection clocks after their AI owners already spent them. A nominal three-second respawn therefore completed in about half that time. Offline AI now retains one clock owner; multiplayer/remote timer ownership remains unchanged. A production-frame regression checks the entire respawn delay and the first protection tick.
+
+Two additional simulator defects surfaced in larger matches. Objective support/carrier inputs cleared retained crouch stance, and local hammer swings retained hammer timing after ball pickup although the live animation samples the current weapon. Inputs now retain stance and mixed local hammer/ball swings retain elapsed phase time while adopting the current weapon's timing. Bounded production comparisons explicitly require crouched objective frames and an actual pickup during windup; they are regression evidence, not full-match acceptance.
+
+Four autonomous 1v1 matches (seeds 101/102, both mirrored sides) compare every frame's actor positions, HP, weapon, possession and phase against the production host, reach actual two-goal match ends, and include kills, revivals and a round reset. Independent restored continuations compare complete simulator state, context, memory, RNG and events, including restoration around combat and round boundaries. Seed 101 finishes at tick 2816 and seed 102 at tick 2839 on both mirrored sides. The unmirrored standard 3v4 seed 101 match also reaches a real end at tick 3401 with eight kills and two goals. These are diagnostic jobs with unverified code identity, not a frozen-baseline quality report.
+
+Two full-size comparisons remain explicitly failing TODO tests with their complete assertions retained. Canyon 4v4 first diverges physically at tick 4403; earlier ground-lunge memory synchronization differs at tick 2317 and needs investigation. Local 4v4 first diverges at tick 1676 after the pickup-timing repair; the target/model-feedback boundary needs investigation. These are unresolved integration failures, not passes or simulation-cap successes. The production runtime remains authoritative. New fixes must close these differences before expanding final-source full-match acceptance.
+
+After this slice, estimate **7-10 substantial automated slices** before human-only testing. The estimate has not decreased because the first full-match comparisons exposed additional integration work. It is a planning range, not a guaranteed number of turns:
+
+| Remaining work | Estimated slices | Exit evidence |
+| --- | ---: | --- |
+| Remaining full-match integration | 1-2 | Close both known 4v4 differences; verify complete local/observer and broader match variants |
+| Retained opening, map, revival and dash cases | 2-3 | Existing behavior criteria pass without relaxed thresholds or authored successes |
+| Frozen baseline and held-out quality/generalization | 2 | Mirrored seed comparisons and uncertainty support tactical quality |
+| Final-source serial performance | 1 | Existing absolute cost and paired-ratio gates pass |
+| Final repository, browser and CLI/Lab verification | 1-2 | Final-source checks and acceptance reports agree |
+
+Only after those gates pass should the remaining work be human assessment of spacing/escort feel, readability, fairness and enjoyment. Passing regression counts and the new match harness do not close those gates.
+
+Final validation: the focused match suite reports 22 passes and two known failing TODOs in 69.84 seconds (output/m7-composed-match-final-focused.log). The explicit 120-file regression bundle reports **10,448 passes, two known failing TODOs, zero other failures** in 156.03 seconds (output/m7-composed-match-regressions.log; exact list output/m7-composed-match-test-files.json). TODOs remain open acceptance work despite the runner's zero exit code. Removing the offline AI timer guard fails both intended regressions (three selected controls pass, 19 filtered; output/m7-composed-match-negative-clock.log); source was restored before the broad run. TypeScript and isolated client/server builds pass (output/m7-composed-match-typecheck.log and output/m7-composed-match-build.log; Vite 83 seconds, server 37 ms, existing chunk-size warning). No full-repository, browser, final-source performance or aggregate M7 acceptance rerun is claimed.

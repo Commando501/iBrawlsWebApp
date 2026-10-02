@@ -26,6 +26,10 @@ export function updateGrifballMatchTimers(
   }
 
   state.otherPlayers.forEach((other) => {
+    // Offline AI lifecycle clocks belong to updateAIRosterTick and the actor's
+    // invulnerability tick. Spending them again here halves respawn/protection.
+    // Network peers still rely on this general match timer.
+    if (!state.isMultiplayer && other.controller === 'ai') return;
     if (other.respawnTimer > 0) {
       other.respawnTimer = Math.max(0, other.respawnTimer - dt);
     }

@@ -88,7 +88,8 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
     && !isNeuralNetDifficulty(options.scriptedBots[c.id]);
   const pickupRequested = (id: string) => options.pickupRequests && Object.prototype.hasOwnProperty.call(options.pickupRequests, id)
     ? options.pickupRequests[id] : undefined;
-  const roster = state.combatants.map(c => ({ id: c.id, team: c.team, controller: c.controller,
+  const participants = state.combatants.filter(c => !(state.combatExecution === 'live-mixed-v1' && state.localPlayerIsObserver && c.id === state.localPlayerId));
+  const roster = participants.map(c => ({ id: c.id, team: c.team, controller: c.controller,
     difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, scripted: scripted(c) }));
   // Versioned execution aims along +sin/+cos; live model yaw is offset by PI.
   // Preserve the original observation contract for legacy training callers.
@@ -96,9 +97,9 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
   // The live mixed snapshot always observes the local player before roster actors,
   // independently of the simulator's serialized actor storage order.
   const observedActors = state.combatExecution === 'live-mixed-v1'
-    ? [...state.combatants].sort((a, b) => Number(b.id === state.localPlayerId) - Number(a.id === state.localPlayerId))
-    : state.combatants;
-  const respawningActors = state.combatants.filter(c => !c.alive && c.respawnTimer > 0);
+    ? [...participants].sort((a, b) => Number(b.id === state.localPlayerId) - Number(a.id === state.localPlayerId))
+    : participants;
+  const respawningActors = participants.filter(c => !c.alive && c.respawnTimer > 0);
   if (state.combatExecution === 'live-mixed-v1')
     respawningActors.sort((a, b) => Number(a.id === state.localPlayerId) - Number(b.id === state.localPlayerId));
   return createGrifballTacticalSnapshot({

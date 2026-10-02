@@ -28,7 +28,7 @@ export function resolveSimGrifballCarrierInput(state: SimState, plan: GrifballTe
   const speed = 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true);
   const scriptedObjective: ScriptedObjectiveInput = { version: SCRIPTED_OBJECTIVE_INPUT_VERSION, scriptedBots,
     movement: { [botId]: { x: decision.velocity.x / speed, z: decision.velocity.z / speed } } };
-  const action = { ...idleAction(), attackPrimary: decision.kind === 'punch', aim: decision.heading && actor.weaponState === 'idle'
+  const action = { ...idleAction(), crouch: actor.isCrouching, attackPrimary: decision.kind === 'punch', aim: decision.heading && actor.weaponState === 'idle'
     ? getYawForHeading(decision.heading.x, decision.heading.z) - Math.PI : actor.yaw };
   validateScriptedObjectiveInput(state, scriptedObjective, { [botId]: action }, state.settings);
   return { decision, input: { action, scriptedObjective } };

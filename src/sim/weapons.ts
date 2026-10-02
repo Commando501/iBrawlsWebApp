@@ -329,8 +329,10 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
   const slam = resolveHammerSlamTiming(settings);
   const roster = isRosterExecution(combatExecutionForActor(state, c));
   // Objective pickup/release can change the equipped weapon during a swing.
-  // Live roster animation samples that weapon each frame, preserving elapsed time.
-  if (roster && c.weaponState !== 'idle' && c.attackKind !== 'none' && c.attackKind !== 'swipe')
+  // Live roster animation and local hammer/ball swings sample that weapon each
+  // frame, preserving elapsed time through objective pickup/release.
+  if ((roster || isMixedPlayer(state, c) && (c.attackKind === 'strike' || c.attackKind === 'punch')) &&
+    c.weaponState !== 'idle' && c.attackKind !== 'none' && c.attackKind !== 'swipe')
     c.attackKind = c.weapon === 'ball' ? 'punch' : c.weapon === 'sword' ? 'slash' : 'strike';
   const swingDuration = () => c.attackKind === 'slash' ? (settings.swordSlashSpeed ?? .22) * (roster ? .5 : 1)
     : roster && c.attackKind === 'swipe' ? (settings.hammerMeleeSpeed ? settings.hammerMeleeSpeed * .4 : .1)

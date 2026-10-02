@@ -84,6 +84,10 @@ export function stepSimulation(
 ): StepEvents {
   const settings = options.settings ?? resolveSimSettings();
   const dt = options.dt ?? SIM_DT;
+  if (state.localPlayerIsObserver !== undefined && (typeof state.localPlayerIsObserver !== 'boolean' ||
+    state.combatExecution !== 'live-mixed-v1')) throw new Error('Observer ownership requires mixed execution');
+  if (state.localPlayerIsObserver && state.combatants.some(c => c.id === state.localPlayerId && (c.alive || c.hp > 0)))
+    throw new Error('A mixed observer camera must not be a living combatant');
   validateScriptedActorDecisionOwner(state, options.scriptedActorDecisions, settings, dt);
   validateScriptedCoordination(state, options.scriptedCoordination, !!options.scriptedPlanner,
     options.scriptedLungeFeedback?.coordinator, dt);
@@ -147,7 +151,7 @@ export function stepSimulation(
     throw new Error('live-mixed-v1 requires exactly one explicit localPlayerId');
   // Pointer events are sampled before the frame: release from the previous
   // position/loadout, then move. Holding across a pickup is not a new press.
-  if (mixedObjectiveFrame && player) {
+  if (mixedObjectiveFrame && player && !state.localPlayerIsObserver) {
     const input = act(player.id), held = input.attackSecondary;
     if (held && !player.passInputHeld && player.alive && player.hp > 0 && player.hasBall && resolveRunnerThrowAllowed(settings)) {
       player.passCharging = true; player.passChargeTimer = 0;
@@ -172,19 +176,21 @@ export function stepSimulation(
   const swapTimersAdvanced = new Set<string>();
   // Local physics/contact and weapon animation precede roster respawn and AI.
   if (player) {
-    const wasDead = !player.alive;
-    tickRespawns(state, settings, dt, [player]);
-    if (!wasDead) {
-      stepCombatantMovement(state, player, act(player.id), settings, dt);
-      if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills, learning);
+    if (!state.localPlayerIsObserver) {
+      const wasDead = !player.alive;
+      tickRespawns(state, settings, dt, [player]);
+      if (!wasDead) {
+        stepCombatantMovement(state, player, act(player.id), settings, dt);
+        if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills, learning);
+      }
     }
     // The live weapon-frame owner ticks main AI before local weapon animation
     // and roster revival/decisions, including while dead or phase-paused.
     const mainAI = mixedObjectiveFrame ? state.combatants.find(c => c !== player && c.id === 'main_ai') : undefined;
     if (mainAI) { tickWeaponSwapTimers(mainAI, dt); swapTimersAdvanced.add(mainAI.id); }
-    if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills,
+    if (!state.localPlayerIsObserver && player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills,
       'complete', undefined, undefined, undefined, false, undefined, learning);
-    else { delete player.playerSwordLungeRecovery; player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
+    else if (!state.localPlayerIsObserver) { delete player.playerSwordLungeRecovery; player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
   }
   if (options.scriptedCoordination)
     beginAICoordinationFrame(options.scriptedCoordination.coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);

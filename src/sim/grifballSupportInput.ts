@@ -40,7 +40,7 @@ export function resolveSimGrifballSupportInput(state: SimState, plan: GrifballTe
   const speed = 5.2 * state.settings.speedForward / 100;
   scriptedObjective.movement = { [botId]: speed > 0
     ? { x: movement.velocity.x / speed, z: movement.velocity.z / speed } : { x: 0, z: 0 } };
-  const action = { ...idleAction(), pickup: movement.pickupRequested,
+  const action = { ...idleAction(), crouch: actor.isCrouching, pickup: movement.pickupRequested,
     aim: movement.heading && actor.weaponState === 'idle' ? getYawForHeading(movement.heading.x, movement.heading.z) - Math.PI : actor.yaw };
   validateScriptedObjectiveInput(state, scriptedObjective, { [botId]: action }, state.settings);
   return { action, scriptedObjective };
