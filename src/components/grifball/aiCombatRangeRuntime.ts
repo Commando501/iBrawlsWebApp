@@ -30,7 +30,7 @@ export function resolveAICombatRangeFrame({
   targetProtected: boolean;
   predictedTargetPos: THREE.Vector3;
   distanceToTarget: number;
-  activeWeapon: 'hammer' | 'sword';
+  activeWeapon: 'hammer' | 'sword' | 'ball';
   attackRange: number;
   attackRadius: number;
   resolvedAiReach: number;

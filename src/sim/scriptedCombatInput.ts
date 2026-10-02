@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import type { ActionsById } from './actions';
 import type { SimState } from './simState';
 import type { UniversalSettings } from '../types';
@@ -5,7 +6,7 @@ import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import { validateScriptedObjectiveInput, SCRIPTED_OBJECTIVE_INPUT_VERSION } from './scriptedObjectiveInput';
 
 export type ScriptedCombatCommand = { kind: 'revert-weapon-feint' } | { kind: 'swap'; weapon: 'hammer' | 'sword' }
-  | { kind: 'melee'; weapon: 'hammer' | 'sword'; swipe: boolean }
+  | { kind: 'melee'; weapon: 'hammer' | 'sword' | 'ball'; swipe: boolean }
   | { kind: 'hammer-jump'; jumpType: 'offensive' | 'defensive'; heading?: { x: number; y: number; z: number } }
   | { kind: 'lunge'; targetId: string; direction: { x: number; y: number; z: number } };
 export interface ScriptedCombatInput {
@@ -51,7 +52,7 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
   const validated: Record<string, ScriptedCombatCommand[]> = Object.create(null);
   for (const [id, commands] of Object.entries(input.commands)) {
     const actor = state.combatants.find(c => c.id === id)!;
-    if (actor.hasBall || actor.weapon === 'ball' || state.match.ball.holderId === id)
+    if (!hasCoherentSimCarrierState(state, actor) || actor.weapon === 'ball' && (!sequential || !prepared))
       throw new Error(`Scripted armed combat cannot control a carrier: ${id}`);
     if (actions[id]?.attackPrimary || actions[id]?.attackSecondary || actions[id]?.swapWeapon)
       throw new Error(`Scripted combat has conflicting action owners: ${id}`);
@@ -67,7 +68,7 @@ export function validateScriptedCombatInput(state: SimState, input: ScriptedComb
         if (input.version === 'scripted-combat-v1' || commands.indexOf(command) !== 0 || commands.filter(c => c?.kind === 'revert-weapon-feint').length !== 1)
           throw new Error(`Feint reversion requires v2/v3 and the first command: ${id}`);
       } else if (command.kind === 'swap' || command.kind === 'melee') {
-        if (command.weapon !== 'hammer' && command.weapon !== 'sword') throw new Error(`Invalid scripted weapon: ${id}`);
+        if (command.weapon !== 'hammer' && command.weapon !== 'sword' && !(sequential && command.kind === 'melee' && command.weapon === 'ball' && actor.weapon === 'ball')) throw new Error(`Invalid scripted weapon: ${id}`);
         if (command.kind === 'melee') {
           if (typeof command.swipe !== 'boolean' || command.swipe && command.weapon !== 'hammer') throw new Error(`Invalid scripted swipe: ${id}`);
           attacked = !sequential || command.weapon !== 'hammer' || command.swipe;

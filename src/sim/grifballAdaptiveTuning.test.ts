@@ -130,8 +130,8 @@ for (const reverse of [false, true]) for (const dt of [1 / 60, 1 / 30]) for (con
           const result = tuned.get(actorId); if (!result) throw new Error('Missing begin-turn adaptive tuning');
           const observation = resolveSimGrifballCombatObservation(current, actorId,
             actorId === 'ordinary' ? 'main_ai' : 'ordinary', f.owners, result, dt)!;
-          if (current.combatants.find(c => c.id === actorId)!.hasBall) assert.equal(observation, null);
-          else assert.ok(observation);
+          assert.ok(observation, 'active armed actors and coherent carriers retain combat observations');
+          assert.equal(observation.observedWeapon, current.combatants.find(c => c.id === actorId)!.weapon);
           assert.equal(result.psychState, context.psychState.get(actorId));
           return { kind: 'handled', action: idleAction() };
         } };

@@ -45,7 +45,7 @@ export function resolveAIPressureLungeChance({
 }: {
   aiState: AIBehaviorState | undefined;
   baseLungeChance: number;
-  activeWeapon: AICombatWeapon;
+  activeWeapon: AICombatWeapon | 'ball';
   lungeDistanceToTarget: number;
   resolvedAiReach: number;
   minLungeRange: number;
@@ -113,7 +113,7 @@ export function resolveAIPressureState({
   totalApproachLateral: number;
   dt: number;
   sprintMult: number;
-  activeWeapon: AICombatWeapon;
+  activeWeapon: AICombatWeapon | 'ball';
   stationarySwingReach: number;
   minLungeRange: number;
   targetProtected: boolean;
@@ -122,7 +122,7 @@ export function resolveAIPressureState({
   playstyleFactor: number;
   clearPressureTarget: (botId: string) => void;
   isCoordAttackBlocked: () => boolean;
-  triggerCombatantAttack: (weapon: AICombatWeapon) => void;
+  triggerCombatantAttack: (weapon: AICombatWeapon | 'ball') => void;
   playDash: () => void;
   random?: () => number;
 }): AIPressureStateResult {

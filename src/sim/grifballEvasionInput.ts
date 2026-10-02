@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import { resolveAIAirborneHammerOpportunity } from '../game/aiAirborneHammerOpportunity';
 import { retainSimGrifballCombatObservation, type SimGrifballCombatObservation } from './grifballCombatObservation';
 import * as THREE from 'three';
@@ -61,7 +62,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
     weaponFrame.readinessRemaining, weaponFrame.currentSwapLockout, weaponFrame.observedSwapLockout].every(n => Number.isFinite(n) && n >= 0) ||
     ![observation.toTarget.x, observation.toTarget.z, context.swayTimer, context.defensiveEvasionMult, context.spatialIQ].every(Number.isFinite) ||
     context.spatialIQ < 0 || context.spatialIQ > 100 || typeof context.pendingPostEvasionCharge !== 'boolean' ||
-    typeof weaponFrame.canStartWeaponAction !== 'boolean' || !['hammer', 'sword'].includes(weaponFrame.activeWeapon) ||
+    typeof weaponFrame.canStartWeaponAction !== 'boolean' || !['hammer', 'sword', 'ball'].includes(weaponFrame.activeWeapon) ||
     ![null, 'hammer', 'sword'].includes(context.bulltrueCounter)) throw new Error('Invalid evasion observation');
   const airborne = context.airborneOpportunity && retained ? { ...context.airborneOpportunity,
     targetAirborne: retained.prediction.targetAirborne, enemyInKillRange: retained.range.enemyInKillRange,
@@ -74,7 +75,7 @@ export function resolveSimGrifballEvasionInput(state: SimState, botId: string,
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
     actors.length !== 1 || isMixedPlayer(state, self) || self.controller !== 'ai' || !Object.hasOwn(scriptedBots, botId) || typeof scriptedBots[botId] !== 'string' ||
     isNeuralNetDifficulty(scriptedBots[botId]) || isNeuralNetDifficulty(state.settings.aiDifficulty) ||
-    !self.alive || self.hp <= 0 || self.respawnTimer > 0 || self.isLunging && !retained?.committedFlight || self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === botId ||
+    !self.alive || self.hp <= 0 || self.respawnTimer > 0 || self.isLunging && !retained?.committedFlight || !hasCoherentSimCarrierState(state, self) ||
     targets.length !== 1 || target.id === botId || target.team === self.team || !target.alive || target.hp <= 0 || target.respawnTimer > 0 ||
     !Object.hasOwn(memories, botId) || target.controller === 'ai' && !isMixedPlayer(state, target) && !Object.hasOwn(memories, target.id)) return null;
   const memory = memories[botId], observed = observeSimTacticalWeaponTarget(state, target, memories[target.id]);

@@ -44,7 +44,7 @@ export function resolveSimGrifballTacticalWeaponChoice(state: SimState, plan: Gr
     playerModel?: PlayerModelSnapshot | null;
   }, dt = 1 / 60, clockPhase: ScriptedDecisionClockPhase = 'before-swap-tick') {
   if (typeof context.random !== 'function') throw new Error('Tactical weapon decisions require a caller-owned random stream');
-  if (context.weaponFrame && (!['hammer', 'sword'].includes(context.weaponFrame.activeWeapon) ||
+  if (context.weaponFrame && (!['hammer', 'sword', 'ball'].includes(context.weaponFrame.activeWeapon) ||
     typeof context.weaponFrame.canStartWeaponAction !== 'boolean' || typeof context.weaponFrame.weaponState !== 'string'))
     throw new Error('Invalid tactical weapon frame');
   if (!Object.hasOwn(memories, botId)) return null;

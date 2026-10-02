@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import { validateScriptedAIGroundOwner, type ScriptedAIGroundOwner, type ScriptedAIGroundFeedback } from './scriptedAIGround';
 import { validateScriptedAINoTargetOwner, type ScriptedAINoTargetOwner, type ScriptedAINoTargetFeedback } from './scriptedAINoTarget';
 import type { UniversalSettings } from '../types';
@@ -116,7 +117,7 @@ export function validateScriptedActorDecision(state: SimState, owner: ScriptedAc
     throw new Error(`Invalid evasion movement hold: ${id}`);
   if (decision.holdAfterEvasion) {
     const actor = state.combatants.find(c => c.id === id);
-    if (!engagementPrepared || !actor || actor.isLunging || actor.hasBall || actor.weapon === 'ball' || state.match.ball.holderId === id ||
+    if (!engagementPrepared || !actor || actor.isLunging || !hasCoherentSimCarrierState(state, actor) ||
       decision.noTarget || decision.movement !== undefined || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash ||
       action.attackPrimary || action.attackSecondary || action.swapWeapon || action.pickup || action.passCharge !== 0 ||
       decision.commands?.some(command => command.kind === 'lunge'))

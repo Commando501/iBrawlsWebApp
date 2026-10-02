@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import { validateScriptedCombatLearning, createScriptedCombatLearning, type ScriptedCombatLearning } from './scriptedCombatLearning';
 import { executeScriptedAIGround, type ScriptedAIGroundOwner, type ScriptedAIGroundFeedback } from './scriptedAIGround';
 /**
@@ -233,8 +234,8 @@ export function stepSimulation(
         const preparation = owner.prepare ? owner.prepare(context) : 'default';
         if (preparation !== 'default' && preparation !== 'engagement') throw new Error(`Invalid actor preparation: ${c.id}`);
         if (preparation === 'engagement') {
-          if (c.hasBall || c.weapon === 'ball' || view.match.ball.holderId === c.id)
-            throw new Error(`Carrier movement cannot use armed engagement preparation: ${c.id}`);
+          if (!hasCoherentSimCarrierState(view, c))
+            throw new Error(`Carrier movement requires coherent possession: ${c.id}`);
           prepareSimAIEngagementMotion(view, c, settings, dt);
           engagementPrepared = true;
         }

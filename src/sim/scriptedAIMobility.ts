@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import { applyAIEmergencyHopMotion } from '../game/aiEmergencyHop';
 import { startAISpatialDodgeMotion } from '../game/aiDashMotion';
 import { pickPerpendicularDodgeDirection, type PostEvasionCommitInput } from '../game/aiSpatialStrategy';
@@ -54,7 +55,7 @@ export function validateScriptedAIMobility(state: SimState, id: string, command:
     Math.abs(Math.hypot(direction.x, direction.z) - 1) > 1e-6)
     throw new Error(`AI mobility requires a unit direction: ${id}`);
   if (!engagementPrepared || !self || !self.alive || self.hp <= 0 || self.respawnTimer > 0 ||
-    self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === id || self.isLunging && !committedFlight ||
+    !hasCoherentSimCarrierState(state, self) || self.isLunging && !committedFlight ||
     (command.kind === 'emergency-hop' && self.slideActive && self.dashRemaining <= 0 && !sequentialOpportunities) ||
     (command.kind === 'spatial-dodge' && (self.dashCooldownTimer > 0 || self.dashRemaining > 0 && !sequentialOpportunities)))
     throw new Error(`AI mobility requires an uncommitted armed engagement: ${id}`);
@@ -94,7 +95,7 @@ export function validateScriptedAIDashDecision(state: SimState, id: string, deci
     typeof target.targetProtected !== 'boolean' || typeof target.weaponReady !== 'boolean')
     throw new Error(`Invalid AI dash observation: ${id}`);
   if (!engagementPrepared || !self || self.isLunging && !committedFlight || !self.alive || self.hp <= 0 || self.respawnTimer > 0 ||
-    self.hasBall || self.weapon === 'ball' || state.match.ball.holderId === id ||
+    !hasCoherentSimCarrierState(state, self) ||
     (mobility?.kind !== 'spatial-dodge' && self.dashRemaining <= 0))
     throw new Error(`AI dash requires an armed engagement dash: ${id}`);
   if (hasOtherCommands || action.moveX !== 0 || action.moveZ !== 0 || action.jump || action.dash ||

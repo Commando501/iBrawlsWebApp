@@ -198,10 +198,13 @@ for (const sequential of [false, true]) for (const kind of ['emergency-hop', 'sp
     }
   });
 
-for (const id of ['main_ai', 'ordinary']) test(`unsupported airborne carrier handoff fails explicitly ${id}`, () => {
+for (const id of ['main_ai', 'ordinary']) test(`airborne carrier hands off and retains possession ${id}`, () => {
   const f = fixture(id), control = controlFor(f, () => .9); control.planner = plannerFor(control);
   f.state.match.ball.state = 'held'; f.state.match.ball.holderId = id;
   setSimCarrier(f.actor, true, f.state.settings, f.state);
   f.actor.pos.y = 2; f.actor.isJumping = true;
-  assert.throws(() => stepSimulation(f.state, {}, createSimGrifballActorStepOptions(f.state, control)), /Carrier requires an objective movement owner/);
+  const events = stepSimulation(f.state, {}, createSimGrifballActorStepOptions(f.state, control));
+  assert.equal(events.actorDecisionFrame!.decisions[0].kind, 'handled');
+  assert.ok(f.actor.pos.y < 2, 'carrier gravity must advance');
+  assert.equal(f.actor.weapon, 'ball'); assert.equal(f.state.match.ball.holderId, id);
 });

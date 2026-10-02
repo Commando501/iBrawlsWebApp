@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import type { RosterCombatLearning } from './scriptedCombatLearning';
 import * as THREE from 'three';
 import { resolveAIGroundState, type AIGroundStateInput } from '../game/aiGroundState';
@@ -44,7 +45,7 @@ export interface ScriptedAIGroundFeedback {
   timer: number | undefined;
   weaponState: AIGroundStateInput['frame']['weaponState'];
   standoffTimer: number;
-  actions: ('hammer-jump' | 'attack-hammer' | 'attack-sword' | 'dash' | 'swap-sword' | 'lunge')[];
+  actions: ('hammer-jump' | 'attack-hammer' | 'attack-sword' | 'attack-ball' | 'dash' | 'swap-sword' | 'lunge')[];
   opportunity?: AIGroundAttackOpportunityResult;
 }
 
@@ -95,7 +96,7 @@ function validateRequest(state: SimState, actor: SimCombatant, request: Scripted
   ] as const) if (!object || keys.some(key => !Number.isFinite((object as Record<string, unknown>)[key])))
     throw new Error('Invalid ground tuning or memory');
   if (typeof p.matchMultipliers.avoidCoinFlipTrades !== 'boolean' || typeof p.difficulty !== 'string' ||
-    p.activeWeapon !== actor.weapon || !['hammer', 'sword'].includes(p.activeWeapon)) throw new Error('Invalid ground weapon/tuning');
+    p.activeWeapon !== actor.weapon || !['hammer', 'sword', 'ball'].includes(p.activeWeapon)) throw new Error('Invalid ground weapon/tuning');
   if (request.targetMemory && (!Number.isFinite(request.targetMemory.timer) || !Number.isFinite(request.targetMemory.cooldownMultiplier) ||
     request.targetMemory.aiState !== undefined && !states.includes(request.targetMemory.aiState))) throw new Error('Invalid ground target memory');
   const targets = state.combatants.filter(c => c.id === request.targetId), target = targets[0];
@@ -112,7 +113,7 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
   dt: number, savedVelY: number, owner: ScriptedAIGroundOwner, readyFromThisTurn = false, learning?: RosterCombatLearning): ScriptedAIGroundFeedback {
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
     actor.id === state.localPlayerId || actor.controller !== 'ai' || !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 ||
-    actor.isLunging || actor.hasBall || actor.weapon === 'ball' || actor.dashRemaining > 0 || actor.isJumping || actor.pos.y > .01)
+    actor.isLunging || !hasCoherentSimCarrierState(state, actor) || actor.dashRemaining > 0 || actor.isJumping || actor.pos.y > .01)
     throw new Error('Ground execution requires a recovered armed AI');
   const view = settings === state.settings ? state : { ...state, settings };
   const request = owner.resolve({ state: view, actorId: actor.id, dt, motionPhase: 'after-engagement-recovery' });
@@ -133,14 +134,14 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
   };
   // Live generic attack callbacks reset their animation; cached readiness was
   // already arbitrated by the policy. They do not spend another AI/weapon clock.
-  const swing = (timestampWeapon?: 'hammer' | 'sword', observeAttack = true) => {
+  const swing = (timestampWeapon?: 'hammer' | 'sword' | 'ball', observeAttack = true) => {
     actor.weaponState = 'windup'; actor.weaponPhaseElapsed = 0;
-    actor.attackKind = actor.weapon === 'sword' ? 'slash' : 'strike';
-    actor.weaponTimer = actor.weapon === 'sword' ? (settings.swordSlashSpeed ?? .22) * .5 : resolveHammerSlamTiming(settings).windupTime;
+    actor.attackKind = actor.weapon === 'sword' ? 'slash' : actor.weapon === 'ball' ? 'punch' : 'strike';
+    actor.weaponTimer = actor.weapon === 'sword' ? (settings.swordSlashSpeed ?? .22) * .5 : actor.weapon === 'ball' ? (settings.hammerMeleeSpeed ?? .24) : resolveHammerSlamTiming(settings).windupTime;
     if (timestampWeapon) {
       actor.lastAttackTick = state.tick;
       const now = state.combatTimeMs ?? state.tick * 1000 / 60;
-      if (timestampWeapon === 'hammer') {
+      if (timestampWeapon !== 'sword') {
         actor.lastHammerAttackTimeMs = now;
         if (observeAttack) learning?.hammerAttack(actor);
       } else actor.lastSwordAttackTimeMs = now;
@@ -192,7 +193,6 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
       return { aiState: opportunity.aiState, timer: opportunity.timer, weaponState: opportunity.weaponState,
         standoffTimer: policy.psychState.standoffTimer, actions, opportunity };
     }
-    if (opportunity.activeWeapon === 'ball') throw new Error('Ground opportunity cannot equip the ball');
     policy.activeWeapon = opportunity.activeWeapon; policy.canStartWeaponAction = opportunity.canStartWeaponAction;
     policy.feintLungeFakeout = opportunity.feintLungeFakeout;
   }

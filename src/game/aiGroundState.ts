@@ -40,7 +40,7 @@ export interface AIGroundStateInput {
   maxLungeRange: number;
   minLungeRange: number;
   stationarySwingReach: number;
-  activeWeapon: AICombatWeapon;
+  activeWeapon: AICombatWeapon | 'ball';
   canStartWeaponAction: boolean;
   targetIsProtected: boolean;
   difficulty: string;
@@ -74,7 +74,7 @@ export interface AIGroundStateInput {
   isTargetOnCooldown: () => boolean;
   isCoordAttackBlocked: () => boolean;
   clearPressureTarget: (id: string) => void;
-  triggerCombatantAttack: (weapon: AICombatWeapon) => void;
+  triggerCombatantAttack: (weapon: AICombatWeapon | 'ball') => void;
   random?: () => number;
 }
 

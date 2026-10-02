@@ -17,7 +17,7 @@ export interface PressureExitInput {
 }
 
 export interface PressureAttackInput {
-  activeWeapon: 'hammer' | 'sword';
+  activeWeapon: 'hammer' | 'sword' | 'ball';
   distanceToTarget: number;
   aiReach: number;
   minLungeRange: number;

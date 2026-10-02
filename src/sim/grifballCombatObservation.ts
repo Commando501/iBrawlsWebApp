@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import * as THREE from 'three';
 import { resolveAICombatRangeFrame } from '../components/grifball/aiCombatRangeRuntime';
 import { resolveAITargetPredictionFrame } from '../components/grifball/aiTargetPredictionRuntime';
@@ -25,7 +26,7 @@ export interface SimGrifballCombatObservation {
   targetId: string;
   /** Explicit live decision bookkeeping during an already committed flight. */
   committedFlight?: true;
-  observedWeapon: 'hammer' | 'sword';
+  observedWeapon: 'hammer' | 'sword' | 'ball';
   targetProtected: boolean;
   resolvedAiReach: number;
   /** Adopt at this priority boundary, before later model/feint/combo effects. */
@@ -43,7 +44,8 @@ export interface SimGrifballCombatObservation {
 
 /** Observation authority is broader than ground movement: active airborne,
  * sliding and dashing AI still observe targets before those movement owners run.
- * Flight requires explicit ownership; carriers, player/RL and inactive AI are excluded. */
+ * Flight requires explicit ownership; coherent carriers retain their ball weapon.
+ * Player/RL and inactive AI are excluded. */
 export function getSimGrifballObservationActors(state: SimState, botId: string, targetId: string,
   scriptedBots: Readonly<Record<string, string>>, dt: number, committedFlight = false) {
   if (!Number.isFinite(dt) || dt <= 0) throw new Error('Combat observation requires a positive finite timestep');
@@ -55,7 +57,7 @@ export function getSimGrifballObservationActors(state: SimState, botId: string, 
     !Object.hasOwn(scriptedBots, botId) || typeof scriptedBots[botId] !== 'string' ||
     isNeuralNetDifficulty(scriptedBots[botId]) || isNeuralNetDifficulty(state.settings.aiDifficulty) ||
     state.match.phase !== 'playing' || !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 ||
-    actor.isLunging !== committedFlight || actor.hasBall || actor.weapon === 'ball' || state.match.ball.holderId === botId ||
+    actor.isLunging !== committedFlight || !hasCoherentSimCarrierState(state, actor) ||
     targets.length !== 1 || !target.alive || target.hp <= 0 || target.respawnTimer > 0 ||
     target.id === actor.id || target.team === actor.team) return null;
   return { actor, target };
@@ -88,7 +90,7 @@ export function resolveSimGrifballCombatObservation(state: SimState, botId: stri
     targetIsCrouching: target.isCrouching, targetHp: target.hp,
     targetProtected: target.invulnerabilityTimer > 0,
     predictedTargetPos: prediction.predictedTargetPos, distanceToTarget: prediction.distanceToTarget,
-    activeWeapon: actor.weapon as 'hammer' | 'sword', attackRange: state.settings.attackRange, attackRadius: state.settings.attackRadius,
+    activeWeapon: actor.weapon, attackRange: state.settings.attackRange, attackRadius: state.settings.attackRadius,
     resolvedAiReach };
   const prepared = preparation ? resolveAIEngagementPreparation({ ...preparation, range: rangeInput,
     slideActive: actor.slideActive, movementComplexity: tuning.movementComplexity,
@@ -98,7 +100,7 @@ export function resolveSimGrifballCombatObservation(state: SimState, botId: stri
   const point = (v: THREE.Vector3) => ({ x: v.x === 0 ? 0 : v.x, y: v.y === 0 ? 0 : v.y, z: v.z === 0 ? 0 : v.z });
   return { version: 'grifball-combat-observation-v1', tick: state.tick, actorId: botId, targetId,
     ...(committedFlight ? { committedFlight: true as const } : {}),
-    observedWeapon: actor.weapon as 'hammer' | 'sword', targetProtected: target.invulnerabilityTimer > 0, resolvedAiReach, range,
+    observedWeapon: actor.weapon, targetProtected: target.invulnerabilityTimer > 0, resolvedAiReach, range,
     ...(prepared ? { preparation: { isCrouching: prepared.isCrouching, coordCommitTimer: prepared.coordCommitTimer,
       standoffTimer: prepared.standoffTimer } } : {}),
     prediction: { predictedTargetPos: point(prediction.predictedTargetPos), movementTargetPos: point(prediction.movementTargetPos),
@@ -111,7 +113,8 @@ export function resolveSimGrifballCombatObservation(state: SimState, botId: stri
 export function retainSimGrifballCombatObservation(state: SimState, botId: string,
   scriptedBots: Readonly<Record<string, string>>, observation: SimGrifballCombatObservation, dt = 1 / 60) {
   if (!observation || observation.version !== 'grifball-combat-observation-v1' || observation.tick !== state.tick ||
-    observation.actorId !== botId || observation.committedFlight !== undefined && observation.committedFlight !== true || !['hammer', 'sword'].includes(observation.observedWeapon))
+    observation.actorId !== botId || observation.committedFlight !== undefined && observation.committedFlight !== true || !['hammer', 'sword', 'ball'].includes(observation.observedWeapon) ||
+    observation.observedWeapon === 'ball' && state.combatants.find(c => c.id === botId)?.weapon !== 'ball')
     throw new Error('Retained combat observation must belong to this actor and tick');
   const p = observation.prediction, r = observation.range;
   const prepared = observation.preparation;

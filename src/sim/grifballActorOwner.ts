@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import { recordCalibrationCounterAttempt } from '../game/aiSkillCalibration';
 import { getEffectivePressureAggression } from '../components/grifball/matchPressure';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
@@ -80,8 +81,8 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
     prepare: ({ state: view, actorId, dt: stepDt }) => {
       const turn = current(view, actorId, stepDt), actor = view.combatants.find(c => c.id === actorId)!;
       if (turn.targetId !== undefined) throw new Error('Composed target selection must run once');
-      if (actor.hasBall || actor.weapon === 'ball' || view.match.ball.holderId === actorId)
-        throw new Error(`Carrier requires an objective movement owner for its current motion: ${actorId}`);
+      if (!hasCoherentSimCarrierState(view, actor))
+        throw new Error(`Carrier combat requires coherent possession: ${actorId}`);
       const target = resolveSimGrifballTargetSelection(view, actorId, scriptedBots, {
         plan: ai.grifballTeamPlan, coordinator: ai.coordinator, memories,
         aiPlaystyle: configs[actorId].knobs.aiPlaystyle, spatialIQ: turn.adaptive.derivedParams.spatialIQ,

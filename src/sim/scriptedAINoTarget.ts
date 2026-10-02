@@ -1,3 +1,4 @@
+import { hasCoherentSimCarrierState } from './grifballCarrierState';
 import * as THREE from 'three';
 import { resolveNoTargetAIFrameForCombatant, type AINoTargetResolutionMode } from '../components/grifball/aiNoTargetRuntime';
 import type { GrifballAIObjectiveFrame } from '../components/grifball/grifballAIObjectiveMovement';
@@ -50,7 +51,7 @@ export function executeScriptedAINoTarget(state: SimState, actor: SimCombatant, 
   dt: number, owner: ScriptedAINoTargetOwner): ScriptedAINoTargetFeedback {
   if (state.mode !== 'grifball' || state.combatExecution !== 'live-mixed-v1' || state.match.phase !== 'playing' ||
     actor.controller !== 'ai' || actor.id === state.localPlayerId || !actor.alive || actor.hp <= 0 || actor.respawnTimer > 0 ||
-    actor.hasBall || actor.weapon === 'ball' || state.match.ball.holderId === actor.id)
+    !hasCoherentSimCarrierState(state, actor))
     throw new Error('No-target recovery requires an active armed roster AI');
   const request = owner.resolve({ state: settings === state.settings ? state : { ...state, settings }, actorId: actor.id, dt });
   if (!request || ![request.spatialIQ, request.edgeInset].every(Number.isFinite) || typeof request.isObserverMode !== 'boolean' ||

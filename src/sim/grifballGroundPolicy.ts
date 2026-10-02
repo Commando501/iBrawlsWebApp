@@ -70,7 +70,7 @@ export function createSimGrifballGroundOwner(botId: string, scriptedBots: Readon
       policy: { pressureTargetId: memory.pressureTargetId, ...o.range,
         distanceToTarget: o.prediction.distanceToTarget, resolvedDangerZone: context.resolvedDangerZone, resolvedAiReach: o.resolvedAiReach,
         minLungeRange: context.resolvedDangerZone * .85, maxLungeRange: Math.min(18, state.settings.swordLungeDistance ?? 14.5),
-        activeWeapon: weapon.activeWeapon as 'hammer' | 'sword', canStartWeaponAction: weapon.canStartWeaponAction,
+        activeWeapon: weapon.activeWeapon, canStartWeaponAction: weapon.canStartWeaponAction,
         targetIsProtected: o.targetProtected, difficulty: scriptedBots[botId], movementComplexity: a.movementComplexity,
         playstyleFactor: a.playstyleFactor, tunedAnticipationFactor: a.tunedAnticipationFactor,
         effectiveReactionLatency: a.effectiveReactionLatency, effectivePressureAggression: a.effectivePressureAggression,
