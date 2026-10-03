@@ -4084,3 +4084,20 @@ Each route sample now credits pressure only if the escort's attack arrival is no
 All **445/445 tactical/runtime tests pass**, with zero failures, skips or TODOs, and TypeScript passes with the established 8 GB allowance. Evidence: output/m7-runner-support-deadline-regression.log and output/m7-runner-support-deadline-types.log. The selected full match changes to a focal-team **2–0 win** at tick **14,680**, with a passing correctness check and **zero live/composed physical differences**. Source parent 847e52b6d9c845ca1ad68cec32ad754b65d44486, fingerprint 7962a073713178308dfee3b45473672f77403654fec0ed8ed21acc72979d516c. Evidence: output/m7-runner-support-deadline-replay.json/.log. This selected development result does not establish a general improvement.
 
 This closes the runner support-timing repair slice. The next slice measures a fresh fixed 20-seed Stadium/patient cohort before further gameplay changes. The same four automated acceptance packages remain open, and reserved held-out inputs remain untouched. Human review follows automated acceptance.
+
+## 2026-10-03 — Runner support-deadline fixed-cohort evaluation
+
+The fixed cohort at output/m7-runner-support-deadline-cohort ran from 13:26:52 to 13:51:03 UTC on 2c8b03b046973430100b9cc0dbf9358916660188, fingerprint 2f3e0d79622fa5e40db3d2e33216ec036964a71d1f868649464d394984241324. It retains all 20 Stadium/patient seeds (201–220), both orientations, normal 4v4, fresh baseline/candidate games, goal target two and unchanged 900-second limits. No results were substituted or extended.
+
+All **80/80 matches finish**, with zero caps or failed correctness checks. The audit reconstructs the frozen plan, verifies all source/artifact identities and corresponding predecessor results, and confirms that seed 202 mirrored reproduces the repaired full-match replay exactly. Evidence: output/m7-runner-support-deadline-cohort/audit.json and output/m7-runner-support-deadline-cohort-audit.log.
+
+| Configuration | Previous wins / 40 | New wins / 40 | Previous mean goal margin | New mean goal margin |
+| --- | --- | --- | --- | --- |
+| Independent baseline | 34 | 32 | +1.200 | +1.100 |
+| Coordinated candidate | 25 | 26 | +0.450 | +0.400 |
+
+The paired candidate-minus-baseline goal margin is **-0.700**, 95% Student-t interval **[-1.2227, -0.1773]**, using 20 seed clusters with mirrors averaged within each seed. Paired change is **+0.050**, interval **[-0.7985, +0.8985]**. The repair fixes demonstrated timing logic but has not established broader quality improvement. Candidate conversion falls descriptively from 0.2452 to 0.1870, while goal prevention rises from 0.8839 to 0.8987 and uncovered fraction falls from 0.5310 to 0.4210. All have 40 observed match opportunities; these associations do not identify a mechanism or override the primary deficit.
+
+Fresh production evidence at output/m7-runner-support-deadline-cli-lab passes 159/159 focused tests, TypeScript, client/relay/validation builds, startup and the CLI/Lab browser agreement test. All six deterministic jobs agree: four complete goal scenarios and two declared 10-second match caps. CLI exit 2 preserves incomplete evidence, and imported reference provenance remains separate from local browser results. All nine captures were inspected (visual-review.json); the owned server closed. This is concurrent correctness evidence, not calibrated performance evidence.
+
+This closes the evaluation slice. The next slice expands the fixed adaptation/variation diagnostic to all twenty development seeds on the current source: four configurations, both mirrors, 160 fresh candidate matches, with styles retained and no outcome-driven additions. The 40 full-system references must reproduce this cohort. Independent child processes may run with fixed concurrency four; this experiment makes no performance claim. The purpose is to test whether the earlier four-seed style contrast persists after the repairs, rather than infer a general mechanism from isolated wins. Four automated acceptance packages remain open; reserved held-out inputs and later human review remain pending.
