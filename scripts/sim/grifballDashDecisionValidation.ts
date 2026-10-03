@@ -5,7 +5,7 @@ type Trace = ReturnType<typeof runOpposedDecisionTrace>;
 /** Observe the production updater without supplying movement or dash requests.
  * Suspended commitments follow an independent ballistic/drift oracle for this
  * open rectangular fixture. They are not counted as completed ground dashes. */
-export function validateDashDecisionTrace(trace: Trace) {
+export function validateDashDecisionTrace(trace: Pick<Trace, 'dashSamples' | 'dashSettings'>) {
   const failures: { tick: number; field: string; actual: unknown; expected: unknown }[] = [];
   let failureCount = 0, groundedSteps = 0, airborneDeferred = 0;
   let airborneSteps = 0;

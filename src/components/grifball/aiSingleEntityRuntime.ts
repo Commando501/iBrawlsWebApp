@@ -1,4 +1,6 @@
 import { resolveAIGroundState } from '../../game/aiGroundState';
+import { selectGrifballEscortEvasion } from '../../game/aiGrifballEvasion';
+import { createLiveGrifballTacticalSnapshot } from './grifballTeamPlanRuntime';
 import { finishAIHorizontalMotion } from '../../game/aiDashMotion';
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
 import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
@@ -1289,6 +1291,10 @@ export function createAISingleEntityUpdaterForState({
           playDash: () => sfx.playDash(), tryFeintRoll, commitFeint,
           isTargetOnCooldown: () => isTargetOnCooldown(target), isCoordAttackBlocked, clearPressureTarget,
           triggerCombatantAttack: weapon => triggerCombatantAttack(self, weapon),
+          selectDefensiveDashDirection: s.settings.gameMode === 'grifball' && !s.isMultiplayer ? (origin, fallback) =>
+            selectGrifballEscortEvasion({ snapshot: createLiveGrifballTacticalSnapshot(s, grifballEnemyGoalPos, getActiveCustomMap()),
+              assignment: s.aiMatchContext.grifballTeamPlan.assignments.get(botId), botId, origin, fallback,
+              distance: s.settings.dashDistance, duration: s.settings.dashDuration || .25 }) : undefined,
         });
         ({ aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer, slideActive,
           slideDistanceTraveled, slideCooldownTimer, isSprinting } = groundStateFrame);

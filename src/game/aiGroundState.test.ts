@@ -54,6 +54,37 @@ function fixture(id: string, sign: number, dt: number) {
 }
 const state = (f: Fixture, value: AIGroundStateInput['frame']['aiState']) => { f.input.frame.aiState = value; };
 const distance = (f: Fixture, value: number) => { f.input.distanceToTarget = f.input.attackDistanceToTarget = value; };
+for (const sign of [1, -1]) for (const dt of [1 / 30, 1 / 60])
+  test(`objective escape changes only a committed defensive dash direction ${sign}/${dt}`, () => {
+    const control = fixture('ordinary', sign, dt), changed = fixture('ordinary', sign, dt);
+    for (const f of [control, changed]) {
+      state(f, 'DANCING_FORWARD'); distance(f, 6); f.input.activeWeapon = 'sword';
+      f.input.target.weaponState = 'swing_up'; f.input.frame.dashCooldownTimer = 0; f.rolls.push(.1);
+    }
+    let calls = 0;
+    changed.input.selectDefensiveDashDirection = (origin, fallback) => {
+      calls++; close(origin.z, sign * 5 * dt);
+      assert.deepEqual(fallback, { x: -0, z: -sign });
+      return { x: sign, z: 0 };
+    };
+    resolveAIGroundState(control.input); resolveAIGroundState(changed.input);
+    assert.equal(calls, 1); assert.equal(changed.draws(), control.draws());
+    assert.deepEqual(changed.events, control.events);
+    assert.deepEqual({ ...changed.input.frame, dashDir: null }, { ...control.input.frame, dashDir: null });
+    assert.deepEqual(changed.input.frame.dashDir.toArray(), [sign, 0, 0]);
+    close(changed.input.frame.dashRemaining!, .25); close(changed.input.frame.dashCooldownTimer!, 2);
+  });
+
+for (const condition of ['cooldown', 'no-reaction', 'offensive', 'protected'] as const)
+  test(`objective escape stays lazy for ${condition}`, () => {
+    const f = fixture('ordinary', 1, 1 / 60);
+    state(f, condition === 'offensive' ? 'CHARGE_ATTACK' : 'DANCING_FORWARD');
+    distance(f, 6); f.input.activeWeapon = 'sword'; f.input.target.weaponState = 'swing_up';
+    f.input.frame.dashCooldownTimer = condition === 'cooldown' ? 2 : 0;
+    f.input.targetIsProtected = condition === 'protected'; f.rolls.push(condition === 'no-reaction' ? .99 : .1);
+    f.input.selectDefensiveDashDirection = () => { assert.fail('No defensive dash was committed'); };
+    resolveAIGroundState(f.input);
+  });
 const cases: Case[] = [
   { name: 'approach walks', setup: () => {}, state: 'APPROACHING', forward: 4, draws: 0 },
   { name: 'approach sprint and lateral', setup: f => { f.input.sprintMult = 1.5; f.input.totalApproachLateral = 2; },

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { validateDashDecisionTrace } from './grifballDashDecisionValidation';
 import { MOBILITY_DECISION_CASES } from './grifballMobilityDecisionIntegration';
+import { runDashTargetLossFixture, runDashFlightFixture } from './grifballDashTargetLossFixture';
 
-type Trace = ReturnType<typeof runOpposedDecisionTrace>;
+type Trace = Pick<ReturnType<typeof runOpposedDecisionTrace>, 'dashSamples' | 'dashSettings'> & { scenario: unknown };
 type Sample = NonNullable<Trace['dashSamples']>[number];
 const predicates = {
   step: (s: Sample) => !s.requested && !!s.target && s.before.remaining > 0 &&
     !s.before.jumping && !s.after.jumping && s.before.pos[1] === 0 && s.after.pos[1] === 0,
-  cancelled: (s: Sample) => !s.target && s.before.remaining > 0,
   started: (s: Sample) => s.requested,
   flight: (s: Sample) => !s.requested && !!s.target && !s.incomingThreat && s.before.remaining > 0 &&
     s.before.pos[1] > 1 && s.after.pos[1] > 1 && Math.hypot(s.before.vel[0], s.before.vel[2]) > .1,
@@ -21,6 +21,14 @@ let cached: Witnesses | undefined;
 function corruptionWitnesses(): Witnesses {
   if (cached) return cached;
   const found = {} as Witnesses;
+  for (const kind of ['flight', 'landing'] as const) {
+    const trace = runDashFlightFixture(kind);
+    const audit = validateDashDecisionTrace(trace);
+    assert.equal(audit.failureCount, 0, JSON.stringify(audit.failures));
+    const sample = trace.dashSamples.find(predicates[kind]);
+    assert.ok(sample, `production ${kind} boundary must be observed`);
+    found[kind] = { trace, sample };
+  }
   // Validate every original case, then select the first observed example of
   // each required behavior. No outcome or seed is excluded from the audit.
   for (const spec of MOBILITY_DECISION_CASES) {
@@ -39,7 +47,7 @@ function corruptionWitnesses(): Witnesses {
   return cached = found;
 }
 
-test('dash audit rejects corrupted movement, timers, request evidence and cancellation', (t) => {
+test('dash audit rejects corrupted movement, timers and request evidence', (t) => {
   const witnesses = corruptionWitnesses();
   t.diagnostic(JSON.stringify(Object.fromEntries(Object.entries(witnesses).map(([kind, w]) =>
     [kind, {scenario:w.trace.scenario, tick:w.sample.tick, actor:w.sample.id}]))));
@@ -48,7 +56,6 @@ test('dash audit rejects corrupted movement, timers, request evidence and cancel
     [witnesses.step, (s: Sample) => { s.after.remaining = s.before.remaining; }, 'duration'],
     [witnesses.step, (s: Sample) => { s.after.cooldown = s.before.cooldown; }, 'cooldown'],
     [witnesses.started, (s: Sample) => { s.requested = false; }, 'unobserved'],
-    [witnesses.cancelled, (s: Sample) => { s.after.remaining = s.before.remaining; }, 'target loss'],
   ] as const) {
     const {trace, sample} = witness, samples = trace.dashSamples!;
     const corrupted = structuredClone(sample); mutate(corrupted);
@@ -57,6 +64,19 @@ test('dash audit rejects corrupted movement, timers, request evidence and cancel
   }
   assert.ok(validateDashDecisionTrace({ ...witnesses.step.trace, dashSamples: [] }).failureCount > 0);
 });
+
+for (const id of ['ordinary', 'main_ai']) for (const airborne of [false, true])
+  test(`dash audit rejects a lost cancellation in the production target-loss boundary ${id}/${airborne}`, () => {
+    const trace = runDashTargetLossFixture(id, airborne);
+    const audit = validateDashDecisionTrace(trace);
+    assert.equal(audit.failureCount, 0, JSON.stringify(audit.failures));
+    assert.equal(audit.cancellations.length, 1);
+    assert.equal(trace.dashSamples[0].requested, false);
+    assert.equal(trace.dashSamples[0].after.remaining, 0);
+    const corrupt = structuredClone(trace);
+    corrupt.dashSamples[0].after.remaining = corrupt.dashSamples[0].before.remaining;
+    assert.ok(validateDashDecisionTrace(corrupt).failures.some(f => f.field.includes('target loss')));
+  });
 
 test('dash audit rejects corrupted suspended flight and landing state', () => {
   const {flight, landing} = corruptionWitnesses();

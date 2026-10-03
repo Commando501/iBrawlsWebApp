@@ -75,6 +75,7 @@ export interface AIGroundStateInput {
   isCoordAttackBlocked: () => boolean;
   clearPressureTarget: (id: string) => void;
   triggerCombatantAttack: (weapon: AICombatWeapon | 'ball') => void;
+  selectDefensiveDashDirection?: (origin: { x: number; z: number }, fallback: { x: number; z: number }) => { x: number; z: number };
   random?: () => number;
 }
 
@@ -95,6 +96,13 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
   let { aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer, slideActive,
     slideDistanceTraveled, slideCooldownTimer, isSprinting } = frame;
   let groundJumpVelocity: number | undefined;
+  const directDefensiveDash = () => {
+    dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+    if (input.selectDefensiveDashDirection) {
+      const direction = input.selectDefensiveDashDirection({ x: pos.x, z: pos.z }, { x: dashDir.x, z: dashDir.z });
+      if (direction.x !== dashDir.x || direction.z !== dashDir.z) dashDir.set(direction.x, 0, direction.z);
+    }
+  };
   if (activeWeapon === 'hammer' && weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
     const previousVerticalVelocity = vel.y;
     if (startOffensiveHammerJump(lookHeading)) {
@@ -210,7 +218,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
         timer = effectiveReactionLatency + 0.35;
 
         if (dashCooldownTimer <= 0) {
-          dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+          directDefensiveDash();
           dashRemaining = settings.dashDuration || 0.25;
           dashCooldownTimer = settings.dashCooldown || 2.0;
           playDash();
@@ -265,7 +273,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
       state = 'DANCING_BACKWARD';
       timer = 0.65;
       if (dashCooldownTimer <= 0 && random() < 0.7) {
-        dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+        directDefensiveDash();
         dashRemaining = settings.dashDuration || 0.25;
         dashCooldownTimer = settings.dashCooldown || 2.0;
         playDash();
@@ -349,7 +357,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
         state = 'DANCING_BACKWARD';
         timer = 0.6;
         if (dashCooldownTimer <= 0) {
-          dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+          directDefensiveDash();
           dashRemaining = settings.dashDuration || 0.25;
           dashCooldownTimer = settings.dashCooldown || 2.0;
           playDash();

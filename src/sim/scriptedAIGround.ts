@@ -86,6 +86,8 @@ function validateRequest(state: SimState, actor: SimCombatant, request: Scripted
     if (typeof p[key] !== 'boolean') throw new Error(`Invalid ground flag: ${key}`);
   for (const key of ['random', 'tryFeintRoll', 'commitFeint', 'isTargetOnCooldown', 'isCoordAttackBlocked', 'clearPressureTarget'] as const)
     if (typeof p[key] !== 'function') throw new Error(`Invalid ground callback: ${key}`);
+  if (p.selectDefensiveDashDirection !== undefined && typeof p.selectDefensiveDashDirection !== 'function')
+    throw new Error('Invalid ground callback: selectDefensiveDashDirection');
   for (const key of ['lookHeading', 'spatialLookHeading', 'sidewayHeading'] as const)
     if (!p[key] || ![p[key].x, p[key].y, p[key].z].every(Number.isFinite)) throw new Error(`Invalid ground heading: ${key}`);
   for (const [object, keys] of [
@@ -201,6 +203,7 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
     random: atPose(policy.random), tryFeintRoll: atPose(policy.tryFeintRoll), commitFeint: atPose(policy.commitFeint),
     isCoordAttackBlocked: atPose(policy.isCoordAttackBlocked), isTargetOnCooldown: atPose(policy.isTargetOnCooldown),
     clearPressureTarget: atPose(policy.clearPressureTarget),
+    selectDefensiveDashDirection: policy.selectDefensiveDashDirection ? atPose(policy.selectDefensiveDashDirection) : undefined,
     lookHeading: point(policy.lookHeading), spatialLookHeading: point(policy.spatialLookHeading), sidewayHeading: point(policy.sidewayHeading),
     startOffensiveHammerJump: heading => {
       syncPose();

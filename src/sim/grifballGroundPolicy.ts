@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { selectGrifballEscortEvasion } from '../game/aiGrifballEvasion';
+import { createSimGrifballTacticalSnapshot } from './grifballTacticalAdapter';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import { getPincerApproachOffset } from '../game/aiBotCoordinator';
 import { getPlayerFeintMultiplier, isFeintEligible, rollFeintAttempt, rollFeintCooldownDuration } from '../game/aiFeints';
@@ -93,6 +95,14 @@ export function createSimGrifballGroundOwner(botId: string, scriptedBots: Readon
           return result.blocked;
         },
         clearPressureTarget: id => { if (memories[id]) delete memories[id].pressureTargetId; },
+        selectDefensiveDashDirection: (origin, fallback) => {
+          const plan = ai.grifballTeamPlan;
+          if (state.mode !== 'grifball' || !plan.snapshot?.tactics) return fallback;
+          return selectGrifballEscortEvasion({
+            snapshot: createSimGrifballTacticalSnapshot(state, { scriptedBots, tactics: plan.snapshot.tactics }),
+            assignment: plan.assignments.get(botId), botId, origin, fallback,
+            distance: state.settings.dashDistance, duration: state.settings.dashDuration || .25 });
+        },
       },
       opportunity: { targetAirborne: o.prediction.targetAirborne, enemyInKillRange: o.range.enemyInKillRange,
         selfGrounded: o.range.selfGrounded, swordForbidden: a.swordForbidden, hammerForbidden: a.hammerForbidden,
