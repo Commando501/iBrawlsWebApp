@@ -29,7 +29,11 @@ export function hashTree(directory: string): string {
   };
   visit(directory, ''); return hash.digest('hex');
 }
-export async function nodeCheck(root: string, args: string[], logPath: string, signal: AbortSignal, env: NodeJS.ProcessEnv = process.env, timeoutMs = 30 * 60 * 1000) {
+// The v84 aggregate alone takes about 55 minutes. Keep broad checks bounded
+// separately from Quick/build commands; this does not extend gameplay horizons.
+const NODE_CHECK_TIMEOUT_MS = 30 * 60 * 1000;
+const PARITY_CHECK_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+export async function nodeCheck(root: string, args: string[], logPath: string, signal: AbortSignal, env: NodeJS.ProcessEnv = process.env, timeoutMs = NODE_CHECK_TIMEOUT_MS) {
   if (signal.aborted) throw new Error('Validation cancelled');
   const fd = openSync(logPath, 'wx');
   const child = spawn(process.execPath, args, { cwd: root, env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', fd, fd] });
@@ -52,7 +56,8 @@ export function validationTestCommand(manifest: SuiteManifest, scripts: Record<s
   const script = repository ? 'test' : parity ? 'test:grifball-validation' : 'test:grifball-smoke';
   const args = (scripts[script] ?? '').split(/\s+/);
   if (args.shift() !== 'node') throw new Error(`Expected a Node test command for ${script}`);
-  return { repository, parity, script, args: ['--max-old-space-size=8192', ...args] };
+  return { repository, parity, script, args: ['--max-old-space-size=8192', ...args],
+    timeoutMs: parity ? PARITY_CHECK_TIMEOUT_MS : NODE_CHECK_TIMEOUT_MS };
 }
 const check = (id: string, success: boolean, summary: string, evidence: string): CheckResult => ({
   id, state: 'completed', verdict: success ? 'pass' : 'fail', summary, evidence: [evidence],
@@ -83,18 +88,18 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
     const lockHash = createHash('sha256').update(readFileSync(join(root, 'package-lock.json'))).digest('hex');
     const publicHash = hashTree(join(root, 'public'));
     const buildId = digest({ code: plan.code, lockHash, publicHash });
-    const command = async (name: string, args: string[], env?: NodeJS.ProcessEnv) => {
-      console.log(`Running ${name}...`);
+    const command = async (name: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs = NODE_CHECK_TIMEOUT_MS) => {
+      console.log(`Running ${name} (wall timeout ${timeoutMs / 60000} minutes)...`);
       const log = `logs/${name}.log`;
-      const status = await nodeCheck(root, args, join(directory, log), abort.signal, env);
-      atomicJSON(join(directory, `${name}.json`), { args, status, log });
+      const status = await nodeCheck(root, args, join(directory, log), abort.signal, env, timeoutMs);
+      atomicJSON(join(directory, `${name}.json`), { args, status, log, timeoutMs });
       console.log(`${name}: exit ${status}`); return { status, log };
     };
     const selection = validationTestCommand(plan.manifest, pkg.scripts);
     const fullTests = selection.repository;
     atomicJSON(join(directory, 'node-check-scope.json'), selection);
     const tests = await command(fullTests ? 'repository-tests' : 'focused-tests', selection.args,
-      { ...process.env, GRIFBALL_VALIDATION_PARITY_OUT: selection.parity ? directory : '' });
+      { ...process.env, GRIFBALL_VALIDATION_PARITY_OUT: selection.parity ? directory : '' }, selection.timeoutMs);
     testsPassed = tests.status === 0;
     if (fullTests) artifacts.gates.push(check('repository-tests', tests.status === 0, `Repository tests exited ${tests.status}; see complete output.`, tests.log));
     else if (tests.status !== 0) artifacts.gates.push(check('correctness', false, 'Focused Node checks failed; gameplay correctness cannot pass.', tests.log));
