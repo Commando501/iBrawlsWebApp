@@ -265,6 +265,8 @@ Run `npm run bench:grifball-space` to profile planning refreshes, including a sc
 
 **Current M7 status (v84, 2026-10-02):** bounded scripted execution acceptance passes its fresh aggregate and saved-evidence audit. All 52 evidence families are present, with zero action mismatches, decision failures or missing required witnesses. Four automated work packages remain: frozen-baseline tactical quality, held-out generalization, calibrated serial performance, and final repository/build/production-browser/CLI-Lab acceptance. Human testing follows those gates. The incremental validation notes below retain their historical scope limits; this status and the latest v84 entry supersede earlier open execution items.
 
+The current two-seed development quality pilot completes all 48 baseline/candidate matches within its prospectively fixed 900-second simulation horizon; all 24 reproducibility control pairs pass. Its goal-margin estimate remains statistically unresolved, and its development maps/seeds cannot supply held-out acceptance. The validation history retains the preceding 300-second capped results and both complete artifact audits.
+
 The suite freezes a manifest and executes scenario or autonomous-match jobs through the real browser gameplay loop. The CLI runs the profile's Node checks, TypeScript, production client/relay builds, an explicit validation build, and a production startup smoke before running the serial job queue. It uses project-pinned Playwright 1.63.0 and its matching Chromium, with a fresh offline browser context for every job. Install the browser once after `npm ci` (and again when its pin changes):
 
 ```sh
