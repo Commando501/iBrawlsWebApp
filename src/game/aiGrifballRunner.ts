@@ -59,7 +59,7 @@ export function pointAlongRunnerRoute(start: FieldPoint, route: SpaceRoute, dist
   return { ...from };
 }
 
-export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: GrifballTacticalPlayer, tuning: TeamTactics, memory: RunnerMemory, routers: SpaceRouters, choice?: TacticalChoice): RunnerPlan {
+export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: GrifballTacticalPlayer, tuning: TeamTactics, memory: RunnerMemory, routers: SpaceRouters, choice?: TacticalChoice, supportTargets?: ReadonlyMap<string, string | null>): RunnerPlan {
   const geometry = snapshot.geometry!, goal = snapshot.goals[carrier.team === 'blue' ? 'red' : 'blue']!;
   const router = routers.get(carrier.id)!, goalDistance = fieldDistance(carrier.pos, goal);
   const goalHeading = direction(carrier.pos, goal), speed = Math.max(0.1, carrier.space!.speed);
@@ -67,7 +67,10 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const enemies = snapshot.players.filter(p => p.team !== carrier.team);
   // Reaching the runner's route is not enough to cover it: the escort must
   // be able to pressure the opponent threatening that route in time.
-  const threatSupport = new Map(enemies.map(enemy => [enemy.id, Math.min(Infinity, ...allies.map(ally =>
+  // The team planner supplies rechecked published intent. Standalone space
+  // evaluations without that ledger retain their potential-pressure estimate.
+  const threatSupport = new Map(enemies.map(enemy => [enemy.id, Math.min(Infinity, ...allies
+    .filter(ally => !supportTargets || ally.scripted && supportTargets.get(ally.id) === enemy.id).map(ally =>
     estimateSpaceAttackTime(ally, enemy.pos, routers.get(ally.id)!(enemy.pos, true).length)))]));
   const forcedProgress = memory.stalledSeconds >= tuning.runnerProgressTimeout;
   const evaluate = (action: RunnerAction, destination: FieldPoint, stationarySeconds = 0): RunnerCandidate => {

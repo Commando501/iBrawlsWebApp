@@ -75,7 +75,13 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
       if (obsolete) { protection = 0; opening = 0; }
       const purpose = protection * tuning.tankProtectionWeight + opening * tuning.tankOpeningWeight + delay * tuning.tankDelayWeight;
       const trade = Number.isFinite(attackETA) && Number.isFinite(opponentETA) ? Math.max(-1, Math.min(1, opponentETA - attackETA)) + protection * 0.5 : -1;
-      const coverageLost = Math.min(2, fieldDistance(a.destination, enemy.pos) / Math.max(1, tuning.coverageBoundary)) + (a.role === 'safety' ? 0.5 : 0);
+      // Fighting an immediate carrier threat also protects the current carrier
+      // position. A retreating runner's screen destination must not make that
+      // protection look like abandoning all coverage.
+      const coverageDistance = friendly && anchorETA <= tuning.threatHorizon
+        ? Math.min(fieldDistance(a.destination, enemy.pos), fieldDistance(anchor, enemy.pos))
+        : fieldDistance(a.destination, enemy.pos);
+      const coverageLost = Math.min(2, coverageDistance / Math.max(1, tuning.coverageBoundary)) + (a.role === 'safety' ? 0.5 : 0);
       const score = !Number.isFinite(attackETA) || purpose <= 0 || obsolete || attackETA > tuning.threatHorizon + 1 ? -Infinity
         : purpose + trade * tuning.tankTradeWeight - coverageLost * tuning.tankCoverageWeight - attackETA * 0.25;
       return { targetId: enemy.id, score, protection, opening, delay, trade, coverageLost, attackETA, opponentETA, purpose };

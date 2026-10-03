@@ -216,8 +216,19 @@ export function updateGrifballTeamPlan(
     const friendly = holder?.team === team;
     const recoveryPoint = tuning.passingEnabled && recovery?.settled ? recovery.point : snapshot.ball;
     const anchor = holder?.pos ?? recoveryPoint;
+    // Recheck the team's published orders against current public observations.
+    // A covering/receiving ally must not be credited as attacking every opponent
+    // within weapon range. New possessions start without inherited pressure.
+    const supportTargets = new Map<string, string | null>();
+    if (friendly && state.runnerMemory[team] && routers) for (const ally of teammates) {
+      const order = previous.get(ally.id);
+      if (!ally.scripted || !order || order.team !== team || order.carrierId !== holder.id ||
+        order.geometry?.key !== snapshot.geometry?.key || !order.tuning?.enabled ||
+        order.tanking && !tuning.tankingEnabled) continue;
+      supportTargets.set(ally.id, selectGrifballAssignmentThreat(order, ally.pos, players));
+    }
     const runnerPlay = friendly && state.runnerMemory[team] && routers
-      ? planGrifballRunner(snapshot, holder!, tuning, state.runnerMemory[team], routers, choice) : undefined;
+      ? planGrifballRunner(snapshot, holder!, tuning, state.runnerMemory[team], routers, choice, supportTargets) : undefined;
     if (runnerPlay) state.runnerPlans[team] = runnerPlay;
     const escortPlanner = runnerPlay && routers ? createRunnerEscortPlanner(snapshot, holder!, runnerPlay, tuning, routers) : undefined;
     const add = (bot: GrifballTacticalPlayer, role: GrifballTeamRole, slot: number, destination: FieldPoint, reason: string) => {
