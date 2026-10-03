@@ -120,3 +120,34 @@ test('ball recovery replaces a blocked retriever and ignores unreachable human p
   updateGrifballTeamPlan(plan, s, 0.001);
   assert.equal(plan.assignments.get('near')!.role, 'retriever');
 });
+
+for (const sign of [1, -1]) for (const objective of ['carrier', 'friendly-chaser', 'enemy-chaser', 'retriever'] as const)
+  for (const geometry of ['detour', 'sealed', 'missing', 'space-off'] as const)
+  test(`independent objectives respect navigation ${objective}/${geometry}/sign=${sign}`, () => {
+    const s = scene(), plan = createGrifballTeamPlanState(), team = sign === 1 ? 'blue' : 'red';
+    const actor = player('independent', team, -8 * sign, 0);
+    const holder = player('holder', objective === 'enemy-chaser' ? (team === 'blue' ? 'red' : 'blue') : team, 8 * sign, 0);
+    s.players = [actor, holder];
+    s.holderId = objective === 'carrier' ? actor.id : objective === 'retriever' ? null : holder.id;
+    s.ball = { x: 8 * sign, z: 0 };
+    s.tactics!.defaults.enabled = false;
+    s.tactics!.defaults.spaceEnabled = geometry !== 'space-off';
+    s.geometry = geometry === 'missing' ? undefined : buildGrifballSpaceGeometry(court([obstacle(0, 0, 2, geometry === 'sealed' ? 60 : 8)]), 52);
+    updateGrifballTeamPlan(plan, s, .2);
+    const order = plan.assignments.get(actor.id)!;
+    assert.equal(order.role, objective === 'carrier' ? 'runner' : objective === 'retriever' ? 'retriever' : 'chaser');
+    assert.equal(order.slot, -1);
+    for (const field of ['runner', 'escort', 'tanking', 'defense', 'pass', 'receive'] as const) assert.equal(order[field], undefined);
+    assert.deepEqual(plan.runnerPlans, {}); assert.deepEqual(plan.stylePlans, {});
+    const destination = { x: (objective === 'carrier' || objective === 'friendly-chaser' ? 47 : 8) * sign, z: 0 };
+    if (geometry === 'space-off' || geometry === 'missing') {
+      assert.equal(order.space, undefined); assert.deepEqual(order.destination, destination);
+    } else if (geometry === 'sealed') {
+      assert.equal(order.space?.route.status, 'blocked'); assert.deepEqual(order.destination, actor.pos);
+    } else {
+      assert.equal(order.space?.route.status, 'routed'); assert.deepEqual(order.destination, destination);
+      const points = order.space!.route.points;
+      assert.deepEqual(points.at(-1), destination);
+      points.forEach((point, index) => assert.ok(isSpaceSegmentOpen(s.geometry!, index ? points[index - 1] : actor.pos, point)));
+    }
+  });

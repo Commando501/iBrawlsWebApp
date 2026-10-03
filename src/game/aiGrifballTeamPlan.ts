@@ -236,6 +236,12 @@ export function updateGrifballTeamPlan(
     if (!tuning.enabled) {
       for (const bot of bots) add(bot, holder ? 'chaser' : 'retriever', -1,
         { ...(friendly ? goal : anchor) }, 'Independent objective fallback: team coordination disabled');
+      // Independent objectives still need obstacle routes when space awareness is enabled.
+      if (tuning.spaceEnabled && evaluateSpace) for (const bot of controlled) {
+        const assignment = next.get(bot.id)!;
+        assignment.geometry = snapshot.geometry;
+        evaluateSpace(assignment, bot, previous.get(bot.id), true);
+      }
       continue;
     }
 

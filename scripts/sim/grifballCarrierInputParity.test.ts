@@ -41,13 +41,14 @@ function fixture(id: string, mirror: boolean, routed: boolean, pickup: boolean) 
   return { ...f, self, other, goal, plan: createGrifballTeamPlanState(), scriptedBots: { [id]: 'normal' } };
 }
 
-for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true]) for (const routed of [false, true]) for (const pickup of [false, true])
-  test(`independent planner carries to goal ${id}/mirror=${mirror}/routed=${routed}/pickup=${pickup}`, () => {
+for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true]) for (const routed of [false, true]) for (const pickup of [false, true]) for (const coordinated of [false, true])
+  test(`independent planner carries to goal ${id}/mirror=${mirror}/routed=${routed}/pickup=${pickup}/coordinated=${coordinated}`, () => {
     const f = fixture(id, mirror, routed, pickup), { sim, state, self, bot, plan, scriptedBots } = f;
+    state.grifballTactics.defaults.enabled = coordinated;
     let acquired = !pickup, goalTick = 0, maxLateral = 0, runnerTicks = 0;
     for (let tick = 1; tick <= 600; tick++) {
       updateGrifballTeamPlanForState(state, dt, f.goal, f.map);
-      updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, pickupRequests: { [id]: false } }), dt);
+      updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, pickupRequests: { [id]: false }, tactics: state.grifballTactics }), dt);
       assert.equal(state.aiMatchContext.grifballTeamPlan.assignments.get(id)?.role, plan.assignments.get(id)?.role);
       const carrier = self.hasBall ? resolveSimGrifballCarrierInput(sim, plan, id, scriptedBots, true) : null;
       const input = self.hasBall ? carrier?.input : resolveSimGrifballSupportInput(sim, plan, id, scriptedBots);
