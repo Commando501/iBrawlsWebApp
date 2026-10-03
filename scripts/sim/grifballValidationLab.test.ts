@@ -1,4 +1,4 @@
-// Explicit UI integration command. Start the app on port 3000 before running it.
+// Explicit UI integration command. Defaults to port 3000; an isolated production server can be supplied via the environment.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -8,7 +8,8 @@ import { createSuiteManifest } from '../../src/game/grifballValidation/profiles'
 import { trialCheck } from '../../src/game/grifballValidation/runner';
 import type { LabRun } from '../../src/game/grifballValidation/labReport';
 
-const origin = 'http://localhost:3000';
+const origin = new URL(process.env.GRIFBALL_LAB_TEST_ORIGIN ?? 'http://localhost:3000').origin;
+const artifactDirectory = resolve(process.env.GRIFBALL_LAB_TEST_OUT ?? 'output/grifball-validation/vs4-lab-ui');
 async function records(page: Page): Promise<LabRun[]> {
   return page.evaluate(async () => new Promise((resolve, reject) => {
     const open = indexedDB.open('ibrawls-grifball-validation', 1);
@@ -46,7 +47,7 @@ async function finished(page: Page) {
 }
 
 test('Lab runs frozen jobs, pauses at boundaries, persists, imports, reruns and reports interruption at desktop and narrow widths', { timeout: 300000 }, async () => {
-  const out = resolve('output/grifball-validation/vs4-lab-ui'); mkdirSync(out, { recursive: true });
+  const out = artifactDirectory; mkdirSync(out, { recursive: true });
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', serviceWorkers: 'block', acceptDownloads: true });
   await context.route('**/*', route => new URL(route.request().url()).origin !== origin || new URL(route.request().url()).pathname.startsWith('/api/') ? route.abort() : route.continue());
@@ -127,7 +128,7 @@ test('Lab runs frozen jobs, pauses at boundaries, persists, imports, reruns and 
 });
 
 test('Lab stops on storage failure, exports unsaved evidence, excludes concurrent tabs and cancels on close', { timeout: 180000 }, async () => {
-  const out = resolve('output/grifball-validation/vs4-lab-ui'); mkdirSync(out, { recursive: true });
+  const out = artifactDirectory; mkdirSync(out, { recursive: true });
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: 'block', acceptDownloads: true });
   await context.route('**/*', route => new URL(route.request().url()).origin !== origin || new URL(route.request().url()).pathname.startsWith('/api/') ? route.abort() : route.continue());
