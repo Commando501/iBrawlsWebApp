@@ -4101,3 +4101,37 @@ The paired candidate-minus-baseline goal margin is **-0.700**, 95% Student-t int
 Fresh production evidence at output/m7-runner-support-deadline-cli-lab passes 159/159 focused tests, TypeScript, client/relay/validation builds, startup and the CLI/Lab browser agreement test. All six deterministic jobs agree: four complete goal scenarios and two declared 10-second match caps. CLI exit 2 preserves incomplete evidence, and imported reference provenance remains separate from local browser results. All nine captures were inspected (visual-review.json); the owned server closed. This is concurrent correctness evidence, not calibrated performance evidence.
 
 This closes the evaluation slice. The next slice expands the fixed adaptation/variation diagnostic to all twenty development seeds on the current source: four configurations, both mirrors, 160 fresh candidate matches, with styles retained and no outcome-driven additions. The 40 full-system references must reproduce this cohort. Independent child processes may run with fixed concurrency four; this experiment makes no performance claim. The purpose is to test whether the earlier four-seed style contrast persists after the repairs, rather than infer a general mechanism from isolated wins. Four automated acceptance packages remain open; reserved held-out inputs and later human review remain pending.
+
+## 2026-10-03 — Twenty-seed adaptation/variation diagnostic and remaining acceptance
+
+The fixed experiment at output/m7-style-cohort-factorial ran from 13:56:27 to 14:15:28 UTC on f5cc98e5a45205d36e7a6d71b15ee56caa5542aa, working-tree fingerprint 0db0eedd8243e6dd2dd82e3fec6eebde6a3429a39cb3975da8bfaa5ad29383a1. It retains all twenty development seeds (201–220), both mirrors, Stadium/patient, normal 4v4, goal target two and unchanged 900-second limits. Four configurations retain stylesEnabled: full defaults, adaptation disabled, zero variation, and both responses neutralized. Only the forty selected candidate jobs in each plan were scheduled; embedded baseline jobs are not claimed executed. Independent child processes used fixed concurrency four, so this is not calibrated performance evidence. No gameplay defaults changed.
+
+All **160/160 matches finish**, with zero caps or failed correctness checks. The audit reconstructs all four plans, checks declared interventions and every selected job, verifies source/artifact hashes, and confirms all forty full-system references reproduce the preceding cohort's endpoint, metrics, behavior, trace and decisions exactly. Evidence: output/m7-style-cohort-factorial/audit.json and output/m7-style-cohort-factorial-audit.log. An initial preflight stopped before scheduling any matches because fixture input hashes include source identity; its local comparison was corrected to compare gameplay fixture fields separately. That log is retained as output/m7-style-cohort-factorial-preflight.log; no outcome was retried or substituted.
+
+| Configuration | Wins / 40 | Mean goal margin |
+| --- | --- | --- |
+| Full styles | 26 | +0.400 |
+| Variation only | 32 | +0.950 |
+| Adaptation only | 25 | +0.600 |
+| Neutral styles | 28 | +0.800 |
+
+| Matched goal-margin contrast | Mean | Descriptive 95% interval |
+| --- | --- | --- |
+| Adaptation with variation | -0.550 | [-1.0296, -0.0704] |
+| Adaptation without variation | -0.200 | [-0.9258, +0.5258] |
+| Variation with adaptation | -0.200 | [-0.7390, +0.3390] |
+| Variation without adaptation | +0.150 | [-0.5746, +0.8746] |
+| Interaction | -0.350 | [-1.2292, +0.5292] |
+
+Mirrors are averaged within each of twenty seed clusters before calculating Student-t intervals. These are descriptive development contrasts, not held-out or general acceptance evidence. The earlier four-seed neutral-style advantage does not support a blanket removal of styles: variation only now has the highest observed margin, and the adaptation-with-variation contrast is the clearest investigation lead. The other intervals span zero. The experiment identifies an intervention to inspect, not the causal decision error or an accepted repair. The unchanged full-system deficit against the preceding fresh independent baseline remains -0.700, interval [-1.2227, -0.1773].
+
+A separate replay of the first zero-goal candidate loss in that cohort (seed 201, original orientation) exactly reproduces tick 14,253, blue 0–red 2. Evidence: output/m7-style-cohort-match-diagnosis.json and output/m7-style-cohort-match-summary.json. Before the first goal, several defenders have airborne attack delays; before the second, no focal defenders are alive two seconds before scoring. These are investigation leads. The trace does not yet establish whether the airborne state came from voluntary movement or impact, nor why the team lost those combat exchanges. No unsupported gameplay repair is inferred from these observations.
+
+This closes the diagnostic slice. All seven implementation milestones and the validation tooling exist, but **M7 automated acceptance remains incomplete**. There are **four remaining acceptance packages, not four guaranteed slices**:
+
+1. Repair demonstrated tactical problems and pass the fixed full development matrix, including resolution of Canyon match completion. This is the current blocker and may require multiple repair/evaluation slices.
+2. Run the reserved held-out maps and seeds on the frozen candidate; those inputs remain unused.
+3. Revalidate calibrated, serial performance on the final source, separate from concurrent diagnostic workloads.
+4. Complete final integrated repository, build, browser, CLI/Lab and report acceptance on that source, retaining the documented retired-test exception and any incomplete evidence explicitly.
+
+The next slice examines concrete adaptation-dependent decisions and the defensive loss traces before choosing a protected repair. There is no evidence-backed fixed count of repair slices remaining. The three later acceptance packages are identifiable, but new failures there could also require repairs. Human tactical readability, spacing/escort feel, fairness and enjoyment testing remains assigned to the user after automated acceptance; no human testing is requested at this point.
