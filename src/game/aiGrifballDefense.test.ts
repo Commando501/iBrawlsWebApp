@@ -410,6 +410,35 @@ test('interceptor readiness takes precedence over proximity to the projected car
   assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'safety');
 });
 
+for (const mirror of [false, true]) for (const reverse of [false, true])
+  for (const delay of ['recovery', 'airborne', 'none'] as const)
+    test(`same-cut interception ranks attack arrival before distance: ${mirror}/${reverse}/${delay}`, () => {
+      const s = scene();
+      // Both candidates first qualify at the .5-second sample. A small style
+      // pressure change must not hide the closer actor's visible readiness delay.
+      s.tactics!.defaults.defensePressure = .59;
+      s.players = [p('safety', 'blue', -20), p('ready', 'blue', -9.7), p('closer', 'blue', -4), p('runner', 'red', 0)];
+      for (const actor of s.players) actor.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, actor.id === 'runner' ? 'ball' : 'hammer');
+      const closer = s.players.find(a => a.id === 'closer')!;
+      if (delay === 'recovery') { closer.space!.phase = 'recovering'; closer.space!.attackIn = .56; }
+      if (delay === 'airborne') closer.space!.mobileIn = .16;
+      s.players.find(a => a.id === 'runner')!.vel.x = -7.54;
+      if (mirror) for (const actor of s.players) {
+        actor.team = actor.team === 'blue' ? 'red' : 'blue';
+        actor.pos.x *= -1; actor.pos.z *= -1; actor.vel.x *= -1; actor.vel.z *= -1;
+      }
+      if (reverse) s.players.reverse();
+      const state = run(s), team = mirror ? 'red' : 'blue';
+      const orders = [...state.assignments.values()].filter(a => a.team === team);
+      const interceptor = orders.find(a => a.defense?.mode === 'intercept')!;
+      assert.equal(interceptor.botId, delay === 'none' ? 'closer' : 'ready', 'readiness precedes distance; equal readiness still uses distance');
+      assert.equal(interceptor.defense!.carrierETA, .5, 'same sampled cut remains the objective');
+      assert.equal(interceptor.defense!.arrivalETA, .4, 'choose the actor ready before the carrier reaches the cut');
+      assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'safety');
+      updateGrifballTeamPlan(state, s, 1);
+      assert.equal([...state.assignments.values()].find(a => a.team === team && a.defense?.mode === 'intercept')!.botId, interceptor.botId);
+    });
+
 test('a sealed route cannot make a nearby defender a feasible interceptor', () => {
   const s = scene();
   s.geometry = { key: 'sealed-defense', shape: 'rectangular', x: 52, z: 23,

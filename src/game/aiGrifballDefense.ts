@@ -111,24 +111,26 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const cost = (a: GrifballAssignment) => routeLength(a.botId, safetyPoint) - (previous.get(a.botId)?.defense?.mode === 'last-defender' ? tuning.reassignmentAdvantage : 0);
     return cost(a) - cost(b) || a.botId.localeCompare(b.botId);
   });
-  const interceptions = new Map<string, { point: FieldPoint; time: number; reachable: boolean }>();
+  const interceptions = new Map<string, { point: FieldPoint; time: number; arrival: number; reachable: boolean }>();
   const interception = (a: GrifballAssignment) => {
     const cached = interceptions.get(a.botId);
     if (cached) return cached;
     const self = players.find(p => p.id === a.botId)!;
+    let arrival = Infinity;
     for (let i = 1; i <= 6; i++) {
       const t = tuning.defenseLookahead * i / 6, fraction = i / 6;
       // A routed forecast follows its bends at carrier speed. The chord to its
       // endpoint can cross obstacles and invent earlier interception locations.
       const point = carrierRoute ? pointAlongRunnerRoute(anchor, carrierRoute, carrierTravel * fraction) :
         { x: anchor.x + (projected.x - anchor.x) * fraction, z: anchor.z + (projected.z - anchor.z) * fraction };
-      if (estimateSpaceAttackTime(self, point, routeLength(self.id, point)) <= t + tuning.defensePressure * 0.25) {
-        const result = { point, time: t, reachable: true };
+      arrival = estimateSpaceAttackTime(self, point, routeLength(self.id, point));
+      if (arrival <= t + tuning.defensePressure * 0.25) {
+        const result = { point, time: t, arrival, reachable: true };
         interceptions.set(a.botId, result);
         return result;
       }
     }
-    const result = { point: projected, time: tuning.defenseLookahead, reachable: false };
+    const result = { point: projected, time: tuning.defenseLookahead, arrival, reachable: false };
     interceptions.set(a.botId, result);
     return result;
   };
@@ -190,8 +192,11 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const aReachable = reachable.includes(a), bReachable = reachable.includes(b);
     // Contest the earliest feasible cut. Distance to the horizon's endpoint can
     // otherwise send the nearby defender away to mark while a later one chases.
+    // At the same sampled cut, readiness precedes proximity: the closer actor
+    // may still be recovering or airborne while another can already attack.
     return Number(bReachable) - Number(aReachable) || (aReachable && bReachable ?
       interception(a).time - interception(b).time ||
+      interception(a).arrival - interception(b).arrival ||
       routeLength(a.botId, interception(a).point) - routeLength(b.botId, interception(b).point) : 0) ||
       routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId);
   });
