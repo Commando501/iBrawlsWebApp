@@ -80,6 +80,44 @@ test('a ready interception reaches the existing strike owner before a new weapon
   }
 });
 
+for (const mirrored of [false, true]) test(`supported safety holds its cut as the runner closes: ${mirrored}`, async t => {
+  const manifest = createSuiteManifest('quick');
+  manifest.cases = [{ id: 'supported-safety-counter', mode: 'match', scenario: null, mapId: 'championship_stadium',
+    roster: 'scripted-4v4', difficulty: 'normal', seeds: [102], opponents: ['balanced'], mirrored: true,
+    fixedHz: 60, simulationSeconds: 10, watchdogSeconds: 60 }];
+  const plan = await createSuitePlan(manifest, { commit: 'a'.repeat(40), dirty: false, workingTreeHash: 'b'.repeat(64), scope: ['src'] });
+  const job = plan.jobs.find(j => j.variant === 'candidate' && j.mirrored === mirrored)!;
+  const host = createAutonomousValidationRuntime(plan.cases[0], job), s = host.state, sign = mirrored ? -1 : 1;
+  const carrier = [...s.otherPlayers.values()].find(p => p.team === job.focalTeam)!;
+  const [defender, support] = [...s.otherPlayers.values()].filter(p => p.team !== job.focalTeam);
+  for (const p of s.otherPlayers.values()) {
+    p.invulnerabilityTimer = p.aiTimer = p.swapCooldownTimer = p.swapLockoutTimer = 0; p.weaponState = 'ready';
+    p.vel.set(0, 0, 0);
+    if (p !== carrier && p !== defender && p !== support) { p.hp = 0; p.respawnTimer = 100; }
+  }
+  s.grifball.phase = 'playing'; s.grifball.ball.state = 'held'; s.grifball.ball.holderId = carrier.id;
+  carrier.pos.set(20 * sign, 0, 0); defender.pos.set(35 * sign, 0, 0); support.pos.set(22 * sign, 0, 8 * sign);
+  setGrifballCarrierForState({ state: s, id: carrier.id, carrying: true }); Object.assign(s.grifball.ball.pos, carrier.pos);
+  let holds = 0, pressure = 0, elapsed = 0, firstHoldX: number | null = null;
+  try {
+    for (let tick = 1; tick <= 180; tick++) {
+      host.runtime.step(); elapsed = tick;
+      const orders = s.aiMatchContext.grifballTeamPlan.assignments;
+      if (orders.get(defender.id)?.reason.includes('hold the goal-side cut')) {
+        holds++;
+        firstHoldX ??= defender.pos.x;
+        if (orders.get(support.id)?.defense?.mode === 'intercept') pressure++;
+      }
+      if (defender.hp <= 0 || carrier.hp <= 0 || s.grifball.phase !== 'playing') break;
+    }
+    assert.ok(holds > 0, 'a supported defender must use the visible cut');
+    assert.ok(pressure > 0, 'holding the cut must retain separate pressure');
+    assert.equal(carrier.hp, 0, 'the defensive pair stops the approaching runner');
+    assert.ok(defender.hp > 0, 'the covering defender survives');
+    t.diagnostic(JSON.stringify({ mirrored, holds, pressure, elapsed, firstHoldX }));
+  } finally { host.runtime.dispose(); }
+});
+
 for (const boundary of ['cooldown', 'busy', 'protected', 'dead'] as const)
   test(`interception priority does not create an unavailable strike: ${boundary}`, () => {
     const x = comboFixture(true);

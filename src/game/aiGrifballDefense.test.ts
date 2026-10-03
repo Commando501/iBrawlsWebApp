@@ -524,8 +524,8 @@ test('defenders intercept a visible cut, reserve one safety and assign distinct 
   const safety = orders.find(a => a.defense?.mode === 'last-defender')!;
   assert.equal(selectGrifballAssignmentThreat(safety, { x: -10, z: 0 }, [p('side', 'red', -10, 5)]), null);
 });
-for (const mirror of [false, true]) for (const reverse of [false, true]) for (const id of ['guard', 'main_ai'])
-  test(`lone ready defender holds an approaching goal-side cut: ${mirror}/${reverse}/${id}`, () => {
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const id of ['guard', 'main_ai']) for (const supported of [false, true])
+  test(`ready defender holds an approaching goal-side cut: ${mirror}/${reverse}/${id}/supported-${supported}`, () => {
     const s = scene(), sign = mirror ? -1 : 1, team = mirror ? 'red' : 'blue', enemy = mirror ? 'blue' : 'red';
     s.tactics!.defaults.stylesEnabled = false;
     s.tactics!.defaults.defenseLookahead = 1.5;
@@ -533,6 +533,7 @@ for (const mirror of [false, true]) for (const reverse of [false, true]) for (co
     s.players = [p(id, team, -6 * sign), p('runner', enemy, 0), p('distant-support', enemy, 15 * sign, 15)];
     const self = s.players[0], carrier = s.players[1];
     carrier.space!.weapon = 'ball'; carrier.vel.x = -5 * sign;
+    if (supported) s.players.push(p('teammate', team, -2 * sign, 3 * sign));
     if (reverse) s.players.reverse();
     const order = run(s).assignments.get(id)!;
     assert.equal(order.defense?.mode, 'last-defender');
@@ -540,6 +541,7 @@ for (const mirror of [false, true]) for (const reverse of [false, true]) for (co
     assert.deepEqual(order.destination, self.pos, 'hold the cut instead of moving it backward every refresh');
     assert.ok(Math.abs(order.defense!.carrierETA - 1.2) < 1e-9, 'crossing time follows observed carrier velocity');
     assert.match(order.reason, /hold the goal-side cut/);
+    if (supported) assert.equal(run(s).assignments.get('teammate')!.defense?.mode, 'intercept', 'teammate continues providing pressure');
     assert.equal(selectGrifballAssignmentThreat(order, self.pos, s.players), null, 'keep the cut until strike reach');
     carrier.pos.x = -4 * sign;
     assert.equal(selectGrifballAssignmentThreat(order, self.pos, s.players), carrier.id, 'counter the arriving runner');

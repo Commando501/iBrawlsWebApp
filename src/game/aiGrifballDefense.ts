@@ -150,7 +150,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   };
   let safetyDestination = emergency ? anchor : safetyPoint;
   let safetyCarrierETA = 0;
-  if (carrier?.space?.weapon === 'ball' && assignments.length === 1 && !emergency && !expiredMotion && !carrierRoute && tuning.defensePressure >= .4) {
+  if (carrier?.space?.weapon === 'ball' && !carrierSafety && !emergency && !expiredMotion && !carrierRoute && tuning.defensePressure >= .4) {
     const self = players.find(p => p.id === safety.botId)!;
     const dx = self.pos.x - anchor.x, dz = self.pos.z - anchor.z;
     const fx = projected.x - anchor.x, fz = projected.z - anchor.z;
@@ -159,6 +159,8 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     // Do not keep moving the last defender's line away from an approaching
     // runner. A ready defender already covering a reachable cut can hold it
     // and let the existing strike-range counter take over, without tail chasing.
+    // Teammates providing pressure do not invalidate that cut. An earned tanking
+    // attack still needs its separately timed backup at the agreed safety point.
     if (self.space?.phase === 'ready' && self.space.mobileIn <= 0 &&
       dx * (goal.x - anchor.x) + dz * (goal.z - anchor.z) > 0 &&
       dx * carrier.vel.x + dz * carrier.vel.z > .5 * distance(self.pos, anchor) &&
