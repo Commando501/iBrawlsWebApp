@@ -24,7 +24,7 @@ export function createLiveGrifballTacticalSnapshot(
       state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState,
       state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer,
       state.swapCooldownTimer ?? 0, state.playerPos.y, state.playerVel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH,
-      { lunging: state.isLunging, swordRecoverySeconds: state.pSwordRecoverDuration });
+      { lunging: state.isLunging, swordRecoverySeconds: state.pSwordRecoverDuration, dashRemaining: state.playerDashRemaining });
   }
   for (const bot of state.otherPlayers.values()) {
     if (bot.hp <= 0 || (bot.respawnTimer ?? 0) > 0 || bot.isObserver || !bot.team) continue;
@@ -33,7 +33,9 @@ export function createLiveGrifballTacticalSnapshot(
       scripted: bot.controller === 'ai' && !isNeuralNetDifficulty(bot.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty),
       difficulty: bot.difficulty ?? state.settings.aiDifficulty, height: bot.pos.y, pickupRequested: bot.pickupRequested,
       space: observeGrifballSpace(state.settings, bot.activeWeapon, bot.weaponState, bot.weaponTimer ?? 0,
-        bot.swapCooldownTimer ?? 0, bot.pos.y, bot.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH, { lunging: bot.isLunging }),
+        bot.swapCooldownTimer ?? 0, bot.pos.y, bot.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH,
+        { lunging: bot.isLunging, dashRemaining: bot.aiDashRemaining,
+          dashWaitsForLanding: bot.controller === 'ai' && !isNeuralNetDifficulty(bot.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty) }),
     });
   }
   const blue = getEnemyGoalPos('red');

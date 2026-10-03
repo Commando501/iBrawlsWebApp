@@ -262,7 +262,11 @@ test('coverage waiting preserves reload and leaves committed airborne movement w
   state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
   state.grifballTactics = defaultGrifballTactics(); Object.assign(state.grifballTactics.defaults, { runnerMaxWait: 2, runnerCutWidth: 1, runnerRiskWeight: 20 });
   updateGrifballTeamPlanForState(state, 0.2, goal);
-  assert.equal(state.aiMatchContext.grifballTeamPlan.runnerPlans.blue.selected.action, 'wait');
+  // Exercise execution of an authored wait. A new possession deliberately has
+  // no published support intent yet, so planning need not choose this action.
+  const order = state.aiMatchContext.grifballTeamPlan.assignments.get('a')!;
+  const wait = order.runner!.candidates.find(candidate => candidate.action === 'wait');
+  assert.ok(wait); order.runner!.selected = wait;
   const result = move(state, 'a', { aiState: 'COOLDOWN', timer: 0.6, weaponState: 'recovering' });
   assert.equal(result.frame.vel.length(), 0); assert.equal(result.frame.timer, 0.5);
   runner.isJumping = true; runner.vel.y = 4;
@@ -562,12 +566,13 @@ test('scripted pass honors charge time, releases once and restores normal carrie
   const velocity = { ...state.grifball.ball.vel }; assert.equal(tickScriptedGrifballPassForState(state, refs, 1), false);
   assert.deepEqual(state.grifball.ball.vel, velocity);
 });
-test('release rechecks receiver death, pressure, module/rule changes and human/neural ownership', () => {
-  for (const block of ['death', 'pressure', 'throwing', 'module', 'neural', 'remote', 'cooldown', 'airborne', 'phase'] as const) {
+test('release rechecks receiver death/dash, pressure, module/rule changes and human/neural ownership', () => {
+  for (const block of ['death', 'receiver-dash', 'pressure', 'throwing', 'module', 'neural', 'remote', 'cooldown', 'airborne', 'phase'] as const) {
     const state = passingSetup(), refs = createInitialGrifballThreeRefs(), carrier = state.otherPlayers.get('a')!;
     const plan = state.aiMatchContext.grifballTeamPlan; assert.ok(plan.assignments.get('a')!.pass!.selected);
     plan.passCharge = { carrierId: 'a', receiverId: 'b', speed: 9, elapsed: 1 }; carrier.grifballPassCharge = 0.5;
     if (block === 'death') state.otherPlayers.get('b')!.hp = 0;
+    if (block === 'receiver-dash') state.otherPlayers.get('b')!.aiDashRemaining = .25;
     if (block === 'pressure') state.otherPlayers.get('enemy')!.pos.copy(carrier.pos);
     if (block === 'throwing') state.settings.grifballAllowThrowing = false;
     if (block === 'module') state.grifballTactics.defaults.passingEnabled = false;

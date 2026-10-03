@@ -8,8 +8,11 @@ import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import { selectSimRespawnPosition } from './spawns';
 
 /** Remaining headless timers are NOT elapsed live animation timers. */
-export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSettings, execution: SimCombatExecution = 'legacy-v1') {
-  const observation = observeGrifballSpace(settings, c.weapon, 'ready', 0, 0, c.pos.y, c.vel.y);
+export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSettings, execution: SimCombatExecution = 'legacy-v1', scriptedMovement = false) {
+  // Generic input execution advances dash and gravity concurrently. Only the
+  // explicitly owned scripted roster path waits for airborne recovery first.
+  const observation = observeGrifballSpace(settings, c.weapon, 'ready', 0, 0, c.pos.y, c.vel.y, 18, 2.8,
+    { dashRemaining: c.dashRemaining, dashWaitsForLanding: scriptedMovement && isRosterExecution(execution) });
   const timing = resolveHammerSlamTiming(settings);
   const windup = c.weapon === 'hammer' ? timing.windupTime + timing.attackTime
     : c.weapon === 'sword' ? settings.swordSlashSpeed : (settings.hammerMeleeSpeed ?? 0.24);
@@ -108,7 +111,7 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
     players: observedActors.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
       id: c.id, team: c.team, scripted: scripted(c), difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, pos: c.pos, vel: c.vel, height: c.pos.y,
       heading: { x: headingSign * Math.sin(c.yaw), z: headingSign * Math.cos(c.yaw) }, pickupRequested: pickupRequested(c.id),
-      space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c)),
+      space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c), scripted(c)),
     })),
     goals: { blue: state.goalPlates.find(p => p.team === 'blue')?.position ?? null, red: state.goalPlates.find(p => p.team === 'red')?.position ?? null },
     respawns: respawningActors.map(c => {

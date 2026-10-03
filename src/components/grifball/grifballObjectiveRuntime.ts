@@ -383,12 +383,14 @@ export function tickScriptedGrifballPassForState(state: GrifballRuntimeState, re
       pos: { x: state.playerPos.x, z: state.playerPos.z }, vel: { x: state.playerVel.x, z: state.playerVel.z },
       space: observeGrifballSpace(state.settings, state.activeWeapon, state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState,
         state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer, state.swapCooldownTimer ?? 0, state.playerPos.y, state.playerVel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH,
-        { lunging: state.isLunging, swordRecoverySeconds: state.pSwordRecoverDuration }) }] : [];
+        { lunging: state.isLunging, swordRecoverySeconds: state.pSwordRecoverDuration, dashRemaining: state.playerDashRemaining }) }] : [];
     return live && live.hp > 0 && (live.respawnTimer ?? 0) <= 0 && !live.isObserver ? [{ ...p,
       pos: { x: live.pos.x, z: live.pos.z }, vel: { x: live.vel.x, z: live.vel.z }, height: live.pos.y,
       scripted: live.controller === 'ai' && !isNeuralNetDifficulty(live.difficulty),
       space: observeGrifballSpace(state.settings, live.activeWeapon, live.weaponState, live.weaponTimer ?? 0,
-        live.swapCooldownTimer ?? 0, live.pos.y, live.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH, { lunging: live.isLunging }) }] : [];
+        live.swapCooldownTimer ?? 0, live.pos.y, live.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH,
+        { lunging: live.isLunging, dashRemaining: live.aiDashRemaining,
+          dashWaitsForLanding: live.controller === 'ai' && !isNeuralNetDifficulty(live.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty) }) }] : [];
   }) };
   const currentCarrier = snapshot.players.find(p => p.id === bot.id)!;
   const fresh = planGrifballPass(snapshot, currentCarrier, assignment?.tuning ?? tuning, createSnapshotRouters(snapshot));

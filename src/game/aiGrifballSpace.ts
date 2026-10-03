@@ -19,7 +19,7 @@ export interface GrifballSpaceDecision {
 
 /** Estimates from visible weapon phases and elapsed animation time, not AI intentions. */
 export function observeGrifballSpace(settings: UniversalSettings, weapon: string, phase: string = 'ready', elapsed = 0, cooldown = 0, height = 0, verticalSpeed = 0, gravity = 18, swordReach = 2.8,
-  details: { lunging?: boolean; swordRecoverySeconds?: number } = {}): SpaceObservation {
+  details: { lunging?: boolean; swordRecoverySeconds?: number; dashRemaining?: number; dashWaitsForLanding?: boolean } = {}): SpaceObservation {
   const timing = resolveHammerSlamTiming(settings);
   const melee = settings.hammerMeleeSpeed ?? .24, slash = settings.swordSlashSpeed ?? .22;
   const windup = weapon === 'sword' ? slash * .5 : weapon === 'ball' ? melee : timing.windupTime;
@@ -51,6 +51,13 @@ export function observeGrifballSpace(settings: UniversalSettings, weapon: string
     attackIn = nextPrimary(duration - elapsed);
   }
   if (details.lunging) { phase = 'lunging'; attackIn = 0; }
+  const landingIn = height > 0.01 || verticalSpeed > 0
+    ? Math.max(0, (verticalSpeed + Math.sqrt(verticalSpeed * verticalSpeed + 2 * gravity * Math.max(0, height))) / gravity) : 0;
+  const dashRemaining = Math.max(0, details.dashRemaining ?? 0);
+  // Scripted evasion pauses the physical dash clock during airborne recovery.
+  // Player/input movement advances both clocks together. The reuse cooldown is
+  // unrelated to release of the current movement commitment.
+  const mobileIn = details.dashWaitsForLanding ? landingIn + dashRemaining : Math.max(landingIn, dashRemaining);
   return {
     weapon, phase, attackIn,
     reach: weapon === 'ball' ? resolvePunchLungeDistance(settings) + GRIFBALL_PUNCH_RADIUS : weapon === 'sword' ? swordReach : settings.attackRange + settings.attackRadius,
@@ -58,7 +65,7 @@ export function observeGrifballSpace(settings: UniversalSettings, weapon: string
     speed: (weapon === 'ball' ? 5.8 : 5.2) * resolveDirectionalSpeedMultiplier(settings, 'forward', weapon === 'ball'),
     lungeReach: weapon === 'sword' ? settings.swordLungeDistance : 0,
     lungeSpeed: settings.swordLungeSpeed,
-    mobileIn: height > 0.05 ? Math.max(0, (verticalSpeed + Math.sqrt(verticalSpeed * verticalSpeed + 2 * gravity * height)) / gravity) : 0,
+    mobileIn,
   };
 }
 
