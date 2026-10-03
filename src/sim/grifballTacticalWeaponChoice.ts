@@ -23,7 +23,7 @@ export function observeSimTacticalWeaponTarget(state: SimState, actor: SimCombat
     : actor.weaponState === 'recovering' ? swipe ? 'melee_recover' : 'recovering' : actor.weaponState;
   return { id: actor.id, pos: { ...actor.pos }, hp: actor.hp, activeWeapon: actor.weapon,
     weaponState: !local && phase === 'ready' && memory?.aiState === 'COOLDOWN' && (memory.timer ?? 0) > 0 ? 'recovering' : phase,
-    isLunging: actor.isLunging || !local && actor.weapon !== 'ball' && (phase === 'swing_up' || phase === 'swing_down'),
+    isLunging: actor.isLunging,
     invulnerabilityTimer: actor.invulnerabilityTimer, dashCooldownRemaining: actor.dashCooldownTimer,
     swapLockoutRemaining: actor.swapLockoutTimer };
 }

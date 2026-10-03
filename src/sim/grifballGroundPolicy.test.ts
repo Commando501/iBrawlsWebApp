@@ -58,9 +58,16 @@ function policyTurn(f: ReturnType<typeof fixture>, id: string, dt: number, rando
 }
 
 for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 30, 1 / 60]) for (const complexity of [0, 80])
-  test(`composed ground decisions approach and fight without authored actions ${id}/${dt}/${complexity}`, () => {
+  for (const encounter of ['approach', 'contact'] as const)
+  test(`composed ground decisions ${encounter} without authored actions ${id}/${dt}/${complexity}`, () => {
     const f = fixture(id);
     f.knobs.movementComplexity = complexity;
+    // Keep the original long approach for autonomous movement/attack/replay
+    // coverage. Mobile opponents can evade its opening swings. Independently
+    // witness damage from an in-range start, with the same unmodified policies,
+    // mechanics and 180-frame horizon; no actions are injected into either run.
+    if (encounter === 'contact') { f.actor.pos.z = -2; f.target.pos.z = 2; }
+    const startZ = f.actor.pos.z;
     let run = { state: f.state, memories: f.memories, matchContext: f.matchContext, randomState: createRng(33).getState() };
     let replay = structuredClone(run), attacks = 0, groundFrames = 0, moved = false;
     const caches = new WeakMap<typeof run, Parameters<typeof createSimGrifballGroundOwner>[3]['navigation']>();
@@ -88,11 +95,12 @@ for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 30, 1 / 60]) for
     for (let tick = 1; tick <= 180; tick++) {
       const events = advance(run), replayEvents = advance(replay);
       assert.deepEqual(replay, run, `own-state continuation ${tick}`); assert.deepEqual(replayEvents, events);
-      moved ||= run.state.combatants[0].pos.z !== -7;
+      moved ||= run.state.combatants[0].pos.z !== startZ;
       if ([1, 50, 120].includes(tick)) replay = structuredClone(replay);
     }
     assert.equal(moved, true); assert.ok(groundFrames > 0); assert.ok(attacks > 0);
-    assert.ok(run.state.combatants.slice(0, 2).some(c => c.hp < 50), 'autonomous movement and attacks must produce real damage');
+    if (encounter === 'contact') assert.ok(run.state.combatants.slice(0, 2).some(c => c.hp < 50),
+      'autonomous in-range attacks must produce real damage');
   });
 
 for (const branch of ['airborne', 'dash', 'hold'] as const)

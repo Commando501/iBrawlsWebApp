@@ -71,7 +71,9 @@ for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 30, 1 / 60])
         const delay = pending === 'dodge' ? behavior.dodgeResolveDelay : behavior.counterResolveDelay;
         ctx.skillCalibration.set(id, { snapshots: [], ...(pending === 'dodge'
           ? { pendingDodge: { elapsed: delay - dt / 2 } } : { pendingCounter: { elapsed: delay - dt / 2 } }) });
-        const expected = structuredClone(ctx), threat = phase === 'flight' || phase === 'overhead';
+        // Stationary swings remain weapon threats, but must not extend a
+        // pending sword-lunge calibration window.
+        const expected = structuredClone(ctx), threat = phase === 'flight';
         tickCalibrationPendingDodge(expected, id, dt, threat, behavior.dodgeResolveDelay, behavior.calibrationWindowSize);
         tickCalibrationPendingCounter(expected, id, dt, threat, behavior.counterResolveDelay, behavior.calibrationWindowSize);
         assert.equal(f.begin(dt), true);

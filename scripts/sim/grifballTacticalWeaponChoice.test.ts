@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { resolveAILungeEvasionDecision } from '../../src/game/aiLungeEvasionDecision';
 import { createBotParityFixture } from './grifballBotExecutionParity';
 import { createGrifballTeamPlanState } from '../../src/game/aiGrifballTeamPlan';
 import { createSimGrifballTacticalSnapshot } from '../../src/sim/grifballTacticalAdapter';
 import { createRng } from '../../src/sim/rng';
 import { withSimulationRandom } from '../../src/game/simulationRandom';
-import { resolveSimGrifballTacticalWeaponChoice, type TacticalAIMemory } from '../../src/sim/grifballTacticalWeaponChoice';
+import { observeSimTacticalWeaponTarget, resolveSimGrifballTacticalWeaponChoice, type TacticalAIMemory } from '../../src/sim/grifballTacticalWeaponChoice';
 import { evaluateTacticalWeaponChoiceForState } from '../../src/components/grifball/aiTacticalWeaponRuntime';
 import { getTacticalTargetByIdFromState } from '../../src/components/grifball/tacticalTargets';
 import type { SimCombatant } from '../../src/sim/simState';
@@ -97,6 +99,41 @@ test('unknown target AI reload memory and absent deterministic RNG cannot produc
   assert.throws(() => resolveSimGrifballTacticalWeaponChoice(f.sim, f.plan, f.self.id, f.owners, f.tuning, f.memories,
     { random: undefined as any, scoreContext: { scorePlayer: 0, scoreEnemy: 0 } }), /random stream/);
 });
+
+for (const mixed of [false, true]) for (const id of ['main_ai', 'bot_2'])
+  for (const spec of phases.filter(p => ['slam-windup', 'slam-impact', 'slash-windup', 'punch-windup', 'lunge'].includes(p.name)))
+    test(`${mixed ? 'mixed' : 'roster'}/${id}/${spec.name}: stationary swings do not trigger lunge evasion`, () => {
+      const f = fixture(id, mixed, spec);
+      const live = getTacticalTargetByIdFromState(f.state, id, f.other.id, [...f.state.otherPlayers.values()])!;
+      const sim = observeSimTacticalWeaponTarget(f.sim, f.other, f.memories[f.other.id]);
+      for (const target of [live, sim]) {
+        assert.equal(target.isLunging, !!spec.lunge, 'only committed lunge motion is a lunge');
+        assert.equal(target.weaponState, mixed ? spec.local : spec.roster, 'attack phase remains visible');
+        let hops = 0;
+        const result = resolveAILungeEvasionDecision({ settings: f.state.settings,
+          frame: { pos: new THREE.Vector3(), vel: new THREE.Vector3(), dashDir: new THREE.Vector3(),
+            aiState: 'APPROACHING', timer: 0, dashRemaining: 0, dashCooldownTimer: 1,
+            pendingPostEvasionCharge: false, weaponState: 'ready' },
+          targetWeapon: target.activeWeapon, targetIsLunging: target.isLunging,
+          distanceToTarget: 5, combatDistanceToTarget: 5, difficulty: 'normal', defensiveEvasionMult: 1,
+          spatialIQ: 50, swayTimer: 0, activeWeapon: 'sword', canStartWeaponAction: true, playerModel: null,
+          tuning: { defaultReactionTime: .2, baitDodgeDistance: 8, baitDodgeBand: 1,
+            baseEvasionDetectRange: 10, evasionTriggerJitter: 0, hammerWindupSeconds: .4 },
+          random: () => 1, resolveIncomingDirection: () => ({ x: 0, z: -1 }),
+          startSpatialDodge: () => assert.fail('dash is on cooldown'),
+          tryBulltrueCounter: () => ({ started: false, aiState: 'APPROACHING', timer: 0, weaponState: 'ready' }),
+          startHammerJump: () => assert.fail('sword cannot hammer jump'),
+          startEmergencyHop: () => { hops++; return true; }, triggerHammerAttack: () => assert.fail('sword cannot counter with hammer') });
+        assert.equal(hops, spec.lunge ? 1 : 0);
+        assert.equal(result.isEvadingLunge, !!spec.lunge);
+      }
+      // Possession or weapon changes during an actual flight must not conceal it.
+      f.other.isLunging = true;
+      if (mixed) f.state.isLunging = true;
+      else f.target.isLunging = true;
+      assert.equal(getTacticalTargetByIdFromState(f.state, id, f.other.id, [...f.state.otherPlayers.values()])!.isLunging, true);
+      assert.equal(observeSimTacticalWeaponTarget(f.sim, f.other, f.memories[f.other.id]).isLunging, true);
+    });
 
 test('headless teammate proximity does not invent a crowd, while a second enemy does', () => {
   const f = fixture('bot_2', false), context = { scoreContext: { scorePlayer: 0, scoreEnemy: 0 }, random: () => 0 };

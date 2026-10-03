@@ -92,10 +92,11 @@ export const buildPotentialTacticalTargets = (
         weaponState: other.weaponState && other.weaponState !== 'ready'
           ? other.weaponState
           : other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : 'ready',
-        // Punch animation shares hammer phase names but is not a lunge. Keep
-        // an actual lunge visible if possession changed during its movement.
-        isLunging: other.isLunging || (other.activeWeapon !== 'ball' &&
-          (other.weaponState === 'swing_up' || other.weaponState === 'swing_down')),
+        // A committed swing is visible in weaponState, but does not imply
+        // lunge motion. Inventing a lunge here sends defenders into lateral
+        // hops against stationary hammer blasts. Preserve actual flights even
+        // if possession or the equipped weapon changed during their movement.
+        isLunging: !!other.isLunging,
         dashCooldownRemaining: other.aiDashCooldownTimer || 0,
         swapLockoutRemaining: other.swapLockoutTimer || 0,
         vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),
