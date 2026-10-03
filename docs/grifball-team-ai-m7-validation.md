@@ -4055,3 +4055,20 @@ All **433/433 tactical/runtime tests pass**, with zero skips, failures or TODOs,
 The selected complete-match replay reaches tick **22,298**, blue 2–red 1, with **zero live/composed physical differences** and a passing correctness check. The focal red team still loses 1–2; this is execution agreement, not evidence of a win-rate improvement. Source parent e9a8f731bd15964980378b21559e51d56d3ff424, working-tree fingerprint 801d1bd4f25fe1b7b2b017556cc27e320d2b0ab83cfcff5892befa9342f4ac68. Evidence: output/m7-defense-arrival-replay.json/.log.
 
 This closes the defender readiness repair slice. The next slice repeats the full fixed 20-seed Stadium/patient development cohort with fresh baseline/candidate results before further gameplay changes. The four automated acceptance packages remain open: tactical quality/full matrix including Canyon completion, reserved held-out generalization, calibrated serial final-source performance, and final integrated acceptance. Human gameplay review remains deferred. No thresholds, scheduled evidence or module defaults were weakened to claim a pass.
+
+## 2026-10-03 — Defender-readiness fixed-cohort evaluation
+
+The fixed development cohort at output/m7-defense-arrival-cohort ran from 12:53:02 to 13:15:24 UTC on bcffa94cbd4cae5823d8a0b7e2de0660a1655568, fingerprint e4f531742ca48a7ac6c026f980bfe5d87794a76fb06dc5f26a168b6b8e47720f. It retains all 20 Stadium/patient seeds (201–220), both orientations, fresh baseline/candidate games, normal 4v4, goal target two and the original 900-second limits. No result was substituted, extended or excluded.
+
+All **80/80 matches finish**, with zero caps or failed correctness checks. The audit reconstructs the plan, verifies source and artifact identities, compares all 80 corresponding predecessor artifacts, and exactly reproduces the repaired seed-201 mirrored replay's endpoint, metrics, behavior, trace and decisions. Evidence: output/m7-defense-arrival-cohort/audit.json and output/m7-defense-arrival-cohort-audit.log.
+
+| Configuration | Previous wins / 40 | New wins / 40 | Previous mean goal margin | New mean goal margin |
+| --- | --- | --- | --- | --- |
+| Independent baseline | 37 | 34 | +1.375 | +1.200 |
+| Coordinated candidate | 25 | 25 | +0.500 | +0.450 |
+
+Candidate-minus-baseline mean goal margin is **-0.750**, 95% Student-t interval **[-1.3105, -0.1895]**, with mirrors averaged within each of 20 seed clusters. The paired change is **+0.125**, interval **[-0.5907, +0.8407]**. The candidate remains below baseline; this result does not demonstrate improvement from the repair. Baseline games also change because their patient opponent uses the repaired defense. Candidate conversion rises descriptively from 0.2279 (39 observed opportunities) to 0.2452 (40), while goal prevention falls from 0.8946 to 0.8839. Supporting ratios do not identify a causal mechanism.
+
+Fresh production evidence at output/m7-defense-arrival-cli-lab passes 159/159 focused checks, TypeScript, client/relay/validation builds, startup and the browser agreement test. All six CLI/Lab results agree: four completed goal scenarios and two declared 10-second match caps. CLI exit 2 correctly preserves incomplete evidence and imported-reference provenance. All nine startup, arena and report captures were inspected (visual-review.json); the owned ephemeral server closed after the check. These concurrent correctness checks are not calibrated performance evidence.
+
+This closes the fixed-cohort evaluation slice. The next slice replays the first zero-goal candidate loss in the audited cohort (seed 202, mirrored) to inspect actual possession endings, runner routes and escort assignments. Variation witnesses also show mixed timing tradeoffs, including a faster selected attacker, so disabling variation is not justified as a repair. Four automated acceptance packages remain: tactical quality/full matrix including Canyon completion, reserved held-out generalization, calibrated serial final-source performance, and final integrated acceptance. Human gameplay review remains deferred.
