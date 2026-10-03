@@ -80,6 +80,31 @@ for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true]) for (
     if (routed) assert.ok(maxLateral > 3, 'carrier must take the obstacle detour');
   });
 
+for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true])
+  test(`planned local blocker avoidance agrees across hosts ${id}/mirror=${mirror}`, () => {
+    const f = fixture(id, mirror, false, false), { sim, state, self, bot, plan, scriptedBots } = f;
+    state.grifballTactics.defaults.stylesEnabled = false;
+    updateGrifballTeamPlanForState(state, .2, f.goal, f.map);
+    updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics: state.grifballTactics }), .2);
+    const sign = mirror ? -1 : 1;
+    f.other.pos = { x: self.pos.x + 5 * sign, y: 0, z: .5 * sign };
+    f.target.pos.set(f.other.pos.x, 0, f.other.pos.z);
+    const carrier = resolveSimGrifballCarrierInput(sim, plan, id, scriptedBots, false)!;
+    assert.equal(carrier.decision.kind, 'move');
+    assert.ok(carrier.decision.velocity.z * sign < -.01, 'simulation must avoid the newly observed blocker');
+    const frame = { pos: bot.pos, vel: bot.vel, yaw: bot.yaw, aiState: bot.aiState, timer: 0,
+      dashRemaining: 0, slideActive: false, weaponState: 'ready', pickupRequested: false };
+    assert.ok(resolvePrimaryGrifballAIObjectiveMovementForCombatant({ state, botId: id, self: bot, frame,
+      alliesList: [], enemiesList: [f.target.pos], dt, canStartWeaponAction: false,
+      triggerCombatantAttack: () => assert.fail('avoidance must not start an attack'), getEnemyGoalPos: f.goal,
+      constrainCombatantToArena: () => {} }));
+    stepSimulation(sim, { [id]: carrier.input!.action }, { settings: sim.settings, scriptedObjective: carrier.input!.scriptedObjective });
+    for (const axis of ['x', 'y', 'z'] as const) {
+      near(bot.pos[axis], self.pos[axis], `position.${axis}`);
+      near(bot.vel[axis], self.vel[axis], `velocity.${axis}`);
+    }
+  });
+
 test('carrier requests a punch handoff without silently substituting a movement action', () => {
   const f = fixture('bot_2', false, false, false);
   f.other.pos = { x: -7, y: 0, z: 0 };

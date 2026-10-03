@@ -119,6 +119,48 @@ test('a nearer pursuer does not hide a frontal blocker from the runner punch sel
   assert.equal(result.frame.vel.length(), 0);
 });
 
+for (const team of ['blue', 'red'] as const) for (const id of ['a', 'main_ai'])
+  test(`planned runner avoids a visible frontal blocker between plan refreshes: ${team}/${id}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!, sign = team === 'blue' ? 1 : -1;
+    state.otherPlayers.delete('a'); runner.id = id; runner.team = team; state.otherPlayers.set(id, runner);
+    runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball'; state.otherPlayers.get('b')!.team = team;
+    const enemy = state.otherPlayers.get('enemy')!; enemy.team = team === 'blue' ? 'red' : 'blue';
+    enemy.pos.set(30 * sign, 0, 0);
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = id;
+    state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.stylesEnabled = false;
+    updateGrifballTeamPlanForState(state, .2, goal);
+    const assignment = state.aiMatchContext.grifballTeamPlan.assignments.get(id)!;
+    assert.equal(assignment.runner!.selected.action, 'advance');
+    const destination = { ...assignment.destination };
+    enemy.pos.set(5 * sign, 0, .5 * sign);
+    const result = move(state, id, {}, [enemy.pos]);
+    assert.ok(result.frame.vel.x * sign > 0, 'keep making forward progress');
+    assert.ok(result.frame.vel.z * sign < -.01, 'steer away from the newly observed blocker');
+    assert.ok(result.frame.vel.length() <= 7.54 + 1e-9, 'avoidance must not add speed');
+    assert.deepEqual(assignment.destination, destination, 'local steering does not replace the shared route');
+    assert.equal(result.attacks, 0);
+  });
+
+for (const boundary of ['behind', 'distant', 'wall-separated', 'blocked-step', 'routed', 'finish'] as const)
+  test(`planned local avoidance respects ${boundary}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!, enemy = state.otherPlayers.get('enemy')!;
+    runner.pos.set(boundary === 'finish' ? 46 : 0, 0, 0); runner.activeWeapon = 'ball';
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = runner.id;
+    state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.stylesEnabled = false;
+    updateGrifballTeamPlanForState(state, .2, goal);
+    const assignment = state.aiMatchContext.grifballTeamPlan.assignments.get(runner.id)!;
+    if (boundary === 'routed') assignment.space!.route.status = 'routed';
+    if (boundary === 'finish') assert.equal(assignment.runner!.selected.action, 'finish');
+    enemy.pos.set(boundary === 'behind' ? -5 : boundary === 'distant' ? 20 : 5, 0, .5);
+    if (boundary === 'finish') enemy.pos.set(47, 0, .5);
+    if (boundary === 'wall-separated') assignment.geometry!.blockers.push({ kind: 'circle', x: 2, z: .2, radius: .08 });
+    if (boundary === 'blocked-step') assignment.geometry!.blockers.push({ kind: 'circle', x: .15, z: -.15, radius: .1 });
+    const start = runner.pos.clone(), result = move(state, runner.id, {}, [enemy.pos]);
+    assert.ok(result.frame.vel.x > 0, 'retain the clear forward route');
+    assert.equal(result.frame.vel.z, 0, 'do not steer toward an irrelevant threat or through a wall');
+    assert.ok(isSpaceSegmentOpen(assignment.geometry!, start, result.frame.pos));
+  });
+
 test('runner escape filtering also observes a local human pursuer without commanding them', () => {
   const state = setup(), runner = state.otherPlayers.get('a')!;
   runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';

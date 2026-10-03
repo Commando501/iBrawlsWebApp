@@ -28,8 +28,11 @@ function comboFixture(preserveReadyStrike: boolean) {
   return { f, target, frame, options, applyTacticalWeapon, counts: () => ({ swaps, attacks }) };
 }
 
-for (const mirrored of [false, true]) test(`goal-side safety strikes before punch range and survives the carrier: ${mirrored}`, async t => {
+for (const mirrored of [false, true]) for (const evasive of [false, true]) test(`goal-side safety strikes before punch range and survives the carrier: ${mirrored}/evasive=${evasive}`, async t => {
   const manifest = createSuiteManifest('quick');
+  // Keep a straight-route control alongside the default evasive runner. Avoidance
+  // may escape the follow-up, but the first strike and surviving safety are required.
+  if (!evasive) Object.assign(manifest.candidate.defaults, { runnerRiskWeight: 0, stylesEnabled: false });
   manifest.cases = [{ id: 'safety-counter', mode: 'match', scenario: null, mapId: 'championship_stadium',
     roster: 'scripted-4v4', difficulty: 'normal', seeds: [102], opponents: ['balanced'], mirrored: true,
     fixedHz: 60, simulationSeconds: 10, watchdogSeconds: 60 }];
@@ -56,7 +59,8 @@ for (const mirrored of [false, true]) test(`goal-side safety strikes before punc
     }
     assert.ok(firstStrike > 0 && firstStrike <= 3, 'the goal-side safety must take the existing opening');
     assert.ok(firstHitDistance > 3.3, 'first hit lands before the carrier reaches its punch envelope');
-    assert.equal(carrier.hp, 0, 'the approaching carrier must be stopped');
+    assert.ok(carrier.hp < 2, 'the safety must damage the approaching carrier');
+    if (!evasive) assert.equal(carrier.hp, 0, 'the straight-running carrier must be stopped');
     assert.equal(defender.hp, 1, 'early defense avoids the previous fatal return punch');
     t.diagnostic(JSON.stringify({ mirrored, firstStrike, firstHitDistance, elapsed }));
   } finally { host.runtime.dispose(); }
@@ -80,8 +84,9 @@ test('a ready interception reaches the existing strike owner before a new weapon
   }
 });
 
-for (const mirrored of [false, true]) test(`supported safety holds its cut as the runner closes: ${mirrored}`, async t => {
+for (const mirrored of [false, true]) for (const evasive of [false, true]) test(`supported safety holds its cut as the runner closes: ${mirrored}/evasive=${evasive}`, async t => {
   const manifest = createSuiteManifest('quick');
+  if (!evasive) Object.assign(manifest.candidate.defaults, { runnerRiskWeight: 0, stylesEnabled: false });
   manifest.cases = [{ id: 'supported-safety-counter', mode: 'match', scenario: null, mapId: 'championship_stadium',
     roster: 'scripted-4v4', difficulty: 'normal', seeds: [102], opponents: ['balanced'], mirrored: true,
     fixedHz: 60, simulationSeconds: 10, watchdogSeconds: 60 }];
@@ -112,7 +117,8 @@ for (const mirrored of [false, true]) test(`supported safety holds its cut as th
     }
     assert.ok(holds > 0, 'a supported defender must use the visible cut');
     assert.ok(pressure > 0, 'holding the cut must retain separate pressure');
-    assert.equal(carrier.hp, 0, 'the defensive pair stops the approaching runner');
+    assert.ok(carrier.hp < 2, 'the defensive pair damages the approaching runner');
+    if (!evasive) assert.equal(carrier.hp, 0, 'the defensive pair stops the straight-running carrier');
     assert.ok(defender.hp > 0, 'the covering defender survives');
     t.diagnostic(JSON.stringify({ mirrored, holds, pressure, elapsed, firstHoldX }));
   } finally { host.runtime.dispose(); }

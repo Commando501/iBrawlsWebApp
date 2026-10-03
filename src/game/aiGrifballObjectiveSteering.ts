@@ -98,9 +98,14 @@ export function resolveGrifballCarrierDecision({ assignment, pos, players, threa
   if (!finishBeforePunch && closest && distance <= 2.2 && canStartWeaponAction && weaponState === 'ready') return stopped('punch', closest);
   if (assignment?.pass?.selected && canStartWeaponAction && weaponState === 'ready') return stopped('pass', assignment.pass.selected.direction);
   if (assignment?.runner?.selected.action === 'wait') return stopped('wait');
-  const heading = assignment?.runner && waypoint
+  // Refresh local avoidance between team-plan updates without replacing a routed
+  // waypoint, an intentional zero-risk route, or an immediately reachable finish.
+  const avoidOnDirectRoute = assignment?.runner && waypoint && space?.route.status === 'direct' &&
+    (assignment.tuning?.runnerRiskWeight ?? 1) > 0 && !finishBeforePunch;
+  const heading = assignment?.runner && waypoint && !avoidOnDirectRoute
     ? { x: (waypoint.x - pos.x) / Math.max(.001, routeDistance), z: (waypoint.z - pos.z) / Math.max(.001, routeDistance) }
-    : getGrifballRunnerSteering(pos, waypoint ?? goal, avoidanceEnemies, 8);
+    : getGrifballRunnerSteering(pos, waypoint ?? goal,
+      avoidOnDirectRoute ? avoidanceEnemies.filter(enemy => isSpaceSegmentOpen(geometry!, pos, enemy)) : avoidanceEnemies, 8);
   const moveSpeed = waypoint ? Math.min(speed, Math.hypot(waypoint.x - pos.x, waypoint.z - pos.z) / Math.max(dt, .001)) : speed;
   let movement: GrifballGroundMovement = { heading, velocity: { x: heading.x * moveSpeed, z: heading.z * moveSpeed } };
   const open = () => !geometry || isSpaceSegmentOpen(geometry, pos,
