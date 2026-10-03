@@ -4000,3 +4000,25 @@ Fresh production evidence at output/m7-runner-avoidance-cli-lab passes 159/159 f
 The saved full-matrix inventory independently verifies all 480 comparison artifact hashes and identifies all 17 historical caps as baseline Canyon matches. A current-source replay of the first such case (seed 201, balanced, original orientation) finishes 2–1 at tick 28,794 within the unchanged limit, while recording 26 one-second stationary witnesses away from destinations: 25 independent chasers and one carrier. These fallback assignments lack routed geometry. Evidence: output/m7-canyon-cap-inventory.json and output/m7-canyon-stall-diagnosis.json. This is a development diagnosis, not proof that all historical caps are resolved or replacement evidence for the original matrix.
 
 This closes the fixed-cohort evaluation slice. Four automated acceptance packages remain. The next slice uses fixed development cases with one tactical module disabled at a time to identify which modules contribute to the deficit; disabling modules is a diagnostic intervention, not the final implementation or an acceptance workaround. Reserved held-out inputs remain unused, and human gameplay review remains deferred.
+
+## 2026-10-03 — Fixed development module comparison
+
+The diagnostic at output/m7-module-diagnosis runs all 72 declared cells from 12:03:56 to 12:26:56 UTC: nine configurations, the first four previously used development seeds (201–204), both orientations, Stadium/patient, normal 4v4 play and unchanged goal target two/900-second limits. Source is bdd3e70a8ce9cf969fe7a6bdf1240d53cc38cc2d, fingerprint 04e3cbead8a91fcf0e503201f31182bf0590f7ba69fc387f6e1e904dab07c936. Each variant changes one declared flag. All cells execute fresh; no result is substituted or extended. Only the explicitly selected candidate jobs from each diagnostic configuration plan are scheduled; no acceptance report is produced from these subsets.
+
+All **72/72 matches finish**, with zero caps or failed correctness checks. The audit reconstructs each plan, checks the one-flag interventions, selected jobs, source and artifact hashes, and verifies that all **16 full-system/independent reference results** exactly reproduce the prior cohort's endpoints, metrics, behavior, traces and decisions. Evidence: experiment.json, intent.json, audit.json and output/m7-module-diagnosis-audit.log.
+
+| Diagnostic configuration | Wins / 8 | Mean goal margin | Matched change versus full |
+| --- | --- | --- | --- |
+| Full system | 4 | +0.500 | 0 |
+| Independent reference | 7 | +1.250 | +0.750 |
+| Legacy spacing parameters | 5 | +0.500 | 0 |
+| Space planning disabled | 7 | +1.375 | +0.875 |
+| Runner planning disabled | 7 | +1.125 | +0.625 |
+| Tanking disabled | 3 | -0.250 | -0.750 |
+| Defense disabled | 1 | -1.250 | -1.750 |
+| Passing disabled | 4 | +0.125 | -0.375 |
+| Styles disabled | 8 | +1.625 | +1.125 |
+
+These are exploratory matched contrasts on four development seeds, not independent eight-seed estimates, significance claims or general quality acceptance. Disabling space planning also gates dependent runner/tanking/defense/passing behavior; disabling spacing restores legacy spacing rather than removing it. Disabling styles removes both adaptation and keyed tactical variation. The exact dependency interpretation is retained in flag-interpretation.json and embedded in the audit. No shipped default or module implementation changed.
+
+Styles provide the strongest next investigation lead, with runner planning secondary. Styles-disabled scoring conversion actually falls from 0.2227 to 0.1662 while observed goal prevention rises from 0.9457 to 0.9761, so the win contrast alone does not establish a runner-scoring mechanism. The next diagnostic separates adaptation and variation while retaining style support, then inspects concrete differing decisions before choosing a repair. Tanking and defense remain enabled. Four automated acceptance packages and subsequent human gameplay review remain open; reserved held-out inputs are untouched.
