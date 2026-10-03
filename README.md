@@ -491,6 +491,8 @@ Reports include trial termination, score/tick, bounded traces/failure diagnostic
 
 IndexedDB retains the newest **12 reports**, bounded to **32 MiB total / 8 MiB each**, with at most **1,024 trace frames per report / 64 per trial**. Old reports are evicted as needed; export reports to retain them. The Lab supports at most 512 jobs per plan; larger matrices and complete artifacts belong in the CLI. Checkpoints are awaited before the next job; a storage error stops the queue and leaves the in-memory report available for export. `npm run test:grifball-lab` exercises the visible controls, actual arenas, persistence and narrow layout against the app running on port 3000. Set `GRIFBALL_LAB_TEST_ORIGIN` to target an isolated production server and `GRIFBALL_LAB_TEST_OUT` to retain each run's screenshots and reports in a distinct directory. The defaults remain port 3000 and `output/grifball-validation/vs4-lab-ui`.
 
+For fresh CLI/Lab agreement, set `GRIFBALL_CLI_LAB_REPORT` to a completed CLI run's `lab-import.json`, set `GRIFBALL_LAB_TEST_ORIGIN` to the matching production app, then run `npm run test:grifball-cli-lab`. This explicit integration check requires current-source evidence, runs the same manifest through visible Lab controls, compares deterministic results, and verifies that CLI provenance survives export without certifying a new local run. Use a small manifest within the browser test's five-minute limit; simulation caps retain their inconclusive verdict.
+
 ### Keyboard + Mouse Controls
 - **Move**: `W`, `A`, `S`, `D` (or Arrows)
 - **Jump**: `Spacebar` (Launch hammer jump if pressed immediately after Slam)
