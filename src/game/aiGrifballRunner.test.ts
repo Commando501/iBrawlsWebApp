@@ -126,6 +126,26 @@ for (const team of ['blue', 'red'] as const) for (const reverse of [false, true]
     }
   });
 
+for (const team of ['blue', 'red'] as const) for (const reverse of [false, true])
+  for (const timing of ['late-support', 'timely-support', 'delayed-threat'] as const)
+    test(`runner coverage arrives before predicted contact: ${team}/${reverse}/${timing}`, () => {
+      const s = scene(), sign = team === 'blue' ? 1 : -1, enemy = team === 'blue' ? 'red' : 'blue';
+      const carrier = p('runner', team, 0, 0), threat = p('threat', enemy, 6 * sign, 0);
+      const escort = p('escort', team, 6 * sign, 5);
+      Object.assign(threat.space!, { phase: 'swing_down', attackIn: timing === 'delayed-threat' ? .5 : .13333333333333333 });
+      escort.space!.attackIn = timing === 'timely-support' ? .1 : .4;
+      s.players = [carrier, threat, escort];
+      if (reverse) s.players.reverse();
+      const tuning = defaultGrifballTactics().defaults;
+      const plan = planGrifballRunner(s, carrier, tuning, tickRunnerMemory(undefined, carrier, s.goals[enemy]!, 0), createSnapshotRouters(s));
+      const advance = plan.candidates.find(c => c.action === 'advance')!;
+      const firstArrival = advance.route.length * .25 / carrier.space!.speed;
+      assert.ok(firstArrival < .2 && firstArrival + .25 > .4, 'fixture exposes the old grace-period credit');
+      if (timing === 'late-support') assert.equal(advance.risk, 1, 'support after contact cannot reduce a fully exposed route');
+      else assert.ok(advance.risk > 0 && advance.risk < 1,
+        'timely pressure reduces risk without guaranteeing safety, including a threat that arrives after the runner');
+    });
+
 test('clear lane advances, reachable goal finishes, and escorts advance after breakthrough', () => {
   const s = scene(), state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2);
   assert.equal(state.runnerPlans.blue.selected.action, 'advance');

@@ -83,8 +83,11 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
       for (const enemy of enemies) {
         const enemyETA = estimateSpaceAttackTime(enemy, point, routers.get(enemy.id)!(point, true).length);
         const exposure = Math.max(0, Math.min(1, (arrival + tuning.runnerDangerMargin - enemyETA) / Math.max(0.25, tuning.runnerDangerMargin)));
-        // Each threat needs its own coverage; an escort is never assumed to win.
-        risk = Math.max(risk, exposure * (threatSupport.get(enemy.id)! <= arrival + 0.25 ? 0.55 : 1));
+        // Contact requires both the runner and the threat to reach this point.
+        // Support arriving after that contact cannot protect the runner's approach.
+        // Timely pressure only discounts this threat; it never guarantees a win.
+        const contact = Math.max(arrival, enemyETA);
+        risk = Math.max(risk, exposure * (threatSupport.get(enemy.id)! <= contact ? 0.55 : 1));
       }
     }
     const score = route.length > tuning.runnerLookahead * 1.75 ? -Infinity : progress * tuning.runnerProgressWeight - risk * tuning.runnerRiskWeight - route.length * 0.08;
