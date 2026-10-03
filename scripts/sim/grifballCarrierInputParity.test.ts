@@ -81,17 +81,20 @@ for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true]) for (
   });
 
 for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true])
-  test(`planned local blocker avoidance agrees across hosts ${id}/mirror=${mirror}`, () => {
+  for (const location of ['front', 'flank', 'rear', 'far-flank'] as const)
+  test(`planned local blocker avoidance agrees across hosts ${id}/mirror=${mirror}/${location}`, () => {
     const f = fixture(id, mirror, false, false), { sim, state, self, bot, plan, scriptedBots } = f;
     state.grifballTactics.defaults.stylesEnabled = false;
     updateGrifballTeamPlanForState(state, .2, f.goal, f.map);
     updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics: state.grifballTactics }), .2);
     const sign = mirror ? -1 : 1;
-    f.other.pos = { x: self.pos.x + 5 * sign, y: 0, z: .5 * sign };
+    f.other.pos = { x: self.pos.x + (location === 'front' ? 5 : -1) * sign, y: 0,
+      z: (location === 'front' ? .5 : location === 'flank' ? 2.5 : location === 'rear' ? 0 : 6) * sign };
     f.target.pos.set(f.other.pos.x, 0, f.other.pos.z);
     const carrier = resolveSimGrifballCarrierInput(sim, plan, id, scriptedBots, false)!;
     assert.equal(carrier.decision.kind, 'move');
-    assert.ok(carrier.decision.velocity.z * sign < -.01, 'simulation must avoid the newly observed blocker');
+    if (location === 'front' || location === 'flank') assert.ok(carrier.decision.velocity.z * sign < -.01, 'simulation must open clearance from the nearby threat');
+    else near(carrier.decision.velocity.z, 0, 'straight pursuit or distant flank keeps the direct route');
     const frame = { pos: bot.pos, vel: bot.vel, yaw: bot.yaw, aiState: bot.aiState, timer: 0,
       dashRemaining: 0, slideActive: false, weaponState: 'ready', pickupRequested: false };
     assert.ok(resolvePrimaryGrifballAIObjectiveMovementForCombatant({ state, botId: id, self: bot, frame,

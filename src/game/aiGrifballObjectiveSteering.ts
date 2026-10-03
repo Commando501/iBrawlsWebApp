@@ -105,7 +105,8 @@ export function resolveGrifballCarrierDecision({ assignment, pos, players, threa
   const heading = assignment?.runner && waypoint && !avoidOnDirectRoute
     ? { x: (waypoint.x - pos.x) / Math.max(.001, routeDistance), z: (waypoint.z - pos.z) / Math.max(.001, routeDistance) }
     : getGrifballRunnerSteering(pos, waypoint ?? goal,
-      avoidOnDirectRoute ? avoidanceEnemies.filter(enemy => isSpaceSegmentOpen(geometry!, pos, enemy)) : avoidanceEnemies, 8);
+      avoidOnDirectRoute ? avoidanceEnemies.filter(enemy => isSpaceSegmentOpen(geometry!, pos, enemy)) : avoidanceEnemies, 8,
+      avoidOnDirectRoute ? settings.attackRadius : 0);
   const moveSpeed = waypoint ? Math.min(speed, Math.hypot(waypoint.x - pos.x, waypoint.z - pos.z) / Math.max(dt, .001)) : speed;
   let movement: GrifballGroundMovement = { heading, velocity: { x: heading.x * moveSpeed, z: heading.z * moveSpeed } };
   const open = () => !geometry || isSpaceSegmentOpen(geometry, pos,
