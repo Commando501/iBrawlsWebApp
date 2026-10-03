@@ -102,3 +102,55 @@ test('invalid launch data cannot produce a direction', () => {
     assert.equal(selectGrifballRunnerEvasion({ ...f.input, duration: value }), null);
   }
 });
+
+for (const sign of [1, -1]) {
+  test(`a clear escape prefers goal progress over surplus retreat clearance (${sign})`, () => {
+    const f = fixture(sign);
+    f.hammer.pos = f.point(-2, -2); f.hammer.vel = f.point(0, 0);
+    f.hammer.space!.attackIn = .4;
+    // At impact, forward travel leaves sqrt(68)-7.7 metres of clearance;
+    // the diagonal leaves more, but makes less goal progress.
+    const before = structuredClone(f.input), result = selectGrifballRunnerEvasion(f.input);
+    assert.ok(result && Math.abs(result.x - sign) < 1e-12 && Math.abs(result.z) < 1e-12);
+    assert.deepEqual(f.input, before);
+    // Turning during windup is allowed: current facing must not turn the
+    // conservative radial threat into a guaranteed fixed impact direction.
+    f.hammer.heading = f.point(-1, 0);
+    assert.deepEqual(selectGrifballRunnerEvasion(f.input), result);
+    f.hammer.heading = f.point(1, 0);
+    assert.deepEqual(selectGrifballRunnerEvasion(f.input), result);
+  });
+
+  test(`goal progress cannot outrank a clear alternative at the hit boundary (${sign})`, () => {
+    const f = fixture(sign);
+    f.hammer.pos = f.point(-2, -2); f.hammer.vel = f.point(0, 0);
+    f.hammer.space!.attackIn = .4; f.hammer.space!.reach = Math.sqrt(68);
+    const result = selectGrifballRunnerEvasion(f.input);
+    assert.ok(result && Math.abs(result.x - sign * Math.SQRT1_2) < 1e-12 && Math.abs(result.z - sign * Math.SQRT1_2) < 1e-12);
+  });
+
+  test(`when no escape clears the attack, maximize clearance before progress (${sign})`, () => {
+    const f = fixture(sign);
+    f.hammer.pos = f.point(-2, -2); f.hammer.vel = f.point(0, 0);
+    f.hammer.space!.attackIn = .4; f.hammer.space!.reach = 10;
+    const result = selectGrifballRunnerEvasion(f.input);
+    assert.ok(result && Math.abs(result.x - sign * Math.SQRT1_2) < 1e-12 && Math.abs(result.z - sign * Math.SQRT1_2) < 1e-12);
+  });
+}
+
+test('a goalward escape still cannot introduce exposure to a second enemy', () => {
+  const f = fixture();
+  f.hammer.pos = f.point(-2, -2); f.hammer.vel = f.point(0, 0); f.hammer.space!.attackIn = .4;
+  f.snapshot.players.push({ id: 'crossfire', team: 'red', pos: { x: 6, z: 0 }, vel: { x: 0, z: 0 }, scripted: true,
+    space: { ...observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'sword'), phase: 'lunging', attackIn: 0, reach: 2 } });
+  const result = selectGrifballRunnerEvasion(f.input);
+  assert.ok(result && result.x > 0 && result.z > .5);
+});
+
+test('a clear goalward endpoint cannot bypass a blocked dash path', () => {
+  const f = fixture();
+  f.hammer.pos = f.point(-2, -2); f.hammer.vel = f.point(0, 0); f.hammer.space!.attackIn = .4;
+  f.snapshot.geometry!.blockers.push({ kind: 'box', x: 3, z: 0, hx: .01, hz: .25 });
+  const result = selectGrifballRunnerEvasion(f.input);
+  assert.ok(result && result.x > 0 && result.z > .5);
+});

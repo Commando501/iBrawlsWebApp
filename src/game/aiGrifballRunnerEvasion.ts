@@ -57,8 +57,16 @@ export function selectGrifballRunnerEvasion(input: {
     if (!isSpaceSegmentOpen(s.geometry, origin, candidate.end) ||
       candidate.minimum <= normal.minimum + tuning.positionHysteresis ||
       candidate.clearances.some((clearance, index) => clearance + 1e-9 < Math.min(0, normal.clearances[index]))) continue;
-    if (!best || candidate.minimum > best.minimum + 1e-9 ||
-      Math.abs(candidate.minimum - best.minimum) <= 1e-9 && candidate.goalDistance < best.goalDistance - 1e-9)
+    // Once a route clears every observed threat, spend the escape on the
+    // objective instead of buying unlimited clearance by retreating. If all
+    // routes remain exposed, maximize clearance as before. This is predicted
+    // exposure, not a guarantee against enemy steering or subsequent attacks.
+    const clear = candidate.minimum > 0, bestClear = !!best && best.minimum > 0;
+    if (!best || clear && !bestClear || clear === bestClear && (clear
+      ? candidate.goalDistance < best.goalDistance - 1e-9 ||
+        Math.abs(candidate.goalDistance - best.goalDistance) <= 1e-9 && candidate.minimum > best.minimum + 1e-9
+      : candidate.minimum > best.minimum + 1e-9 ||
+        Math.abs(candidate.minimum - best.minimum) <= 1e-9 && candidate.goalDistance < best.goalDistance - 1e-9))
       best = { ...candidate, direction };
   }
   return best?.direction ?? null;
