@@ -7,6 +7,33 @@ const blockedSpec = { opening: 'blocked-lane', team: 'blue', reverse: false, mai
 const closingSpec = { opening: 'closing-charge', seed: 43, team: 'blue', reverse: false, main: false } as const;
 const blocked = runPassContestTrace(blockedSpec);
 const closing = runPassMatchTrace(closingSpec);
+const closingContestSpec = { opening: 'closing-charge', team: 'blue', reverse: false, main: false } as const;
+const closingContest = runPassContestTrace(closingContestSpec);
+
+test('closing contest cancels its unsafe charge and carries to the scoring position', () => {
+  assert.equal(closingContest.failureCount, 0, JSON.stringify(closingContest.failures));
+  assert.equal(closingContest.passes.length, 0);
+  assert.ok(closingContest.cancellations.some(c => c.carrierId === 'carrier' && c.elapsed > 0));
+  assert.ok(closingContest.frames.some(f => f.ball.holderId === 'carrier' && f.actors.some(a =>
+    a.id === 'carrier' && a.hp > 0 && Math.hypot(a.pos[0] - 47, a.pos[2]) < 1)));
+});
+
+test('short contest rejects fabricated cancellation or missing safe carrying progress', () => {
+  // Mutated histories test the validator; they are not simulated match evidence.
+  for (const mutation of ['missing', 'frame', 'elapsed', 'receiver', 'uncleared', 'release', 'stalled', 'lost-possession']) {
+    const trace = structuredClone(closingContest), c = trace.cancellations[0];
+    if (mutation === 'missing') trace.cancellations = [];
+    if (mutation === 'frame') c.tick = 1;
+    if (mutation === 'elapsed') c.elapsed += 1 / 60;
+    if (mutation === 'receiver') c.receiverId = 'cover';
+    if (mutation === 'uncleared') trace.frames[c.tick - 1].pass!.charge = { ...trace.frames[c.tick - 2].pass!.charge! };
+    if (mutation === 'release') trace.passes.push({ tick:c.tick, carrierId:c.carrierId, receiverId:c.receiverId, speed:17.5, chargeSeconds:c.elapsed });
+    if (mutation === 'stalled') for (const f of trace.frames) f.actors.find(a => a.id === 'carrier')!.pos = [-20,0,0];
+    if (mutation === 'lost-possession') trace.frames[c.tick].ball.holderId = 'escort';
+    validatePassContestTrace(trace, closingContestSpec);
+    assert.ok(trace.failureCount > 0, mutation);
+  }
+});
 
 test('unsafe opening can become a safe autonomous pass after its blocker dies', () => {
   assert.equal(blocked.failureCount, 0, JSON.stringify(blocked.failures));

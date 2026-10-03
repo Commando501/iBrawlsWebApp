@@ -1,7 +1,7 @@
 import type { CustomMapData } from '../../src/types';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { validateCompleteMatchTrace } from './grifballMatchDecisionIntegration';
-import { PASS_CONTEST_OPENINGS, validatePassSelections, type PassContestCase } from './grifballPassContest';
+import { PASS_CONTEST_OPENINGS, validatePassSelections, validatePassCancellation, type PassContestCase } from './grifballPassContest';
 
 export interface PassMatchCase extends Omit<PassContestCase, 'opening'> {
   opening: 'clear' | 'closing-charge' | 'disabled';
@@ -38,18 +38,7 @@ export function validatePassMatchTrace(trace: Omit<ReturnType<typeof runOpposedD
     check('initial pass reaches teammate', trace.pickups.find(p => p.tick > (first?.tick ?? Infinity))?.id, 'escort');
     check('clear opening release timing', first?.tick, 36);
   } else {
-    // Withholding after a cancellation is valid when no new safe opportunity
-    // appears. A later pass is not necessary to prove the earlier cancellation.
-    const cancellation = trace.cancellations.find(c => c.carrierId === carrierId && c.elapsed > 0 && c.tick < (first?.tick ?? Infinity));
-    check('closing pressure cancels a real charge', !!cancellation, true);
-    if (cancellation) {
-      const before = trace.frames[cancellation.tick - 2]?.pass?.charge;
-      const after = trace.frames[cancellation.tick - 1]?.pass?.charge;
-      check('cancelled charge was held by the original carrier', before?.carrierId, carrierId);
-      check('cancellation records elapsed charge', before?.elapsed, cancellation.elapsed);
-      check('cancellation clears charge', after, null);
-      check('cancellation does not release', trace.passes.some(p => p.tick === cancellation.tick && p.carrierId === carrierId), false);
-    }
+    validatePassCancellation(trace, carrierId);
   }
   const end = trace.frames.at(-1)!;
   check('hostile targeting throughout match', trace.targetLookups.every(t => end.actors.find(a => a.id === t.id)!.team !== end.actors.find(a => a.id === t.target)!.team), true);

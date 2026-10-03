@@ -52,6 +52,18 @@ export function validatePassContestTrace(trace: Omit<ReturnType<typeof runOppose
     check('unsafe opening does not release', trace.passes.some(p => p.tick <= opening.tick && p.carrierId === carrierId), false);
     // The defender can move or die. Later safe releases must remain legal;
     // neither a carrier death nor an opposing pickup is required for pass safety.
+  } else if (spec.opening === 'closing-charge') {
+    const cancellation = validatePassCancellation(trace, carrierId);
+    const sign = spec.team === 'blue' ? 1 : -1;
+    // This opening leaves a viable carrying route after the pass becomes unsafe.
+    // Requiring a later throw would penalize the runner for taking that route.
+    const arrival = trace.frames.find(f => cancellation && f.tick > cancellation.tick &&
+      f.ball.holderId === carrierId && f.actors.some(a => a.id === carrierId && a.hp > 0 &&
+        Math.hypot(a.pos[0] - 47 * sign, a.pos[2]) < 1));
+    check('cancelled pass becomes a living carry to the scoring position', !!arrival, true);
+    if (cancellation && arrival) check('carrying route retains possession after cancellation',
+      trace.frames.filter(f => f.tick >= cancellation.tick && f.tick <= arrival.tick)
+        .every(f => f.ball.holderId === carrierId), true);
   } else {
     const first = trace.passes[0];
     check('original carrier releases autonomously', first?.carrierId, carrierId);
@@ -63,15 +75,36 @@ export function validatePassContestTrace(trace: Omit<ReturnType<typeof runOppose
       check('unpressured settled reception timing', reception?.tick, 131);
     } else {
       check('nearby threat dies before release', trace.deaths.some(d => d.id === 'defender' && d.tick < (first?.tick ?? 0)), true);
-      if (spec.opening === 'closing-charge') {
-        check('moving pressure cancels a real charge', trace.cancellations.some(c => c.carrierId === carrierId && c.elapsed > 0 && c.tick < (first?.tick ?? 0)), true);
-      } else check('immediate pressure prevents opening charge', trace.frames[0].pass?.charge, null);
+      check('immediate pressure prevents opening charge', trace.frames[0].pass?.charge, null);
     }
   }
   return { ...trace, name: spec.opening + '/' + trace.name, scenario: spec };
 }
 
 type PassTrace = Pick<ReturnType<typeof runOpposedDecisionTrace>, 'ticks' | 'frames' | 'passes' | 'failureCount' | 'failures'>;
+
+/** Cancellation is a completed safety decision even if carrying remains preferable. */
+export function validatePassCancellation(trace: PassTrace & Pick<ReturnType<typeof runOpposedDecisionTrace>, 'cancellations'>, carrierId: string) {
+  const check = (field: string, actual: unknown, expected: unknown) => {
+    if (actual !== expected) {
+      trace.failureCount++;
+      if (trace.failures.length < 64) trace.failures.push({ tick: trace.ticks, field, actual, expected });
+    }
+  };
+  const cancellation = trace.cancellations.find(c => c.carrierId === carrierId && c.elapsed > 0 && c.tick < (trace.passes[0]?.tick ?? Infinity));
+  check('closing pressure cancels a real charge', !!cancellation, true);
+  if (cancellation) {
+    const before = trace.frames[cancellation.tick - 2]?.pass?.charge;
+    const after = trace.frames[cancellation.tick - 1]?.pass?.charge;
+    check('cancellation uses an observed frame', Number.isInteger(cancellation.tick) && cancellation.tick > 1 && cancellation.tick <= trace.frames.length, true);
+    check('cancelled charge was held by the original carrier', before?.carrierId, carrierId);
+    check('cancellation retains its receiver', before?.receiverId, cancellation.receiverId);
+    check('cancellation records elapsed charge', before?.elapsed, cancellation.elapsed);
+    check('cancellation clears charge', after, null);
+    check('cancellation does not release', trace.passes.some(p => p.tick === cancellation.tick && p.carrierId === carrierId), false);
+  }
+  return cancellation;
+}
 
 /** Every charge/release needs the contemporaneous selection, not the opening's decision. */
 export function validatePassSelections<T extends PassTrace>(trace: T): T {

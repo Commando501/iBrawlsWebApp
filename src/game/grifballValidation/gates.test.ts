@@ -230,17 +230,17 @@ test('CLI gate evidence imports as a separate reference and survives re-export w
   const history = await importLabRun(JSON.stringify({ ...imported, cliPreviousFailures: 1 }));
   assert.equal(labRunReport(history).automatedVerdict, 'fail');
 });
-test('corrected player traces agree while incomplete coverage and legacy differences remain explicit', async () => {
+test('bounded scripted execution passes every required family while legacy differences remain explicit', async () => {
   const before = await fixture();
   const report = await runExecutionParity();
   if (process.env.GRIFBALL_VALIDATION_PARITY_OUT) writeParityEvidence(process.env.GRIFBALL_VALIDATION_PARITY_OUT, report);
-  assert.equal(report.check.verdict, 'inconclusive');
+  assert.equal(report.check.verdict, 'pass');
   assert.ok(report.check.summary.length <= 500, 'aggregate parity summary fits the CLI report contract');
   const persisted = aggregateSuiteReport(before, { planId: before.id, jobs: [], gates: [report.check] });
   assert.equal(persisted.gates.find(g => g.id === 'execution-parity')!.verdict, report.check.verdict);
   const details = report.details as any;
   assert.deepEqual(await fixture(), before, 'parity must not mutate cached authored maps used by later plans');
-  assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.ok(details.gaps.length);
+  assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.deepEqual(details.gaps,[]);
   assert.deepEqual(details.combatExecution, ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1']);
   assert.ok(details.traces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.rosterMatchTraces.length, 32);
@@ -292,7 +292,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mapContestTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 72000);
   assert.equal(new Set(details.mapContestTraces.map((t: any) => t.mapId)).size, 5);
   assert.equal(details.mapRoutingTraces.length, 40);
-  assert.ok(details.mapRoutingTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-map-routing' && t.goalTick > t.pickupTick && t.endTick > t.goalTick));
+  assert.ok(details.mapRoutingTraces.every((t: any) => t.failureCount === 0 && t.frameCount === 1440 && t.boundary === 'live-map-routing' && t.goalTick > t.pickupTick && t.endTick > t.goalTick));
   assert.equal(details.mapRoutingTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 57600);
   assert.equal(new Set(details.mapRoutingTraces.map((t: any) => t.mapId)).size, 5);
   assert.equal(details.mapMobilityTraces.length, 92);
@@ -300,7 +300,8 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mapMobilityTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 16560);
   assert.equal(new Set(details.mapMobilityTraces.map((t: any) => t.mapId)).size, 8);
   assert.equal(details.mobilityDecisionTraces.length, 32);
-  assert.ok(details.mobilityDecisionTraces.some((t: any) => t.landingReassignments.some((r: any) => r.landing === 1286 && r.reassignedAt === 1287 && r.carrierId === 'cover')));
+  assert.ok(details.mobilityDecisionTraces.every((t: any) => t.landingReassignments.every((r: any) =>
+    r.reassignedAt === r.landing + 1)), 'observed landing turnovers rebuild orders on the next tick');
   assert.deepEqual(details.dashWitnesses.missing, []);
   assert.ok(details.dashWitnesses.groundedSteps > 0 && details.dashWitnesses.cancellations > 0);
   assert.ok(details.mobilityDecisionTraces.every((t: any) => t.dash.failureCount === 0 && t.dashEvidence.frameCount > 0));
@@ -309,6 +310,9 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.landingTurnoverTraces.length, 8);
   assert.ok(details.landingTurnoverTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-landing-turnover' && t.frameCount === 12));
   assert.deepEqual(details.landingTurnoverWitnesses, {required:8,completed:8,errors:[]});
+  assert.ok(details.landingTurnoverTraces.every((t: any) => t.landingRecovery?.landing === 8 &&
+    t.landingRecovery.carrierId === 'carrier' && t.landingRecovery.reassignedAt === 9),
+    'all controlled landing cases retain verified carrier death and next-tick reassignment');
   assert.equal(details.matchDecisionTraces.length, 24);
   assert.ok(details.matchDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-match-decision-integration'));
   assert.equal(details.matchDecisionTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 181920);
@@ -322,7 +326,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.revivalDecisionTraces.every((t: any) => !t.activity.required ||
     t.activity.attacks.length > 0 || t.activity.defensiveDashes.length > 0));
   assert.ok(details.revivalDecisionTraces.some((t: any) => t.activity.required &&
-    t.activity.attacks.length === 0 && t.activity.defensiveDashes.length > 0));
+    t.activity.attacks.length > 0), 'required revival cases retain verified renewed attacks');
   assert.equal(details.revivalDecisionTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 14400);
   assert.equal(details.opposedDecisionTraces.length, 24);
   assert.ok(details.opposedDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-opposed-decision-integration'));
@@ -346,16 +350,16 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v83');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v84');
   assert.deepEqual(details.autonomousMobilityWitnesses, { required: 72, completed: 72, errors: [] });
   assert.equal(details.autonomousMobilityTraces.length, 72);
   assert.ok(details.autonomousMobilityTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 901 && t.restoredFrames === 900));
   assert.deepEqual(details.completeMatchWitnesses, { required: 20, completed: 20, errors: [] });
   assert.equal(details.completeMatchTraces.length, 20);
   assert.ok(details.completeMatchTraces.every((t: any) => t.termination === 'match-end' && t.differenceCount === 0), 'all required independent matches must finish without differences');
-  assert.equal(details.airborneViewTraces.length, 576);
+  assert.equal(details.airborneViewTraces.length, 3840);
   assert.ok(details.airborneViewTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 60));
-  assert.deepEqual(details.airborneViewWitnesses, {required:576,completed:576,errors:[]});
+  assert.deepEqual(details.airborneViewWitnesses, {required:3840,completed:3840,errors:[]});
   assert.equal(details.plannedMatchTraces.length, 8);
   assert.equal(details.plannedMatchTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 18144);
   assert.deepEqual(details.plannedMatchWitnesses, { required: 8, completed: 8, errors: [] });

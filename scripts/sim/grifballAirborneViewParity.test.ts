@@ -9,11 +9,11 @@ for (const [index,spec] of AIRBORNE_VIEW_CASES.entries()) test(`airborne view ${
   const trace = traces()[index];
   assert.equal(trace.differenceCount,0,JSON.stringify(trace.differences));
   assert.equal(trace.frames.length,60);
-  assert.equal(trace.firstLiveHit,trace.expectedHit ? (spec.attack === 'slam' ? 5 : 3) : 0);
+  assert.equal(trace.firstLiveHit,trace.expectedHit ? (spec.attack === 'slam' || spec.attack === 'punch' ? 5 : 3) : 0);
 });
 test('airborne view inventory retains range, pitch, stance and landing controls', () => {
-  const full = traces(), compact = compactExecutionTraces(full);
-  assert.deepEqual(airborneViewCoverage(compact),{required:576,completed:576,errors:[]});
+  const full = traces().filter(t=>t.scenario.targetMotion === 'static' && t.scenario.attack !== 'punch'), compact = compactExecutionTraces(traces());
+  assert.deepEqual(airborneViewCoverage(compact),{required:3840,completed:3840,errors:[]});
   assert.equal(full.filter(t=>t.expectedHit).length,248);
   assert.deepEqual(['slash','slam','swipe'].map(attack => full.filter(t=>t.scenario.attack === attack && t.expectedHit).length),[72,88,88]);
   for (const trace of full.filter(t=>t.scenario.flight === 'landing')) {
@@ -33,7 +33,7 @@ test('airborne view inventory retains range, pitch, stance and landing controls'
   for (const t of select('falling',false,'large',-.5)) assert.equal(t.expectedHit,true);
   for (const t of select('landing',true,'medium',-.5)) {assert.equal(t.expectedHit,true); assert.equal(t.frames[2].live.height,0);}
   for (const t of select('landing',true,'medium',.5)) assert.equal(t.expectedHit,false);
-  for (const mutation of ['missing','duplicate','failed','truncated','scenario','snapshots','impact','impact-clock','renamed']) {
+  for (const mutation of ['missing','duplicate','failed','truncated','scenario','snapshots','impact','impact-clock','renamed','motion']) {
     const changed = structuredClone(compact);
     if (mutation === 'missing') changed.shift();
     if (mutation === 'duplicate') changed.push(changed[0]);
@@ -43,13 +43,37 @@ test('airborne view inventory retains range, pitch, stance and landing controls'
     if (mutation === 'snapshots') changed[0].snapshotTicks = [2];
     if (mutation === 'impact') changed[0].firstLiveHit = 2;
     if (mutation === 'impact-clock') changed[0].impactTick = 5;
+    if (mutation === 'motion') changed[0].scenario.targetMotion = 'retreat';
     if (mutation === 'renamed') changed[0].name = 'substituted';
     assert.ok(airborneViewCoverage(changed).errors.length,mutation);
   }
 });
 test('airborne view repeats exactly across impact and stance-release snapshots', () => {
-  for (const attack of ['slash','slam','swipe']) for (const flight of ['rising','falling','landing']) {
+  for (const attack of ['slash','slam','swipe','punch']) for (const flight of ['rising','falling','landing']) {
     const original = traces().find(t=>t.scenario.attack === attack && t.scenario.flight === flight && t.expectedHit)!;
     assert.deepEqual(runAirborneViewTrace(original.scenario),original);
   }
+});
+
+// The matrix must retain meaningful outcomes, not simply exercise nominal inputs.
+test('expanded geometry covers moving targets, aim changes, both supported model sizes and airborne punches', () => {
+  const all = traces();
+  for (const attack of ['slash','slam','swipe','punch']) for (const targetMotion of ['static','approach','retreat','rise','fall'])
+    for (const model of ['medium','large']) {
+      const group = all.filter(t=>t.scenario.attack === attack && t.scenario.targetMotion === targetMotion && t.scenario.model === model);
+      assert.equal(group.length,96);
+      assert.ok(group.some(t=>t.expectedHit), `${attack}/${targetMotion}/${model} hit witness`);
+      assert.ok(group.some(t=>!t.expectedHit), `${attack}/${targetMotion}/${model} miss witness`);
+    }
+  for (const t of all.filter(t=>t.scenario.targetMotion !== 'static')) {
+    assert.ok(Math.abs(t.frames[1].live.pitch-t.frames[0].live.pitch-.2)<1e-9,'actual pointer input changes pitch');
+    assert.notEqual(t.frames[t.impactTick-1].live.targetHeight+t.frames[t.impactTick-1].live.targetZ,
+      t.frames[0].live.targetHeight+t.frames[0].live.targetZ,'target moves before impact');
+  }
+  // An approaching target crosses reach during the third frame. Real mixed
+  // ordering samples the target before that frame's roster movement.
+  const edge = all.filter(t=>t.scenario.attack==='slash' && t.scenario.targetMotion==='approach' &&
+    t.scenario.flight==='rising' && t.scenario.model==='large' && !t.scenario.crouching && t.scenario.pitch===-.5);
+  assert.equal(edge.length,8);
+  for (const t of edge) assert.equal(t.expectedHit,t.scenario.execution==='live-player-v1');
 });
