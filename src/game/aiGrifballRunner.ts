@@ -70,13 +70,13 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const threatSupport = new Map(enemies.map(enemy => [enemy.id, Math.min(Infinity, ...allies.map(ally =>
     estimateSpaceAttackTime(ally, enemy.pos, routers.get(ally.id)!(enemy.pos, true).length)))]));
   const forcedProgress = memory.stalledSeconds >= tuning.runnerProgressTimeout;
-  const evaluate = (action: RunnerAction, destination: FieldPoint): RunnerCandidate => {
+  const evaluate = (action: RunnerAction, destination: FieldPoint, stationarySeconds = 0): RunnerCandidate => {
     const route = router(destination), progress = goalDistance - fieldDistance(destination, goal);
     let risk = 0, supportETA = Infinity;
     if (route.status === 'blocked') return { action, destination, route, progress, risk: 1, supportETA, score: -Infinity };
     for (const fraction of [0.25, 0.6, 1]) {
       const point = pointAlongRunnerRoute(carrier.pos, route, route.length * fraction);
-      const arrival = route.length * fraction / speed;
+      const arrival = route.length * fraction / speed + stationarySeconds * fraction;
       let allyETA = Infinity;
       for (const ally of allies) allyETA = Math.min(allyETA, estimateSpaceAttackTime(ally, point, routers.get(ally.id)!(point, true).length));
       supportETA = Math.min(supportETA, allyETA);
@@ -86,7 +86,9 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
         // Contact requires both the runner and the threat to reach this point.
         // Support arriving after that contact cannot protect the runner's approach.
         // Timely pressure only discounts this threat; it never guarantees a win.
-        const contact = Math.max(arrival, enemyETA);
+        // A waiting carrier is already here when the threat arrives. Pressure
+        // after that first contact cannot cover the earlier part of its wait.
+        const contact = action === 'wait' ? enemyETA : Math.max(arrival, enemyETA);
         risk = Math.max(risk, exposure * (threatSupport.get(enemy.id)! <= contact ? 0.55 : 1));
       }
     }
@@ -106,11 +108,18 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
 
   const goalRoute = router(goal);
   const advance = goalRoute.status === 'blocked' ? offset(carrier.pos, goalHeading, Math.min(goalDistance, tuning.runnerLookahead)) : pointAlongRunnerRoute(carrier.pos, goalRoute, tuning.runnerLookahead);
+  const remainingWait = Math.max(0, tuning.runnerMaxWait - memory.waitUsed);
+  // Evaluate the time spent waiting for a ready escort, not only the instant
+  // the zero-length route starts. An unreachable rendezvous stays ineligible.
+  const rendezvousETA = Math.min(Infinity, ...allies.filter(p => p.scripted && fieldDistance(p.pos, carrier.pos) > 2).map(p => {
+    const routeLength = routers.get(p.id)!(carrier.pos, true).length;
+    return Math.max(routeLength / Math.max(0.1, p.space?.speed ?? 0.1), estimateSpaceAttackTime(p, carrier.pos, routeLength));
+  }));
   const candidates = [
     evaluate('advance', advance),
     evaluate('cut-left', offset(carrier.pos, goalHeading, Math.min(goalDistance, tuning.runnerLookahead * 0.7), tuning.runnerCutWidth)),
     evaluate('cut-right', offset(carrier.pos, goalHeading, Math.min(goalDistance, tuning.runnerLookahead * 0.7), -tuning.runnerCutWidth)),
-    evaluate('wait', carrier.pos),
+    evaluate('wait', carrier.pos, Math.min(remainingWait, rendezvousETA)),
     evaluate('retreat', offset(carrier.pos, goalHeading, -Math.min(3, tuning.runnerLookahead * 0.5))),
   ];
   if (goalDistance <= tuning.runnerFinishDistance) candidates.push(evaluate('finish', goal));
@@ -120,12 +129,7 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
     if (c.action === 'wait') {
       // A rendezvous needs an escort that can actually arrive and fight before
       // patience runs out; a nearby body behind a wall or in recovery cannot help.
-      const coverageComing = allies.some(p => {
-        if (!p.scripted || fieldDistance(p.pos, carrier.pos) <= 2) return false;
-        const routeLength = routers.get(p.id)!(carrier.pos, true).length;
-        const arrival = routeLength / Math.max(0.1, p.space?.speed ?? 0.1);
-        return Math.max(arrival, estimateSpaceAttackTime(p, carrier.pos, routeLength)) <= tuning.runnerMaxWait - memory.waitUsed;
-      });
+      const coverageComing = rendezvousETA <= remainingWait;
       // Waiting is a short coverage rendezvous, never the default when alone or fully covered.
       c.score = !forcedProgress && memory.waitUsed < tuning.runnerMaxWait && coverageComing && lowestRisk >= 0.75 && c.risk < 1 ? 1 - c.risk * tuning.runnerRiskWeight : -Infinity;
     }

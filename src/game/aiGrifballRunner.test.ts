@@ -67,7 +67,8 @@ for (const team of ['blue', 'red'] as const)
   for (const scenario of ['reachable', 'weapon-range-only', 'blocked', 'recovering', 'spent-budget', 'human', 'already-close'] as const)
     test(`runner waits for a reachable ready escort within remaining budget: ${team}/${scenario}`, () => {
       const s = scene(), sign = team === 'blue' ? 1 : -1;
-      const allyDistance = scenario === 'weapon-range-only' ? 12 : scenario === 'already-close' ? 1.5 : 9;
+      // The positive case must rendezvous before the enemy's 1.4s attack ETA.
+      const allyDistance = scenario === 'weapon-range-only' ? 12 : scenario === 'already-close' ? 1.5 : scenario === 'reachable' ? 3 : 9;
       s.players = [p('runner', team, 0, 0), p('ally', team, -allyDistance * sign, 0), p('enemy', team === 'blue' ? 'red' : 'blue', 6 * sign, 0)];
       if (scenario !== 'weapon-range-only') Object.assign(s.players[1].space!, { reach: 2, speed: 5, attackIn: .4 });
       Object.assign(s.players[2].space!, { reach: 3, speed: 3, attackIn: .4 });
@@ -94,6 +95,34 @@ function scene(): GrifballTacticalSnapshot {
     geometry: buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52, arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData, 52),
     players: [p('runner', 'blue', 0, 0), p('a', 'blue', 3, 4), p('b', 'blue', 1, -4), p('c', 'blue', -3, 0), p('enemy', 'red', 30, 0)] };
 }
+
+for (const team of ['blue', 'red'] as const) for (const reverse of [false, true])
+  for (const timing of ['early-rendezvous', 'late-rendezvous', 'late-pressure', 'timely-pressure', 'clear'] as const)
+    test(`wait risk covers the rendezvous interval and first threat contact: ${team}/${reverse}/${timing}`, () => {
+      const s = scene(), sign = team === 'blue' ? 1 : -1, enemy = team === 'blue' ? 'red' : 'blue';
+      const carrier = p('runner', team, 0, 0), threat = p('threat', enemy, 6 * sign, 0);
+      const escort = p('escort', team, (timing === 'early-rendezvous' ? -5 : -9) * sign, 0);
+      Object.assign(threat.space!, { reach: 3, speed: 3, attackIn: .4 });
+      Object.assign(escort.space!, { reach: 2, speed: 5, attackIn: .4 });
+      if (timing === 'late-pressure' || timing === 'timely-pressure') {
+        escort.pos = { x: 6 * sign, z: 6.5 * sign };
+        Object.assign(escort.space!, { reach: 7.7, attackIn: timing === 'late-pressure' ? 1.6 : .4 });
+      }
+      s.players = timing === 'clear' ? [carrier, escort] : [carrier, escort, threat];
+      if (reverse) s.players.reverse();
+      const tuning = { ...defaultGrifballTactics().defaults, runnerMaxWait: 2, runnerCutWidth: 1, runnerRiskWeight: 20 };
+      const plan = planGrifballRunner(s, carrier, tuning, tickRunnerMemory(undefined, carrier, s.goals[enemy]!, 0), createSnapshotRouters(s));
+      const wait = plan.candidates.find(c => c.action === 'wait')!;
+      // The threat reaches this stationary carrier in (6 - 3) / 3 + .4 = 1.4s.
+      // The early escort rendezvous takes 5 / 5 = 1s; the late one takes 1.8s.
+      const expected = timing === 'clear' ? 0 : timing === 'early-rendezvous' ? 1 / 3 : timing === 'timely-pressure' ? .55 : 1;
+      assert.ok(Math.abs(wait.risk - expected) < 1e-10, `${timing}: expected ${expected}, got ${wait.risk}`);
+      if (timing === 'early-rendezvous') assert.ok(Number.isFinite(wait.score), 'safe rendezvous remains eligible alongside a safer retreat');
+      if (timing === 'late-rendezvous' || timing === 'late-pressure') {
+        assert.equal(wait.score, -Infinity, 'an enemy can attack before coverage; remaining still is not a safe rendezvous');
+        assert.notEqual(plan.selected.action, 'wait');
+      }
+    });
 
 for (const team of ['blue', 'red'] as const) for (const reverse of [false, true])
   test(`runner coverage must reach the threatening opponent: ${team}/${reverse}`, () => {
@@ -175,7 +204,7 @@ test('cuts away from forward pressure and commits across small observation chang
 
 test('coverage wait and retreat are bounded by actual progress, even with an immobile carrier', () => {
   const s = scene(), state = createGrifballTeamPlanState();
-  s.players = [s.players[0], p('ally', 'blue', -9, 0), p('enemy', 'red', 6, 0)];
+  s.players = [s.players[0], p('ally', 'blue', -3, 0), p('enemy', 'red', 6, 0)];
   Object.assign(s.players[1].space!, { reach: 2, speed: 5, attackIn: 0.4 });
   Object.assign(s.players[2].space!, { reach: 3, speed: 3, attackIn: 0.4 });
   Object.assign(s.tactics!.defaults, { runnerMaxWait: 2, runnerCutWidth: 1, runnerRiskWeight: 20 });
