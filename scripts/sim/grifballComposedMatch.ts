@@ -71,6 +71,7 @@ export function createComposedMatchStepper(fixture: FrozenCase, job: ValidationJ
   };
   control.planner = { version: 'scripted-objective-planner-v1', scriptedBots: control.scriptedBots,
     plan: checkpoint.matchContext.grifballTeamPlan, tactics: job.config, passControl: 'scripted-pass-v1',
+    runnerEvasion: 'scripted-runner-evasion-v1',
     punchControl: { version: 'scripted-carrier-punch-v1', cooldowns: checkpoint.punchCooldowns } };
   return () => {
     const state = checkpoint.state;

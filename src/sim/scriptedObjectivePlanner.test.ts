@@ -42,6 +42,18 @@ for (const failure of ['version', 'legacy', 'combat', 'unknown', 'duplicate', 'r
     assert.deepEqual(f.state, before); assert.deepEqual(f.planner.plan, plan);
   });
 
+for (const failure of ['version', 'readiness', 'physical-owner'] as const)
+  test(`runner evasion rejects missing ${failure} before mutation`, () => {
+    const f = fixture();
+    f.planner.runnerEvasion = 'scripted-runner-evasion-v1';
+    f.planner.punchControl = { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { walker: 0 } };
+    if (failure === 'version') f.planner.runnerEvasion = 'unknown' as any;
+    if (failure === 'readiness') delete f.planner.punchControl;
+    const before = structuredClone(f.state), plan = structuredClone(f.planner.plan);
+    assert.throws(() => stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner }), /Runner evasion/);
+    assert.deepEqual(f.state, before); assert.deepEqual(f.planner.plan, plan);
+  });
+
 test('planner observes a newly revived actor before choosing its movement', () => {
   const f = fixture(); f.actor.alive = false; f.actor.hp = 0; f.actor.respawnTimer = SIM_DT / 2;
   const event = stepSimulation(f.state, {}, { settings: f.state.settings, scriptedPlanner: f.planner });

@@ -11,6 +11,9 @@ import { validateScriptedAIMobility } from './scriptedAIMobility';
 import { createRng } from './rng';
 import { setSimCarrier } from './grifball';
 import type { ScriptedObjectivePlanner } from './scriptedObjectivePlanner';
+import { defaultGrifballTactics } from '../game/grifballTacticsConfig';
+import { updateGrifballTeamPlan } from '../game/aiGrifballTeamPlan';
+import { createSimGrifballTacticalSnapshot } from './grifballTacticalAdapter';
 function fixture(id = 'ordinary') {
   const state = createMatch({ map: structuredClone(defaultGrifballMap()), seed: 33, combatExecution: 'live-mixed-v1', teamSizes: { blue: 2, red: 1 },
     settings: { aiDifficulty: 'normal', maxHP: 50, weaponReadyTime: 0 } });
@@ -208,3 +211,46 @@ for (const id of ['main_ai', 'ordinary']) test(`airborne carrier hands off and r
   assert.ok(f.actor.pos.y < 2, 'carrier gravity must advance');
   assert.equal(f.actor.weapon, 'ball'); assert.equal(f.state.match.ball.holderId, id);
 });
+
+for (const id of ['main_ai', 'ordinary']) for (const cooldownTicks of [0, .5, 1, 2])
+  test(`runner escape uses the committed physical owner ${id}/cooldown=${cooldownTicks}`, () => {
+    const f = fixture(id), dt = 1 / 60;
+    f.state.localPlayerIsObserver = true; f.player.alive = false; f.player.hp = 0;
+    f.actor.pos = { x: -8, y: 0, z: 0 }; f.target.pos = { x: 30, y: 0, z: 15 };
+    f.actor.dashCooldownTimer = cooldownTicks * dt;
+    f.state.match.ball.state = 'held'; f.state.match.ball.holderId = id;
+    setSimCarrier(f.actor, true, f.state.settings);
+    const tactics = defaultGrifballTactics();
+    updateGrifballTeamPlan(f.matchContext.grifballTeamPlan,
+      createSimGrifballTacticalSnapshot(f.state, { scriptedBots: f.owners, tactics }), .2);
+    f.target.pos = { x: -14, y: 0, z: 0 }; f.target.vel = { x: 5.2, y: 0, z: 0 };
+    f.target.weaponState = 'windup'; f.target.attackKind = 'strike'; f.target.weaponTimer = .02;
+    let run = { state: f.state, memories: f.memories, matchContext: f.matchContext, randomState: createRng(63).getState() };
+    let restored = structuredClone(run);
+    const advance = (r: typeof run) => {
+      const rng = createRng(0); rng.setState(r.randomState);
+      const own = { ...f, ...r, actor: r.state.combatants[0], target: r.state.combatants[1], player: r.state.combatants[2] };
+      const control = controlFor(own, rng.next);
+      control.planner = { ...plannerFor(control), tactics, runnerEvasion: 'scripted-runner-evasion-v1' };
+      const event = stepSimulation(r.state, {}, createSimGrifballActorStepOptions(r.state, control));
+      r.randomState = rng.getState(); return event;
+    };
+    const first = advance(run); assert.deepEqual(advance(restored), first); assert.deepEqual(restored, run);
+    const launched = cooldownTicks <= 1;
+    assert.equal(first.plannerFrame!.decisions.find(d => d.id === id)?.reason === 'runner-evasion', launched);
+    if (!launched) { close(f.actor.dashCooldownTimer, dt); return; }
+    assert.equal(first.actorDecisionFrame!.decisions.find(d => d.id === id)?.kind, 'handled');
+    close(f.actor.dashCooldownTimer, f.state.settings.dashCooldown);
+    close(f.actor.dashRemaining, f.state.settings.dashDuration - dt);
+    close(Math.hypot(f.actor.pos.x + 8, f.actor.pos.z), f.state.settings.dashDistance / f.state.settings.dashDuration * dt);
+    let launches = 1;
+    for (let tick = 2; tick <= Math.ceil(f.state.settings.dashDuration / dt) + 3; tick++) {
+      const event = advance(run); assert.deepEqual(advance(restored), event); assert.deepEqual(restored, run);
+      launches += event.plannerFrame!.decisions.filter(d => d.id === id && d.reason === 'runner-evasion').length;
+      close(f.actor.dashCooldownTimer, f.state.settings.dashCooldown - (tick - 1) * dt);
+      if (tick === 3) restored = structuredClone(run);
+    }
+    assert.equal(launches, 1, 'A continuing dash must not relaunch or reset cooldown');
+    assert.equal(f.actor.dashRemaining, 0);
+    assert.ok(f.actor.alive, 'The fixture must exercise a complete living dash');
+  });

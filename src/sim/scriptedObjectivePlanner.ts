@@ -3,6 +3,7 @@ import type { BotCoordinatorState } from '../game/aiBotCoordinator';
 import { publishGrifballTacticalEngagements } from '../game/aiCoordinationFrame';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import { resolvePunchCooldown } from '../game/runnerBallSettings';
+import { startAISpatialDodgeMotion } from '../game/aiDashMotion';
 import { updateGrifballTeamPlan, type GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import type { GrifballTacticsConfig } from '../game/grifballTacticsConfig';
 import type { SimState, SimCombatant } from './simState';
@@ -15,6 +16,7 @@ import { SCRIPTED_OBJECTIVE_INPUT_VERSION, validateScriptedObjectiveInput, type 
 export const SCRIPTED_OBJECTIVE_PLANNER_VERSION = 'scripted-objective-planner-v1' as const;
 export const SCRIPTED_CARRIER_PUNCH_VERSION = 'scripted-carrier-punch-v1' as const;
 export const SCRIPTED_PASS_VERSION = 'scripted-pass-v1' as const;
+export const SCRIPTED_RUNNER_EVASION_VERSION = 'scripted-runner-evasion-v1' as const;
 export interface ScriptedCarrierPunchControl {
   version: typeof SCRIPTED_CARRIER_PUNCH_VERSION;
   /** Caller-owned AI reload seconds, separate from mechanical weapon recovery.
@@ -36,6 +38,8 @@ export interface ScriptedObjectivePlanner {
   punchControl?: ScriptedCarrierPunchControl;
   /** Charge/recheck/release in the objective phase for IDs with owned AI reloads. */
   passControl?: typeof SCRIPTED_PASS_VERSION;
+  /** Launch intent only; requires the same scripted actor's committed-dash owner. */
+  runnerEvasion?: typeof SCRIPTED_RUNNER_EVASION_VERSION;
 }
 export interface ScriptedObjectiveDecision {
   id: string;
@@ -59,6 +63,8 @@ export function validateScriptedObjectivePlanner(state: SimState, planner: Scrip
   if (!(planner.plan?.assignments instanceof Map)) throw new Error('Objective planning requires caller-owned team plan memory');
   if (planner.passControl !== undefined && (planner.passControl !== SCRIPTED_PASS_VERSION || !planner.punchControl))
     throw new Error('Scripted passing requires a supported version and owned AI reloads');
+  if (planner.runnerEvasion !== undefined && (planner.runnerEvasion !== SCRIPTED_RUNNER_EVASION_VERSION || !planner.punchControl))
+    throw new Error('Runner evasion requires a supported version and owned AI readiness');
   for (const [id, difficulty] of Object.entries(planner.scriptedBots)) {
     const actors = state.combatants.filter(c => c.id === id);
     if (actors.length !== 1 || actors[0].controller !== 'ai' || id === state.localPlayerId || typeof difficulty !== 'string' ||
@@ -111,7 +117,13 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
     const ready = controlled ? planner.punchControl!.cooldowns[actor.id] <= 0 && Math.max(0, actor.weaponReadyTimer - swapTick) <= 0
       : planner.weaponReady?.[actor.id] ?? false;
     const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, ready, dt,
-      { punch: controlled, pass: controlled && planner.passControl === SCRIPTED_PASS_VERSION }) : null;
+      { punch: controlled, pass: controlled && planner.passControl === SCRIPTED_PASS_VERSION,
+        evasion: controlled && planner.runnerEvasion === SCRIPTED_RUNNER_EVASION_VERSION }) : null;
+    if (decision?.evasion) {
+      startAISpatialDodgeMotion(settings, actor, decision.evasion);
+      record({ kind: 'handoff', reason: 'runner-evasion' });
+      return null;
+    }
     const input = carrier ? decision?.input : resolveSimGrifballSupportInput(view, planner.plan, actor.id, planner.scriptedBots, dt);
     if (!input) {
       record({ kind: 'handoff', reason: decision?.decision.kind ?? 'combat-or-unsupported-state' }); return null;

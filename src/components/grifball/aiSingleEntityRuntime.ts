@@ -1,7 +1,8 @@
 import { resolveAIGroundState } from '../../game/aiGroundState';
 import { selectGrifballEscortEvasion } from '../../game/aiGrifballEvasion';
+import { selectGrifballRunnerEvasion } from '../../game/aiGrifballRunnerEvasion';
 import { createLiveGrifballTacticalSnapshot } from './grifballTeamPlanRuntime';
-import { finishAIHorizontalMotion } from '../../game/aiDashMotion';
+import { finishAIHorizontalMotion, startAISpatialDodgeMotion } from '../../game/aiDashMotion';
 import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
 import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
@@ -626,6 +627,20 @@ export function createAISingleEntityUpdaterForState({
         botId,
         self,
         frame: primaryGrifballFrame,
+        tryRunnerEvasion: s.settings.gameMode === 'grifball' && !s.isMultiplayer ? movement => {
+          if (!(dashCooldownTimer <= 0)) return false;
+          const direction = selectGrifballRunnerEvasion({
+            snapshot: createLiveGrifballTacticalSnapshot(s, grifballEnemyGoalPos, getActiveCustomMap()),
+            assignment: s.aiMatchContext.grifballTeamPlan.assignments.get(botId), botId,
+            origin: pos, movement, distance: s.settings.dashDistance, duration: s.settings.dashDuration || .25,
+          });
+          if (!direction) return false;
+          const launch = { dashDir, dashRemaining, dashCooldownTimer };
+          startAISpatialDodgeMotion(s.settings, launch, direction);
+          ({ dashRemaining, dashCooldownTimer } = launch);
+          sfx.playDash();
+          return true;
+        } : undefined,
         alliesList,
         enemiesList,
         dt,

@@ -205,6 +205,10 @@ for (const id of ['main_ai', 'ordinary']) for (const mobility of ['hop', 'dodge'
   test(`composed evasion during flight preserves flight precedence ${id}/${mobility}`, () => {
     const f = flightFixture(id); f.target.pos = { x: 0, y: 0, z: 3 };
     f.target.weapon = 'sword'; f.target.weaponState = 'windup'; f.target.attackKind = 'slash'; f.target.weaponTimer = 1;
+    // Preserve flight precedence while evading a real incoming lunge, not a
+    // stationary slash that does not trigger this policy.
+    Object.assign(f.target, { isLunging: true, lungeTimer: 0,
+      lungeDir: { x: 0, y: 0, z: -1 }, lungeStartPos: { ...f.target.pos } });
     f.actor.dashCooldownTimer = mobility === 'hop' ? 2 : 0;
     f.state.settings.enableSwordTrade = false;
     const events = advance(f, 1 / 60, () => {

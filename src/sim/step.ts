@@ -125,6 +125,11 @@ export function stepSimulation(
   if (options.scriptedCombat && (!Number.isFinite(dt) || dt <= 0)) throw new Error('Scripted combat requires a positive finite timestep');
   if (options.scriptedObjective && options.scriptedPlanner) throw new Error('Choose either scripted objective inputs or a scripted planner');
   validateScriptedObjectivePlanner(state, options.scriptedPlanner, settings, dt);
+  if (options.scriptedPlanner?.runnerEvasion) {
+    for (const [id, difficulty] of Object.entries(options.scriptedPlanner.scriptedBots))
+      if (options.scriptedActorDecisions?.scriptedBots[id] !== difficulty)
+        throw new Error(`Runner evasion requires the same actor's committed-dash owner: ${id}`);
+  }
   if (options.scriptedActorDecisions && options.scriptedPlanner) {
     for (const [id, difficulty] of Object.entries(options.scriptedActorDecisions.scriptedBots))
       if (Object.hasOwn(options.scriptedPlanner.scriptedBots, id) && options.scriptedPlanner.scriptedBots[id] !== difficulty)

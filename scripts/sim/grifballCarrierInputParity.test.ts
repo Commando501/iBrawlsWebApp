@@ -9,7 +9,9 @@ import { resolveSimGrifballSupportInput } from '../../src/sim/grifballSupportInp
 import { createSimGrifballTacticalSnapshot } from '../../src/sim/grifballTacticalAdapter';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan } from '../../src/game/aiGrifballTeamPlan';
 import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
-import { updateGrifballTeamPlanForState } from '../../src/components/grifball/grifballTeamPlanRuntime';
+import { updateGrifballTeamPlanForState, createLiveGrifballTacticalSnapshot } from '../../src/components/grifball/grifballTeamPlanRuntime';
+import { selectGrifballRunnerEvasion } from '../../src/game/aiGrifballRunnerEvasion';
+import { resolveHammerSlamTiming } from '../../src/game/hammerSlamTiming';
 import { resolvePrimaryGrifballAIObjectiveMovementForCombatant } from '../../src/components/grifball/grifballAIObjectiveMovement';
 import { setGrifballCarrierForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
@@ -40,6 +42,66 @@ function fixture(id: string, mirror: boolean, routed: boolean, pickup: boolean) 
   const goal = (team: string | undefined) => sim.goalPlates.find(p => p.team !== team)?.position ?? null;
   return { ...f, self, other, goal, plan: createGrifballTeamPlanState(), scriptedBots: { [id]: 'normal' } };
 }
+
+function runnerWindup(id = 'bot_2', mirror = false) {
+  const f = fixture(id, mirror, false, false), sign = mirror ? -1 : 1;
+  updateGrifballTeamPlanForState(f.state, .2, f.goal, f.map);
+  updateGrifballTeamPlan(f.plan, createSimGrifballTacticalSnapshot(f.sim,
+    { scriptedBots: f.scriptedBots, tactics: f.state.grifballTactics }), .2);
+  // The cached team snapshot still sees a distant, ready enemy. A runner's
+  // immediate escape must instead observe the newly started nearby windup.
+  f.other.pos = { x: f.self.pos.x - 6 * sign, y: 0, z: 0 };
+  f.target.pos.set(f.other.pos.x, 0, 0);
+  f.other.vel = { x: 5.2 * sign, y: 0, z: 0 }; f.target.vel.set(f.other.vel.x, 0, 0);
+  f.other.weapon = f.target.activeWeapon = 'hammer';
+  f.other.weaponState = 'windup'; f.other.attackKind = 'strike'; f.other.weaponTimer = .02;
+  f.target.weaponState = 'swing_up'; f.target.weaponTimer = resolveHammerSlamTiming(f.state.settings).windupTime - .02;
+  f.self.dashCooldownTimer = f.self.dashRemaining = 0;
+  return f;
+}
+
+for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true])
+  test(`fresh runner evasion hands the same launch to both physical owners ${id}/${mirror}`, () => {
+    const f = runnerWindup(id, mirror), before = structuredClone(f.sim);
+    const result = resolveSimGrifballCarrierInput(f.sim, f.plan, id, f.scriptedBots, true, dt, { evasion: true });
+    assert.ok(result?.evasion, 'Fresh windup must request an escape');
+    assert.equal(result.input, null, 'The physical owner must commit and advance the dash');
+    assert.deepEqual(f.sim, before, 'Decision adapter is read-only');
+    const frame = { pos: f.bot.pos, vel: f.bot.vel, yaw: f.bot.yaw, aiState: f.bot.aiState, timer: 0,
+      dashRemaining: 0, slideActive: false, weaponState: 'ready', pickupRequested: false };
+    const start = f.bot.pos.clone(); let calls = 0;
+    const handled = resolvePrimaryGrifballAIObjectiveMovementForCombatant({ state: f.state, botId: id, self: f.bot, frame,
+      alliesList: [], enemiesList: [f.target.pos], dt, canStartWeaponAction: true,
+      triggerCombatantAttack: () => assert.fail('No punch expected'), getEnemyGoalPos: f.goal,
+      constrainCombatantToArena: () => assert.fail('Dash owner must integrate and constrain'),
+      tryRunnerEvasion: movement => {
+        calls++;
+        const direction = selectGrifballRunnerEvasion({ snapshot: createLiveGrifballTacticalSnapshot(f.state, f.goal, f.map),
+          assignment: f.state.aiMatchContext.grifballTeamPlan.assignments.get(id), botId: id, origin: f.bot.pos, movement,
+          distance: f.state.settings.dashDistance, duration: f.state.settings.dashDuration });
+        assert.ok(direction); near(direction.x, result.evasion.x, 'Escape x'); near(direction.z, result.evasion.z, 'Escape z');
+        return true;
+      } });
+    assert.equal(calls, 1); assert.equal(handled, false); assert.deepEqual(f.bot.pos, start);
+  });
+
+for (const condition of ['not-owned', 'thrust-off', 'cooldown', 'reload', 'recovering', 'punching', 'airborne', 'sliding', 'already-dashing', 'pass', 'punch'] as const)
+  test(`runner input cannot replace ${condition} with an escape`, () => {
+    const f = runnerWindup();
+    if (condition === 'thrust-off') f.sim.settings.grifballAllowRunnerThrust = false;
+    if (condition === 'cooldown') f.self.dashCooldownTimer = .1;
+    if (condition === 'recovering') f.self.weaponState = 'recovering';
+    if (condition === 'punching') f.self.weaponState = 'windup';
+    if (condition === 'airborne') f.self.pos.y = 1;
+    if (condition === 'sliding') f.self.slideActive = true;
+    if (condition === 'already-dashing') f.self.dashRemaining = .1;
+    if (condition === 'pass') f.plan.assignments.get(f.self.id)!.pass = { selected: { direction: { x: 1, z: 0 } } } as any;
+    if (condition === 'punch') f.other.pos.x = f.self.pos.x + 1;
+    const result = resolveSimGrifballCarrierInput(f.sim, f.plan, f.self.id, f.scriptedBots, condition !== 'reload', dt,
+      { evasion: condition !== 'not-owned' });
+    assert.ok(!result?.evasion);
+    if (condition === 'pass' || condition === 'punch') assert.equal(result?.decision.kind, condition);
+  });
 
 for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true]) for (const routed of [false, true]) for (const pickup of [false, true]) for (const coordinated of [false, true])
   test(`independent planner carries to goal ${id}/mirror=${mirror}/routed=${routed}/pickup=${pickup}/coordinated=${coordinated}`, () => {

@@ -50,7 +50,9 @@ for (const roster of ['scripted-1v1', 'scripted-3v4', 'scripted-4v4', 'local-4v4
 
 for (const seed of [101, 102]) for (const mirrored of [false, true])
   test(`autonomous complete 1v1 matches production and restored continuation ${seed}/${mirrored}`, async t => {
-    const { fixture, job } = await inputs('scripted-1v1', seed, mirrored), live = createAutonomousValidationRuntime(fixture, job);
+    // Complete-match coverage uses the full diagnostic window. The standard
+    // 120-second profile remains capped and must report inconclusive if unfinished.
+    const { fixture, job } = await inputs('scripted-1v1', seed, mirrored, 900), live = createAutonomousValidationRuntime(fixture, job);
     const { checkpoint } = createComposedValidationMatch(fixture, job);
     let restored = structuredClone(checkpoint), replay = createComposedMatchStepper(fixture, job, restored);
     const step = createComposedMatchStepper(fixture, job, checkpoint);
@@ -77,7 +79,10 @@ for (const seed of [101, 102]) for (const mirrored of [false, true])
       assert.equal(checkpoint.state.match.phase, 'matchEnd', 'simulation cap must not count as a finished match');
       const result = await live.runtime.done;
       assert.equal(result.termination, 'match-end'); assert.equal(result.check.verdict, 'pass');
-      assert.equal(result.end!.tick, checkpoint.state.tick); assert.equal(resets, 1);
+      assert.equal(result.end!.tick, checkpoint.state.tick);
+      // Every non-winning goal resets the round; a 2–1 match has two resets.
+      const goals = Object.values(checkpoint.state.scores).reduce((sum, score) => sum + score.goals, 0);
+      assert.ok(resets > 0); assert.equal(resets, goals - 1);
       assert.ok(kills > 0 && revivals > 0, 'the complete match must include combat and revival');
       const before = structuredClone(checkpoint); assert.equal(step(), null); assert.deepEqual(checkpoint, before);
       t.diagnostic(JSON.stringify({ seed, mirrored, ticks: checkpoint.state.tick, kills, revivals, resets }));
@@ -135,11 +140,12 @@ const fullSizeCases = (['scripted-3v4', 'scripted-4v4', 'local-4v4'] as const).f
   [101, 102].flatMap(seed => [false, true].map(mirrored => ({ roster, seed, mirrored, seconds: 120 }))));
 // Separate frozen extended fixture; the standard cap and its inconclusive verdict stay intact.
 fullSizeCases.push({ roster: 'local-4v4', seed: 101, mirrored: false, seconds: 300 });
+fullSizeCases.push({ roster: 'local-4v4', seed: 101, mirrored: false, seconds: 900 });
 for (const { roster, seed, mirrored, seconds } of fullSizeCases)
   test(`full-size production comparison retains the real termination ${roster}/${seed}/${mirrored}/${seconds}`, async t => {
     const { fixture, job } = await inputs(roster, seed, mirrored, seconds), live = createAutonomousValidationRuntime(fixture, job);
     const { checkpoint } = createComposedValidationMatch(fixture, job), step = createComposedMatchStepper(fixture, job, checkpoint);
-    let restored = seconds === 300 ? structuredClone(checkpoint) : undefined;
+    let restored = seconds === 900 ? structuredClone(checkpoint) : undefined;
     let replay = restored ? createComposedMatchStepper(fixture, job, restored) : undefined;
     let kills = 0, goals = 0, launches = 0, flightEnds = 0;
     try {
@@ -171,7 +177,7 @@ for (const { roster, seed, mirrored, seconds } of fullSizeCases)
         if (roster === 'local-4v4') for (const axis of ['x', 'y', 'z'] as const)
           near(state.combatants[0].pos[axis], live.state.playerPos[axis], `${tick}/player/${axis}`);
       }
-      if (seconds === 300) assert.equal(checkpoint.state.match.phase, 'matchEnd', 'extended local fixture must actually finish');
+      if (seconds === 900) assert.equal(checkpoint.state.match.phase, 'matchEnd', 'extended local fixture must actually finish');
       const result = await live.runtime.done;
       assert.equal(result.end!.tick, checkpoint.state.tick);
       assert.equal(result.termination, checkpoint.state.match.phase === 'matchEnd' ? 'match-end' : 'simulation-cap');

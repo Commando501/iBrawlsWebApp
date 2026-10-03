@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { resolveGrifballCarrierDecision, resolveGrifballSupportSteering } from '../../game/aiGrifballObjectiveSteering';
 import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { getGrifballSpaceWaypoint } from '../../game/aiGrifballSpace';
-import { resolveDirectionalSpeedMultiplier, resolvePunchCooldown } from '../../game/runnerBallSettings';
+import { resolveDirectionalSpeedMultiplier, resolvePunchCooldown, resolveRunnerThrustAllowed } from '../../game/runnerBallSettings';
 import { getYawForHeading } from '../../game/yaw';
 import { type AIBehaviorState, type WeaponState, type Combatant } from '../../types';
 import { type GrifballAwarenessPoint } from './grifballAITeamAwareness';
@@ -61,6 +61,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   triggerCombatantAttack,
   constrainCombatantToArena,
   getEnemyGoalPos,
+  tryRunnerEvasion,
 }: {
   state: GrifballAIObjectiveState;
   botId: string;
@@ -73,6 +74,9 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   triggerCombatantAttack: (self: CombatantLike, weapon: 'hammer' | 'sword', melee?: boolean) => void;
   constrainCombatantToArena: GroundConstraint;
   getEnemyGoalPos: (team: string | undefined) => { x: number; z: number } | null;
+  /** Commit only the launch; false from this objective function then hands the
+   * same frame to the caller's existing committed-dash execution owner. */
+  tryRunnerEvasion?: (movement: { x: number; z: number }) => boolean;
 }): boolean {
   if (state.settings.gameMode !== 'grifball') return false;
   if (state.grifball.phase !== 'playing') return false;
@@ -108,6 +112,8 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       players: state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [], threats, avoidanceEnemies: enemiesList,
       goal: getEnemyGoalPos(self.team), weaponState: frame.weaponState, canStartWeaponAction, settings: state.settings, dt });
     if (!decision) return false;
+    if (decision.kind === 'move' && frame.weaponState === 'ready' && canStartWeaponAction &&
+      resolveRunnerThrustAllowed(state.settings) && tryRunnerEvasion?.(decision.velocity)) return false;
     frame.vel.set(decision.velocity.x, 0, decision.velocity.z);
     if (decision.kind === 'move') { frame.pos.x += frame.vel.x * dt; frame.pos.z += frame.vel.z * dt; }
     if (decision.heading && frame.weaponState === 'ready') frame.yaw = getYawForHeading(decision.heading.x, decision.heading.z);

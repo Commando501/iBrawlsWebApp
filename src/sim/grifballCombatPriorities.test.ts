@@ -185,6 +185,10 @@ for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 30, 1 / 60]) for
   test(`composed attack and evasion resume from own-state checkpoints ${id}/${dt}/${sign}`, () => {
     const f = fixture(id); f.actor.dashCooldownTimer = 2;
     f.target.weapon = 'sword'; f.target.pos.z *= sign;
+    // A stationary slash is not an incoming lunge. Exercise the actual
+    // physical threat required by the lunge-evasion policy.
+    Object.assign(f.target, { isLunging: true, lungeTimer: 0,
+      lungeDir: { x: 0, y: 0, z: -sign }, lungeStartPos: { ...f.target.pos } });
     f.target.weaponState = 'windup'; f.target.attackKind = 'slash'; f.target.weaponPhaseElapsed = 0;
     f.target.weaponTimer = f.state.settings.swordSlashSpeed / 2;
     f.matchContext.comboState.set(id, { comboId: 'safe_finish', targetId: 'target', stepIndex: 1, stepTimer: 0 });
