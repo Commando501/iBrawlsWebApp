@@ -3,7 +3,7 @@ import { grifballLab } from '../game/grifballLabStore';
 import { defaultGrifballTactics } from '../game/grifballTacticsConfig';
 import { createSuiteManifest } from '../game/grifballValidation/profiles';
 import { createSuitePlan } from '../game/grifballValidation/plan';
-import { validateManifest } from '../game/grifballValidation/manifest';
+import { MAX_VALIDATION_SEEDS_PER_CASE, validateManifest } from '../game/grifballValidation/manifest';
 import { runValidationSuite, type SuiteProgress } from '../game/grifballValidation/runner';
 import { MAP_IDS, type SuiteManifest, type SuitePlan, type SuiteProfile } from '../game/grifballValidation/types';
 import { JobBoundary } from '../game/grifballValidation/jobBoundary';
@@ -134,7 +134,7 @@ export function GrifballValidationPanel({ visible }: { visible: boolean }) {
         <div className="space-y-2 mt-2">
           <label className="block">Map override<select aria-label="Validation map" className={input} value="" onChange={e => { if (e.target.value) changeDraft({ ...draft, cases: draft.cases.map(c => ({ ...c, mapId: e.target.value as typeof MAP_IDS[number] })) }); }}><option value="">Choose a map for all selected cases…</option>{MAP_IDS.map(id => <option key={id}>{id}</option>)}</select></label>
           {draft.cases.map(c => <div key={c.id} className="border-b border-slate-800 pb-2 break-words"><strong>{c.id}</strong><p>{c.mapId} · {c.roster} · seeds {c.seeds.join(', ')} · {c.opponents.join(', ')} · {c.mirrored ? 'both sides' : 'original side'} · {c.simulationSeconds}s cap</p><button className={`${button} mt-1`} disabled={draft.cases.length === 1} onClick={() => changeDraft({ ...draft, cases: draft.cases.filter(other => other.id !== c.id) })}>Remove {c.id}</button></div>)}
-          <p className="text-slate-400">Reselect a profile to restore its cases. Use manifest JSON to specify individual maps, seeds, opponents and durations.</p>
+          <p className="text-slate-400">Reselect a profile to restore its cases. Use manifest JSON to specify maps, up to {MAX_VALIDATION_SEEDS_PER_CASE} seeds per case, opponents and durations. Use the CLI for more than {BROWSER_JOB_LIMIT} jobs.</p>
         </div>
       </details>}
       <details><summary className="cursor-pointer text-cyan-200">Manifest JSON</summary>

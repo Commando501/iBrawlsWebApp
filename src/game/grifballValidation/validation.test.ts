@@ -113,6 +113,38 @@ test('mechanic overrides resolve into the real gameplay contract', async () => {
   assert.ok(!('playerName' in c.mechanics));
 });
 
+test('larger predeclared cohorts retain canonical pairing, bounds and stricter evidence minima', async () => {
+  const m = createSuiteManifest('standard');
+  m.cases = [m.cases.find(c => c.roster === 'scripted-4v4')!];
+  Object.assign(m.cases[0], { seeds: Array.from({ length: 80 }, (_, i) => 401 + i), opponents: [...EVALUATION_STYLES] });
+  m.quality = { primaryMeasure: 'goalMargin', minIndependentSeeds: 80, minEffect: .25, heldOut: true };
+  m.requiredGates.push('quality');
+  const p = await createSuitePlan(m, code);
+  assert.equal(p.jobs.length, 960);
+  assert.equal(new Set(p.jobs.map(j => j.id)).size, 960);
+  assert.equal(p.manifest.quality!.minIndependentSeeds, 80);
+  for (const seed of m.cases[0].seeds) {
+    const jobs = p.jobs.filter(j => j.seed === seed);
+    assert.equal(jobs.length, 12);
+    for (const opponent of EVALUATION_STYLES) assert.deepEqual(jobs.filter(j => j.opponent === opponent).map(j => [j.variant, j.focalTeam]),
+      [['baseline', 'blue'], ['candidate', 'blue'], ['baseline', 'red'], ['candidate', 'red']]);
+  }
+  m.cases[0].seeds.reverse(); assert.deepEqual(await createSuitePlan(m, code), p);
+  m.cases[0].seeds.pop(); assert.throws(() => validateManifest(m), /minimum independent seeds/);
+});
+
+test('expanded seed capacity still rejects oversized, duplicate and excessive Cartesian inventories', () => {
+  const m = small(); m.cases[0].seeds = Array.from({ length: 100 }, (_, i) => i);
+  assert.equal(validateManifest(m).cases[0].seeds.length, 100);
+  m.cases[0].seeds.push(100); assert.throws(() => validateManifest(m), /seeds/);
+  m.cases[0].seeds.pop(); m.cases[0].seeds[99] = 0;
+  assert.throws(() => validateManifest(m), /duplicate/);
+  m.cases[0].seeds[99] = 99; m.cases[0].opponents = [...EVALUATION_STYLES];
+  const original = structuredClone(m.cases[0]);
+  m.cases = Array.from({ length: 9 }, (_, i) => ({ ...structuredClone(original), id: `case-${i}` }));
+  assert.throws(() => validateManifest(m), /10,000 jobs/);
+});
+
 test('reserved evaluation layouts have distinct symmetric obstacles and reachable objectives', async () => {
   const geometries = new Set(['championship_stadium', 'forerunner_canyon'].map(id => {
     const base = PREMADE_MAPS.find(map => map.id === id)!;

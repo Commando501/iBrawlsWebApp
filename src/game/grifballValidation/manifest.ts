@@ -3,6 +3,10 @@ import { validateGrifballTactics } from '../grifballTacticsConfig';
 import { DIFFICULTIES, GATES, MAP_IDS, PROFILE_VERSION, PROFILES, REQUIRED_GATES, ROSTERS,
   SCENARIOS, SUITE_VERSION, type SuiteManifest, type ValidationCase } from './types';
 
+/** Fixed cohorts may need spare independent seeds for no-opportunity metrics.
+ * This capacity does not change profile defaults or quality acceptance minima. */
+export const MAX_VALIDATION_SEEDS_PER_CASE = 100;
+
 export function object(value: unknown, keys: readonly string[], at: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
     ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error(`${at}: expected an object`);
@@ -48,7 +52,7 @@ function parseCase(value: unknown): ValidationCase {
     id, mode, roster,
     scenario: mode === 'scenario' ? choice(c.scenario, SCENARIOS, `${id}.scenario`) : null,
     mapId: choice(c.mapId, MAP_IDS, `${id}.mapId`), difficulty: choice(c.difficulty, DIFFICULTIES, `${id}.difficulty`),
-    seeds: list(c.seeds, s => number(s, 0, 0xffffffff, `${id}.seed`, true), 20, `${id}.seeds`).sort((a, b) => a - b),
+    seeds: list(c.seeds, s => number(s, 0, 0xffffffff, `${id}.seed`, true), MAX_VALIDATION_SEEDS_PER_CASE, `${id}.seeds`).sort((a, b) => a - b),
     opponents: list(c.opponents, s => choice(s, EVALUATION_STYLES, `${id}.opponent`), 3, `${id}.opponents`)
       .sort((a, b) => EVALUATION_STYLES.indexOf(a) - EVALUATION_STYLES.indexOf(b)),
     mirrored: boolean(c.mirrored, `${id}.mirrored`), fixedHz: choice(c.fixedHz, [60], `${id}.fixedHz`),
@@ -75,7 +79,7 @@ export function validateManifest(value: unknown): SuiteManifest {
   };
   const quality = q && {
     primaryMeasure: choice(q.primaryMeasure, ['goalMargin'], 'primaryMeasure'),
-    minIndependentSeeds: number(q.minIndependentSeeds, 2, 20, 'minIndependentSeeds', true),
+    minIndependentSeeds: number(q.minIndependentSeeds, 2, MAX_VALIDATION_SEEDS_PER_CASE, 'minIndependentSeeds', true),
     minEffect: number(q.minEffect, 0, 100, 'minEffect'), heldOut: boolean(q.heldOut, 'heldOut') as true,
   };
   if (quality && !quality.heldOut) throw new Error('quality: requires held-out seeds');

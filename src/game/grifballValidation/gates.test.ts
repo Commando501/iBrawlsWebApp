@@ -190,6 +190,33 @@ test('quality diagnoses zero opportunities without discarding a valid zero rate 
   assert.match(g.check.summary, /goalsPerPossession/);
 });
 
+test('larger fixed cohorts retain missing opportunities and unchanged acceptance requirements', async () => {
+  const base = await fixture(true), manifest = structuredClone(base.manifest);
+  for (const c of manifest.cases) c.seeds = Array.from({ length: 80 }, (_, i) => 401 + i);
+  manifest.quality!.minIndependentSeeds = 20;
+  const p = await createSuitePlan(manifest, code), r = results(p);
+  // One missing opportunity in ten independent clusters must stay unavailable,
+  // while the other seventy can satisfy the unchanged twenty-cluster minimum.
+  for (const [i, j] of p.jobs.entries()) if (j.seed < 411 && !j.mirrored && j.variant === 'baseline')
+    r[i].metrics![j.focalTeam].completedPossessions = 0;
+  const check = { ...passedNull, evidence: [...passedNull.evidence] };
+  const g = qualityGate(p, r, check, protocol), d = g.details as any;
+  assert.equal(g.check.verdict, 'pass');
+  assert.equal(d.estimate.seeds, 80); assert.equal(d.estimate.pairedRuns, 960);
+  for (const stratum of d.strata) {
+    assert.equal(stratum.measures.goalsPerPossession.estimate.seeds, 70);
+    assert.equal(stratum.measures.goalsPerPossession.unavailable.length, 10);
+    assert.ok(stratum.measures.goalsPerPossession.unavailable.every((v: any) => v.reason === 'no-opportunity'));
+  }
+  const stricterManifest = structuredClone(manifest); stricterManifest.quality!.minIndependentSeeds = 80;
+  const stricter = await createSuitePlan(stricterManifest, code);
+  assert.equal(qualityGate(stricter, r, check, protocol).check.verdict, 'inconclusive');
+  assert.equal(qualityGate(p, r, { ...check, verdict: 'inconclusive' }, protocol).check.verdict, 'inconclusive');
+  assert.equal(qualityGate(p, r, check, { ...protocol, quality: { tuningSeeds: [401], tuningMapIds: [] } }).check.verdict, 'inconclusive');
+  r[0].termination = 'simulation-cap';
+  assert.equal(qualityGate(p, r, check, protocol).check.verdict, 'inconclusive');
+});
+
 for (const reason of ['missing-trial', 'incomplete-trial', 'missing-metrics', 'invalid-metric'] as const)
   test(`quality distinguishes ${reason} from a missing opportunity`, async () => {
     const p = await fixture(true), r = results(p), j = p.jobs[0];
