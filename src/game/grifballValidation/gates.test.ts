@@ -401,9 +401,13 @@ test('bounded scripted execution passes every required family while legacy diffe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v86');
-  assert.deepEqual(details.autonomousMobilityWitnesses, { required: 72, completed: 72, errors: [] });
-  assert.equal(details.autonomousMobilityTraces.length, 72);
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v87');
+  assert.deepEqual(details.autonomousMobilityWitnesses, { required: 80, completed: 80, errors: [] });
+  assert.equal(details.autonomousMobilityTraces.length, 80);
+  assert.equal(details.autonomousMobilityTraces.filter((t: any) => t.spec.profile !== 'loose-opposed').length, 72);
+  assert.equal(details.autonomousMobilityTraces.filter((t: any) => t.spec.profile.includes('opposed')).length, 40);
+  assert.ok(details.autonomousMobilityTraces.filter((t: any) => t.spec.profile.includes('opposed')).every((t: any) =>
+    ['jump', 'landing'].every(kind => t.witnesses.some((w: any) => w.kind === kind))));
   assert.ok(details.autonomousMobilityTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 901 && t.restoredFrames === 900));
   assert.deepEqual(details.completeMatchWitnesses, { required: 20, completed: 20, errors: [] });
   assert.equal(details.completeMatchTraces.length, 20);

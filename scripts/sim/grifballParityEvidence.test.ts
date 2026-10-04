@@ -209,3 +209,11 @@ test('v86 retains every v85 family including incoming-sword recordings', () => {
   delete current.incomingLungeMobilityTraces;
   assert.deepEqual(validateSampledParityEvidence(current), ['incomingLungeMobilityTraces: missing or empty family']);
 });
+
+test('v87 retains every family for the expanded matched mobility inventory', () => {
+  assert.deepEqual(SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v87'], SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v86']);
+  const current = sampledReport('live-functions-vs-headless-step-v87');
+  assert.deepEqual(validateSampledParityEvidence(current), []);
+  delete current.autonomousMobilityTraces;
+  assert.deepEqual(validateSampledParityEvidence(current), ['autonomousMobilityTraces: missing or empty family']);
+});

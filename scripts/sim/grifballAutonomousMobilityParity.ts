@@ -9,16 +9,20 @@ import { completeMatchFrame, compareCompleteMatchFrame } from './grifballComplet
 import { createParityFrameRecorder } from './grifballParityEvidence';
 
 export type AutonomousMobilityCase = {
-  profile: 'loose' | 'runner-rise' | 'runner-fall' | 'local-rise' | 'local-fall' |
+  profile: 'loose' | 'loose-opposed' | 'runner-rise' | 'runner-fall' | 'local-rise' | 'local-fall' |
     'opposed-rise' | 'opposed-fall' | 'local-opposed-rise' | 'local-opposed-fall';
   mirrored: boolean; reversed: boolean; seed: number;
 };
 export const AUTONOMOUS_MOBILITY_CASES: readonly AutonomousMobilityCase[] =
   (['loose', 'runner-rise', 'runner-fall', 'local-rise', 'local-fall',
-    'opposed-rise', 'opposed-fall', 'local-opposed-rise', 'local-opposed-fall'] as const).flatMap(profile =>
+    'opposed-rise', 'opposed-fall', 'local-opposed-rise', 'local-opposed-fall', 'loose-opposed'] as const).flatMap(profile =>
     [false, true].flatMap(mirrored => [false, true].flatMap(reversed =>
       [101, 102].map(seed => ({ profile, mirrored, reversed, seed })))));
 const nameOf = (s: AutonomousMobilityCase) => `${s.profile}/${s.mirrored}/${s.reversed}/${s.seed}`;
+export const AUTONOMOUS_MOBILITY_PAIRS = [
+  ['loose', 'loose-opposed'], ['runner-rise', 'opposed-rise'], ['runner-fall', 'opposed-fall'],
+  ['local-rise', 'local-opposed-rise'], ['local-fall', 'local-opposed-fall'],
+] as const;
 
 /** Authored encounter starts, followed exclusively by own-state autonomous
  * decisions (and the standard local-input policy). No live action or position
@@ -52,9 +56,9 @@ export async function runAutonomousMobilityTrace(spec: AutonomousMobilityCase) {
       const actor = state.combatants.find(a => a.id === id)!;
       const side = actor.team === job.focalTeam ? -1 : 1, index = counters[actor.team] ?? 0;
       counters[actor.team] = index + 1;
-      const carrier = spec.profile !== 'loose' && id === carrierId;
+      const carrier = !spec.profile.startsWith('loose') && id === carrierId;
       const airborneOpponent = opposed && side === 1;
-      return { id, pos: { x: side * (spec.profile === 'loose' ? 7 : 3) * sign,
+      return { id, pos: { x: side * (spec.profile.startsWith('loose') ? 7 : 3) * sign,
         y: carrier ? 2 : airborneOpponent ? 1.5 : 0, z: (index - 1.5) * 4 * sign },
         vel: { x: carrier ? 3 * sign : 0,
           y: carrier ? (spec.profile.endsWith('rise') ? 6 : -4) : airborneOpponent ? 4 : 0, z: 0 },
@@ -79,7 +83,7 @@ export async function runAutonomousMobilityTrace(spec: AutonomousMobilityCase) {
         live.invulnerabilityTimer = live.swapLockoutTimer = 0;
       }
     }
-    if (spec.profile !== 'loose') {
+    if (!spec.profile.startsWith('loose')) {
       const carrier = state.combatants.find(a => a.id === carrierId)!;
       setSimCarrier(carrier, true, state.settings, state);
       setGrifballCarrierForState({ state: host.state, id: carrierId, carrying: true });
@@ -185,16 +189,27 @@ export function autonomousMobilityCoverage(traces: readonly AutonomousMobilityTr
       trace.frames.length > 32 || !/^[a-f0-9]{64}$/.test(trace.frameEvidence.fullTraceSHA256))
       errors.push(`${trace.name}: incomplete or divergent encounter`);
     const has = (kind: string) => trace.witnesses.some(w => w.kind === kind);
-    for (const kind of ['dash', 'jump', 'steering', 'damage', 'landing'])
+    // Quiet encounters can resolve through grounded combat. Their matched sword
+    // threats must demonstrate jump responses; every original frame still agrees.
+    for (const kind of ['dash', 'steering', 'damage',
+      ...(!trace.spec.profile.startsWith('loose') || trace.spec.profile.includes('opposed') ? ['landing'] : []),
+      ...(trace.spec.profile.includes('opposed') ? ['jump'] : [])])
       if (!has(kind)) errors.push(`${trace.name}: missing ${kind}`);
-    if (trace.spec.profile !== 'loose') for (const kind of [trace.spec.profile.endsWith('rise') ? 'carrier-rising' : 'carrier-falling', 'carrier-moving-airborne'])
+    if (!trace.spec.profile.startsWith('loose')) for (const kind of [trace.spec.profile.endsWith('rise') ? 'carrier-rising' : 'carrier-falling', 'carrier-moving-airborne'])
       if (!has(kind)) errors.push(`${trace.name}: missing ${kind}`);
-    if (trace.spec.profile.includes('opposed')) for (const kind of ['opposed-flight-at-carrier', 'airborne-carrier-damage'])
+    if (trace.spec.profile.includes('opposed') && !trace.spec.profile.startsWith('loose')) for (const kind of ['opposed-flight-at-carrier', 'airborne-carrier-damage'])
       if (!has(kind)) errors.push(`${trace.name}: missing ${kind}`);
     if (trace.witnesses.some(w => !Number.isSafeInteger(w.tick) || w.tick <= trace.startTick || w.tick > trace.endTick ||
       !trace.starts.some(a => a.id === w.actor))) errors.push(`${trace.name}: invalid witness`);
   }
   for (const name of expected.keys()) if (!seen.has(name)) errors.push(`${name}: missing case`);
+  // Every quiet condition has its own required threat companion with the same
+  // seed, team mirror and roster order. Other groups cannot fill a missing pair.
+  for (const [quiet, threat] of AUTONOMOUS_MOBILITY_PAIRS) for (const spec of AUTONOMOUS_MOBILITY_CASES.filter(s => s.profile === quiet)) {
+    const pair = [nameOf(spec), nameOf({ ...spec, profile: threat })];
+    for (const name of pair) if (traces.filter(t => t.name === name).length !== 1)
+      errors.push(`${nameOf(spec)}: missing or duplicate matched encounter ${name}`);
+  }
   // Launches must actually be chosen after setup in both execution rosters and
   // team mirrors. Starting committed flights cannot satisfy this requirement.
   for (const local of [false, true]) for (const mirrored of [false, true])
