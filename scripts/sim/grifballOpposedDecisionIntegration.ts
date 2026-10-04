@@ -175,9 +175,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get(defenderId)!;
   // This wounded mid-fight opening exercises the counter after the first pickup.
   // The opening defender has just spent its normal dash cooldown. Later movement,
-  // cooldown expiry, combat and possession remain production-owned; full-match,
+  // cooldown expiry, combat and possession remain production-owned. Supplied-map
+  // complete matches share this opening; synthetic full-match,
   // revival and mobility continuations retain their original ready-dash starts.
-  if (spec.mode === 'contested' && ['opening', 'map-contest'].includes(continuation)) defender.aiDashCooldownTimer = state.settings.dashCooldown;
+  if (spec.mode === 'contested' && ['opening', 'map-contest', 'map-match'].includes(continuation)) defender.aiDashCooldownTimer = state.settings.dashCooldown;
   if (landingTurnover) {
     // A short authored descent lands on the opening autonomous impact frame.
     // No action, damage, assignment or subsequent motion is injected.

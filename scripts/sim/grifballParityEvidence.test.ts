@@ -201,3 +201,11 @@ test('v85 requires incoming sword recordings without removing earlier families',
   delete current.incomingLungeMobilityTraces;
   assert.deepEqual(validateSampledParityEvidence(current), ['incomingLungeMobilityTraces: missing or empty family']);
 });
+
+test('v86 retains every v85 family including incoming-sword recordings', () => {
+  assert.deepEqual(SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v86'], SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v85']);
+  const current = sampledReport('live-functions-vs-headless-step-v86');
+  assert.deepEqual(validateSampledParityEvidence(current), []);
+  delete current.incomingLungeMobilityTraces;
+  assert.deepEqual(validateSampledParityEvidence(current), ['incomingLungeMobilityTraces: missing or empty family']);
+});

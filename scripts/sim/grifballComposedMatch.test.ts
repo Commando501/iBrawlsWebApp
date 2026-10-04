@@ -26,6 +26,12 @@ async function inputs(roster: ValidationCase['roster'] = 'scripted-1v1', seed = 
 }
 const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) <= 1e-6, `${label}: ${a} != ${b}`);
 
+function assertCommittedAim(sim: { yaw: number }, actor: { id: string; yaw: number; weaponState?: string }, tick: number) {
+  if (!['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(actor.weaponState ?? '')) return;
+  const delta = sim.yaw + Math.PI - actor.yaw;
+  near(Math.atan2(Math.sin(delta), Math.cos(delta)), 0, tick + '/' + actor.id + '/committed strike aim');
+}
+
 for (const roster of ['scripted-1v1', 'scripted-3v4', 'scripted-4v4', 'local-4v4'] as const) for (const mirrored of [false, true])
   test(`composed match uses production starting roster and countdown ${roster}/${mirrored}`, async () => {
     const { fixture, job } = await inputs(roster, 101, mirrored), live = createAutonomousValidationRuntime(fixture, job);
@@ -69,6 +75,7 @@ for (const seed of [101, 102]) for (const mirrored of [false, true])
         assert.equal(checkpoint.state.match.ball.holderId, live.state.grifball.ball.holderId, `holder at ${tick}`);
         for (const actor of live.state.otherPlayers.values()) {
           const sim = checkpoint.state.combatants.find(c => c.id === actor.id)!;
+          assertCommittedAim(sim, actor, tick);
           assert.equal(sim.hp, actor.hp, `hp at ${tick}`); assert.equal(sim.weapon, actor.activeWeapon, `weapon at ${tick}`);
           for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], actor.pos[axis], `${tick}/${actor.id}/${axis}`);
         }
@@ -171,6 +178,7 @@ for (const { roster, seed, mirrored, seconds } of fullSizeCases)
             if (actor.isLunging && !flights.has(actor.id)) launches++;
             if (!actor.isLunging && flights.has(actor.id)) flightEnds++;
           }
+          assertCommittedAim(sim, actor, tick);
           assert.equal(sim.hp, actor.hp, `${actor.id} hp at ${tick}`); assert.equal(sim.weapon, actor.activeWeapon, `${actor.id} weapon at ${tick}`);
           for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], actor.pos[axis], `${tick}/${actor.id}/${axis}`);
         }
@@ -197,6 +205,7 @@ for (const [roster, ticks] of [['scripted-4v4', 2200], ['local-4v4', 1600]] as c
         const event = step()!; live.runtime.step(); kills += event.kills.length;
         for (const actor of live.state.otherPlayers.values()) {
           const sim = checkpoint.state.combatants.find(c => c.id === actor.id)!;
+          assertCommittedAim(sim, actor, tick);
           assert.equal(sim.hp, actor.hp, `${tick}/${actor.id}/hp`);
           assert.equal(sim.isCrouching, actor.isCrouching, `${tick}/${actor.id}/stance`);
           for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], actor.pos[axis], `${tick}/${actor.id}/${axis}`);

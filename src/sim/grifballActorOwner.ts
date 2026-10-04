@@ -57,7 +57,7 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
       !Object.hasOwn(planner.punchControl!.cooldowns, id))))
     throw new Error('Composed objectives must share actor authority, team plan and reload ownership');
 
-  const turns = new Map<string, { adaptive: Adaptive; targetId?: string | null; resolved?: boolean }>();
+  const turns = new Map<string, { adaptive: Adaptive; targetId?: string | null; resolved?: boolean; strikeCommitted?: boolean }>();
   const current = (view: SimState, actorId: string, stepDt: number) => {
     if (view.combatants !== state.combatants || view.tick !== tick || stepDt !== dt || !Object.hasOwn(scriptedBots, actorId))
       throw new Error('Composed actor hooks belong to one simulation frame');
@@ -89,6 +89,7 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
         isObserverMode: control.isObserverMode,
       });
       turn.targetId = target?.id ?? null;
+      turn.strikeCommitted = ['windup', 'active'].includes(actor.weaponState);
       if (!target) return 'default';
       if (!beginSimGrifballTargetEngagement(view, actorId, target.id, scriptedBots,
         { memory: memories[actorId], matchContext: ai }, dt, actor.isLunging))
@@ -134,7 +135,15 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
       }) };
     },
     completeTurn: ({ state: view, actorId, dt: stepDt, record }) => {
-      current(view, actorId, stepDt);
+      const turn = current(view, actorId, stepDt);
+      const actor = view.combatants.find(c => c.id === actorId)!;
+      // A new strike commits after the predictive movement prelude. Its first
+      // attack frame faces the observed target, matching the live sync boundary.
+      if (turn.targetId && !turn.strikeCommitted && ['windup', 'active'].includes(actor.weaponState)) {
+        const target = view.combatants.find(c => c.id === turn.targetId)!;
+        const dx = target.pos.x - actor.pos.x, dz = target.pos.z - actor.pos.z;
+        if (dx !== 0 || dz !== 0) actor.yaw = Math.atan2(dx, dz);
+      }
       const memory = memories[actorId];
       if (record.kind === 'objective') {
         if (!planner || !record.objective) throw new Error('Composed objective completion requires its planner');

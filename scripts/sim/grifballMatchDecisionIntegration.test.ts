@@ -1,3 +1,4 @@
+import { INCOMING_LUNGE_MOBILITY_CASES, runIncomingLungeMobilityTrace, incomingLungeMobilityCoverage, incomingLungeCompletedMatchWitnesses, type IncomingLungeMobilityTrace } from './grifballIncomingLungeMobility';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MATCH_DECISION_CASES, runMatchDecisionTrace } from './grifballMatchDecisionIntegration';
@@ -11,8 +12,13 @@ for (const spec of MATCH_DECISION_CASES) test(`match decision ${JSON.stringify(s
   coverage.push({ name: trace.name, scenario: trace.scenario, failureCount: trace.failureCount,
     mainJumpRequests: trace.mainJumpRequests });
 });
-test('complete-match matrix witnesses real dash rejections on both teams', () => {
-  assert.deepEqual(jumpCoverage(coverage, 'match').missing, []);
+test('complete matches retain the original matrix and witness dash rejections on both teams', async () => {
+  assert.equal(coverage.length, MATCH_DECISION_CASES.length);
+  const incoming: IncomingLungeMobilityTrace[] = [];
+  for (const spec of INCOMING_LUNGE_MOBILITY_CASES) incoming.push(await runIncomingLungeMobilityTrace(spec));
+  assert.deepEqual(incomingLungeMobilityCoverage(incoming), { required: 64, completed: 64, errors: [] });
+  const completed = incomingLungeCompletedMatchWitnesses(incoming);
+  assert.deepEqual(jumpCoverage([...coverage, ...completed], 'match').missing, []);
 });
 for (const mode of ['punch-first', 'hammer-first', 'contested'] as const) {
   for (const reverse of [false, true]) for (const main of [false, true]) test(`match decisions repeat: ${mode}/${reverse}/${main}`, () => {

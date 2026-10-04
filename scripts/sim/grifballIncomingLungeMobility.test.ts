@@ -1,7 +1,8 @@
+import { jumpCoverage } from './grifballJumpCoverage';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { INCOMING_LUNGE_MOBILITY_CASES, runIncomingLungeMobilityTrace,
-  validateIncomingLungeMobility, incomingLungeMobilityCoverage,
+  validateIncomingLungeMobility, incomingLungeMobilityCoverage, incomingLungeCompletedMatchWitnesses,
   type IncomingLungeMobilityTrace } from './grifballIncomingLungeMobility';
 
 const traces: IncomingLungeMobilityTrace[] = [];
@@ -102,4 +103,37 @@ test('incoming sword dash validation rejects corrupted physical transitions and 
     else assert.ok(validateIncomingLungeMobility(altered).failureCount > 0, defect);
     assert.ok(incomingLungeMobilityCoverage(traces.map(t => t === good ? altered : t)).errors.length > 0, defect);
   }
+});
+
+test('only completed and fully validated incoming-sword matches witness match dash rejections', () => {
+  const matches = incomingLungeCompletedMatchWitnesses(traces);
+  assert.ok(matches.length > 0);
+  assert.deepEqual(jumpCoverage(matches, 'match').missing, []);
+  assert.ok(matches.every(t => t.completion?.termination === 'match-end' && t.completedMatch));
+  for (const capped of traces.filter(t => t.completion?.termination === 'simulation-cap')) {
+    assert.equal(capped.completedMatch, false);
+    assert.deepEqual(incomingLungeCompletedMatchWitnesses([capped]), []);
+  }
+  const good = matches.find(t => t.rejections.length)!;
+  for (const defect of ['missing', 'wrong-tick', 'wrong-phase', 'score', 'round', 'holder', 'failed', 'capped', 'foreign-job', 'wrong-check', 'raw-score', 'raw-round', 'physical', 'cached-failure']) {
+    const altered = structuredClone(good), completion = altered.completion!;
+    if (defect === 'missing') altered.completion = null;
+    if (defect === 'wrong-tick') completion.end!.tick--;
+    if (defect === 'wrong-phase') completion.end!.phase = 'playing';
+    if (defect === 'score') completion.end!.scores.blue++;
+    if (defect === 'round') completion.end!.round++;
+    if (defect === 'holder') completion.end!.holder = 'main_ai';
+    if (defect === 'failed') completion.check.verdict = 'fail';
+    if (defect === 'capped') { completion.termination = 'simulation-cap'; completion.check.verdict = 'inconclusive'; }
+    if (defect === 'foreign-job') completion.jobId = 'foreign';
+    if (defect === 'wrong-check') completion.check.id = 'foreign';
+    if (defect === 'raw-score') altered.frames[0].scores.blue++;
+    if (defect === 'raw-round') altered.frames[0].round++;
+    if (defect === 'physical') altered.requests.find(r => r.id === 'main_ai' && !r.accepted && r.dash > 0)!.plannedAfter = true;
+    if (defect === 'cached-failure') altered.failureCount++;
+    assert.deepEqual(incomingLungeCompletedMatchWitnesses([altered]), [], defect);
+    assert.ok(incomingLungeMobilityCoverage(traces.map(t => t.name === good.name ? altered : t)).errors.length > 0, defect);
+  }
+  const cappedCache = { ...good, completedMatch: false };
+  assert.ok(incomingLungeMobilityCoverage(traces.map(t => t.name === good.name ? cappedCache : t)).errors.length > 0);
 });

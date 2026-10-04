@@ -1,5 +1,6 @@
 import { validateDashDecisionTrace, dashDecisionCoverage } from './grifballDashDecisionValidation';
 import { isDeepStrictEqual } from 'node:util';
+import type { TrialResult } from '../../src/game/grifballValidation/runner';
 import { createSuiteManifest } from '../../src/game/grifballValidation/profiles';
 import { createSuitePlan } from '../../src/game/grifballValidation/plan';
 import { setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
@@ -22,9 +23,11 @@ interface ActorFrame {
 }
 interface Frame {
   tick: number; phase: string; holder: string | null; actors: ActorFrame[];
+  round: number; scores: { blue: number; red: number };
 }
 export interface IncomingLungeRecording {
   spec: IncomingLungeMobilityCase; error: string | null;
+  completion: Pick<TrialResult, 'jobId' | 'termination' | 'check' | 'end'> | null;
   frames: Frame[]; requests: JumpRequest[]; trades: Trade[];
   dashSamples: (AutonomousDashObservation & { tick: number })[];
   dashSettings: { distance: number; duration: number; cooldown: number };
@@ -65,6 +68,7 @@ export async function recordIncomingLungeMobility(spec: IncomingLungeMobilityCas
   const carrier = state.otherPlayers.get('validation-blue-1')!, opponent = state.otherPlayers.get('validation-red-0')!;
   const sign = spec.mirrored ? -1 : 1;
   let error: string | null = null;
+  let completion: IncomingLungeRecording['completion'] = null;
   try {
     for (const actor of state.otherPlayers.values()) {
       actor.invulnerabilityTimer = actor.aiTimer = actor.swapCooldownTimer = actor.swapLockoutTimer = 0;
@@ -82,6 +86,7 @@ export async function recordIncomingLungeMobility(spec: IncomingLungeMobilityCas
     for (tick = 1; tick <= 3600; tick++) {
       host.runtime.step();
       frames.push({ tick, phase: phase(), holder: state.grifball.ball.holderId,
+        round: state.grifball.roundNumber, scores: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals },
         actors: [main, carrier, opponent].map(a => ({ id: a.id, hp: a.hp, deaths: a.deaths ?? 0,
           pos: a.pos.toArray(), vel: a.vel.toArray(), weapon: a.activeWeapon, phase: a.weaponState ?? 'ready',
           weaponTimer: a.weaponTimer ?? 0, jump: !!a.isJumping, planned: !!a.hammerJumpPlanned,
@@ -89,9 +94,11 @@ export async function recordIncomingLungeMobility(spec: IncomingLungeMobilityCas
           role: state.aiMatchContext.grifballTeamPlan.assignments.get(a.id)?.role ?? null })) });
       if (phase() === 'matchEnd') break;
     }
+    const result = await host.runtime.done;
+    completion = { jobId: result.jobId, termination: result.termination, check: result.check, end: result.end };
   } catch (caught) { error = String(caught); }
   finally { host.runtime.dispose(); }
-  return { spec: { ...spec }, error, frames, requests, trades, dashSamples,
+  return { spec: { ...spec }, error, completion, frames, requests, trades, dashSamples,
     dashSettings: { distance: state.settings.dashDistance, duration: state.settings.dashDuration, cooldown: state.settings.dashCooldown } };
 }
 
@@ -143,6 +150,40 @@ export function validateIncomingLungeMobility(trace: IncomingLungeRecording) {
     f.actors.some(a => a.id === 'main_ai') && f.actors.every(a =>
       a.pos.length === 3 && a.vel.length === 3 && [...a.pos, ...a.vel, a.hp, a.budget, a.dash].every(Number.isFinite))),
   'contiguous finite actor recording');
+  // Completion comes from the runtime, while scores and rounds are copied
+  // independently from every frame. A cap remains a valid bounded recording,
+  // but cannot supply a completed-match witness.
+  const last = trace.frames.at(-1), completion = trace.completion;
+  const ended = last?.phase === 'matchEnd';
+  const validScores = (scores: Frame['scores'] | undefined) => !!scores &&
+    [scores.blue, scores.red].every(n => Number.isInteger(n) && n >= 0 && n <= 2);
+  let previousScores = { blue: 0, red: 0 }, previousRound = 1, previousPhase = 'playing';
+  for (const frame of trace.frames) {
+    const coherent = validScores(frame.scores) && Number.isInteger(frame.round) && frame.round >= 1;
+    check(coherent, 'finite legal match scores and round', frame.tick);
+    if (!coherent) continue;
+    const blue = frame.scores.blue - previousScores.blue, red = frame.scores.red - previousScores.red;
+    check((blue === 0 || blue === 1) && (red === 0 || red === 1) && blue + red <= 1,
+      'at most one legal goal per frame', frame.tick);
+    if (blue + red) check(previousPhase === 'playing' && frame.phase === 'scored' && frame.holder === null,
+      'score increment is an observed goal transition', frame.tick);
+    check(frame.round === previousRound + Number(previousPhase === 'scored' && frame.phase === 'countdown'),
+      'round advances only on an observed reset', frame.tick);
+    previousScores = frame.scores; previousRound = frame.round; previousPhase = frame.phase;
+  }
+  const suffix = '/' + trace.spec.seed + '/balanced/' + (trace.spec.mirrored ? 'mirrored' : 'original') + '/candidate';
+  check(!!completion && completion.jobId.split('/')[0] === 'incoming-sword-mobility' &&
+    /^[a-f0-9]{64}$/.test(completion.jobId.split('/')[1]) && completion.jobId.endsWith(suffix) &&
+    completion.check.id === completion.jobId && completion.check.state === 'completed' &&
+    isDeepStrictEqual(completion.check.evidence, ['trial:' + completion.jobId]), 'runtime completion belongs to this declared job');
+  check(completion?.termination === (ended ? 'match-end' : 'simulation-cap') &&
+    completion?.check.verdict === (ended ? 'pass' : 'inconclusive'), 'runtime termination and verdict match the recording');
+  check(!!last && !!completion?.end && completion.end.tick === last.tick && completion.end.phase === last.phase &&
+    completion.end.round === last.round && completion.end.holder === last.holder &&
+    isDeepStrictEqual(completion.end.scores, last.scores), 'runtime end agrees with independently recorded match state');
+  if (ended) check(!!last && validScores(last.scores) && Math.max(last.scores.blue, last.scores.red) === 2 &&
+    Math.min(last.scores.blue, last.scores.red) < 2 && last.holder === null &&
+    last.round === last.scores.blue + last.scores.red, 'completed match has a two-goal winner and released possession');
   let previousRequest = 0;
   const mainJumpRequests = trace.requests.filter(r => r.id === 'main_ai');
   for (const request of mainJumpRequests) {
@@ -222,7 +263,7 @@ export function validateIncomingLungeMobility(trace: IncomingLungeRecording) {
   return { ...trace, name: `incoming-lunge/${caseName(trace.spec)}`, ticks: trace.frames.length,
     boundary: 'live-incoming-lunge-mobility' as const,
     scenario: { ...trace.spec, team: trace.spec.mirrored ? 'red' as const : 'blue' as const, main: true },
-    failureCount, failures, mainJumpRequests, flights, rejections, interruptions, dash };
+    failureCount, failures, completedMatch: failureCount === 0 && ended, mainJumpRequests, flights, rejections, interruptions, dash };
 }
 
 export type IncomingLungeMobilityTrace = ReturnType<typeof validateIncomingLungeMobility>;
@@ -240,7 +281,7 @@ export function incomingLungeMobilityCoverage(traces: readonly IncomingLungeMobi
       trace.boundary !== recomputed.boundary || !isDeepStrictEqual(trace.scenario, recomputed.scenario) ||
       !isDeepStrictEqual(trace.flights, recomputed.flights) || !isDeepStrictEqual(trace.rejections, recomputed.rejections) ||
       !isDeepStrictEqual(trace.mainJumpRequests, recomputed.mainJumpRequests) ||
-      !isDeepStrictEqual(trace.interruptions, recomputed.interruptions) ||
+      !isDeepStrictEqual(trace.interruptions, recomputed.interruptions) || trace.completedMatch !== recomputed.completedMatch ||
       !isDeepStrictEqual(trace.dash, recomputed.dash)) errors.push(`${trace.name}: invalid retained evidence`);
     else verified.add(trace);
   }
@@ -259,4 +300,13 @@ export function incomingLungeMobilityCoverage(traces: readonly IncomingLungeMobi
   for (const group of dashCoverage.missing.filter(group => group.endsWith('/airborne-landing')))
     errors.push(group + ': missing incoming-sword dash landing');
   return { required: expected.size, completed: verified.size, errors };
+}
+
+/** Recheck full raw observations before accepting complete-match opportunities.
+ * Physical failures, runtime failures and capped recordings cannot contribute. */
+export function incomingLungeCompletedMatchWitnesses(traces: readonly IncomingLungeMobilityTrace[]) {
+  return traces.flatMap(trace => {
+    const verified = validateIncomingLungeMobility(trace);
+    return !trace.failureCount && verified.completedMatch ? [verified] : [];
+  });
 }
