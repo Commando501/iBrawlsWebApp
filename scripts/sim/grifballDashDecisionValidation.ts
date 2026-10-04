@@ -1,11 +1,18 @@
-import type { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
-
-type Trace = ReturnType<typeof runOpposedDecisionTrace>;
+/** Copied updater kinematics used by both corridor and incoming-sword audits. */
+export interface DashDecisionKinematics {
+  pos: number[]; vel: number[]; remaining: number; cooldown: number;
+  direction: { x?: number; y?: number; z?: number }; jumping: boolean;
+}
+export interface DashDecisionRecording {
+  dashSettings?: { distance: number; duration: number; cooldown: number };
+  dashSamples?: readonly { tick: number; id: string; requested: boolean; target: string | null;
+    incomingThreat: boolean; before: DashDecisionKinematics; after: DashDecisionKinematics }[];
+}
 
 /** Observe the production updater without supplying movement or dash requests.
  * Suspended commitments follow an independent ballistic/drift oracle for this
  * open rectangular fixture. They are not counted as completed ground dashes. */
-export function validateDashDecisionTrace(trace: Pick<Trace, 'dashSamples' | 'dashSettings'>) {
+export function validateDashDecisionTrace(trace: DashDecisionRecording) {
   const failures: { tick: number; field: string; actual: unknown; expected: unknown }[] = [];
   let failureCount = 0, groundedSteps = 0, airborneDeferred = 0;
   let airborneSteps = 0;

@@ -24,6 +24,38 @@ import { applyValidationLocalInput } from '../../src/components/grifball/validat
 import { areGrifballCombatantsHostileForState, getGrifballCombatantRefForState, getGrifballTeamOfForState,
   getGrifballEnemyGoalPosForMap, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 
+
+export interface AutonomousJumpObservation {
+  id: string; accepted: boolean; dash: number; swap: number;
+  jumpType: 'offensive' | 'defensive'; plannedBefore: boolean; phaseBefore: string;
+  plannedAfter: boolean;
+}
+export interface AutonomousTradeActorObservation {
+  id: string; hp: number; phase: string; planned: boolean;
+  jumpType?: string; vy: number; budget: number;
+}
+export interface AutonomousTradeObservation {
+  attackerId: string; targetId: string; reason: string;
+  before: AutonomousTradeActorObservation | null;
+  after: AutonomousTradeActorObservation | null;
+}
+/** Optional validation-only observations. Payloads contain copied scalar values,
+ * never mutable actors; callbacks do not select or replace production actions. */
+export interface AutonomousDashActorObservation {
+  pos: number[]; vel: number[]; hp: number; weapon: string;
+  remaining: number; cooldown: number; direction: { x: number; y: number; z: number };
+  jumping: boolean; lunging: boolean; role: string | null;
+}
+export interface AutonomousDashObservation {
+  id: string; requested: boolean; target: string | null; incomingThreat: boolean;
+  before: AutonomousDashActorObservation; after: AutonomousDashActorObservation;
+}
+export interface AutonomousActionObservers {
+  dashUpdate?: (sample: Readonly<AutonomousDashObservation>) => void;
+  hammerJump?: (sample: Readonly<AutonomousJumpObservation>) => void;
+  trade?: (sample: Readonly<AutonomousTradeObservation>) => void;
+}
+
 export const AUTONOMOUS_RUNTIME_PROTOCOL = 'production-runtime-node-v1';
 const noop = () => {};
 const ref = <T>(current: T) => ({ current });
@@ -32,7 +64,7 @@ const ref = <T>(current: T) => ({ current });
  * This is an explicit validation host, not a replacement for stepSimulation or
  * an execution/schema change for any existing trained policy. */
 export function createAutonomousValidationRuntime(fixture: FrozenCase, job: ValidationJob,
-  observeState?: (canonicalState: string) => void) {
+  observeState?: (canonicalState: string) => void, actionObservers?: AutonomousActionObservers) {
   const state = createInitialGrifballRuntimeState({ debugMode: false, adminSettings: fixture.mechanics,
     isMultiplayer: false, multiplayerRole: null });
   const refs = createInitialGrifballThreeRefs();
@@ -59,6 +91,21 @@ export function createAutonomousValidationRuntime(fixture: FrozenCase, job: Vali
     getOptimalSpawnPoint: arena.getOptimalSpawnPoint });
   const resolution = createCombatResolutionCallbacksForState({ ...common, ...effects, ...roster, ...bookkeeping,
     getMainAI: roster.mai });
+  if (actionObservers?.trade) {
+    const observe = actionObservers.trade, execute = resolution.executeCustomBotTrade;
+    const snapshot = (id: string): AutonomousTradeActorObservation | null => {
+      const actor = state.otherPlayers.get(id);
+      return actor ? { id, hp: actor.hp, phase: actor.weaponState ?? 'ready',
+        planned: !!actor.hammerJumpPlanned, jumpType: actor.hammerJumpType,
+        vy: actor.vel.y, budget: actor.aiHammerJumpsInAir ?? 0 } : null;
+    };
+    resolution.executeCustomBotTrade = (attacker, target, reason) => {
+      const before = snapshot(target.id), result = execute(attacker, target, reason);
+      observe({ attackerId: attacker.id, targetId: target.id,
+        reason: reason ?? 'sword_vs_sword', before, after: snapshot(target.id) });
+      return result;
+    };
+  }
   const weapons = createWeaponActionCallbacksForState({ ...common, ...effects, ...observations, ...bookkeeping,
     ...resolution, ...targets, getMainAI: roster.mai, getOpponentDisplay: roster.opponentDisplay,
     getIsPaused: () => false, getIsPlaying: () => true });
@@ -75,16 +122,58 @@ export function createAutonomousValidationRuntime(fixture: FrozenCase, job: Vali
     getMobileRightJoystickActive: () => false, deviceIsMobile: false, forceMobileControls: false, onPauseToggle: noop });
   const actions = createCombatantActionCallbacksForState({ ...common, ...effects, ...observations, ...roster,
     getOptimalSpawnPoint: arena.getOptimalSpawnPoint, onMainAIHammerSwing: weapons.triggerEnemyHammerSwing });
+  if (actionObservers?.hammerJump) {
+    const observe = actionObservers.hammerJump, start = actions.startAIHammerJump;
+    actions.startAIHammerJump = (actor, pos, vel, heading, jumpType = 'offensive') => {
+      const before = { id: actor.id, dash: actor.aiDashRemaining ?? 0,
+        swap: actor.swapCooldownTimer ?? 0, plannedBefore: !!actor.hammerJumpPlanned,
+        phaseBefore: actor.weaponState ?? 'ready' };
+      const accepted = start(actor, pos, vel, heading, jumpType);
+      observe({ ...before, accepted, jumpType, plannedAfter: !!actor.hammerJumpPlanned });
+      return accepted;
+    };
+  }
   const goal = (team: string | undefined) => getGrifballEnemyGoalPosForMap(team, fixture.map);
+  let dashRequests = 0, observedTarget: string | null = null, observedIncomingThreat = false;
+  const observedTargets = actionObservers?.dashUpdate ? {
+    ...targets,
+    getBestTacticalTarget: (...args: Parameters<typeof targets.getBestTacticalTarget>) => {
+      const target = targets.getBestTacticalTarget(...args);
+      observedTarget = target?.id ?? null; observedIncomingThreat = !!target?.isLunging;
+      return target;
+    },
+    getTacticalTargetById: (...args: Parameters<typeof targets.getTacticalTargetById>) => {
+      const target = targets.getTacticalTargetById(...args);
+      observedTarget = target?.id ?? null; observedIncomingThreat = !!target?.isLunging;
+      return target;
+    },
+  } : targets;
+  const dashSnapshot = (id: string): AutonomousDashActorObservation => {
+    const actor = state.otherPlayers.get(id)!;
+    return { pos: actor.pos.toArray(), vel: actor.vel.toArray(), hp: actor.hp, weapon: actor.activeWeapon,
+      remaining: actor.aiDashRemaining ?? 0, cooldown: actor.aiDashCooldownTimer ?? 0,
+      direction: { x: actor.aiDashDir?.x ?? 0, y: actor.aiDashDir?.y ?? 0, z: actor.aiDashDir?.z ?? 0 },
+      jumping: !!actor.isJumping, lunging: !!actor.isLunging,
+      role: state.aiMatchContext.grifballTeamPlan.assignments.get(id)?.role ?? null };
+  };
   const updateSingleAIEntity = createAISingleEntityUpdaterForState({ ...common, ...effects, ...observations,
-    ...roster, ...bookkeeping, ...resolution, ...targets, ...collision, ...actions,
+    ...roster, ...bookkeeping, ...resolution, ...observedTargets, ...collision, ...actions,
+    playDash: actionObservers?.dashUpdate ? () => { dashRequests++; effects.playDash(); } : effects.playDash,
     stateRef: ref(state), threeRef: ref(refs), grifballEnemyGoalPos: goal, areCombatantsHostile,
     getOptimalSpawnPoint: arena.getOptimalSpawnPoint,
     grifballTeamOf: (id: string) => getGrifballTeamOfForState(state, id),
     grifballCombatantRef: (id: string) => getGrifballCombatantRefForState(state, id) });
+  const observedUpdate: typeof updateSingleAIEntity = actionObservers?.dashUpdate ? (id, dt) => {
+    const before = dashSnapshot(id), requestsBefore = dashRequests;
+    observedTarget = null; observedIncomingThreat = false;
+    const result = updateSingleAIEntity(id, dt);
+    actionObservers.dashUpdate!({ id, requested: dashRequests > requestsBefore, target: observedTarget,
+      incomingThreat: observedIncomingThreat, before, after: dashSnapshot(id) });
+    return result;
+  } : updateSingleAIEntity;
   const frame = createGameFrameCallbacksForState({ ...common, ...effects, ...roster, ...actions, ...player,
     getMainAI: roster.mai, getReplayActive: () => false, getKeysPressed: () => keysPressed.current,
-    getKeybindings: () => DEFAULT_KEYBINDINGS, getEnemyGoalPos: goal, updateSingleAIEntity,
+    getKeybindings: () => DEFAULT_KEYBINDINGS, getEnemyGoalPos: goal, updateSingleAIEntity: observedUpdate,
     getSpectateTargetData: () => { throw new Error('Headless validation has no spectate target'); } });
   const tick = (dt: number) => advanceGrifballFrameForState({ ...common, ...effects, ...player, ...frame,
     ...collision, state, refs, dt, ballMeshRef, ballChargingRef, ballChargeTimerRef,

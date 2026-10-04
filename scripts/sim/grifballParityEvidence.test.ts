@@ -192,3 +192,12 @@ test('streaming trace hash detects an unsampled intermediate change', () => {
   assert.notEqual(first.frameEvidence.fullTraceSHA256, second.frameEvidence.fullTraceSHA256);
   assert.throws(() => createParityFrameRecorder().finish(), /nonempty/);
 });
+
+test('v85 requires incoming sword recordings without removing earlier families', () => {
+  const previous = SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v84'];
+  assert.deepEqual(SAMPLED_PARITY_FAMILIES['live-functions-vs-headless-step-v85'], [...previous, 'incomingLungeMobilityTraces']);
+  const current = sampledReport('live-functions-vs-headless-step-v85');
+  assert.deepEqual(validateSampledParityEvidence(current), []);
+  delete current.incomingLungeMobilityTraces;
+  assert.deepEqual(validateSampledParityEvidence(current), ['incomingLungeMobilityTraces: missing or empty family']);
+});

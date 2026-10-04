@@ -491,6 +491,8 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
       else if (target.alive && primaryActive) {
         target.weaponState = 'recovering'; target.weaponPhaseElapsed = 0;
         target.weaponTimer = recoverForKind(target.attackKind, settings);
+        if (target.hammerJumpPlanned !== undefined) target.hammerJumpPlanned = false;
+        delete target.hammerJumpType;
         target.attackCooldown = target.weaponTimer;
       }
       if (c.alive) finish('hit', c, !isMixedPlayer(state, target));
@@ -555,6 +557,8 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
       // already ended. Live trades retain that survivor's existing reload.
       // Lethal hits already clear cooldown through strike's death handling.
       target.isLunging = false; target.weaponState = 'idle'; target.weaponTimer = target.weaponPhaseElapsed = 0;
+      if (target.hammerJumpPlanned !== undefined) target.hammerJumpPlanned = false;
+      delete target.hammerJumpType;
       target.attackKind = 'none';
     }
     learning?.lifecycle?.impact(c, target, 'lunge', !!trade, targetWasLunging);

@@ -2,7 +2,7 @@ import { DEFAULT_ADMIN_SETTINGS } from '../../src/settings/gameplaySettings';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 
 export const PASS_RECOVERY_OPENINGS = {
-  interception: { defender: { x: 3, z: 6 }, cover: { x: 40, z: -18 }, releaseSpeed: 17.5, settleTick: 96, pickupTick: 96, stolen: true },
+  interception: { defender: { x: 3, z: 6 }, cover: { x: 40, z: -18 }, escort: { x: -14, z: 0 }, releaseSpeed: 17.5, settleTick: 96, pickupTick: 96, stolen: true },
   overthrow: { defender: { x: 27, z: 8 }, cover: { x: 40, z: -18 }, releaseSpeed: 26, settleTick: 132, pickupTick: 132, stolen: true },
   'distant-opponent': { defender: { x: -35, z: 12 }, cover: { x: 40, z: -18 }, releaseSpeed: 17.5, settleTick: 96, pickupTick: 109, stolen: false },
   'short-pass': { defender: { x: -11, z: 8 }, cover: { x: 40, z: -18 }, releaseSpeed: 9, settleTick: 68, pickupTick: 68, stolen: false },

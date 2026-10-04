@@ -327,6 +327,17 @@ test('bounded scripted execution passes every required family while legacy diffe
   assert.equal(details.mapMobilityTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 16560);
   assert.equal(new Set(details.mapMobilityTraces.map((t: any) => t.mapId)).size, 8);
   assert.equal(details.mobilityDecisionTraces.length, 32);
+  assert.equal(details.incomingLungeMobilityTraces.length, 64);
+  assert.deepEqual(details.incomingLungeMobilityWitnesses, { required: 64, completed: 64, errors: [] });
+  assert.ok(details.incomingLungeMobilityTraces.every((t: any) => t.failureCount === 0 &&
+    t.boundary === 'live-incoming-lunge-mobility' && t.frameCount === t.ticks && t.ticks > 0 && t.ticks <= 3600 &&
+    t.dash.failureCount === 0 && t.dashEvidence.frameCount > 0));
+  for (const team of ['blue', 'red']) for (const reverse of [false, true]) {
+    const group = details.incomingLungeMobilityTraces.filter((t: any) => t.scenario.team === team && t.scenario.reverse === reverse);
+    assert.equal(group.length, 16);
+    assert.ok(group.some((t: any) => t.flights.length > 0), 'incoming sword complete flight: ' + team + '/' + reverse);
+    assert.ok(group.some((t: any) => t.rejections.length > 0), 'incoming sword dash rejection: ' + team + '/' + reverse);
+  }
   assert.ok(details.mobilityDecisionTraces.every((t: any) => t.landingReassignments.every((r: any) =>
     r.reassignedAt === r.landing + 1)), 'observed landing turnovers rebuild orders on the next tick');
   assert.deepEqual(details.dashWitnesses.missing, []);
@@ -377,7 +388,7 @@ test('bounded scripted execution passes every required family while legacy diffe
   assert.equal(details.sampledContactTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 13680);
   assert.ok(details.sampledContactTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v84');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v85');
   assert.deepEqual(details.autonomousMobilityWitnesses, { required: 72, completed: 72, errors: [] });
   assert.equal(details.autonomousMobilityTraces.length, 72);
   assert.ok(details.autonomousMobilityTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 901 && t.restoredFrames === 900));

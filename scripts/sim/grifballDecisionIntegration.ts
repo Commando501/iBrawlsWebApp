@@ -76,6 +76,7 @@ export function runDecisionIntegrationTrace(spec: DecisionIntegrationCase) {
     resolveBotDerived: () => ({ pressureAggression: 50 }), resolveBotFlags: () => ({}),
     getMatchScoreContext: () => ({ ownScore: 0, opponentScore: 0, scoreToWin: 25 }),
     grifballEnemyGoalPos: goal,
+    getActiveCustomMap: () => map,
     constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
     getBestTacticalTarget: () => { check('unexpected generic combat', true, false); return null; },
     triggerCombatantAttack: () => check('unexpected attack', true, false),

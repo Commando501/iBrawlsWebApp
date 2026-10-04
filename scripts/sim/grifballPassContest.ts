@@ -2,7 +2,7 @@ import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 
 export const PASS_CONTEST_OPENINGS = {
   clear: { defender: { x: -35, z: 12 }, cover: { x: -45, z: -18 } },
-  pressure: { defender: { x: -20, z: 8 }, cover: { x: -45, z: -18 } },
+  pressure: { defender: { x: -20, z: 8 }, cover: { x: -45, z: -18 }, escort: { x: -14, z: 5.5 } },
   'closing-charge': { defender: { x: -20, z: 12 }, cover: { x: -45, z: -18 } },
   'blocked-lane': { defender: { x: -6, z: 6 }, cover: { x: -45, z: -18 } },
   disabled: { defender: { x: -35, z: 12 }, cover: { x: -45, z: -18 }, passingEnabled: false },

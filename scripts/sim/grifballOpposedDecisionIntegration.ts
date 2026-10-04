@@ -1,3 +1,4 @@
+import { resolveRunnerMaxHp } from '../../src/game/runnerBallSettings';
 import { throwBall, GRIFBALL_BALL_GRAVITY, GRIFBALL_THROW_ARC } from '../../src/game/grifballBall';
 import { isMapBodyClear } from './grifballMapCollisionOracle';
 import { createArenaCollisionCallbacksForState } from '../../src/components/grifball/arenaCollisionCallbacks';
@@ -74,7 +75,7 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' | 'tank-contest' | 'earned-tank-contest' | 'pass-recovery' | 'map-roster-match' | 'landing-turnover' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean; releaseSpeed?: number }, rosterOptions?: RosterContestOptions) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' | 'pass-match' | 'map-pass-match' | 'roster-contest' | 'tank-contest' | 'earned-tank-contest' | 'pass-recovery' | 'map-roster-match' | 'landing-turnover' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean; releaseSpeed?: number; escort?: { x: number; z: number } }, rosterOptions?: RosterContestOptions) {
   const landingTurnover = continuation === 'landing-turnover';
   if (landingTurnover && spec.mode !== 'contested') throw new Error('Landing turnover requires a four-actor contested opening');
   const rosterMatch = continuation === 'map-roster-match';
@@ -108,6 +109,14 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData;
   if (match && !mapped) map.objects = (['blue', 'red'] as const).map(team => ({ id: team, type: 'box', goalPlateTeam: team,
     position: { x: team === 'blue' ? -47 : 47, y: 0, z: 0 }, scale: { x: 2, y: .12, z: 2 }, rotation: { x: 0, y: 0, z: 0 } })) as CustomMapData['objects'];
+  if (earnedTank) map.objects = [-1, 1].map(side => ({
+    id: 'earned-lane-' + side, type: 'box', isCollidable: true,
+    position: { x: .5 * sign, y: 2, z: side * 1.4 }, scale: { x: 5, y: 4, z: .4 }, rotation: { x: 0, y: 0, z: 0 },
+  })) as CustomMapData['objects'];
+  if (earnedTank) map.objects.push({
+    id: 'earned-backstop', type: 'box', isCollidable: true,
+    position: { x: 5.3 * sign, y: 2, z: -1 * sign }, scale: { x: .4, y: 4, z: 2 }, rotation: { x: 0, y: 0, z: 0 },
+  } as CustomMapData['objects'][number]);
   const mapBefore = JSON.stringify(map);
   state.arenaRadius = map.arenaRadius; state.isObserverMode = true; state.grifball.phase = 'playing';
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = passing && passOpening?.passingEnabled !== false; state.otherPlayers.clear();
@@ -124,7 +133,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     { id: carrierId, x: passing ? -20 : -1, z: 0, team: spec.team },
     { id: defenderId, x: passing ? passOpening!.defender.x : 1, z: passing ? passOpening!.defender.z : 0, team: otherTeam },
     ...(spec.mode === 'contested' ? [
-      { id: 'escort', x: -8, z: passing ? 0 : 3, team: spec.team },
+      { id: 'escort', x: passing ? (passOpening!.escort?.x ?? -8) : -8, z: passing ? (passOpening!.escort?.z ?? 0) : 3, team: spec.team },
       { id: 'cover', x: passing ? passOpening!.cover.x : 8, z: passing ? passOpening!.cover.z : -3, team: otherTeam },
     ] : []),
   ];
@@ -134,7 +143,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (tankContest) {
     const positions: Record<string, [number, number]> = {
-      [carrierId]: [0, 0], defender: [5, 0], escort: [4, -2.5], support_1: [4, 2.5],
+      [carrierId]: [0, 0], defender: [5, 0], escort: [5, -2], support_1: [5, 2],
       support_2: rosterOptions!.tankOpening === 'late-cover' ? [-23, 0] : [-4, 0],
       cover: [40, 18], rival_1: [45, -18], rival_2: [48, 15],
     };
@@ -155,7 +164,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     Object.assign(c, { controller: 'ai', weaponState: 'ready', weaponTimer: 0,
       hp: tankContest && !earnedTank ? 3 : 1, maxHp: mobility || (tankContest && !earnedTank) ? 3 : 1, invulnerabilityTimer: 0, respawnTimer: 0, swapCooldownTimer: 0 });
     if (earnedTank && ['escort', 'main_ai', 'support_1'].includes(c.id)) {
-      c.hp = 0; c.respawnTimer = rosterOptions!.earnedTankOpening === 'late-arrival' ? 1.35 : .75;
+      c.hp = 0; c.respawnTimer = rosterOptions!.earnedTankOpening === 'late-arrival' ? 1.35 : .55;
       initialRespawns.set(c.id, c.respawnTimer);
     }
     state.otherPlayers.set(c.id, c);
@@ -164,6 +173,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapPassMatch && [...state.otherPlayers.values()].some(c => !isMapBodyClear(map, c.pos))) throw new Error('Map pass fixture starts inside an obstacle');
   const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get(defenderId)!;
+  // This wounded mid-fight opening exercises the counter after the first pickup.
+  // The opening defender has just spent its normal dash cooldown. Later movement,
+  // cooldown expiry, combat and possession remain production-owned; full-match,
+  // revival and mobility continuations retain their original ready-dash starts.
+  if (spec.mode === 'contested' && ['opening', 'map-contest'].includes(continuation)) defender.aiDashCooldownTimer = state.settings.dashCooldown;
   if (landingTurnover) {
     // A short authored descent lands on the opening autonomous impact frame.
     // No action, damage, assignment or subsequent motion is injected.
@@ -176,9 +190,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   // Author only the initial visible recovery; all later decisions and phases are live.
   if (tankContest && !earnedTank && rosterOptions!.tankOpening !== 'ready') defender.weaponState = 'recovering';
   if (tankContest && !earnedTank && rosterOptions!.tankOpening === 'short-window') defender.weaponTimer = 1.19;
-  // Mid-fight start: a ready opponent is descending after using its air-jump
-  // budget. Its next swing and recovery must be produced by the live owners.
-  if (earnedTank) { defender.pos.y = .8; defender.isJumping = true; defender.aiHammerJumpsInAir = 1; }
+  if (tankContest && !earnedTank) defender.aiDashCooldownTimer = state.settings.dashCooldown;
+  // Mid-fight start: a grounded, ready opponent has just spent its dash.
+  // It must earn recovery through its own default-speed swing.
+  if (earnedTank) defender.aiDashCooldownTimer = state.settings.dashCooldown;
   const ballState = () => state.grifball.ball.state;
   state.grifball.ball.state = 'held'; state.grifball.ball.holderId = carrierId;
   state.grifball.ball.pos = { x: carrier.pos.x, y: 1.1, z: carrier.pos.z };
@@ -582,7 +597,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         check(`${c.id}.shield countdown`, Math.abs(c.invulnerabilityTimer - expectedShield) < 1e-9, true);
       }
       check(`${c.id}.finite`, [...c.pos.toArray(), ...c.vel.toArray(), c.yaw, c.aiTimer ?? 0].every(Number.isFinite), true);
-      if (mapped) {
+      if (mapped || (earnedTank && map.objects.some(object => object.isCollidable))) {
         // Combat may jump onto platforms or slide around rounded obstacle corners.
         // Ground route segments cannot describe those legal 3D collision results.
         check(`${c.id}.clear map body`, isMapBodyClear(map, c.pos), true);
@@ -684,7 +699,14 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       for (const failure of validateOpeningRecovery({ defenderId: defender.id,
         contested: spec.mode === 'contested', requireImpact: !mobility, dropTick,
         frames, pickups, impacts, targetLookups })) check(failure, false, true);
-      if (spec.mode === 'contested') check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
+      if (spec.mode === 'contested') {
+        const cover = state.otherPlayers.get('cover')!;
+        // Recovery can promote this living defender to runner and grant carrier health.
+        check('coverage teammate unharmed', cover.hp,
+          state.grifball.ball.holderId === cover.id ? resolveRunnerMaxHp(state.settings) : 1);
+        check('coverage teammate has no opening death', cover.deaths, 0);
+        check('coverage teammate receives no opening impact', impacts.some(i => i.victims.includes(cover.id)), false);
+      }
     }
   }
   if (rosterContest) check('tactical configuration preserved', JSON.stringify(state.grifballTactics), tacticsBefore);

@@ -32,7 +32,10 @@ for (const mirrored of [false, true]) for (const evasive of [false, true]) test(
   const manifest = createSuiteManifest('quick');
   // Keep a straight-route control alongside the default evasive runner. Avoidance
   // may escape the follow-up, but the first strike and surviving safety are required.
-  if (!evasive) Object.assign(manifest.candidate.defaults, { runnerRiskWeight: 0, stylesEnabled: false });
+  if (!evasive) {
+    Object.assign(manifest.candidate.defaults, { runnerRiskWeight: 0, stylesEnabled: false });
+    manifest.mechanics.allowRunnerThrust = false;
+  }
   manifest.cases = [{ id: 'safety-counter', mode: 'match', scenario: null, mapId: 'championship_stadium',
     roster: 'scripted-4v4', difficulty: 'normal', seeds: [102], opponents: ['balanced'], mirrored: true,
     fixedHz: 60, simulationSeconds: 10, watchdogSeconds: 60 }];
@@ -53,6 +56,10 @@ for (const mirrored of [false, true]) for (const evasive of [false, true]) test(
   try {
     for (let tick = 1; tick <= 180; tick++) {
       host.runtime.step(); elapsed = tick;
+      if (!evasive) {
+        assert.equal(s.settings.grifballAllowRunnerThrust, false, 'straight-route control disables runner thrust');
+        assert.equal(carrier.aiDashRemaining ?? 0, 0, 'straight-route carrier cannot start an evasive thrust');
+      }
       if (!firstStrike && defender.weaponState === 'swing_up') firstStrike = tick;
       if (!firstHitDistance && carrier.hp < 2) firstHitDistance = carrier.pos.distanceTo(defender.pos);
       if (defender.hp <= 0 || carrier.hp <= 0 || s.grifball.phase !== 'playing') break;
@@ -86,7 +93,10 @@ test('a ready interception reaches the existing strike owner before a new weapon
 
 for (const mirrored of [false, true]) for (const evasive of [false, true]) test(`supported safety holds its cut as the runner closes: ${mirrored}/evasive=${evasive}`, async t => {
   const manifest = createSuiteManifest('quick');
-  if (!evasive) Object.assign(manifest.candidate.defaults, { runnerRiskWeight: 0, stylesEnabled: false });
+  if (!evasive) {
+    Object.assign(manifest.candidate.defaults, { runnerRiskWeight: 0, stylesEnabled: false });
+    manifest.mechanics.allowRunnerThrust = false;
+  }
   manifest.cases = [{ id: 'supported-safety-counter', mode: 'match', scenario: null, mapId: 'championship_stadium',
     roster: 'scripted-4v4', difficulty: 'normal', seeds: [102], opponents: ['balanced'], mirrored: true,
     fixedHz: 60, simulationSeconds: 10, watchdogSeconds: 60 }];
@@ -107,6 +117,10 @@ for (const mirrored of [false, true]) for (const evasive of [false, true]) test(
   try {
     for (let tick = 1; tick <= 180; tick++) {
       host.runtime.step(); elapsed = tick;
+      if (!evasive) {
+        assert.equal(s.settings.grifballAllowRunnerThrust, false, 'straight-route control disables runner thrust');
+        assert.equal(carrier.aiDashRemaining ?? 0, 0, 'straight-route carrier cannot start an evasive thrust');
+      }
       const orders = s.aiMatchContext.grifballTeamPlan.assignments;
       if (orders.get(defender.id)?.reason.includes('hold the goal-side cut')) {
         holds++;

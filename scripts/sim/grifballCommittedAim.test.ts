@@ -16,7 +16,10 @@ for (const mirrored of [false, true])
     const plan = await createSuitePlan(manifest, { commit: 'a'.repeat(40), dirty: false,
       workingTreeHash: 'b'.repeat(64), scope: ['src'] });
     const job = plan.jobs.find(j => j.variant === 'candidate' && j.mirrored === mirrored)!;
-    const host = createAutonomousValidationRuntime(plan.cases[0], job), state = host.state;
+    const fixture = structuredClone(plan.cases[0]);
+    const authoredDefender = fixture.roster.find(actor => actor.slot.team === 'red')!;
+    authoredDefender.slot.weaponPrioritization = authoredDefender.effectiveKnobs.weaponPrioritization = 100;
+    const host = createAutonomousValidationRuntime(fixture, job), state = host.state;
     const sign = mirrored ? -1 : 1;
     const carrier = [...state.otherPlayers.values()].find(p => p.team === job.focalTeam)!;
     const defender = [...state.otherPlayers.values()].find(p => p.team !== job.focalTeam)!;
@@ -26,15 +29,20 @@ for (const mirrored of [false, true])
       if (actor !== carrier && actor !== defender) { actor.hp = 0; actor.respawnTimer = 100; }
     }
     state.grifball.phase = 'playing'; state.grifball.ball.state = 'held'; state.grifball.ball.holderId = carrier.id;
-    carrier.pos.set(30 * sign, 0, 0); defender.pos.set(35 * sign, 0, 0);
+    carrier.pos.set(30 * sign, 0, 0); defender.pos.set(32 * sign, 0, 0);
     carrier.vel.set(0, 0, 0); defender.vel.set(0, 0, 0); defender.activeWeapon = 'sword';
     setGrifballCarrierForState({ state, id: carrier.id, carrying: true });
+    carrier.weaponState = 'recovering'; carrier.weaponTimer = 0;
     Object.assign(state.grifball.ball.pos, carrier.pos);
-    let firstHit = 0, committedFrames = 0;
+    let firstHit = 0, committedFrames = 0, swordImpacts = 0;
     const awayFrames: number[] = [];
     try {
       for (let tick = 1; tick <= 180; tick++) {
+        const hpBefore = carrier.hp;
+        const committedSwordBefore = defender.activeWeapon === 'sword' && !defender.isLunging &&
+          ['swing_up', 'swing_down'].includes(defender.weaponState ?? '');
         host.runtime.step();
+        if (committedSwordBefore && carrier.hp < hpBefore) swordImpacts++;
         if (!firstHit && carrier.hp < 2) firstHit = tick;
         if (defender.activeWeapon === 'sword' && ['swing_up', 'swing_down'].includes(defender.weaponState ?? '')) {
           committedFrames++;
@@ -47,6 +55,7 @@ for (const mirrored of [false, true])
       t.diagnostic(JSON.stringify({ mirrored, firstHit, committedFrames, awayFrames }));
       assert.ok(committedFrames > 0, 'exercise a real autonomous sword commitment');
       assert.ok(firstHit > 0, 'the in-range approaching carrier must take the sword impact');
+      assert.ok(swordImpacts > 0, 'require committed sword damage independently of an earlier lunge');
       assert.deepEqual(awayFrames, [], 'movement prediction must not turn a committed strike away from its target');
     } finally { host.runtime.dispose(); }
   });

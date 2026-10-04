@@ -1,3 +1,4 @@
+import type { CustomMapData } from '../../types';
 import { resolveAIGroundState } from '../../game/aiGroundState';
 import { selectGrifballEscortEvasion } from '../../game/aiGrifballEvasion';
 import { selectGrifballRunnerEvasion } from '../../game/aiGrifballRunnerEvasion';
@@ -103,6 +104,7 @@ type MutableRef<T> = { current: T };
 type AISingleEntityUpdaterOptions = {
   stateRef: MutableRef<GrifballRuntimeState>;
   threeRef: MutableRef<GrifballThreeRefs>;
+  getActiveCustomMap: () => CustomMapData | null;
   playDash: () => void;
   playJump: () => void;
   playExplosion: () => void;
@@ -189,6 +191,7 @@ export function createAISingleEntityUpdaterForState({
       const pos = self.pos;
       const vel = self.vel;
       let yaw = self.yaw;
+      let newlyCommittedAimTarget: THREE.Vector3 | null = null;
       let activeWeapon = self.activeWeapon;
       let weaponState = self.weaponState || 'ready';
   
@@ -249,6 +252,12 @@ export function createAISingleEntityUpdaterForState({
       // aiDashDir setter copies into the main AI's Vector3 but assigns a fresh object on
       // a bot â€” matching each backing store's representation.
       const syncStateAndMesh = () => {
+        // Decisions may start a strike after the prediction prelude. Aim that
+        // first committed frame at the observed target, as later frames do.
+        if (newlyCommittedAimTarget && ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(self.weaponState ?? '')) {
+          const dx = newlyCommittedAimTarget.x - pos.x, dz = newlyCommittedAimTarget.z - pos.z;
+          if (dx !== 0 || dz !== 0) yaw = Math.atan2(-dx, -dz);
+        }
         syncAICombatantFrameToState({
           self,
           mesh: botMesh,
@@ -720,6 +729,7 @@ export function createAISingleEntityUpdaterForState({
       }
   
       registerBotEngagement(s.aiMatchContext.coordinator, botId, target.id);
+      if (!['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState)) newlyCommittedAimTarget = target.pos;
   
       // SPAWN_GUARDING is only driven by the post-kill-pressure / no-target early-return
       // paths above. If we reach here we have a live target and those holds have expired,

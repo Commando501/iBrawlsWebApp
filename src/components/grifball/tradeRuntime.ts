@@ -244,6 +244,8 @@ export function executeCustomBotTradeForState({
     (targetCombatant.weaponState === 'swing_up' || targetCombatant.weaponState === 'swing_down')) {
     targetCombatant.weaponState = 'recovering';
     targetCombatant.weaponTimer = 0;
+    if (targetCombatant.hammerJumpPlanned !== undefined) targetCombatant.hammerJumpPlanned = false;
+    targetCombatant.hammerJumpType = undefined;
   }
   attackerBot.isLunging = false;
   attackerBot.weaponState = 'ready';
@@ -347,6 +349,8 @@ export function executePlayerCombatantTradeForState({
   combatant.isLunging = false;
   combatant.weaponState = 'ready';
   combatant.weaponTimer = 0;
+  if (combatant.hammerJumpPlanned !== undefined) combatant.hammerJumpPlanned = false;
+  combatant.hammerJumpType = undefined;
 
   const { text: attackerText, weapon: tradeWeapon } = getTradePresentation(reason);
   const playerName = state.settings.playerName || 'Blue (You)';
