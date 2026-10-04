@@ -1,12 +1,20 @@
-import { validateDashDecisionTrace } from './grifballDashDecisionValidation';
+import { validateDashDecisionTrace, type DashDecisionRecording, type DashDecisionKinematics } from './grifballDashDecisionValidation';
 import type { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 
 type Trace = ReturnType<typeof runOpposedDecisionTrace>;
-type AttackEvidence = Pick<Trace, 'attacks' | 'revivals' | 'deaths' | 'frames'>;
+export type RevivalAttackEvidence = Pick<Trace, 'attacks' | 'revivals' | 'deaths' | 'frames'>;
+export type RevivalActivityRecording = RevivalAttackEvidence &
+  Pick<Trace, 'scenario' | 'ticks'> & {
+    dashSettings?: DashDecisionRecording['dashSettings'];
+    dashSamples?: (Omit<NonNullable<DashDecisionRecording['dashSamples']>[number], 'before' | 'after'> & {
+      before: DashDecisionKinematics & { hp: number };
+      after: DashDecisionKinematics & { hp: number };
+    })[];
+  };
 
 /** Requests alone cannot prove renewed combat. These bounded recordings retain
  * both the actual dead-to-alive boundary and the first committed attack frame. */
-export function verifiedRevivalAttacks(trace: AttackEvidence) {
+export function verifiedRevivalAttacks(trace: RevivalAttackEvidence) {
   const frames = new Map(trace.frames.map(f => [f.tick, f]));
   const actor = (tick: number, id: string) => frames.get(tick)?.actors.find(a => a.id === id);
   return trace.attacks.filter(attack => {
@@ -36,7 +44,7 @@ export function verifiedRevivalAttacks(trace: AttackEvidence) {
 /** A revival must lead to renewed combat participation. A defensive witness
  * needs an observed threat and an independently verified consumed ground step;
  * a request, suspended jump, blocked dash or action by a never-revived actor is insufficient. */
-export function validateRevivalActivity(trace: Trace) {
+export function validateRevivalActivity(trace: RevivalActivityRecording) {
   const dash = validateDashDecisionTrace(trace);
   let failureCount = dash.failureCount;
   const failures = [...dash.failures];

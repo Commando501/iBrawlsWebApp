@@ -1,7 +1,8 @@
+import { INCOMING_LUNGE_MOBILITY_CASES, runIncomingLungeMobilityTrace, incomingLungeMobilityCoverage, type IncomingLungeMobilityTrace } from './grifballIncomingLungeMobility';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { REVIVAL_DECISION_CASES, runRevivalDecisionTrace, revivalAttackCoverage, runRevivalDecisionIntegration, summarizeRevivalDecisionTraces } from './grifballRevivalDecisionIntegration';
-import { validateRevivalActivity, verifiedRevivalAttacks } from './grifballRevivalActivity';
+import { validateRevivalActivity, verifiedRevivalAttacks, type RevivalActivityRecording } from './grifballRevivalActivity';
 import { MOBILITY_DECISION_CASES } from './grifballMobilityDecisionIntegration';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 import { PARITY_FRAME_SAMPLE_LIMIT } from './grifballParityEvidence';
@@ -29,22 +30,59 @@ test('revival report verifies full history before sampling and preserves actual 
   assert.equal(summarizeRevivalDecisionTraces(withoutProof).revivalAttackWitnesses.missing.length, 8);
 });
 
-let dashWitness: ReturnType<typeof runOpposedDecisionTrace> | undefined;
-function defensiveRevivalWitness() {
+// The adapter copies actual lifecycle observations into the shared validator's
+// minimal input contract. No actions, deaths, revivals or movement are injected.
+function incomingRevivalRecording(trace: IncomingLungeMobilityTrace) {
+  const deaths: RevivalActivityRecording['deaths'] = [];
+  const revivals: RevivalActivityRecording['revivals'] = [];
+  for (let i = 1; i < trace.frames.length; i++) for (const after of trace.frames[i].actors) {
+    const before = trace.frames[i - 1].actors.find(a => a.id === after.id)!;
+    if (before.hp > 0 && after.hp <= 0) deaths.push({ tick: trace.frames[i].tick, id: after.id });
+    if (before.hp <= 0 && before.respawnTimer > 0 && after.hp > 0 && after.respawnTimer === 0 &&
+      before.deaths === after.deaths && trace.frames[i - 1].phase === 'playing' && trace.frames[i].phase === 'playing' &&
+      deaths.some(d => d.id === after.id && d.tick < trace.frames[i].tick))
+      revivals.push({ tick: trace.frames[i].tick, id: after.id, pos: [...after.pos], shield: after.shield,
+        deaths: after.deaths, kills: after.kills });
+  }
+  return { name: trace.name, failureCount: trace.failureCount,
+    scenario: { mode: 'contested' as const, ...trace.scenario }, ticks: trace.ticks,
+    attacks: [] as RevivalActivityRecording['attacks'], deaths, revivals,
+    frames: trace.frames.map(frame => ({ tick: frame.tick, phase: frame.phase,
+      actors: frame.actors.map(actor => ({ ...actor, weaponState: actor.phase,
+        jumpPlanned: actor.planned, isJumping: actor.jump })) })),
+    dashSettings: trace.dashSettings, dashSamples: trace.dashSamples } satisfies RevivalActivityRecording &
+      { name: string; failureCount: number };
+}
+
+type DefensiveRecording = RevivalActivityRecording & { name: string; failureCount: number };
+let dashWitness: DefensiveRecording | undefined;
+async function defensiveRevivalWitness() {
   if (dashWitness) return dashWitness;
-  let selected: typeof dashWitness;
-  // Retain every original mobility case. The longer recordings supply test
-  // evidence; they do not replace the separate 600-frame revival requirement.
+  let selected: DefensiveRecording | undefined;
+  // Preserve all corridor cases and their validation. Both existing matrices
+  // may supply corruption-test evidence; the 600-frame revival gate is separate.
   for (const spec of MOBILITY_DECISION_CASES) {
     const trace = runOpposedDecisionTrace(spec, 'mobility');
-    assert.equal(trace.failureCount, 0, JSON.stringify({spec, failures:trace.failures}));
+    assert.equal(trace.failureCount, 0, JSON.stringify({ spec, failures: trace.failures }));
     const activity = validateRevivalActivity(trace);
-    assert.equal(activity.failureCount, 0, JSON.stringify({spec, failures:activity.failures}));
+    assert.equal(activity.failureCount, 0, JSON.stringify({ spec, failures: activity.failures }));
     const witness = activity.defensiveDashes[0];
-    if (!selected && witness) selected = {...trace, attacks:[],
-      dashSamples: trace.dashSamples!.filter(s => s.id === witness.id && s.tick === witness.tick)};
+    if (!selected && witness) selected = { ...trace, attacks: [],
+      dashSamples: trace.dashSamples!.filter(s => s.id === witness.id && s.tick === witness.tick) };
   }
-  assert.ok(selected, 'the complete fixed mobility matrix must supply a defensive revival witness');
+  const incoming: IncomingLungeMobilityTrace[] = [];
+  for (const spec of INCOMING_LUNGE_MOBILITY_CASES) incoming.push(await runIncomingLungeMobilityTrace(spec));
+  assert.deepEqual(incomingLungeMobilityCoverage(incoming), { required: 64, completed: 64, errors: [] });
+  for (const trace of incoming) {
+    const recording = incomingRevivalRecording(trace);
+    for (const sample of trace.dashSamples.filter(s => s.requested && s.incomingThreat &&
+      recording.revivals.some(r => r.id === s.id && r.tick < s.tick))) {
+      const isolated = { ...recording, dashSamples: [sample] };
+      const activity = validateRevivalActivity(isolated);
+      if (!selected && activity.failureCount === 0 && activity.defensiveDashes.length === 1) selected = isolated;
+    }
+  }
+  assert.ok(selected, 'the fixed corridor and incoming-sword matrices must supply a defensive revival witness');
   assert.equal(validateRevivalActivity(selected).failureCount, 0);
   return dashWitness = selected;
 }
@@ -133,16 +171,16 @@ test('revival matrix proves renewed attacks by both carrier identities, teams an
   }
 });
 
-test('verified defensive activity cannot replace original-carrier attack matrix coverage', () => {
-  const source = defensiveRevivalWitness();
+test('verified defensive activity cannot replace original-carrier attack matrix coverage', async () => {
+  const source = await defensiveRevivalWitness();
   assert.equal(validateRevivalActivity(source).defensiveDashes.length, 1);
   assert.equal(revivalAttackCoverage([source]).missing.length, 8);
   const missing = revivalAttackCoverage(coverage.map(t => ({ ...t, attacks: [] }))).missing;
   assert.equal(missing.length, 8);
 });
 
-test('revival activity requires a verified consumed defensive step by a living revived actor', (t) => {
-  const source = defensiveRevivalWitness(), activity = validateRevivalActivity(source);
+test('revival activity requires a verified consumed defensive step by a living revived actor', async (t) => {
+  const source = await defensiveRevivalWitness(), activity = validateRevivalActivity(source);
   const witness = activity.defensiveDashes[0];
   t.diagnostic(JSON.stringify({scenario:source.scenario, witness}));
   assert.deepEqual(activity.attacks, []);
@@ -158,7 +196,9 @@ test('revival activity requires a verified consumed defensive step by a living r
     ['no target', (_t, s) => { s.target = null; }],
     ['self target', (_t, s) => { s.target = s.id; }],
     ['unknown actor', (_t, s) => { s.id = 'missing'; }],
-    ['friendly target', (_t, s) => { s.target = 'escort'; }],
+    ['friendly target', (t, s) => { const frame = t.frames.find(f => f.tick === witness.tick - 1)!;
+      const actor = frame.actors.find(a => a.id === witness.id)!;
+      s.target = frame.actors.find(a => a.id !== actor.id && a.team === actor.team)!.id; }],
     ['unrevived actor', t => { t.revivals = t.revivals.filter(r => r.id !== witness.id); }],
     ['before revival', t => { t.revivals.forEach(r => r.tick = t.ticks + 1); }],
     ['dead actor', (_t, s) => { s.before.hp = 0; }],

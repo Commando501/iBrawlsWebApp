@@ -1,5 +1,5 @@
 import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, type OpposedDecisionCase } from './grifballOpposedDecisionIntegration';
-import { validateRevivalActivity, verifiedRevivalAttacks } from './grifballRevivalActivity';
+import { validateRevivalActivity, verifiedRevivalAttacks, type RevivalAttackEvidence } from './grifballRevivalActivity';
 import { compactExecutionTrace, compactExecutionTraces } from './grifballParityEvidence';
 
 export const REVIVAL_DECISION_CASES = OPPOSED_DECISION_CASES;
@@ -23,7 +23,7 @@ export function summarizeRevivalDecisionTraces(traces: readonly ReturnType<typeo
   return { revivalAttackWitnesses, revivalDecisionTraces };
 }
 
-interface RevivalAttackTrace extends Pick<ReturnType<typeof runOpposedDecisionTrace>, 'attacks' | 'revivals' | 'deaths' | 'frames'> {
+interface RevivalAttackTrace extends RevivalAttackEvidence {
   name: string; failureCount: number;
   scenario: { team: 'blue' | 'red'; reverse: boolean; main: boolean };
 }

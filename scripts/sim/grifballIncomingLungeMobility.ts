@@ -1,3 +1,4 @@
+import type { Combatant } from '../../src/types';
 import { validateDashDecisionTrace, dashDecisionCoverage } from './grifballDashDecisionValidation';
 import { isDeepStrictEqual } from 'node:util';
 import type { TrialResult } from '../../src/game/grifballValidation/runner';
@@ -18,7 +19,8 @@ type JumpRequest = AutonomousJumpObservation & { tick: number };
 type Trade = AutonomousTradeObservation & { tick: number };
 interface ActorFrame {
   id: string; hp: number; deaths: number; pos: number[]; vel: number[];
-  weapon: string; phase: string; weaponTimer: number; jump: boolean; planned: boolean;
+  team: Combatant['team']; kills: number; respawnTimer: number; shield: number;
+  weapon: Combatant['activeWeapon']; phase: NonNullable<Combatant['weaponState']>; weaponTimer: number; jump: boolean; planned: boolean;
   budget: number; dash: number; lunge: boolean; role: string | null;
 }
 interface Frame {
@@ -88,6 +90,7 @@ export async function recordIncomingLungeMobility(spec: IncomingLungeMobilityCas
       frames.push({ tick, phase: phase(), holder: state.grifball.ball.holderId,
         round: state.grifball.roundNumber, scores: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals },
         actors: [main, carrier, opponent].map(a => ({ id: a.id, hp: a.hp, deaths: a.deaths ?? 0,
+          team: a.team, kills: a.kills, respawnTimer: a.respawnTimer, shield: a.invulnerabilityTimer,
           pos: a.pos.toArray(), vel: a.vel.toArray(), weapon: a.activeWeapon, phase: a.weaponState ?? 'ready',
           weaponTimer: a.weaponTimer ?? 0, jump: !!a.isJumping, planned: !!a.hammerJumpPlanned,
           budget: a.aiHammerJumpsInAir ?? 0, dash: a.aiDashRemaining ?? 0, lunge: !!a.isLunging,
