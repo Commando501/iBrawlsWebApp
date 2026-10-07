@@ -3,7 +3,13 @@
 Date: 2026-09-26. Branch: `codex/grifball-team-tactics`.
 Milestone 6 checkpoint: `c7be970` (`feat(grifball): add team styles and adaptive tactics`).
 
-This is the first implementation slice of milestone 7, not acceptance of the entire milestone. The attached implementation plan is unchanged.
+This document retains the initial implementation and dated validation history. The attached implementation plan is unchanged.
+
+## Current acceptance status — 2026-10-07
+
+**Zero automated acceptance slices remain in the agreed scope. Human playtesting is the only remaining required M7 gate.** The final independent audit passes held-out quality, execution parity, production browser/CLI-Lab integration, builds and calibrated performance. Repository regression coverage retains the five explicitly retired V3 failures (22,741/22,746 tests pass; actual exit 1). Overall M7 acceptance remains pending your assessment of tactical readability, teammate spacing, tanking variation, runner protection, fairness and enjoyment. Optional learned-policy integration/retraining is outside this completion target.
+
+The final held-out results and source identities are recorded at the end of this document. Earlier remaining-work statements below describe their dated checkpoints and are superseded by this status.
 
 ## Current tracking update — 2026-09-27
 
@@ -4825,3 +4831,27 @@ Focused checks, TypeScript, production/relay/validation builds, startup, correct
 Both existing Node benchmarks run serially after browser cleanup and exit zero. The eight-participant validation fixtures measure planner p95 **3.920 ms** static-open, **7.736 ms** moving-obstacles and **7.464 ms** respawning-obstacles. The separate space probe measures **4.37/9.70 ms** open/obstacles for eight participants and **19.19/41.21 ms** for informational 32-participant stress. These uncalibrated Node fixture costs are diagnostic and are not substituted for the browser budget. Evidence: output/m7-v90-performance-check/terminal.json, cli/gates/performance.json, validation-benchmark.log and space-benchmark.log.
 
 **One substantive automated package remains: held-out generalization**, followed by final evidence consolidation. Before any held-out outcomes, the next study fixes 100 seeds (301–400) on the two original reserved maps, retaining the original reservation file. Development evidence shows that a 20-seed cohort can fall below the existing 20 opportunity-bearing-seed minimum even when every match completes; the prospectively larger cohort addresses coverage and precision without a power guarantee. An inventory of **710** retained plan/intent/manifest/protocol declarations finds no previous use of added seeds 321–400 and only the original reservation referencing 301–320 (output/m7-v91-heldout-seed-inventory.json). AI settings, maps, opponents, both mirrors, thresholds and horizons remain fixed. No outcome-selected extensions or retries are permitted. Human playtesting remains pending and user-owned.
+
+
+### Final held-out acceptance and human-testing handoff (2026-10-07)
+
+The fixed study on commit **1fee455b49cea4c3d7298ab0711e36dab7a9af61**, dirty scoped source fingerprint **845a971067495a558ebacd12f2cff202654b43f024afd66a23b6ec12c3faa9dd**, completes successfully at **20:18:33 UTC**. Its gameplay bytes match the accepted integrated/development and performance sources: tracked scoped-content SHA-256 **58b9f9aec531f1bb402a90509f15418049884903a1b58edcd710cdfe0a898c1d**. This includes the existing uncommitted team-outline work; the receipts do not certify a clean commit-only checkout.
+
+The comparison matrix is **100 seeds (301–400) × 2 reserved maps × 3 opponent styles × 2 sides × 2 configurations = 2,400 matches**. A separate 2,400-match identical-configuration control batch brings the total to **4,800**. Every match reaches normal match end with zero execution or correctness failures; all **1,200 exact null pairs** agree. The six-worker production-runtime Node study retains the fixed two-goal target, 60 Hz simulation, 900-second simulated horizon and predeclared baseline/candidate settings. The sample size was fixed before outcomes to improve opportunity coverage and precision; 100 seeds is a conservative engineering choice, not a proven minimum or a power guarantee.
+
+The unchanged held-out quality gate **passes**. Equally weighted, side-averaged paired seed estimates give goal-margin improvement **+0.7242**, 95% interval **[+0.5885, +0.8599]**, exceeding the declared +0.25 minimum at the lower bound. All supporting measures meet the existing minimum opportunity coverage, and every map/opponent stratum has a positive lower bound:
+
+| Reserved map | Opponent | Mean goal-margin improvement | 95% interval |
+| --- | --- | ---: | --- |
+| validation-staggered-lanes-v1 | balanced | +0.6850 | [+0.3799, +0.9901] |
+| validation-staggered-lanes-v1 | patient | +0.4150 | [+0.1123, +0.7177] |
+| validation-staggered-lanes-v1 | aggressive | +0.6000 | [+0.3010, +0.8990] |
+| validation-split-midfield-v1 | balanced | +0.6650 | [+0.3720, +0.9580] |
+| validation-split-midfield-v1 | patient | +0.6350 | [+0.3413, +0.9287] |
+| validation-split-midfield-v1 | aggressive | +1.3450 | [+1.0220, +1.6680] |
+
+There are no unresolved generalization groups or flagged stratum regressions. The original reservation hash remains **c06a9abd4f474a61ded2e1fa9cf3978e63d4bbb8b7a31cfcecbca6f643101bd7**. No old development cohort is pooled, no outcomes are replaced, and no sample extension or threshold change follows inspection of results. Evidence: output/m7-v91-heldout100/intent.json, audit.json and terminal.json.
+
+The independent final audit reconstructs all **4,800 artifacts**, checks job/fixture/source/runtime identities and hashes, recomputes correctness/reproducibility/quality, verifies pinned static acceptance receipts and the unchanged source, and reconciles every required acceptance category. It exits zero with **humanOnlyReady: true** and **milestone7Accepted: false** (output/m7-v91-final-acceptance-audit.json). The earlier static audit retains its historical pending-held-out status.
+
+**Human handoff:** play and observe matches with the existing AI Lab controls, assess whether spacing and role changes are readable, tanking is varied and useful, escorts protect without crowding the runner, and defending/attacking feels fair and enjoyable. Record map, roster/difficulty, team settings and a reproducible situation for any issue. These judgments remain user-owned; automated goal-margin improvement does not certify enjoyment. The five retired V3 failures remain recorded, and the short performance trials retain their overall inconclusive match-cap result while their dedicated performance gate passes. No additional automated slice is currently required; new defects discovered in human testing may require targeted repairs.
