@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { createVanguardSword, attachVanguardSword } from './iron-vanguard/ironVanguardSword';
+import { animateIronVanguard, isIronVanguardModel } from './iron-vanguard/ironVanguardModel';
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel, buildGravityHammerModel, buildKatarSwordModel, CharacterLoadout, DEFAULT_LOADOUT } from './VoxelModels';
@@ -12,7 +14,7 @@ import {
 } from './grifball/combatantRig';
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './grifball/attackAnimationPresets';
 import { disposePreviewObject, getPreviewLoadoutSignature } from './previewModelUtils';
-import type { V3RenderOptions } from './v3/v3QualityTiers';
+import { getV3GameplayRenderOptions } from './v3/v3QualityTiers';
 
 interface CharacterPreviewProps {
   hue: number;
@@ -20,10 +22,7 @@ interface CharacterPreviewProps {
   loadout?: CharacterLoadout;
 }
 
-const PREVIEW_V3_RENDER_OPTIONS: V3RenderOptions = {
-  v3QualityTier: 'desktop',
-  v3Distance: 0,
-};
+const PREVIEW_V3_RENDER_OPTIONS = getV3GameplayRenderOptions();
 
 export function getCharacterPreviewLoadoutSignature(loadout?: CharacterLoadout): string {
   return getPreviewLoadoutSignature(loadout);
@@ -116,7 +115,9 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       buildCombatantRigForModel(characterGroup);
       scene.add(characterGroup);
 
-      if (w === 'hammer') {
+      const importedHammer = characterGroup.userData.ironVanguardHammer as THREE.Group | undefined;
+      if (importedHammer) importedHammer.visible = w === 'hammer';
+      if (w === 'hammer' && !importedHammer) {
         const hammer = buildGravityHammerModel(h, lo?.hammerPreset);
         hammer.scale.set(0.6, 0.6, 0.6);
         hammer.position.set(
@@ -126,6 +127,8 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         );
         hammer.rotation.set(Math.PI / 2.5, 0, 0);
         attachToCombatantAttachment(characterGroup, 'thirdPersonWeaponGrip', hammer);
+      } else if (w === 'sword' && importedHammer) {
+        attachVanguardSword(characterGroup, createVanguardSword());
       } else if (w === 'sword') {
         const sword = buildKatarSwordModel(h, lo?.swordPreset);
         sword.scale.set(0.6, 0.6, 0.6);
@@ -203,6 +206,12 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       }
 
       const elapsed = clock.getElapsedTime();
+      if (characterGroup && isIronVanguardModel(characterGroup)) {
+        animateIronVanguard(characterGroup, {
+          activeWeapon: currentWeapon, weaponState: 'ready', weaponTimer: 0,
+          dt: 0, yaw: characterGroup.rotation.y, previewClip: 'idle', previewTime: elapsed,
+        });
+      }
       scene.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material) {
           const materials = Array.isArray(child.material) ? child.material : [child.material];

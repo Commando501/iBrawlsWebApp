@@ -1,0 +1,9 @@
+/* Self-contained offline entry: validation must not fetch hosted fonts or account UI assets. */
+@import "tailwindcss";
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-display: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+}
+body { margin: 0; background: #0f172a; }
+#game-canvas { width: 100%; height: 100%; display: block; }

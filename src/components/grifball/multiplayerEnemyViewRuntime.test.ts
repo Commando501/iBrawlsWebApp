@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { buildMultiplayerEnemyViewForRefs } from './multiplayerEnemyViewRuntime';
-import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
+import { getCombatantTeamArmorState } from './combatantTeamArmor';
 
-test('multiplayer enemy view can attach a Grifball team body outline', () => {
+test('multiplayer enemy view can attach a Grifball solid team armor', () => {
   const refs = createInitialGrifballThreeRefs();
   const scene = new THREE.Scene();
 
@@ -13,9 +13,9 @@ test('multiplayer enemy view can attach a Grifball team body outline', () => {
     refs,
     scene,
     mainAIHue: 0,
-    teamOutlineTeam: 'red',
+    teamArmorTeam: 'red',
   });
 
   assert.ok(refs.enemyGroup);
-  assert.equal(getCombatantTeamOutlineState(refs.enemyGroup)?.team, 'red');
+  assert.equal(getCombatantTeamArmorState(refs.enemyGroup)?.team, 'red');
 });

@@ -85,3 +85,15 @@ test('getGrifballRunnerSteering steers away from enemy blockers', () => {
   assert.ok(steer.x > 0); // still moving forward
   assert.ok(Math.abs(steer.z) > 0.01); // steered laterally to avoid the enemy
 });
+
+for (const sign of [1, -1]) for (const side of [1, -1])
+  for (const situation of ['near-flank', 'straight-pursuit', 'distant-flank', 'disabled'] as const)
+    test(`runner opens distance from close flanking pursuit: ${sign}/${side}/${situation}`, () => {
+      const enemy = { x: -sign, z: side * sign * (situation === 'straight-pursuit' ? 0 : situation === 'distant-flank' ? 6 : 2.5) };
+      const heading = getGrifballRunnerSteering({ x: 0, z: 0 }, { x: 10 * sign, z: 0 }, [enemy], 8,
+        situation === 'disabled' ? 0 : 4.5);
+      assert.ok(heading.x * sign > 0, 'keep making forward progress');
+      assert.ok(Math.abs(Math.hypot(heading.x, heading.z) - 1) < 1e-12);
+      if (situation === 'near-flank') assert.ok(heading.z * side * sign < -.1, 'open lateral clearance from the nearby pursuer');
+      else assert.ok(Math.abs(heading.z) < 1e-12, 'distant or directly trailing opponents must not cause a sideways detour');
+    });

@@ -3,6 +3,8 @@ import { getRectHalfExtents } from '../../game/arenaDimensions';
 import { type CustomMapData } from '../../types';
 import { createHighFidelityObjectMesh, generateCustomTexture } from './customMapAssets';
 import { type GrifballThreeRefs } from './threeRefs';
+import { applyStadiumWorldUVs, createStadiumFloorMaterial } from './stadiumMaterials';
+import { buildStadiumFieldMarkings } from './stadiumFieldMarkings';
 
 type CustomMapFloorTexture =
   | 'futuristic_hex'
@@ -84,18 +86,36 @@ export function buildCustomMapBaseArenaForRefs({
     )
     : new THREE.CylinderGeometry(r, r, 0.2, 64);
 
-  const floorTexture = generateCustomTexture(getCustomMapFloorTexture(activeCustomMap.theme), '#0f172a');
-  const floorMat = new THREE.MeshStandardMaterial({
-    map: floorTexture,
-    bumpMap: floorTexture,
-    bumpScale: activeCustomMap.theme === 'winter_rink' ? 0.005 : (activeCustomMap.theme === 'grifball_stadium' ? 0.015 : 0.02),
-    roughness: activeCustomMap.theme === 'winter_rink' ? 0.2 : (activeCustomMap.theme === 'grifball_stadium' ? 0.18 : 0.8),
-    metalness: activeCustomMap.theme === 'winter_rink' ? 0.1 : (activeCustomMap.theme === 'grifball_stadium' ? 0.9 : 0.5),
-  });
+  const isStadium = activeCustomMap.theme === 'grifball_stadium';
+  let floorMat: THREE.MeshStandardMaterial;
+  if (isStadium) {
+    applyStadiumWorldUVs(floorGeo, 6);
+    floorMat = createStadiumFloorMaterial();
+  } else {
+    const floorTexture = generateCustomTexture(getCustomMapFloorTexture(activeCustomMap.theme), '#0f172a');
+    floorMat = new THREE.MeshStandardMaterial({
+      map: floorTexture,
+      bumpMap: floorTexture,
+      bumpScale: activeCustomMap.theme === 'winter_rink' ? 0.005 : 0.02,
+      roughness: activeCustomMap.theme === 'winter_rink' ? 0.2 : 0.8,
+      metalness: activeCustomMap.theme === 'winter_rink' ? 0.1 : 0.5,
+    });
+  }
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.position.y = -0.1;
   floor.receiveShadow = true;
   scene.add(floor);
+  if (isStadium) {
+    floor.name = 'stadium_floor';
+    // Broad cool fill reveals surface detail under the dark stadium sky.
+    const fill = new THREE.HemisphereLight('#bacde2', '#26212c', 0.85);
+    fill.name = 'stadium_fill';
+    scene.add(fill);
+    if (activeCustomMap.mapShape === 'rectangular') {
+      const half = getRectHalfExtents(r, activeCustomMap.arenaHalfExtents);
+      scene.add(buildStadiumFieldMarkings(half.x, half.z));
+    }
+  }
 
   refs.customMapObjects = [];
   activeCustomMap.objects.forEach(obj => {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type AILungeOutcome } from '../../game/aiCombatDecision';
 import { MAIN_AI_ID } from '../../game/roster';
+import { exceedsSwordLungeTravel } from '../../game/swordLungeTravel';
 import { type Combatant, type CustomMapData, type DeathEvent } from '../../types';
 import { isVectorXZAtArenaBoundary } from './arenaBounds';
 import {
@@ -33,6 +34,7 @@ export function resolveAISwordLungeFlightForCombatant({
   constrainCombatantToArena,
   areCombatantsHostile,
   finishSwordLunge,
+  finishTradedTargetLunge,
   executeCustomBotTrade,
   renderSwordLungeTrailVfx,
   recordPlayerDamageTaken,
@@ -59,7 +61,8 @@ export function resolveAISwordLungeFlightForCombatant({
   recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
   areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
-  finishSwordLunge: (cooldownMultiplier: number, outcome: AILungeOutcome, targetId?: string) => void;
+  finishSwordLunge: (cooldownMultiplier: number, outcome: AILungeOutcome, targetId?: string, damageAlreadyRecorded?: boolean) => void;
+  finishTradedTargetLunge: (target: Combatant, attackerId: string) => void;
   executeCustomBotTrade: (
     attackerBot: Combatant,
     target: { id: string },
@@ -114,15 +117,23 @@ export function resolveAISwordLungeFlightForCombatant({
   const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
   if (target.hp <= 0 || !areCombatantsHostile(botId, target.id)) {
     finishSwordLunge(cooldownMult, 'target_dead', target.id);
-  } else if (dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
-    const tradeReason = resolveSwordLungeTradeReasonForState({
+    return 'continue';
+  } else if ((target.invulnerabilityTimer ?? 0) <= 0 && dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
+    // A shielded initiator can land a hit, but cannot take reciprocal trade damage.
+    const tradeReason = (self.invulnerabilityTimer ?? 0) > 0 ? null : resolveSwordLungeTradeReasonForState({
       state,
       target,
       mainAi: target.id === MAIN_AI_ID ? mainAi : undefined,
     });
 
     if (tradeReason) {
+      const tradedTarget = state.otherPlayers.get(target.id);
+      const targetWasLunging = !!tradedTarget?.isLunging;
       executeCustomBotTrade(self, target, tradeReason);
+      if (targetWasLunging && tradedTarget && tradedTarget.hp > 0) finishTradedTargetLunge(tradedTarget, self.id);
+      // Surviving a trade still consumes this flight and its reload. Dead actors
+      // keep their respawn state instead of entering pressure/combo recovery.
+      if (self.hp > 0) finishSwordLunge(cooldownMult, 'hit', target.id, target.id !== 'player');
       return 'trade_return';
     }
 
@@ -144,6 +155,9 @@ export function resolveAISwordLungeFlightForCombatant({
       recordBotCalibrationDeath,
     });
     pushStatsUpdate();
+    // Contact already ended the flight. A boundary/timeout on this same tick must
+    // not replace hit memory, restart cooldown, or record the lunge a second time.
+    return 'continue';
   }
 
   const startDist = pos.distanceTo(new THREE.Vector3(self.lungeStartPos!.x, self.lungeStartPos!.y, self.lungeStartPos!.z));
@@ -156,7 +170,7 @@ export function resolveAISwordLungeFlightForCombatant({
 
   if (hitsBoundary) {
     finishSwordLunge(cooldownMult, 'miss_arena', target.id);
-  } else if (startDist > 16.0 || self.lungeTimer > 0.8) {
+  } else if (exceedsSwordLungeTravel(startDist) || self.lungeTimer > 0.8) {
     finishSwordLunge(cooldownMult, 'miss_timeout', target.id);
   }
 

@@ -49,7 +49,7 @@ export const tryEnterCombatantPressureState = ({
   settings,
   scoreContext,
 }: {
-  bot: Combatant | undefined;
+  bot: Pick<Combatant, 'controller' | 'aiState' | 'aiTimer' | 'aiPressureTargetId'> | undefined;
   targetId: string;
   targetHp: number;
   targetInvuln: number;

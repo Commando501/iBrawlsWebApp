@@ -1,3 +1,4 @@
+import { simulationSeconds } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type AIPersonalityFlags } from '../../game/aiPersonalities';
 import {
@@ -105,7 +106,7 @@ export function createAICombatBookkeepingCallbacksForState({
       wasLungeKill,
       rosterAI: getRosterAI(),
       getOptimalSpawnPoint,
-      nowSeconds: performance.now() / 1000,
+      nowSeconds: simulationSeconds(),
     });
   };
 
@@ -115,7 +116,7 @@ export function createAICombatBookkeepingCallbacksForState({
       state: getState(),
       botId,
       difficulty: knobs.difficulty,
-      nowSeconds: performance.now() / 1000,
+      nowSeconds: simulationSeconds(),
     });
   };
 

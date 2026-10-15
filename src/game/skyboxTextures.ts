@@ -787,44 +787,122 @@ function drawWinterRinkSky(ctx: CanvasRenderingContext2D, hue: number, brightnes
 
 function drawGrifballStadiumSky(ctx: CanvasRenderingContext2D, hue: number, brightness: number, fogColor: string, size: SkyboxTextureSize): void {
   const { width, height } = size;
-  const horizon = height * 0.58;
+  const roofEdge = height * 0.48;
+  const exposure = Math.max(0.55, Math.min(1.65, 0.72 + brightness * 0.1));
   ctx.save();
-  ctx.globalCompositeOperation = 'screen';
-  for (let i = 0; i < 8; i++) {
-    const sx = width * (0.06 + i * 0.13);
-    const spotGrad = ctx.createLinearGradient(sx, horizon, sx + width * 0.08, 0);
-    spotGrad.addColorStop(0, 'rgba(224,242,254,0.36)');
-    spotGrad.addColorStop(1, 'rgba(224,242,254,0)');
-    ctx.fillStyle = spotGrad;
-    ctx.beginPath();
-    ctx.moveTo(sx - width * 0.02, horizon);
-    ctx.lineTo(sx + width * 0.06, 0);
-    ctx.lineTo(sx + width * 0.13, 0);
-    ctx.lineTo(sx + width * 0.025, horizon);
-    ctx.closePath();
-    ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+
+  // An enclosed roof replaces the saturated outdoor atmosphere beneath it.
+  // Low chroma still responds to the sky controls without tinting the entire hall.
+  const enclosure = ctx.createLinearGradient(0, 0, 0, height);
+  enclosure.addColorStop(0, hsl(hue, 7, 3.5 * exposure));
+  enclosure.addColorStop(0.18, hsl(hue, 9, 8 * exposure));
+  enclosure.addColorStop(0.43, hsl(hue, 8, 12 * exposure));
+  enclosure.addColorStop(0.52, hsl(hue, 7, 6.5 * exposure));
+  enclosure.addColorStop(0.68, hsl(hue, 5, 3.5 * exposure));
+  enclosure.addColorStop(1, hsl(hue, 5, 2 * exposure));
+  ctx.fillStyle = enclosure;
+  ctx.fillRect(0, 0, width, height);
+
+  const bays = 24;
+  const bayWidth = width / bays;
+  const rings = [0.045, 0.11, 0.195, 0.285, 0.38, 0.48].map(y => y * height);
+  for (let bay = 0; bay < bays; bay++) {
+    const x = bay * bayWidth;
+    for (let ring = 0; ring < rings.length - 1; ring++) {
+      const top = rings[ring];
+      const bottom = rings[ring + 1];
+      const inset = width * 0.0012;
+      // Broad anodized panels carry quiet variation, recessed joints and edges.
+      ctx.fillStyle = hsl(hue, 8, (7.5 + ring * 0.55 + ((bay + ring) % 3) * 0.42) * exposure);
+      ctx.fillRect(x + inset, top + height * 0.0012, bayWidth - inset * 2, bottom - top - height * 0.0024);
+      ctx.strokeStyle = 'rgba(2,5,9,0.38)';
+      ctx.lineWidth = Math.max(1, height * 0.0008);
+      ctx.strokeRect(x + inset, top + height * 0.0012, bayWidth - inset * 2, bottom - top - height * 0.0024);
+      ctx.strokeStyle = 'rgba(197,210,220,0.045)';
+      ctx.beginPath();
+      ctx.moveTo(x + inset * 2, bottom - height * 0.002);
+      ctx.lineTo(x + bayWidth - inset * 2, bottom - height * 0.002);
+      ctx.stroke();
+
+      // Alternating diagonal web members between the radial roof ribs.
+      const left = x + width * 0.003;
+      const right = x + bayWidth - width * 0.003;
+      ctx.strokeStyle = 'rgba(1,3,6,0.6)';
+      ctx.lineWidth = height * 0.0019;
+      ctx.beginPath();
+      ctx.moveTo((bay + ring) % 2 ? right : left, top);
+      ctx.lineTo((bay + ring) % 2 ? left : right, bottom);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(175,190,205,0.1)';
+      ctx.lineWidth = Math.max(0.75, height * 0.00055);
+      ctx.stroke();
+    }
+    // Paired narrow ribs read as box trusses, fading naturally at the zenith.
+    const ribShade = ctx.createLinearGradient(0, 0, 0, roofEdge);
+    ribShade.addColorStop(0, 'rgba(5,8,12,0)');
+    ribShade.addColorStop(0.15, 'rgba(5,8,12,0.75)');
+    ribShade.addColorStop(1, 'rgba(5,8,12,0.9)');
+    ctx.strokeStyle = ribShade;
+    ctx.lineWidth = width * 0.0018;
+    for (const offset of [-0.0017, 0.0017]) {
+      ctx.beginPath();
+      ctx.moveTo(x + width * offset, 0);
+      ctx.lineTo(x + width * offset, roofEdge);
+      ctx.stroke();
+    }
   }
+
+  // Dark structural belt and distant concourse recesses anchor the seating bowl.
+  ctx.fillStyle = hsl(hue, 6, 4.5 * exposure);
+  ctx.fillRect(0, roofEdge, width, height * 0.12);
+  ctx.fillStyle = 'rgba(185,198,208,0.09)';
+  ctx.fillRect(0, roofEdge, width, Math.max(1, height * 0.0009));
+  for (let bay = 0; bay < bays; bay++) {
+    const x = bay * bayWidth;
+    ctx.fillStyle = 'rgba(0,2,5,0.56)';
+    ctx.fillRect(x + bayWidth * 0.13, height * 0.505, bayWidth * 0.74, height * 0.046);
+    ctx.fillStyle = hsl(hue, 10, 19 * exposure, 0.3);
+    ctx.fillRect(x + bayWidth * 0.16, height * 0.51, bayWidth * 0.68, height * 0.0015);
+    ctx.fillStyle = 'rgba(181,153,107,0.22)';
+    ctx.fillRect(x + bayWidth * 0.18, height * 0.559, bayWidth * 0.64, height * 0.0012);
+  }
+
+  // Small recessed lamp cells replace the old solid white light wedges.
+  for (let bank = 0; bank < 12; bank++) {
+    const cx = (bank + 0.5) * width / 12;
+    const cy = height * (bank % 2 ? 0.365 : 0.315);
+    const bankWidth = width * 0.020;
+    const bankHeight = height * 0.014;
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, height * 0.05);
+    glow.addColorStop(0, 'rgba(213,226,234,0.065)');
+    glow.addColorStop(1, 'rgba(213,226,234,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - height * 0.05, cy - height * 0.05, height * 0.1, height * 0.1);
+    ctx.fillStyle = '#0b0f14';
+    ctx.fillRect(cx - bankWidth * 0.55, cy - bankHeight * 0.7, bankWidth * 1.1, bankHeight * 1.4);
+    for (let column = 0; column < 6; column++) {
+      for (let row = 0; row < 2; row++) {
+        ctx.fillStyle = hsl(42, 12, Math.min(79, 57 * exposure), 0.85);
+        ctx.fillRect(
+          cx - bankWidth / 2 + column * bankWidth / 6,
+          cy - bankHeight / 2 + row * bankHeight / 2,
+          bankWidth / 7.5,
+          bankHeight / 2.8,
+        );
+      }
+    }
+  }
+
+  // Blend only the far underside with the configured fog, not the roof panels.
+  const undercroft = ctx.createLinearGradient(0, height * 0.65, 0, height);
+  undercroft.addColorStop(0, translucent(fogColor, 0));
+  undercroft.addColorStop(1, translucent(fogColor, 0.3));
+  ctx.fillStyle = undercroft;
+  ctx.fillRect(0, height * 0.65, width, height * 0.35);
   ctx.restore();
-  ctx.fillStyle = 'rgba(8,13,22,0.9)';
-  ctx.fillRect(0, horizon - height * 0.09, width, height * 0.09);
-  ctx.fillStyle = 'rgba(15,23,42,0.95)';
-  ctx.fillRect(width * 0.38, horizon - height * 0.2, width * 0.24, height * 0.085);
-  ctx.fillStyle = 'rgba(6,182,212,0.5)';
-  ctx.fillRect(width * 0.405, horizon - height * 0.18, width * 0.07, height * 0.035);
-  ctx.fillStyle = 'rgba(239,68,68,0.5)';
-  ctx.fillRect(width * 0.525, horizon - height * 0.18, width * 0.07, height * 0.035);
-  ctx.strokeStyle = 'rgba(148,163,184,0.5)';
-  ctx.lineWidth = height * 0.008;
-  for (let y = height * 0.05; y < horizon - height * 0.12; y += height * 0.055) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-  void hue;
-  void brightness;
-  void fogColor;
 }
+
 
 function drawHolodeckSky(ctx: CanvasRenderingContext2D, hue: number, brightness: number, fogColor: string, size: SkyboxTextureSize): void {
   const { width, height } = size;

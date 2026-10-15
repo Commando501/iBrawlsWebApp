@@ -133,7 +133,7 @@ function ema(model: PlayerModel, current: number, sample: number): number {
 }
 
 export function getOrCreatePlayerModel(
-  context: AIMatchContext,
+  context: Pick<AIMatchContext, 'playerModels'>,
   playerId: string,
   defaults?: PlayerModelDefaults,
 ): PlayerModel {

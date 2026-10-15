@@ -1,3 +1,4 @@
+import { isIronVanguardLoadout, preloadIronVanguard } from '../iron-vanguard/ironVanguardModel';
 import React from 'react';
 import type { CharacterModelType, UniversalSettings } from '../../types';
 import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
@@ -164,6 +165,9 @@ export function ArmoryPanel({
   setCustomizerWeapon,
   setAdminSettings,
 }: ArmoryPanelProps) {
+  const isIronVanguard = isIronVanguardLoadout(playerLoadout);
+  const [characterLoading, setCharacterLoading] = React.useState(false);
+  const [characterError, setCharacterError] = React.useState('');
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const activeModelSystem = playerLoadout.modelSystem ?? 'v1';
   const activeModelType: CharacterModelType = activeModelSystem === 'v2'
@@ -193,6 +197,20 @@ export function ArmoryPanel({
       persistPlayerLoadout(next);
       return next;
     });
+  };
+
+  const equipIronVanguard = async () => {
+    setCharacterLoading(true);
+    setCharacterError('');
+    try {
+      await preloadIronVanguard();
+      updateLoadout({ characterAsset: 'iron-vanguard', modelSystem: 'v3', modelType: 'medium' });
+      setCustomizerWeapon('hammer');
+    } catch {
+      setCharacterError('Iron Vanguard could not load. Please try again.');
+    } finally {
+      setCharacterLoading(false);
+    }
   };
 
   const updatePlayerHue = (hue: number) => {
@@ -269,10 +287,22 @@ export function ArmoryPanel({
         />
       ) : (
         <div className="flex flex-col gap-4">
+              <div className="flex gap-2 mb-3" aria-label="Character selection">
+                <button type="button" disabled={characterLoading} aria-pressed={!isIronVanguard}
+                  onClick={() => updateLoadout({ characterAsset: undefined, modelSystem: 'v2' })}
+                  className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">Standard</button>
+                <button type="button" disabled={characterLoading} aria-pressed={isIronVanguard}
+                  onClick={equipIronVanguard}
+                  className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">
+                  {characterLoading ? 'Loading character…' : 'Version 3 Iron Vanguard'}
+                </button>
+              </div>
+              {characterError && <p role="alert" className="mb-3 text-red-300">{characterError}</p>}
           <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
             <CharacterPreview hue={playerHue} heldWeapon={customizerWeapon} loadout={playerLoadout} />
           </div>
 
+          {!isIronVanguard && <>
           <button
             type="button"
             onClick={() => setIsPainting(true)}
@@ -300,7 +330,8 @@ export function ArmoryPanel({
             {editorModelSystem === 'v3' ? 'Create / Edit V3 Armor Model' : 'Create / Edit V2 Armor Model'}
           </a>
 
-          {activeModelSystem === 'v3' && (
+          </>}
+          {activeModelSystem === 'v3' && !isIronVanguard && (
             <div className="rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-amber-100">
               {V3_INTERNAL_PROTOTYPE_LABEL}
             </div>
@@ -351,7 +382,7 @@ export function ArmoryPanel({
               </div>
             </div>
 
-            {activeModelSystem === 'v3' && (
+            {activeModelSystem === 'v3' && !isIronVanguard && (
               <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">V3 Material Roles</span>
@@ -394,7 +425,7 @@ export function ArmoryPanel({
               </div>
             )}
 
-            {activeModelSystem === 'v3' && (
+            {activeModelSystem === 'v3' && !isIronVanguard && (
               <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Suit Profiles</span>
@@ -452,6 +483,8 @@ export function ArmoryPanel({
 
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
               <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
+
+              {isIronVanguard ? <p className="text-white/70 leading-relaxed">Choose Version 3 Iron Vanguard in Model Set to use it for you and every bot. Hammer swing is ready; movement has a first animation pass. Secondary weapon animations are provisional. Match settings control attack timing.</p> : <>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Model Sys</span>
                 <div className="flex gap-1.5 flex-1">
@@ -462,6 +495,7 @@ export function ArmoryPanel({
                         key={model.id}
                         type="button"
                         onClick={() => updateLoadout({
+                          characterAsset: undefined,
                           modelSystem: model.id,
                           modelType: model.id === 'v2' ? activeModelType : undefined,
                         })}
@@ -644,6 +678,7 @@ export function ArmoryPanel({
                   ))
                 )}
               </div>
+              </>}
             </div>
           </div>
         </div>

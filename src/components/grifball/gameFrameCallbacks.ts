@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { type Combatant, type Keybindings } from '../../types';
+import { type Combatant, type Keybindings, type CustomMapData } from '../../types';
 import { updateAIRosterTick } from './aiRosterTick';
+import { updateGrifballTeamPlanForState } from './grifballTeamPlanRuntime';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { updateObserverCombatantVisualsForState } from './observerVisualSync';
 import { updateRosterCombatantVisualsForState } from './rosterVisualSync';
@@ -22,6 +23,8 @@ export function createGameFrameCallbacksForState({
   multiplayerRole,
   respawnCombatant,
   updateSingleAIEntity,
+  getEnemyGoalPos,
+  getActiveCustomMap,
   getSpectateTargetData,
   renderSwordLungeTrailVfx,
   applyBotMeleeImpact,
@@ -37,6 +40,8 @@ export function createGameFrameCallbacksForState({
   multiplayerRole: MultiplayerRole;
   respawnCombatant: (combatant: Combatant, mesh: THREE.Object3D) => void;
   updateSingleAIEntity: (combatantId: string, dt: number) => void;
+  getEnemyGoalPos: (team: string | undefined) => { x: number; z: number } | null;
+  getActiveCustomMap: () => CustomMapData | null;
   getSpectateTargetData: (target: SpectateTargetRole) => SpectateTargetData;
   renderSwordLungeTrailVfx: (
     pos: THREE.Vector3,
@@ -54,6 +59,7 @@ export function createGameFrameCallbacksForState({
       dt,
       respawnCombatant,
       updateSingleAIEntity,
+      beforeUpdate: () => updateGrifballTeamPlanForState(getState(), dt, getEnemyGoalPos, getActiveCustomMap()),
     });
   };
 

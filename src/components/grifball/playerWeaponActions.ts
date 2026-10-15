@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type CharacterModelType, type Combatant } from '../../types';
@@ -41,7 +42,7 @@ export function triggerPlayerHammerSwingForState({
   state.pWeaponState = 'swing_up';
   state.pWeaponTimer = 0;
   state.pWeaponReady = false;
-  state.lastPlayerHammerAttackTime = Date.now();
+  state.lastPlayerHammerAttackTime = simulationTimestamp();
   recordHammerAttack();
   playSwing();
   sendSync({ type: 'sync', action: 'swing_hammer' });
@@ -60,7 +61,7 @@ export function triggerPlayerHammerMeleeForState({
   state.pWeaponState = 'melee_swing';
   state.pWeaponTimer = 0;
   state.pWeaponReady = false;
-  state.lastPlayerHammerAttackTime = Date.now();
+  state.lastPlayerHammerAttackTime = simulationTimestamp();
   playSwing();
   sendSync({ type: 'sync', action: 'melee_hammer' });
 }
@@ -78,7 +79,7 @@ export function triggerPlayerSwordSlashForState({
   state.pSwordState = 'slashing';
   state.pSwordTimer = 0;
   state.pSwordReady = false;
-  state.lastPlayerSwordAttackTime = Date.now();
+  state.lastPlayerSwordAttackTime = simulationTimestamp();
   playSwing();
   sendSync({ type: 'sync', action: 'slash_sword' });
 }
@@ -104,12 +105,13 @@ export function triggerPlayerSwordLungeForState({
   const lungeDistance = lungeDir.length();
 
   state.isLunging = true;
+  state.swordLungeHit = false;
   state.lungeTimer = 0;
   state.lungeStartPos.copy(state.playerPos);
   state.lungeTargetDir.copy(lungeDir).normalize();
   recordLungeStart(lungeDistance);
   state.pSwordState = 'ready';
-  state.lastPlayerSwordAttackTime = Date.now();
+  state.lastPlayerSwordAttackTime = simulationTimestamp();
   playDash();
   sendSync({
     type: 'sync',
@@ -128,6 +130,7 @@ export function finishPlayerSwordLungeRecoveryForState({
   recordLungeEnd: (hit: boolean) => void;
 }): void {
   state.isLunging = false;
+  state.swordLungeHit = hit;
   recordLungeEnd(hit);
   state.pSwordState = 'recovering';
   state.pSwordTimer = 0;
@@ -157,6 +160,9 @@ export function findPlayerSwordLungeHitTargetForState({
     !isMultiplayer &&
     mainAi &&
     mainAi.hp > 0 &&
+    !mainAi.isObserver &&
+    (mainAi.respawnTimer ?? 0) <= 0 &&
+    (mainAi.invulnerabilityTimer ?? 0) <= 0 &&
     mainAi.aiState !== 'RESPAWNING' &&
     areCombatantsHostile('player', MAIN_AI_ID)
   ) {
@@ -165,8 +171,11 @@ export function findPlayerSwordLungeHitTargetForState({
   }
 
   state.otherPlayers.forEach((other) => {
+    if (!isMultiplayer && mainAi && other.id === mainAi.id) return;
     if (
       other.hp > 0 &&
+      other.aiState !== 'RESPAWNING' &&
+      (other.invulnerabilityTimer ?? 0) <= 0 &&
       !other.isObserver &&
       other.respawnTimer <= 0 &&
       areCombatantsHostile('player', other.id)

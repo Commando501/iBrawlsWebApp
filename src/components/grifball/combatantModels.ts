@@ -1,4 +1,6 @@
+import { createVanguardSword, attachVanguardSword } from '../iron-vanguard/ironVanguardSword';
 import * as THREE from 'three';
+import { isIronVanguardLoadout } from '../iron-vanguard/ironVanguardModel';
 import { buildV3CarriedBallModel } from './v3BallCarry';
 import {
   AVAILABLE_PRESETS,
@@ -20,10 +22,9 @@ import {
 import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './attackAnimationPresets';
 import {
-  type CombatantTeamOutlineOptions,
-  registerCombatantTeamOutlineSources,
-  syncCombatantTeamOutline,
-} from './combatantTeamOutlines';
+  registerCombatantTeamArmorSources,
+  syncCombatantTeamArmor,
+} from './combatantTeamArmor';
 
 export type CombatantMeshRig = {
   group: THREE.Group;
@@ -73,7 +74,7 @@ const positionPistol = (pistol: THREE.Group) => {
   pistol.rotation.set(Math.PI / 2, 0, 0);
 };
 
-const isV3Loadout = (loadout?: CharacterLoadout): boolean => loadout?.modelSystem === 'v3';
+const isV3Loadout = (loadout?: CharacterLoadout): boolean => loadout?.modelSystem === 'v3' && !isIronVanguardLoadout(loadout);
 
 const prepareV3ThirdPersonWeaponBasis = (
   weaponModel: THREE.Group,
@@ -97,7 +98,7 @@ const buildCombatantSword = (
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {}
 ): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3SwordModel(hue, { ...v3Options, loadout }) : buildKatarSwordModel(hue, loadout?.swordPreset);
+  isIronVanguardLoadout(loadout) ? createVanguardSword() : isV3Loadout(loadout) ? buildV3SwordModel(hue, { ...v3Options, loadout }) : buildKatarSwordModel(hue, loadout?.swordPreset);
 
 const buildCombatantPistol = (
   hue: number | undefined,
@@ -116,6 +117,8 @@ const attachCombatantWeapon = (
     rig.v3WeaponMotionAnchor.add(weaponModel);
     return;
   }
+  if (weaponModel === group.userData.ironVanguardHammer) return;
+  if (weaponModel.userData.ironVanguardSword) { attachVanguardSword(group, weaponModel); return; }
   attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', weaponModel);
 };
 
@@ -143,8 +146,8 @@ export const createCombatantMeshRig = (
   isEnemyBot = false,
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {},
-  teamOutlineTeam?: TeamId | null,
-  teamOutlineOptions?: CombatantTeamOutlineOptions | null
+  teamArmorTeam?: TeamId | null,
+  friendlyTeam?: TeamId
 ): CombatantMeshRig => {
   const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
   const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout, v3Options);
@@ -153,19 +156,19 @@ export const createCombatantMeshRig = (
   group.userData.appliedV3QualityTier = v3Options.v3QualityTier;
   group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
-  registerCombatantTeamOutlineSources(group);
-  syncCombatantTeamOutline(group, teamOutlineTeam, teamOutlineOptions);
+  registerCombatantTeamArmorSources(group);
+  syncCombatantTeamArmor(group, teamArmorTeam, friendlyTeam);
   scene.add(group);
 
-  const hammer = buildCombatantHammer(hue, resolvedLoadout, v3Options);
-  if (!isV3Loadout(resolvedLoadout)) {
+  const hammer = (group.userData.ironVanguardHammer as THREE.Group | undefined) ?? buildCombatantHammer(hue, resolvedLoadout, v3Options);
+  if (!group.userData.ironVanguardHammer && !isV3Loadout(resolvedLoadout)) {
     positionHammer(hammer);
   }
   prepareV3ThirdPersonWeaponBasis(hammer, 'hammer', resolvedLoadout);
   attachCombatantWeapon(group, rig, hammer, resolvedLoadout);
 
   const sword = buildCombatantSword(hue, resolvedLoadout, v3Options);
-  if (!isV3Loadout(resolvedLoadout)) {
+  if (!isV3Loadout(resolvedLoadout) && !isIronVanguardLoadout(resolvedLoadout)) {
     positionSword(sword);
   }
   prepareV3ThirdPersonWeaponBasis(sword, 'sword', resolvedLoadout);
@@ -195,8 +198,8 @@ export const rebuildDualWeaponCombatantModel = ({
   position,
   activeWeapon,
   v3Options = {},
-  teamOutlineTeam,
-  teamOutlineOptions,
+  teamArmorTeam,
+  friendlyTeam,
 }: {
   scene: THREE.Scene;
   previousGroup?: THREE.Group | null;
@@ -207,8 +210,8 @@ export const rebuildDualWeaponCombatantModel = ({
   position: THREE.Vector3;
   activeWeapon: 'hammer' | 'sword' | 'pistol';
   v3Options?: V3RenderOptions;
-  teamOutlineTeam?: TeamId | null;
-  teamOutlineOptions?: CombatantTeamOutlineOptions | null;
+  teamArmorTeam?: TeamId | null;
+  friendlyTeam?: TeamId;
 }): RebuiltDualWeaponCombatantModel => {
   if (previousGroup) {
     scene.remove(previousGroup);
@@ -221,14 +224,14 @@ export const rebuildDualWeaponCombatantModel = ({
   group.userData.appliedV3QualityTier = v3Options.v3QualityTier;
   group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
-  registerCombatantTeamOutlineSources(group);
-  syncCombatantTeamOutline(group, teamOutlineTeam, teamOutlineOptions);
+  registerCombatantTeamArmorSources(group);
+  syncCombatantTeamArmor(group, teamArmorTeam, friendlyTeam);
   scene.add(group);
 
   const resolvedWeaponHue = weaponHue === null ? undefined : (weaponHue ?? hue);
 
-  const hammer = buildCombatantHammer(resolvedWeaponHue, loadout, v3Options);
-  if (!isV3Loadout(loadout)) {
+  const hammer = (group.userData.ironVanguardHammer as THREE.Group | undefined) ?? buildCombatantHammer(resolvedWeaponHue, loadout, v3Options);
+  if (!group.userData.ironVanguardHammer && !isV3Loadout(loadout)) {
     positionHammer(hammer);
   }
   prepareV3ThirdPersonWeaponBasis(hammer, 'hammer', loadout);
@@ -236,15 +239,16 @@ export const rebuildDualWeaponCombatantModel = ({
   attachCombatantWeapon(group, rig, hammer, loadout);
 
   const sword = buildCombatantSword(resolvedWeaponHue, loadout, v3Options);
-  if (!isV3Loadout(loadout)) {
+  if (!isV3Loadout(loadout) && !isIronVanguardLoadout(loadout)) {
     positionSword(sword);
   }
   prepareV3ThirdPersonWeaponBasis(sword, 'sword', loadout);
   sword.visible = activeWeapon === 'sword';
   attachCombatantWeapon(group, rig, sword, loadout);
 
-  if (isV3Loadout(loadout)) {
+  if (isV3Loadout(loadout) || group.userData.characterAsset === 'iron-vanguard') {
     const pistol = buildCombatantPistol(resolvedWeaponHue, loadout, v3Options);
+    if (!isV3Loadout(loadout)) positionPistol(pistol);
     prepareV3ThirdPersonWeaponBasis(pistol, 'pistol', loadout);
     pistol.name = 'v3ObserverPistol';
     pistol.visible = activeWeapon === 'pistol';

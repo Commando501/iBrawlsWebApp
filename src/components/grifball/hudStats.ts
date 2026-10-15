@@ -1,4 +1,5 @@
 import { MAIN_AI_ID } from '../../game/roster';
+import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { getTeamTally, type TeamId } from '../../game/teamScoring';
 import { type Combatant, type GameStats, type GrifballScoreboardCombatant, type GrifballScoreboardTeam } from '../../types';
@@ -54,6 +55,14 @@ export const buildGrifballHudStats = ({
   gameTime: s.gameTime,
   debugMode: s.debugMode,
   debugDamageRadius: s.settings.attackRadius,
+  grifballTacticsDebug: s.debugMode && s.settings.gameMode === 'grifball'
+    ? Array.from(s.aiMatchContext.grifballTeamPlan.assignments.values()).map(assignment => {
+      const bot = s.otherPlayers.get(assignment.botId);
+      const threat = bot ? selectGrifballAssignmentThreat(assignment, bot.pos, s.aiMatchContext.grifballTeamPlan.snapshot?.players ?? []) : null;
+      const target = threat ? (s.otherPlayers.get(threat)?.playerName ?? threat) : 'hold coverage';
+      return `${assignment.team} / ${bot?.playerName ?? assignment.botId}: ${assignment.role} -> (${assignment.destination.x.toFixed(1)}, ${assignment.destination.z.toFixed(1)}) / ${target} / ${assignment.reason}`;
+    })
+    : undefined,
   weaponReady: s.activeWeapon === 'hammer'
     ? s.pWeaponReady
     : s.activeWeapon === 'pistol'

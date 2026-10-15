@@ -135,7 +135,9 @@ export function updateWeaponAnimationFrameForState({
     });
   }
 
-  updateMainAIWeaponAnimationsForState({
+  // Registered offline bots (including main_ai) advance attacks in the roster pass.
+  // Running the legacy animation updater too halves main_ai's timings in player view.
+  if (!mainAI || !state.otherPlayers.has(mainAI.id)) updateMainAIWeaponAnimationsForState({
     state,
     refs,
     mainAI,

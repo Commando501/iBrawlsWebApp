@@ -15,6 +15,8 @@ export interface BotCoordinatorState {
   recentTags: Map<string, Map<string, number>>;
   /** Cleared each AI tick; bots re-register current focus. */
   engagements: Map<string, string>;
+  /** Grifball supplies the full shared plan before any combatant acts. */
+  tacticalEngagements: Map<string, { targetId: string; role: BotCoordRole }>;
 }
 
 export function createBotCoordinator(): BotCoordinatorState {
@@ -22,6 +24,7 @@ export function createBotCoordinator(): BotCoordinatorState {
     priorityAge: 0,
     recentTags: new Map(),
     engagements: new Map(),
+    tacticalEngagements: new Map(),
   };
 }
 
@@ -30,6 +33,7 @@ export function resetBotCoordinator(state: BotCoordinatorState): void {
   state.taggerBotId = undefined;
   state.priorityAge = 0;
   state.recentTags.clear();
+  state.tacticalEngagements.clear();
   state.engagements.clear();
 }
 
@@ -66,8 +70,14 @@ export function tickBotCoordinator(
   }
 }
 
+export function setTacticalBotEngagements(state: BotCoordinatorState, orders: Iterable<[string, { targetId: string; role: BotCoordRole }]>): void {
+  for (const [id, order] of state.tacticalEngagements) if (state.engagements.get(id) === order.targetId) state.engagements.delete(id);
+  state.tacticalEngagements = new Map(orders);
+  for (const [id, order] of state.tacticalEngagements) state.engagements.set(id, order.targetId);
+}
 export function clearBotEngagements(state: BotCoordinatorState): void {
   state.engagements.clear();
+  for (const [id, order] of state.tacticalEngagements) state.engagements.set(id, order.targetId);
 }
 
 export function registerBotEngagement(
@@ -150,6 +160,8 @@ export interface BotCoordRoleInput {
 }
 
 export function getBotCoordRole(input: BotCoordRoleInput): BotCoordRole {
+  const planned = input.coordinator.tacticalEngagements.get(input.botId);
+  if (planned?.targetId === input.targetId) return planned.role;
   if (!isCoordinationEnabled(input.difficulty)) {
     return 'pressure';
   }

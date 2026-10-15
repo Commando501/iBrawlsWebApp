@@ -994,6 +994,13 @@ export const HUD: React.FC<HUDProps> = ({
         </DraggableHUDItem>
       )}
 
+      {stats.debugMode && !!stats.grifballTacticsDebug?.length && (
+        <aside aria-label="Grifball team tactics" className="fixed left-3 top-36 z-50 max-w-[min(42rem,70vw)] max-h-[45vh] overflow-y-auto rounded border border-cyan-400/40 bg-black/80 p-3 text-[10px] font-mono text-cyan-100 pointer-events-none">
+          <div className="mb-2 font-bold">GRIFBALL TEAM TACTICS</div>
+          {stats.grifballTacticsDebug.map((line, index) => <div key={index} className="mb-1">{line}</div>)}
+        </aside>
+      )}
+
       {/* 9. FULL IN-GAME SCOREBOARD OVERLAY */}
       {stats.showScoreboard && (
         <div className="fixed inset-0 flex items-center justify-center bg-slate-950/65 backdrop-blur-md z-[999] pointer-events-none animate-fade-in">

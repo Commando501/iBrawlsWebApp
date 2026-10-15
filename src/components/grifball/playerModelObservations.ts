@@ -4,17 +4,16 @@ import {
   hydratePlayerModel,
   LOCAL_PLAYER_ID,
   observePlayerCounter,
-  observePlayerApproachSpeed,
   observePlayerDamageDealt,
   observePlayerDamageReceived,
   observePlayerLungeEnd,
-  observePlayerPosition,
   type PlayerModel,
 } from '../../game/aiPlayerModel';
 import { resetAIMatchContext } from '../../game/aiMatchContext';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import { loadPlayerFingerprint } from '../../game/theaterDatabase';
 import { type GrifballRuntimeState } from './runtimeState';
+import { recordAIEngagementApproachSamples } from '../../game/aiEngagementObservations';
 
 export {
   applyLungeAimBias,
@@ -212,23 +211,13 @@ export const recordAIEngagementApproachObservations = ({
   nowSeconds: number;
   mapShape?: string;
 }): void => {
-  if (targetId === LOCAL_PLAYER_ID) {
-    recordLocalPlayerModelObservation(state, (model) => {
-      observePlayerPosition(model, state.playerPos.x, state.playerPos.z, state.arenaRadius, nowSeconds, mapShape);
-      if (distanceToTarget < 15) {
-        const speed = Math.hypot(state.playerVel.x, state.playerVel.z);
-        const maxSpeed = (state.settings.speedForward / 100) * 5.0;
-        observePlayerApproachSpeed(model, speed, maxSpeed);
-      }
-    });
-  }
-
-  recordCombatantModelObservation(state, botId, (model) => {
-    observePlayerPosition(model, botPos.x, botPos.z, state.arenaRadius, nowSeconds, mapShape);
-    if (distanceToTarget < 15) {
-      const speed = Math.hypot(botVel.x, botVel.z);
-      const maxSpeed = (state.settings.speedForward / 100) * 5.0;
-      observePlayerApproachSpeed(model, speed, maxSpeed);
-    }
+  recordAIEngagementApproachSamples({
+    bot: { id: botId, pos: botPos, vel: botVel },
+    localPlayer: { id: LOCAL_PLAYER_ID, pos: state.playerPos, vel: state.playerVel },
+    targetId, distanceToTarget, nowSeconds, mapShape, arenaRadius: state.arenaRadius,
+    maxSpeed: (state.settings.speedForward / 100) * 5.0,
+    record: (id, observe) => id === LOCAL_PLAYER_ID
+      ? recordLocalPlayerModelObservation(state, observe)
+      : recordCombatantModelObservation(state, id, observe),
   });
 };

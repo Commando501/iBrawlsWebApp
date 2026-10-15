@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 /**
  * Pure decision logic for the AI's use of the optional locomotion mechanics
  * (sprint and slide) that the player can toggle and tune in the Gameplay /
@@ -98,6 +99,8 @@ export interface SlideStartInput {
   isSliding: boolean;
   targetProtected: boolean;
   rng?: number;
+  /** Lazily sampled only after eligibility; explicit rng retains precedence. */
+  random?: () => number;
   /** Tuning overrides (default to module constants). */
   minComplexity?: number;
   minGap?: number;
@@ -127,7 +130,7 @@ export function shouldStartAISlide(input: SlideStartInput): boolean {
   if (gap < (input.minGap ?? SLIDE_MIN_GAP) || gap > (input.maxGap ?? SLIDE_MAX_GAP)) {
     return false;
   }
-  const rng = input.rng ?? Math.random();
+  const rng = input.rng ?? (input.random ?? simulationRandom)();
   return rng < (input.triggerChance ?? SLIDE_TRIGGER_CHANCE);
 }
 

@@ -1,3 +1,5 @@
+import type { FrozenCase, ValidationJob } from '../../game/grifballValidation/types';
+import type { TrialHandle } from '../../game/grifballValidation/runner';
 import type React from 'react';
 import type { MatchLobbyConfig } from '../../network/protocol';
 import type { VisualModelPolicy } from '../../model/modelSystem';
@@ -16,8 +18,16 @@ import { type GameLoadingState } from '../loading/loadingTypes';
 import { type CharacterLoadout } from '../VoxelModels';
 
 export interface GrifballGameProps {
+  /** Private isolated session for the Lab or dedicated validation page; ordinary matches never supply this. */
+  validationTrial?: {
+      fixture: FrozenCase; job: ValidationJob;
+      observeState?: (canonicalState: string) => void;
+      canAdvance?: () => boolean;
+    onReady: (handle: TrialHandle) => void; onError: (error: Error) => void;
+  };
   isPlaying: boolean;
   isPaused: boolean;
+  isMatchLoading?: boolean;
   debugMode: boolean;
   adminSettings: UniversalSettings;
   onStatsUpdate: (stats: GameStats) => void;
@@ -26,6 +36,7 @@ export interface GrifballGameProps {
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;
   multiplayerSocket?: WebSocket | null;
+  gameplayClientId?: string;
   matchLobbyConfig?: MatchLobbyConfig | null;
   multiplayerSpawnSlot?: number;
   opponentClientId?: string;

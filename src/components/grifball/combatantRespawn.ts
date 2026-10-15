@@ -1,6 +1,6 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { clearBotComboState, type AIMatchContext } from '../../game/aiMatchContext';
-import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type UniversalSettings } from '../../types';
 import { getInwardSpawnYaw } from './combatGeometry';
 
@@ -12,6 +12,7 @@ export const respawnAICombatant = ({
   settings,
   aiMatchContext,
   playerPos,
+  excludePlayer = true,
   rosterAI,
   getOptimalSpawnPoint,
   playRespawn,
@@ -21,6 +22,8 @@ export const respawnAICombatant = ({
   settings: RespawnSettings;
   aiMatchContext: AIMatchContext;
   playerPos: THREE.Vector3;
+  /** Observer cameras and dead players do not occupy a spawn. */
+  excludePlayer?: boolean;
   rosterAI: Combatant[];
   getOptimalSpawnPoint: (excludePositions: THREE.Vector3[]) => THREE.Vector3;
   playRespawn: () => void;
@@ -28,7 +31,7 @@ export const respawnAICombatant = ({
   const c = combatant;
   c.hp = c.maxHp;
 
-  const exclude: THREE.Vector3[] = [playerPos];
+  const exclude: THREE.Vector3[] = excludePlayer ? [playerPos] : [];
   rosterAI.forEach((other) => {
     if (other.id !== c.id && other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
       exclude.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
@@ -44,8 +47,9 @@ export const respawnAICombatant = ({
   c.weaponTimer = 0;
   c.aiHammerJumpCooldownTimer = 0;
   c.invulnerabilityTimer = settings.respawnInvulnerabilityDuration;
-  c.spawnTime = Date.now();
+  c.spawnTime = simulationTimestamp();
 
+  c.lastSwordAttackTime = c.lastHammerAttackTime = 0;
   c.isLunging = false;
   c.aiState = 'APPROACHING';
   c.aiTimer = 0;
@@ -59,12 +63,14 @@ export const respawnAICombatant = ({
   c.aiPressureTargetId = undefined;
   clearBotComboState(aiMatchContext, c.id);
 
-  if (c.id === MAIN_AI_ID) {
-    c.isJumping = false;
-    c.hammerJumpPlanned = false;
-    c.hammerJumpType = undefined;
-    c.swapCooldownTimer = 0;
-  }
+  // Every roster bot starts a new grounded life, including ordinary bots killed
+  // during a jump. Carrying airborne state into revival delays objective control.
+  c.isJumping = false;
+  c.aiHammerJumpsInAir = 0;
+  c.hammerJumpPlanned = false;
+  c.hammerJumpType = undefined;
+  c.hammerJumpWindowTimer = 0;
+  c.swapCooldownTimer = 0;
 
   mesh.visible = true;
   playRespawn();

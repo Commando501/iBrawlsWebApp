@@ -1,5 +1,3 @@
-import { V3_INTERNAL_PROTOTYPE_LABEL } from './v3InternalStatus';
-
 export const MODEL_SYSTEMS = ['v1', 'v2', 'v3'] as const;
 
 export type ModelSystem = (typeof MODEL_SYSTEMS)[number];
@@ -20,7 +18,7 @@ export interface VisualModelPolicyOption {
 export const VISUAL_MODEL_POLICY_OPTIONS = [
   { value: 'v1', label: 'Version 1 Classic', recommended: false },
   { value: 'v2', label: 'Version 2 Rigged', recommended: true },
-  { value: 'v3', label: V3_INTERNAL_PROTOTYPE_LABEL, recommended: false },
+  { value: 'v3', label: 'Version 3 Iron Vanguard', recommended: false },
 ] as const satisfies readonly VisualModelPolicyOption[];
 
 export function isModelSystem(value: unknown): value is ModelSystem {
@@ -49,12 +47,8 @@ export function normalizeSelectableVisualModelPolicy(
   context: VisualModelSelectionContext = 'standard'
 ): VisualModelPolicy {
   void isAdmin;
-  const normalized = normalizeVisualModelPolicy(value, fallback);
-  if (context === 'trainingSandbox') return normalized;
-  if (normalized !== 'v3') return normalized;
-
-  const normalizedFallback = normalizeVisualModelPolicy(fallback);
-  return normalizedFallback === 'v3' ? DEFAULT_VISUAL_MODEL_POLICY : normalizedFallback;
+  void context;
+  return normalizeVisualModelPolicy(value, fallback);
 }
 
 export function getSelectableVisualModelPolicyOptions(
@@ -62,15 +56,11 @@ export function getSelectableVisualModelPolicyOptions(
   context: VisualModelSelectionContext = 'standard'
 ): readonly VisualModelPolicyOption[] {
   void isAdmin;
-  if (context === 'trainingSandbox') {
-    return VISUAL_MODEL_POLICY_OPTIONS.map((option) => option.value === 'v3'
-      ? { ...option, label: 'Version 3 Preview' }
-      : option);
-  }
-  return VISUAL_MODEL_POLICY_OPTIONS.filter((option) => option.value !== 'v3');
+  void context;
+  return VISUAL_MODEL_POLICY_OPTIONS;
 }
 
-/** Only an explicitly launched local training session can opt into V3. */
+/** Multiplayer follows the lobby; local sessions follow their selected model set. */
 export function resolveSessionVisualModelPolicy(input: {
   localPolicy: unknown;
   lobbyPolicy?: unknown;

@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 import { getFeintPressureMultiplier } from './aiPlayerModel';
 import type { PlayerModelSnapshot } from './aiPlayerModel';
 
@@ -32,12 +33,12 @@ export function rollFeintAttempt(input: FeintRollInput): boolean {
   if (!isFeintEligible(input)) {
     return false;
   }
-  const rng = input.rng ?? Math.random();
+  const rng = input.rng ?? simulationRandom();
   return rng < getEffectiveFeintChance(input);
 }
 
 export function rollFeintCooldownDuration(
-  rng = Math.random(),
+  rng = simulationRandom(),
   min: number = FEINT_COOLDOWN_MIN,
   max: number = FEINT_COOLDOWN_MAX,
 ): number {

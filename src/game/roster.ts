@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 import * as THREE from 'three';
 import type { AIBehaviorState, CharacterModelType, Combatant, UniversalSettings, WeaponState } from '../types';
 import { DEFAULT_CHARACTER_MODEL_TYPE, resolveCharacterModelType } from '../characterModelTypes';
@@ -229,7 +230,7 @@ export function createRemoteCombatant(params: CreateRemoteCombatantParams): Comb
     isCrouching: data.isCrouching ?? false,
     activeWeapon: (data.activeWeapon === 'pistol' ? 'hammer' : data.activeWeapon) ?? 'hammer',
     respawnTimer: data.respawnTimer ?? 0,
-    hue: data.hue ?? Math.floor(Math.random() * 360),
+    hue: data.hue ?? Math.floor(simulationRandom() * 360),
     modelType: resolveCharacterModelType(data.modelType, 'v2'),
     score: 0,
     kills: 0,

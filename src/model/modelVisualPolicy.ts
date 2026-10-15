@@ -57,7 +57,7 @@ export function resolveLoadoutForVisualPolicy(
   }
 
   if (modelSystem === 'v2') {
-    const { modelSystem: baseModelSystem, modelType: baseModelType, ...customization } = base;
+    const { modelSystem: baseModelSystem, modelType: baseModelType, characterAsset: _characterAsset, ...customization } = base;
     return {
       ...customization,
       modelSystem: 'v2',
@@ -69,5 +69,9 @@ export function resolveLoadoutForVisualPolicy(
     ...DEFAULT_LOADOUT,
     ...base,
     modelSystem: 'v3',
+    // The public V3 model set uses the imported character for every participant.
+    // Prototype factories remain available to the separate authoring tools.
+    characterAsset: 'iron-vanguard',
+    modelType: 'medium',
   };
 }

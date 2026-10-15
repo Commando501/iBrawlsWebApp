@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { RUNNER_ARMOR_COLOR, syncCombatantRunnerArmor } from './combatantTeamArmor';
 
-export const RUNNER_ARMOR_ORANGE = new THREE.Color('#f97316');
+export const RUNNER_ARMOR_ORANGE = new THREE.Color(RUNNER_ARMOR_COLOR);
 export const RUNNER_DAMAGE_RED = new THREE.Color('#ef4444');
 export const RUNNER_HEAL_BLUE = new THREE.Color('#38bdf8');
 
@@ -20,6 +21,7 @@ type MaterialSnapshot = {
 type VertexColorSnapshot = {
   attribute: THREE.BufferAttribute;
   colors: Float32Array;
+  painted: boolean;
 };
 
 type RunnerVisualState = {
@@ -85,7 +87,7 @@ const findMaterialSnapshot = (
 
 const captureVisualState = (group: THREE.Group, state: RunnerVisualState): void => {
   group.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || child.userData.teamOutlineMesh === true) return;
+    if (!(child instanceof THREE.Mesh) || child.userData.teamArmorMesh === true || child === state.wave) return;
 
     const colorAttribute = child.geometry.getAttribute('color');
     if (
@@ -95,6 +97,7 @@ const captureVisualState = (group: THREE.Group, state: RunnerVisualState): void 
       state.vertexColors.push({
         attribute: colorAttribute,
         colors: new Float32Array(colorAttribute.array as ArrayLike<number>),
+        painted: false,
       });
     }
 
@@ -105,11 +108,14 @@ const captureVisualState = (group: THREE.Group, state: RunnerVisualState): void 
 };
 
 const setVertexColors = (state: RunnerVisualState, color: THREE.Color): void => {
-  state.vertexColors.forEach(({ attribute }) => {
+  state.vertexColors.forEach((snapshot) => {
+    if (snapshot.painted) return;
+    const { attribute } = snapshot;
     for (let i = 0; i < attribute.count; i += 1) {
       attribute.setXYZ(i, color.r, color.g, color.b);
     }
     attribute.needsUpdate = true;
+    snapshot.painted = true;
   });
 };
 
@@ -140,7 +146,7 @@ const applyMaterialGlow = (
       material.emissive.copy(color ?? snapshot.emissive);
       material.emissiveIntensity = color ? intensity : (snapshot.emissiveIntensity ?? 0);
     }
-    material.needsUpdate = true;
+    // Color and emissive values are uniforms, not shader configuration changes.
   });
 };
 
@@ -156,9 +162,11 @@ const restoreMaterials = (state: RunnerVisualState): void => {
     if (snapshot.color && material.color) material.color.copy(snapshot.color);
     if (snapshot.emissive && material.emissive) material.emissive.copy(snapshot.emissive);
     if (snapshot.emissiveIntensity !== undefined) material.emissiveIntensity = snapshot.emissiveIntensity;
-    if (snapshot.transparent !== undefined) material.transparent = snapshot.transparent;
+    if (snapshot.transparent !== undefined && material.transparent !== snapshot.transparent) {
+      material.transparent = snapshot.transparent;
+      material.needsUpdate = true;
+    }
     if (snapshot.opacity !== undefined) material.opacity = snapshot.opacity;
-    material.needsUpdate = true;
   });
 };
 
@@ -226,13 +234,14 @@ const clearHealWave = (group: THREE.Group, state: RunnerVisualState): void => {
 
 export const clearRunnerVisualStateForGroup = (group: THREE.Group | null | undefined): void => {
   if (!group) return;
-  const state = getRunnerVisualState(group);
+  syncCombatantRunnerArmor(group, false);
+  const state = group.userData.runnerVisualState as RunnerVisualState | undefined;
+  if (!state || typeof state !== 'object') return;
   restoreVertexColors(state);
   restoreMaterials(state);
   clearHealWave(group, state);
-  state.lastHp = undefined;
-  state.damageStartMs = undefined;
-  state.damageUntilMs = undefined;
+  // Release the old buffers and capture current customization on the next pickup.
+  delete group.userData.runnerVisualState;
 };
 
 export const updateRunnerVisualStateForGroup = ({
@@ -243,13 +252,13 @@ export const updateRunnerVisualStateForGroup = ({
   nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(),
 }: RunnerVisualUpdateInput): void => {
   if (!group) return;
-  const state = getRunnerVisualState(group);
-  captureVisualState(group, state);
-
   if (!carrying || !alive || hp <= 0) {
     clearRunnerVisualStateForGroup(group);
     return;
   }
+  syncCombatantRunnerArmor(group, true);
+  const state = getRunnerVisualState(group);
+  captureVisualState(group, state);
 
   if (state.lastHp !== undefined) {
     if (hp < state.lastHp) {

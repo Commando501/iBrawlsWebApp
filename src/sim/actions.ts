@@ -14,6 +14,9 @@ export interface ActionInput {
   moveZ: number;
   /** Desired facing yaw in radians. The physics step turns toward this. */
   aim: number;
+  /** Optional vertical view angle for opt-in player execution; omitted preserves
+   * the current view. Legacy/RL action decoding and roster controls ignore it. */
+  aimPitch?: number;
   /** Hold to jump / hammer-jump (edge-detected by the weapon/physics step). */
   jump: boolean;
   /** Tap to dash in the current move direction. */

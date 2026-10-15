@@ -53,6 +53,7 @@ type RenderSwordLungeTrailVfx = (
 export function createReplayRuntimeCallbacksForState({
   getState,
   getRefs,
+  getBallMesh,
   replayData,
   replayRecordingRef,
   lastRecordTimeRef,
@@ -93,6 +94,7 @@ export function createReplayRuntimeCallbacksForState({
 }: {
   getState: () => GrifballRuntimeState;
   getRefs: () => GrifballThreeRefs;
+  getBallMesh?: () => THREE.Mesh | null;
   replayData: ReplayFile | null;
   replayRecordingRef: MutableRef<ReplayFile | null>;
   lastRecordTimeRef: MutableRef<number>;
@@ -163,6 +165,8 @@ export function createReplayRuntimeCallbacksForState({
   const recordReplayFrame = (time: number) =>
     recordReplayFrameForState({
       state: getState(),
+      refs: getRefs(),
+      ballMesh: getBallMesh?.(),
       time,
       replayRecordingRef,
       lastRecordedStateRef,

@@ -1,12 +1,14 @@
+import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import * as THREE from 'three';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { MAIN_AI_ID } from '../../game/roster';
-import { resolvePunchLungeDistance } from '../../game/runnerBallSettings';
+import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from '../../game/runnerBallSettings';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { getCombatBodyCenter } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
+import { applyAIHammerJumpAtImpact } from './aiHammerJumpImpact';
 import { type EnemyAITarget } from './targetSelection';
 
 type HammerStrikeSyncPayload =
@@ -107,7 +109,7 @@ export function applyHammerStrikeImpactForState({
       }
     }
 
-    const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
+    const impactRadius = isBall ? GRIFBALL_PUNCH_RADIUS : (state.settings.attackRadius ?? 4.5);
     if (isBall) {
       spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
     } else {
@@ -127,6 +129,8 @@ export function applyHammerStrikeImpactForState({
       !isMultiplayer &&
       mainAI &&
       mainAI.hp > 0 &&
+      !mainAI.isObserver &&
+      (mainAI.respawnTimer ?? 0) <= 0 &&
       mainAI.aiState !== 'RESPAWNING' &&
       (mainAI.invulnerabilityTimer ?? 0) <= 0 &&
       areCombatantsHostile('player', MAIN_AI_ID)
@@ -142,16 +146,8 @@ export function applyHammerStrikeImpactForState({
         state.lastStrikeTick = 1.0;
 
         if (mainAI.hp <= 0) {
-          mainAI.hp = 0;
-          mainAI.aiState = 'RESPAWNING';
-          state.enemyRespawnTimer = 3.0;
-          state.scorePlayer += 1;
-          state.playerKills += 1;
-          state.enemyDeaths += 1;
-          recordBotCalibrationDeath(MAIN_AI_ID);
+          recordPlayerMeleeKillForState(state, mainAI, recordBotCalibrationDeath);
           playDeath();
-          mainAI.weaponState = 'ready';
-          mainAI.weaponTimer = 0;
 
           const medals = evaluatePlayerKillMedals(MAIN_AI_ID);
           const newDeath: DeathEvent = {
@@ -177,8 +173,11 @@ export function applyHammerStrikeImpactForState({
     }
 
     state.otherPlayers.forEach((other) => {
+      // The legacy main-AI branch owns this actor, including sword trades.
+      if (!isMultiplayer && mainAI && other.id === mainAI.id) return;
       if (
         other.hp > 0 &&
+        other.aiState !== 'RESPAWNING' &&
         !other.isObserver &&
         other.respawnTimer <= 0 &&
         (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) &&
@@ -206,11 +205,7 @@ export function applyHammerStrikeImpactForState({
             state.lastStrikeTick = 1.0;
 
             if (other.hp <= 0) {
-              other.hp = 0;
-              other.respawnTimer = 3.0;
-              state.scorePlayer += 1;
-              state.playerKills += 1;
-              other.deaths += 1;
+              recordPlayerMeleeKillForState(state, other, recordBotCalibrationDeath);
               playDeath();
 
               const medals = evaluatePlayerKillMedals(other.id);
@@ -261,24 +256,12 @@ export function applyHammerStrikeImpactForState({
   const range = isBall ? resolvePunchLungeDistance(state.settings) : state.settings.attackRange * 0.875;
   const impactPos = aiEyePos.clone().addScaledVector(aiHeading3D, range);
 
-  const distToBase = impactPos.distanceTo(mainAI.pos);
-  if (distToBase <= (state.settings.hammerJumpTriggerRadius ?? 3.5)) {
-    mainAI.hammerJumpWindowTimer = state.settings.hammerJumpWindow ?? 0.6;
-    const limit = state.settings.hammerJumpAirLimit ?? 1;
-    const withinLimit = limit === 10 || (mainAI.aiHammerJumpsInAir ?? 0) < limit;
-
-    if (mainAI.hammerJumpPlanned && limit > 0 && withinLimit) {
-      mainAI.isJumping = true;
-      mainAI.vel.y = 7.2 + (state.settings.hammerJumpPower ?? 6.5);
-      mainAI.aiHammerJumpsInAir = (mainAI.aiHammerJumpsInAir ?? 0) + 1;
-      playJump();
-      spawnVoxelShockwaveParticles(mainAI.pos, '#f59e0b');
-    }
+  if (applyAIHammerJumpAtImpact(mainAI, state.settings, impactPos)) {
+    playJump();
+    spawnVoxelShockwaveParticles(mainAI.pos, '#f59e0b');
   }
-  mainAI.hammerJumpPlanned = false;
-  mainAI.hammerJumpType = undefined;
 
-  const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
+  const impactRadius = isBall ? GRIFBALL_PUNCH_RADIUS : (state.settings.attackRadius ?? 4.5);
   if (isBall) {
     spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
   } else {

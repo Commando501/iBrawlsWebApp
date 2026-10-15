@@ -87,11 +87,15 @@ describe('service worker routing', () => {
     assert.equal(await response.text(), 'app shell');
   });
 
-  it('does not app-shell fallback standalone animation editor document routes', async () => {
+  it('does not app-shell fallback standalone development document routes', async () => {
     const serviceWorker = loadServiceWorker(async () => {
       throw new Error('network unavailable');
     });
 
+    await assert.rejects(
+      serviceWorker.fetch(createNavigationRequest('/grifball-validation.html')),
+      /network unavailable/
+    );
     await assert.rejects(
       serviceWorker.fetch(createNavigationRequest('/v3-clean-animation-editor.html')),
       /network unavailable/

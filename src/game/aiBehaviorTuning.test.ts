@@ -50,6 +50,25 @@ test('every override key applies', () => {
   }
 });
 
+test('tuning resolution observes edited and removed overrides without sharing results', () => {
+  const settings: Partial<UniversalSettings> = {};
+  for (const [field, key] of Object.entries(AI_TUNE_SETTING_KEYS) as [keyof AIBehaviorTuning, keyof UniversalSettings][]) {
+    Object.assign(settings, { [key]: 123.456 });
+    const first = resolveBehaviorTuning(settings);
+    assert.equal(first[field], 123.456);
+    first[field] = -999;
+    assert.equal(resolveBehaviorTuning(settings)[field], 123.456, 'callers own their resolved object');
+    Object.assign(settings, { [key]: 0 });
+    assert.equal(resolveBehaviorTuning(settings)[field], 0, 'zero is a valid live override');
+    for (const invalid of [NaN, Infinity, -Infinity, '4', null, undefined]) {
+      Object.assign(settings, { [key]: invalid });
+      assert.equal(resolveBehaviorTuning(settings)[field], DEFAULT_AI_BEHAVIOR_TUNING[field]);
+    }
+    delete settings[key];
+    assert.deepEqual(resolveBehaviorTuning(settings), DEFAULT_AI_BEHAVIOR_TUNING);
+  }
+});
+
 test('resolved overrides change downstream module behavior', () => {
   // Feint cooldown duration honors min/max overrides (rng=0 -> returns min).
   const t = resolveBehaviorTuning({ aiTuneFeintCooldownMin: 12, aiTuneFeintCooldownMax: 20 });

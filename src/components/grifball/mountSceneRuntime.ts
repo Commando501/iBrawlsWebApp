@@ -1,3 +1,5 @@
+import { isIronVanguardLoadout, preloadIronVanguard } from '../iron-vanguard/ironVanguardModel';
+import { resolveFriendlyArmorTeam } from './combatantTeamArmor';
 import { type AIOrchestratorEvents, type AIOrchestratorSpawnCallbacks } from '../../game/aiOrchestrator';
 import {
   DEFAULT_AI_TEAM,
@@ -41,7 +43,7 @@ const yieldToBrowser = (): Promise<void> =>
     setTimeout(resolve, 0);
   });
 
-const resolveInitialEnemyTeamOutlineTeam = (state: GrifballRuntimeState): TeamId | null => {
+const resolveInitialEnemyTeamArmorTeam = (state: GrifballRuntimeState): TeamId | null => {
   if (state.settings.gameMode !== 'grifball') return null;
   if (state.multiplayerRole === 'observer') return DEFAULT_AI_TEAM;
   return opponentTeamId(state.localPlayerTeam);
@@ -93,6 +95,10 @@ export async function initializeGrifballMountSceneForState({
     await yieldToBrowser();
   };
 
+  if (isIronVanguardLoadout(visualPlayerLoadout)) {
+    await report(3, 'Loading Iron Vanguard');
+    await preloadIronVanguard();
+  }
   await report(6, 'Preparing renderer', 'Allocating WebGL scene and camera');
   const initialized = initializeGrifballSceneForRefs({
     refs,
@@ -155,8 +161,8 @@ export async function initializeGrifballMountSceneForState({
         scene,
         mainAIHue,
         v3Options,
-        teamOutlineTeam: resolveInitialEnemyTeamOutlineTeam(state),
-        teamOutlineOptions: adminSettings,
+        teamArmorTeam: resolveInitialEnemyTeamArmorTeam(state),
+        friendlyTeam: resolveFriendlyArmorTeam(state),
       });
     } else {
       await report(76, 'Spawning combatants');

@@ -1,30 +1,11 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
-import { type AIBehaviorState, type Combatant, type WeaponState } from '../../types';
+import { type Combatant } from '../../types';
 import { type CombatantWeapon } from './combatantActions';
 import { type TacticalTargetCandidate } from './combatGeometry';
-import { resolveScaledAIWeaponReloadTime } from './aiWeaponTimingRuntime';
+import { resolveAIAirborneHammerOpportunity, type AIAirborneHammerOpportunityFrame, type AIAirborneHammerOpportunityTuning, type AIAirborneHammerOpportunityResult } from '../../game/aiAirborneHammerOpportunity';
+export type { AIAirborneHammerOpportunityFrame, AIAirborneHammerOpportunityTuning, AIAirborneHammerOpportunityResult } from '../../game/aiAirborneHammerOpportunity';
 import { type GrifballRuntimeState } from './runtimeState';
-
-export interface AIAirborneHammerOpportunityFrame {
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-  aiState: AIBehaviorState | undefined;
-  timer: number | undefined;
-  weaponState: WeaponState | 'slashing' | 'recovering';
-}
-
-export interface AIAirborneHammerOpportunityTuning {
-  hammerJumpReachBase: number;
-  hammerJumpReachAnticipation: number;
-  hammerJumpVerticalBase: number;
-  hammerJumpVerticalAnticipation: number;
-}
-
-export interface AIAirborneHammerOpportunityResult {
-  aiState: AIBehaviorState | undefined;
-  timer: number | undefined;
-  weaponState: WeaponState | 'slashing' | 'recovering';
-}
 
 export function resolveAIAirborneHammerOpportunityForCombatant({
   state,
@@ -49,7 +30,9 @@ export function resolveAIAirborneHammerOpportunityForCombatant({
   tuning,
   triggerCombatantAttack,
   startAIHammerJump,
+  random = simulationRandom,
 }: {
+  random?: () => number;
   state: GrifballRuntimeState;
   self: Combatant;
   frame: AIAirborneHammerOpportunityFrame;
@@ -79,40 +62,10 @@ export function resolveAIAirborneHammerOpportunityForCombatant({
     jumpType?: 'offensive' | 'defensive'
   ) => boolean;
 }): AIAirborneHammerOpportunityResult {
-  const canConsiderHammerOpportunity =
-    targetAirborne &&
-    difficulty !== 'easy' &&
-    movementComplexity >= 50 &&
-    canStartWeaponAction &&
-    activeWeapon === 'hammer' &&
-    frame.weaponState === 'ready' &&
-    target.hp > 0 &&
-    !targetProtected;
-
-  if (!canConsiderHammerOpportunity) {
-    return frame;
-  }
-
-  const fallingIntoHammer = (target.vel?.y ?? 0) <= 0.75 && distanceToTarget <= resolvedDangerZone + 2.5;
-  const canReachBody = combatDistanceToTarget <= resolvedAiReach + tunedAnticipationFactor * 1.5;
-
-  if (
-    (fallingIntoHammer || canReachBody) &&
-    Math.random() < tuning.hammerJumpReachBase + tunedAnticipationFactor * tuning.hammerJumpReachAnticipation
-  ) {
-    frame.aiState = 'COOLDOWN';
-    frame.timer = resolveScaledAIWeaponReloadTime(state.settings, 'hammer', cooldownMultiplier);
-    triggerCombatantAttack(self, 'hammer');
-  } else if (
-    !enemyInKillRange &&
-    verticalDeltaToTarget > 2.0 &&
-    distanceToTarget <= resolvedDangerZone + 4.5 &&
-    Math.random() < tuning.hammerJumpVerticalBase + tunedAnticipationFactor * tuning.hammerJumpVerticalAnticipation
-  ) {
-    if (startAIHammerJump(self, frame.pos, frame.vel, toTarget, 'offensive')) {
-      frame.weaponState = 'swing_up';
-    }
-  }
-
-  return frame;
+  return resolveAIAirborneHammerOpportunity({ settings: state.settings, frame, targetHp: target.hp,
+    targetVerticalVelocity: target.vel?.y ?? 0, targetAirborne, targetProtected, difficulty, movementComplexity,
+    canStartWeaponAction, activeWeapon, distanceToTarget, resolvedDangerZone, combatDistanceToTarget, resolvedAiReach,
+    tunedAnticipationFactor, enemyInKillRange, verticalDeltaToTarget, cooldownMultiplier, tuning, random,
+    triggerHammerAttack: () => triggerCombatantAttack(self, 'hammer'),
+    startHammerJump: () => startAIHammerJump(self, frame.pos, frame.vel, toTarget, 'offensive') });
 }

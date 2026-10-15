@@ -132,6 +132,7 @@ export function createCombatantActionCallbacksForState({
       settings: state.settings,
       aiMatchContext: state.aiMatchContext,
       playerPos: state.playerPos,
+      excludePlayer: !state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0,
       rosterAI: getRosterAI(),
       getOptimalSpawnPoint: (excludePositions) => {
         if (state.settings.gameMode === 'grifball') {

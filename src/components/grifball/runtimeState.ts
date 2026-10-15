@@ -1,3 +1,6 @@
+import type { OnlineGrifballState } from './onlineGrifballRuntime';
+import type { RosterSlotConfig } from '../../game/rosterSlotConfig';
+import type { GrifballTacticsConfig } from '../../game/grifballTacticsConfig';
 import * as THREE from 'three';
 import { createAIMatchContext, type AIMatchContext } from '../../game/aiMatchContext';
 import { createEmptyTeamScores, localPlayerTeamFromRole, type TeamId, type TeamScoresState } from '../../game/teamScoring';
@@ -6,6 +9,14 @@ import { type CharacterModelType, type Combatant, type DeathEvent, type MedalInf
 import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
+  onlineGrifball?: OnlineGrifballState;
+  grifballTactics?: GrifballTacticsConfig;
+  /** Local validation-owned roster tuning; never serialized into settings/network messages. */
+  grifballValidationSlots?: Record<string, RosterSlotConfig>;
+  /** Local batch evaluation only; never part of settings or network state. */
+  grifballLabRosterLocked?: boolean;
+  /** Lab observers have no local combatant occupying the free camera. */
+  hideLocalObserverAvatar?: boolean;
   playerPos: THREE.Vector3;
   playerVel: THREE.Vector3;
   yaw: number;
@@ -13,6 +24,7 @@ export interface GrifballRuntimeState {
   crouchAmount: number;
   isCrouching: boolean;
   isJumping: boolean;
+  playerIsSprinting: boolean;
   playerModelType: CharacterModelType;
 
   playerDashRemaining: number;
@@ -32,6 +44,7 @@ export interface GrifballRuntimeState {
   activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
   crosshairColor: 'white' | 'red';
   isLunging: boolean;
+  swordLungeHit?: boolean;
   lungeTimer: number;
   lungeStartPos: THREE.Vector3;
   lungeTargetDir: THREE.Vector3;
@@ -159,6 +172,7 @@ export function createInitialGrifballRuntimeState({
     crouchAmount: 0,
     isCrouching: false,
     isJumping: false,
+    playerIsSprinting: false,
     playerModelType: 'medium',
     otherPlayers: new Map<string, Combatant>(),
 

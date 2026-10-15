@@ -27,6 +27,11 @@ export interface V3RenderOptions {
   v3SourceFidelity?: V3SourceFidelity;
 }
 
+/** Keep the armor shell intact; sparse voxel sampling exposes the internal rig. */
+export function getV3GameplayRenderOptions(v3QualityTier: unknown = 'desktop'): V3RenderOptions {
+  return { v3QualityTier: normalizeV3QualityTier(v3QualityTier), v3Distance: 0, v3SourceFidelity: 'exact' };
+}
+
 const tierRank = (tier: V3QualityTier): number => V3_QUALITY_TIERS.indexOf(tier);
 
 const tierAtRank = (rank: number): V3QualityTier =>

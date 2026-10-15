@@ -1,9 +1,11 @@
+import { GrifballAILab } from './components/GrifballAILab';
+import { grifballLab } from './game/grifballLabStore';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from 'react';
 import { usePlayerSettings } from './settings/usePlayerSettings';
 import { useSaveAccountSync } from './settings/useSaveAccountSync';
 import {
@@ -44,6 +46,7 @@ const APP_VERSION = '0.653e';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
+  const labOpen = useSyncExternalStore(grifballLab.subscribe, grifballLab.getOpen);
   const [isLocalTrainingSession, setIsLocalTrainingSession] = useState(false);
   const {
     forceMobileControls,
@@ -720,6 +723,7 @@ export default function App() {
 	        isMultiplayer={isMultiplayer}
 	        multiplayerRole={multiplayerRole}
 	        multiplayerSocket={multiplayerSocket}
+            gameplayClientId={gameplayClientId}
 	        matchLobbyConfig={matchLobbyConfig}
 	        multiplayerSpawnSlot={multiplayerSpawnSlot}
 	        opponentClientId={opponentClientId}
@@ -949,6 +953,11 @@ export default function App() {
           onSendLobbyChatMessage: sendLobbyChatMessage,
         }}
       />
+      <GrifballAILab canSetup={!isPlaying && !isMultiplayer} onSetup={() => {
+        setAdminSettings(previous => ({ ...previous, gameMode: 'grifball' }));
+        setShowBotSetupMenu(true);
+        grifballLab.close();
+      }} />
       <AppOverlayStack
         dataNotice={{
           isVisible: showDataNotice,
@@ -959,7 +968,7 @@ export default function App() {
           onReboot: handleStartGame,
         }}
         pause={{
-          isVisible: isPaused && isPlaying && !showUiAdjustment && !matchResult,
+          isVisible: !labOpen && isPaused && isPlaying && !showUiAdjustment && !matchResult,
           props: {
             showAdminPanel,
             showLightingMenu,

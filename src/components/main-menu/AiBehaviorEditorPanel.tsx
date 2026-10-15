@@ -1,3 +1,4 @@
+import { grifballLab } from '../../game/grifballLabStore';
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import type { AIPreset, UniversalSettings } from '../../types';
 import { AI_ARCHETYPE_OPTIONS, getArchetypeDef } from '../../game/aiPersonalities';
@@ -55,6 +56,8 @@ export function AiBehaviorEditorPanel({
         <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">Custom AI Behavior Editor</span>
         <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
       </div>
+
+      <button onClick={() => grifballLab.open()} className="rounded-lg border border-cyan-500/30 bg-cyan-950/40 text-cyan-300 p-3 text-sm text-left">Grifball AI Lab · Team tactics and scenarios</button>
 
       <div className="text-[11px] text-white/55 leading-relaxed bg-white/5 border border-white/5 rounded-lg p-3.5 select-text">
         Use this workspace to build custom single-player bot behavior. Start with an archetype, tune reflexes, movement, and combat style, then save a named build so it can be assigned to sandbox bots or selected for custom tournaments.

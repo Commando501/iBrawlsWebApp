@@ -1,3 +1,4 @@
+import { disposeIronVanguard, isIronVanguardModel } from './iron-vanguard/ironVanguardModel';
 import * as THREE from 'three';
 import type { CharacterLoadout } from './VoxelModels';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from './v3/v3ModelTypes';
@@ -42,6 +43,7 @@ export function getPreviewLoadoutSignature(loadout?: CharacterLoadout): string {
     })
     .join('|');
   return [
+    loadout.characterAsset ?? 'standard',
     loadout.modelSystem ?? 'v1',
     loadout.modelType ?? 'medium',
     loadout.helmet ?? 'mark-vi',
@@ -56,6 +58,7 @@ export function getPreviewLoadoutSignature(loadout?: CharacterLoadout): string {
 }
 
 export function disposePreviewObject(object: THREE.Object3D): void {
+  if (isIronVanguardModel(object)) { disposeIronVanguard(object); return; }
   object.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.geometry?.dispose();

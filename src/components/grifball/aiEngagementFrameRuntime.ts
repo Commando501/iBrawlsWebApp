@@ -11,7 +11,7 @@ export interface AIEngagementFrame {
   hammerJumpCooldownTimer: number | undefined;
 }
 
-export function normalizeTargetEngagementFrameState(frame: AIEngagementFrame): void {
+export function normalizeTargetEngagementFrameState(frame: Pick<AIEngagementFrame, 'aiState' | 'timer'>): void {
   if (frame.aiState !== 'SPAWN_GUARDING') {
     return;
   }
@@ -19,7 +19,7 @@ export function normalizeTargetEngagementFrameState(frame: AIEngagementFrame): v
   frame.timer = 0;
 }
 
-export function integrateTargetEngagementGravityForCombatant({
+export function integrateTargetEngagementGravityForCombatant<TSelf extends Pick<Combatant, 'isLunging' | 'isJumping' | 'aiHammerJumpsInAir'>>({
   self,
   frame,
   dt,
@@ -27,13 +27,16 @@ export function integrateTargetEngagementGravityForCombatant({
   recoverCombatantAltitude,
   constrainCombatantToArena,
 }: {
-  self: Combatant;
+  self: TSelf;
   frame: AIEngagementFrame;
   dt: number;
   gravityAcceleration: number;
-  recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
+  recoverCombatantAltitude: (self: TSelf, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 }): void {
+  // Committed flight integrates velocity, gravity and constraints itself later in
+  // this tick. Running the engagement prelude too doubles airborne displacement.
+  if (self.isLunging) return;
   if (frame.vel.y !== 0 || frame.pos.y > 0) {
     frame.vel.y -= gravityAcceleration * dt;
     frame.pos.y += frame.vel.y * dt;
@@ -46,11 +49,13 @@ export function integrateTargetEngagementGravityForCombatant({
       frame.pos.y = 0;
       frame.vel.set(0, 0, 0);
       self.isJumping = false;
+      self.aiHammerJumpsInAir = 0;
     }
   } else {
     frame.pos.y = 0;
     frame.vel.y = 0;
     self.isJumping = false;
+    self.aiHammerJumpsInAir = 0;
   }
   constrainCombatantToArena(frame.pos, frame.vel);
 }

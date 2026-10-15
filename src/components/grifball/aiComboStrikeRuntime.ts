@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import { type Combatant, type WeaponState } from '../../types';
 import { resolveScaledAIWeaponReloadTime } from './aiWeaponTimingRuntime';
 import { MELEE_HAMMER_SWIPE_REACH } from './combatGeometry';
@@ -10,7 +11,7 @@ export interface AIComboMeleeStrikeResult {
   weaponState: WeaponState | 'slashing' | 'recovering';
 }
 
-export function resolveAIComboMeleeStrikeForCombatant({
+export function resolveAIComboMeleeStrikeForCombatant<TSelf>({
   state,
   self,
   activeWeapon,
@@ -18,20 +19,22 @@ export function resolveAIComboMeleeStrikeForCombatant({
   targetModelType,
   cooldownMultiplier,
   triggerCombatantAttack,
+  random = simulationRandom,
 }: {
-  state: GrifballRuntimeState;
-  self: Combatant;
+  state: Pick<GrifballRuntimeState, 'settings'>;
+  self: TSelf;
   activeWeapon: CombatantWeapon;
   attackDistanceToTarget: number;
   targetModelType?: Combatant['modelType'];
   cooldownMultiplier: number;
-  triggerCombatantAttack: (self: Combatant, weapon: CombatantWeapon, melee?: boolean) => void;
+  triggerCombatantAttack: (self: TSelf, weapon: CombatantWeapon, melee?: boolean) => void;
+  random?: () => number;
 }): AIComboMeleeStrikeResult {
   // Player-parity hammer side-swipe only applies inside the melee swipe band.
   const isHammerMelee =
     activeWeapon === 'hammer' &&
     attackDistanceToTarget <= adjustRangeForTargetModel(MELEE_HAMMER_SWIPE_REACH, targetModelType) &&
-    Math.random() < 0.4;
+    random() < 0.4;
 
   const timer = resolveScaledAIWeaponReloadTime(
     state.settings,

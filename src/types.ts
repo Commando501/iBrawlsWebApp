@@ -72,7 +72,7 @@ export interface UniversalSettings {
   aiFeintChance?: number;
   /** Custom override for derived pressure aggression (0–100); unset uses deriveAIParams(). */
   aiPressureAggression?: number;
-  /** Custom override for combat spacing multiplier (e.g. 0.7–1.4×); unset uses archetype/neutral flag. */
+  /** Custom override for combat spacing multiplier (e.g. 0.7–1.4Ã—); unset uses archetype/neutral flag. */
   aiSpacingBand?: number;
   /** Custom override: when true the AI never chains post-hit PRESSURING; unset uses archetype/neutral flag. */
   aiSkipPressure?: boolean;
@@ -325,7 +325,7 @@ export interface RemotePlayerState {
   hp: number;
   maxHp: number;
   isCrouching: boolean;
-  activeWeapon: 'hammer' | 'sword' | 'pistol';
+  activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
   respawnTimer: number;
   hue: number;
   modelType?: CharacterModelType;
@@ -347,6 +347,7 @@ export interface RemotePlayerState {
   swapLockoutTimer?: number;
   weaponState?: WeaponState | 'slashing' | 'recovering';
   isLunging?: boolean;
+  swordLungeHit?: boolean;
   lungeTimer?: number;
   lungeTargetDir?: { x: number; y: number; z: number };
   lungeStartPos?: { x: number; y: number; z: number };
@@ -466,6 +467,7 @@ export interface Combatant {
 
   // Sword-lunge flight
   isLunging?: boolean;
+  swordLungeHit?: boolean;
   lungeTimer?: number;
   lungeStartPos?: { x: number; y: number; z: number } | THREE.Vector3;
   lungeTargetDir?: { x: number; y: number; z: number } | THREE.Vector3;
@@ -513,6 +515,8 @@ export interface GameStats {
   gameTime: number; // in seconds
   debugMode: boolean;
   debugDamageRadius: number; // constant viz size (4.5m / current attackRadius)
+  /** Local-only scripted Grifball assignments, populated only in debug mode. */
+  grifballTacticsDebug?: string[];
   weaponReady: boolean;
   weaponCooldown: number; // 0.0 to 1.0 (1.0 is full)
   lastStrikePos: [number, number, number] | null;
@@ -534,7 +538,7 @@ export interface GameStats {
   enemyIsCrouching: boolean;
   playerIsCrouchMoving: boolean;
   enemyIsCrouchMoving: boolean;
-  activeWeapon: 'hammer' | 'sword' | 'pistol';
+  activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
   crosshairColor: 'white' | 'red';
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;
@@ -673,10 +677,15 @@ export interface ReplayFrame {
     isCrouching: boolean;
     isJumping: boolean;
     isLunging: boolean;
+    swordLungeHit?: boolean;
     isDashing?: boolean;
     isSprinting?: boolean;
     isSliding?: boolean;
     weaponTimer?: number;
+    lungeTimer?: number;
+    ballCharge?: number;
+    ballThrowTime?: number;
+    ballReleaseCharge?: number;
     activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
     weaponState: string;
     score: number;
@@ -693,12 +702,18 @@ export interface ReplayFrame {
     pitch?: number;
     hp: number;
     isCrouching: boolean;
+    isJumping?: boolean;
     isLunging?: boolean;
+    swordLungeHit?: boolean;
     isDashing?: boolean;
     isSprinting?: boolean;
     isSliding?: boolean;
     weaponTimer?: number;
-    activeWeapon: 'hammer' | 'sword' | 'ball';
+    lungeTimer?: number;
+    ballCharge?: number;
+    ballThrowTime?: number;
+    ballReleaseCharge?: number;
+    activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
     weaponState: string;
     score: number;
     kills: number;
@@ -717,12 +732,18 @@ export interface ReplayFrame {
     pitch?: number;
     hp: number;
     isCrouching: boolean;
+    isJumping?: boolean;
     isLunging?: boolean;
+    swordLungeHit?: boolean;
     isDashing?: boolean;
     isSprinting?: boolean;
     isSliding?: boolean;
     weaponTimer?: number;
-    activeWeapon: 'hammer' | 'sword' | 'ball';
+    lungeTimer?: number;
+    ballCharge?: number;
+    ballThrowTime?: number;
+    ballReleaseCharge?: number;
+    activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
     weaponState: string;
     score: number;
     kills: number;

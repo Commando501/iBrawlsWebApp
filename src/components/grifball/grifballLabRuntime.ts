@@ -1,0 +1,356 @@
+import { setGrifballCarrierForState } from './grifballObjectiveRuntime';
+import type { CustomMapData } from '../../types';
+import { createEvaluationJobs, GrifballEvaluationTracker, EVALUATION_VERSION, type EvaluationJob, type EvaluationReport, type EvaluationRosterConfig } from '../../game/grifballEvaluation';
+import { GRIFBALL_TACTICAL_CONTRACT_VERSION } from '../../game/grifballTacticalContract';
+import { createLiveGrifballTacticalSnapshot } from './grifballTeamPlanRuntime';
+import * as THREE from 'three';
+import { grifballLab, type LabCommand, type LabMetrics, type LabResult, type LabScenario } from '../../game/grifballLabStore';
+import { validateGrifballTactics, type GrifballTacticsConfig } from '../../game/grifballTacticsConfig';
+import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
+import { seededRandom, withSimulationRandom } from '../../game/simulationRandom';
+import type { GrifballRuntimeState } from './runtimeState';
+import type { GrifballThreeRefs } from './threeRefs';
+
+import { LAB_TICK, cloneLabState, prepareGrifballScenario, mirrorGrifballTrial } from './grifballTrialSetup';
+export { LAB_TICK, cloneLabState } from './grifballTrialSetup';
+export const emptyLabMetrics = (): LabMetrics => ({ adaptedSeconds: 0, styleSeconds: 0, seconds: 0, goals: 0, possessionLosses: 0, roleChanges: 0, outsideSeconds: 0, botSeconds: 0, stuckSeconds: 0, sharedExposureSeconds: 0, blockedRouteSeconds: 0, runnerWaitSeconds: 0, runnerRouteChanges: 0, tankingSeconds: 0, doubleCommitSeconds: 0, delaySeconds: 0, engagementReleases: 0, containmentSeconds: 0, safetySeconds: 0, passes: 0, completedPasses: 0, interceptedPasses: 0 });
+
+export class GrifballLabRuntime {
+  private checkpoint: GrifballRuntimeState | null = null;
+  private random = seededRandom(1);
+  private accumulator = 0;
+  private tickCount = 0;
+  private metrics = emptyLabMetrics();
+  private pendingPassTeam: string | null = null;
+  private previousHolder: string | null = null;
+  private runnerActions = new Map<string, string>();
+  private roles = new Map<string, string>();
+  private tankingOrders = new Map<string, string>();
+  private positions = new Map<string, { x: number; z: number; still: number }>();
+  private history: string[] = [];
+  private scenario: LabScenario = 'pickup';
+  private seed = 1;
+  private comparison: { command: Extract<LabCommand, { type: 'compare' }>; results: LabResult[]; ticks: number } | null = null;
+  private batch: { report: EvaluationReport; jobs: EvaluationJob[]; index: number; ticks: number;
+    random: () => number; origin: GrifballRuntimeState; state: GrifballRuntimeState; tracker: GrifballEvaluationTracker;
+    seed: number; scenario: LabScenario; secondsOrigin: number; clockEpoch: number;
+    cost: { samples: number; totalMs: number; maxMs: number } } | null = null;
+  private overlay: THREE.Group | null = null;
+  private overlayKey = '';
+  private publishElapsed = 0;
+  private secondsOrigin = 0;
+  private clockEpoch = 1_000_000;
+
+  constructor(private readonly mapName = 'Current arena', private readonly getEnemyGoal?: (team: string) => { x: number; z: number } | null, private readonly getMap?: () => CustomMapData | null, private readonly getRosterConfig?: () => EvaluationRosterConfig) {}
+
+  dispose() { this.finishBatch('cancelled'); this.clearOverlay(); }
+  suspend() { this.finishBatch('cancelled'); this.comparison = null; this.checkpoint = null; this.accumulator = 0; this.clearOverlay(); }
+  private clearOverlay() {
+    this.overlay?.traverse(item => {
+      if (item instanceof THREE.Line || item instanceof THREE.Mesh) { item.geometry.dispose(); (item.material as THREE.Material).dispose(); }
+    });
+    this.overlay?.removeFromParent(); this.overlay = null; this.overlayKey = '';
+  }
+  private resetMetrics() {
+    this.tickCount = 0; this.accumulator = 0; this.random = seededRandom(this.seed);
+    this.metrics = emptyLabMetrics(); this.previousHolder = null; this.pendingPassTeam = null;
+    this.runnerActions.clear(); this.roles.clear(); this.tankingOrders.clear(); this.positions.clear(); this.history = [];
+  }
+  private restore(state: GrifballRuntimeState) {
+    if (!this.checkpoint) return;
+    Object.assign(state, cloneLabState(this.checkpoint));
+    this.resetMetrics(); this.clearOverlay();
+  }
+  private capture(state: GrifballRuntimeState) {
+    if (this.checkpoint) this.secondsOrigin += this.tickCount * LAB_TICK;
+    else {
+      this.secondsOrigin = performance.now() / 1000;
+      this.clockEpoch = Date.now() - this.secondsOrigin * 1000;
+    }
+    this.checkpoint = cloneLabState(state);
+    this.resetMetrics();
+  }
+  private prepare(state: GrifballRuntimeState, scenario: LabScenario, seed: number) {
+    prepareGrifballScenario(state, scenario, seed, this.getEnemyGoal);
+    this.seed = seed; this.scenario = scenario;
+    this.secondsOrigin = 0; this.clockEpoch = 1_000_000;
+    this.checkpoint = cloneLabState(state); this.resetMetrics(); this.clearOverlay();
+    grifballLab.update({ message: 'Scenario ready. Observer mode uses scripted bots; Join runner enables exploratory human play.', results: [] });
+  }
+  private sample(state: GrifballRuntimeState) {
+    const plan = state.aiMatchContext.grifballTeamPlan;
+    this.tickCount++; this.metrics.seconds = this.tickCount * LAB_TICK;
+    this.metrics.goals = state.teamScores.blue.goals + state.teamScores.red.goals;
+    const holder = state.grifball.ball.holderId;
+    if (this.previousHolder && this.previousHolder !== holder && state.grifball.phase === 'playing') this.metrics.possessionLosses++;
+    this.previousHolder = holder;
+    if (plan.passFlight && !this.pendingPassTeam && state.grifball.ball.state === 'thrown') {
+      this.pendingPassTeam = plan.passFlight.team; this.metrics.passes++;
+      this.history.push(`${this.metrics.seconds.toFixed(2)}s · pass released to ${plan.passFlight.receiverId}`);
+    }
+    if (this.pendingPassTeam && holder) {
+      const team = holder === 'player' ? state.localPlayerTeam : state.otherPlayers.get(holder)?.team;
+      if (team === this.pendingPassTeam) this.metrics.completedPasses++; else this.metrics.interceptedPasses++;
+      this.pendingPassTeam = null;
+    }
+    if (state.grifball.phase !== 'playing' || state.grifball.ball.state === 'idle') this.pendingPassTeam = null;
+    for (const style of Object.values(plan.stylePlans)) {
+      if (state.grifball.phase !== 'playing' || ![...plan.assignments.values()].some(a => a.team === style.team)) continue;
+      this.metrics.styleSeconds += LAB_TICK;
+      if (style.adapting) this.metrics.adaptedSeconds += LAB_TICK;
+    }
+    const activeRunners = new Set<string>();
+    for (const play of Object.values(plan.runnerPlans)) {
+      activeRunners.add(play.carrierId);
+      const action = play.selected.action;
+      if (action === 'wait') this.metrics.runnerWaitSeconds += LAB_TICK;
+      const previous = this.runnerActions.get(play.carrierId);
+      if (previous !== action) {
+        if (previous) this.metrics.runnerRouteChanges++;
+        this.history.push(`${this.metrics.seconds.toFixed(2)}s · ${play.carrierId} route → ${action}: ${play.reason}`);
+      }
+      this.runnerActions.set(play.carrierId, action);
+    }
+    for (const id of this.runnerActions.keys()) if (!activeRunners.has(id)) this.runnerActions.delete(id);
+    const doubleTeams = new Set<string>();
+    for (const [id, assignment] of plan.assignments) {
+      const bot = state.otherPlayers.get(id); if (!bot || bot.hp <= 0 || bot.respawnTimer > 0) continue;
+      if (assignment.defense?.mode === 'contain') this.metrics.containmentSeconds += LAB_TICK;
+      if (assignment.defense?.mode === 'last-defender') this.metrics.safetySeconds += LAB_TICK;
+      const tank = assignment.tanking;
+      if (tank) {
+        const key = `${tank.mode}:${tank.targetId ?? '-'}:${tank.attack}`;
+        if (this.tankingOrders.get(id) !== key) {
+          if (tank.mode === 'release' && this.tankingOrders.has(id)) this.metrics.engagementReleases++;
+          this.history.push(`${this.metrics.seconds.toFixed(2)}s · ${id} ${tank.mode} → ${tank.targetId ?? 'coverage'}: ${tank.reason}`);
+        }
+        this.tankingOrders.set(id, key);
+        if (tank.attack) this.metrics.tankingSeconds += LAB_TICK;
+        if (tank.doubleCommit) doubleTeams.add(assignment.team);
+        if (tank.mode === 'delay') this.metrics.delaySeconds += LAB_TICK;
+      } else this.tankingOrders.delete(id);
+      const role = `${assignment.role}:${assignment.slot}`;
+      if (this.roles.get(id) !== role) {
+        if (this.roles.has(id)) this.metrics.roleChanges++;
+        this.history.push(`${this.metrics.seconds.toFixed(2)}s · ${id} → ${assignment.role}: ${assignment.reason}`);
+      }
+      this.roles.set(id, role);
+      this.metrics.botSeconds += LAB_TICK;
+      if ((assignment.space?.selected?.sharedExposure ?? 0) > 0) this.metrics.sharedExposureSeconds += LAB_TICK;
+      if (assignment.space?.route.status === 'blocked') this.metrics.blockedRouteSeconds += LAB_TICK;
+      const distance = Math.hypot(bot.pos.x - assignment.destination.x, bot.pos.z - assignment.destination.z);
+      if (distance > (assignment.tuning?.coverageBoundary ?? 9)) this.metrics.outsideSeconds += LAB_TICK;
+      const previous = this.positions.get(id);
+      const still = previous && distance > 2 && Math.hypot(previous.x - bot.pos.x, previous.z - bot.pos.z) < 0.1 * LAB_TICK ? previous.still + LAB_TICK : 0;
+      if (still >= 1) this.metrics.stuckSeconds += LAB_TICK;
+      this.positions.set(id, { x: bot.pos.x, z: bot.pos.z, still });
+    }
+    this.metrics.doubleCommitSeconds += doubleTeams.size * LAB_TICK;
+    for (const id of this.tankingOrders.keys()) if (!plan.assignments.has(id)) this.tankingOrders.delete(id);
+    for (const id of this.roles.keys()) if (!plan.assignments.has(id)) { this.roles.delete(id); this.positions.delete(id); this.history.push(`${this.metrics.seconds.toFixed(2)}s · ${id} assignment cleared`); }
+    this.history = this.history.slice(-100);
+  }
+  private publish(state: GrifballRuntimeState) {
+    const plan = state.aiMatchContext.grifballTeamPlan;
+    const threats: Record<string, string | null> = {};
+    for (const [id, assignment] of plan.assignments) {
+      const bot = state.otherPlayers.get(id);
+      threats[id] = bot ? selectGrifballAssignmentThreat(assignment, bot.pos, plan.snapshot?.players ?? []) : null;
+    }
+    grifballLab.update({ diagnostics: { stylePlans: Object.values(plan.stylePlans), passPlans: Object.values(plan.passPlans), runnerPlans: Object.values(plan.runnerPlans), assignments: [...plan.assignments.values()], snapshot: plan.snapshot, history: [...this.history], metrics: { ...this.metrics }, threats } });
+  }
+  private publishBatch() {
+    if (!this.batch) return;
+    const report = { ...this.batch.report, runs: [...this.batch.report.runs] };
+    const previous = grifballLab.getSnapshot().evaluationReports;
+    grifballLab.update({ evaluationReports: [report, ...previous.filter(p => p.status !== 'running')].slice(0, 3),
+      message: `Batch ${report.runs.length}/${report.totalRuns} runs · ${report.status}` });
+  }
+  private sampleBatch(state: GrifballRuntimeState, dt: number) {
+    if (!this.batch) return;
+    const previous = state.aiMatchContext.grifballTeamPlan.snapshot;
+    const snapshot = createLiveGrifballTacticalSnapshot(state, team => this.getEnemyGoal?.(team!) ?? previous?.goals[team === 'blue' ? 'red' : 'blue'] ?? null, this.getMap?.() ?? null);
+    const holder = snapshot.players.find(p => p.id === snapshot.holderId);
+    this.batch.tracker.sample({ phase: state.grifball.phase, holderTeam: holder?.team ?? null, holderId: snapshot.holderId,
+      players: snapshot.players, geometry: snapshot.geometry, assignments: state.aiMatchContext.grifballTeamPlan.assignments.values(),
+      goals: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals } }, dt);
+  }
+  private startBatchJob(state: GrifballRuntimeState) {
+    const batch = this.batch!; const job = batch.jobs[batch.index];
+    Object.assign(state, cloneLabState(batch.origin));
+    this.prepare(state, batch.report.request.scenario, job.seed);
+    if (job.mirrored) mirrorGrifballTrial(state, team => this.getEnemyGoal?.(team) ??
+      batch.origin.aiMatchContext.grifballTeamPlan.snapshot?.goals[team === 'red' ? 'blue' : 'red'] ?? null);
+    state.grifballLabRosterLocked = true;
+    state.grifballTactics = cloneLabState(job.config);
+    this.checkpoint = cloneLabState(state);
+    batch.tracker = new GrifballEvaluationTracker(); batch.cost = { samples: 0, totalMs: 0, maxMs: 0 };
+    this.sampleBatch(state, 0); this.publishBatch();
+  }
+  private finishBatch(status: 'complete' | 'cancelled') {
+    const batch = this.batch; if (!batch) return;
+    batch.report.status = status; this.publishBatch();
+    Object.assign(batch.state, cloneLabState(batch.origin));
+    batch.state.grifballLabRosterLocked = batch.origin.grifballLabRosterLocked ?? false;
+    this.seed = batch.seed; this.scenario = batch.scenario; this.secondsOrigin = batch.secondsOrigin; this.clockEpoch = batch.clockEpoch;
+    this.checkpoint = cloneLabState(batch.origin); this.resetMetrics(); this.clearOverlay();
+    this.random = batch.random;
+    this.batch = null;
+    grifballLab.update({ running: false, comparing: false });
+  }
+  /** Called every rendered frame, even while the host application is paused. */
+  frame(state: GrifballRuntimeState, elapsed: number, tick: (dt: number) => void): void {
+    const lab = grifballLab.getSnapshot();
+    if (!lab.open) { this.finishBatch('cancelled'); this.comparison = null; this.accumulator = 0; this.clearOverlay(); return; }
+    let steps = 0;
+    const commands = grifballLab.takeCommands();
+    for (const command of commands) {
+      try {
+        if (command.type === 'cancelBatch') { this.finishBatch('cancelled'); continue; }
+        if (this.batch) {
+          if (command.type === 'restart') this.finishBatch('cancelled');
+          else throw new Error('Cancel the batch before changing its setup.');
+        }
+        if (command.type === 'batch') {
+          const jobs = createEvaluationJobs(command.request);
+          if ([...state.otherPlayers.values()].some(p => p.controller !== 'ai' || p.isObserver || !['blue', 'red'].includes(p.team ?? '')))
+            throw new Error('Batch evaluation requires only scripted blue/red bots in the roster.');
+          const request = cloneLabState(command.request);
+          this.comparison = null;
+          this.batch = { jobs, index: 0, ticks: Math.round(request.seconds / LAB_TICK), origin: cloneLabState(state), state, random: this.random,
+            seed: this.seed, scenario: this.scenario, secondsOrigin: this.secondsOrigin + this.tickCount * LAB_TICK, clockEpoch: this.clockEpoch,
+            tracker: new GrifballEvaluationTracker(), cost: { samples: 0, totalMs: 0, maxMs: 0 },
+            report: { schemaVersion: EVALUATION_VERSION, contractVersion: GRIFBALL_TACTICAL_CONTRACT_VERSION,
+              status: 'running', request, rosterConfig: cloneLabState(this.getRosterConfig?.()), map: cloneLabState(this.getMap?.() ?? null), mapName: this.mapName,
+              arenaRadius: state.arenaRadius, mechanics: cloneLabState(state.settings), input: 'scripted-observer', runs: [], totalRuns: jobs.length } };
+          this.startBatchJob(state); grifballLab.update({ running: true, comparing: true });
+        }
+        if (command.type === 'step') steps++;
+        if (command.type === 'capture') { this.capture(state); grifballLab.update({ message: 'Current simulation captured. Restart restores its mechanics, roster, timers and AI memory.' }); }
+        if (command.type === 'restart') { this.comparison = null; this.restore(state); grifballLab.update({ comparing: false, running: false }); }
+        if (command.type === 'scenario') { this.comparison = null; this.prepare(state, command.scenario, command.seed); grifballLab.update({ comparing: false, running: false }); }
+        if (command.type === 'join') {
+          const carrier = state.otherPlayers.get(state.grifball.ball.holderId ?? '');
+          if (!carrier) throw new Error('Load an escort scenario before joining the runner.');
+          state.isObserverMode = false; state.hideLocalObserverAvatar = false; state.playerHP = state.playerMaxHP; state.playerRespawnTimer = 0;
+          state.localPlayerTeam = carrier.team!; state.playerPos.copy(carrier.pos); state.playerVel.set(0, 0, 0);
+          setGrifballCarrierForState({ state, id: carrier.id, carrying: false });
+          state.grifball.ball.holderId = 'player';
+          setGrifballCarrierForState({ state, id: 'player', carrying: true });
+          grifballLab.update({ message: 'Exploratory human run. Close the lab and resume to control the runner. Automated comparisons always restart in observer mode.' });
+        }
+        if (command.type === 'compare') {
+          if (!Number.isFinite(command.seconds) || command.seconds < 1 || command.seconds > 120) throw new Error('Comparison duration must be 1–120 seconds.');
+          this.prepare(state, command.scenario, command.seed);
+          this.comparison = { command, results: [], ticks: Math.round(command.seconds / LAB_TICK) };
+          grifballLab.update({ running: true, comparing: true, results: [], message: 'Running baseline, then candidate with the same starting state and seed.' });
+        }
+      } catch (error) { this.finishBatch('cancelled'); grifballLab.update({ message: (error as Error).message, running: false, comparing: false }); this.comparison = null; }
+    }
+    if (this.batch && (JSON.stringify(this.getRosterConfig?.()) !== JSON.stringify(this.batch.report.rosterConfig) ||
+      JSON.stringify(state.settings) !== JSON.stringify(this.batch.report.mechanics))) {
+      this.finishBatch('cancelled');
+      grifballLab.update({ message: 'Batch cancelled: mechanics or combat profiles changed during a frozen trial.' });
+      steps = 0;
+    }
+    if (!this.checkpoint) this.capture(state);
+    if (grifballLab.getSnapshot().running) {
+      this.accumulator += Math.min(elapsed, 0.1);
+      steps = Math.min(6, Math.floor((this.accumulator + 1e-9) / LAB_TICK));
+      this.accumulator -= steps * LAB_TICK;
+    } else this.accumulator = 0;
+    for (let index = 0; index < steps; index++) {
+      const comparison = this.comparison;
+      state.grifballTactics = this.batch ? this.batch.jobs[this.batch.index].config : comparison ? (comparison.results.length ? comparison.command.candidate : comparison.command.baseline) : grifballLab.getSnapshot().config;
+      const started = this.batch ? performance.now() : 0;
+      withSimulationRandom(this.random, this.secondsOrigin + this.tickCount * LAB_TICK, () => tick(LAB_TICK), this.clockEpoch);
+      if (this.batch) {
+        const expected = this.checkpoint!.otherPlayers;
+        if (state.otherPlayers.size !== expected.size || [...expected.values()].some(p => {
+          const actual = state.otherPlayers.get(p.id);
+          return !actual || actual.team !== p.team || actual.controller !== p.controller || actual.difficulty !== p.difficulty || actual.modelType !== p.modelType;
+        })) {
+          this.finishBatch('cancelled');
+          grifballLab.update({ message: 'Batch cancelled: the live roster changed during a frozen trial. Partial results are retained.' });
+          break;
+        }
+        const cost = Math.max(0, performance.now() - started);
+        this.batch.cost.samples++; this.batch.cost.totalMs += cost; this.batch.cost.maxMs = Math.max(this.batch.cost.maxMs, cost);
+        this.sampleBatch(state, LAB_TICK);
+      }
+      this.sample(state);
+      if (this.batch && this.tickCount >= this.batch.ticks) {
+        const batch = this.batch;
+        batch.report.runs.push({ job: cloneLabState(batch.jobs[batch.index]), metrics: cloneLabState(batch.tracker.teams),
+          simulationCost: { samples: batch.cost.samples, meanMs: batch.cost.totalMs / batch.cost.samples, maxMs: batch.cost.maxMs },
+          setup: { map: this.mapName, mechanics: cloneLabState(this.checkpoint!.settings), holderId: this.checkpoint!.grifball.ball.holderId, ball: cloneLabState(this.checkpoint!.grifball.ball),
+            roster: [...this.checkpoint!.otherPlayers.values()].map(bot => ({ id: bot.id, team: bot.team ?? '', difficulty: bot.difficulty ?? 'normal', position: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z }, velocity: { x: bot.vel.x, y: bot.vel.y, z: bot.vel.z }, yaw: bot.yaw, maxHp: bot.maxHp, modelType: bot.modelType, controller: bot.controller })) } });
+        batch.index++;
+        if (batch.index === batch.jobs.length) { this.finishBatch('complete'); break; }
+        this.startBatchJob(state);
+      }
+      if (comparison && this.tickCount >= comparison.ticks) {
+        comparison.results.push({ config: validateGrifballTactics(state.grifballTactics), seed: this.seed, scenario: this.scenario, metrics: { ...this.metrics }, setup: {
+          map: this.mapName, mechanics: cloneLabState(this.checkpoint!.settings), holderId: this.checkpoint!.grifball.ball.holderId,
+          roster: [...this.checkpoint!.otherPlayers.values()].map(bot => ({ id: bot.id, team: bot.team ?? '', difficulty: bot.difficulty ?? 'normal', position: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z } })),
+        } });
+        if (comparison.results.length === 1) this.restore(state);
+        else { grifballLab.update({ results: comparison.results, running: false, comparing: false, message: 'A/B complete. This is one scenario and seed, not a general win-rate estimate.' }); this.comparison = null; break; }
+      }
+    }
+    this.publishElapsed += elapsed;
+    if (commands.length || steps && !grifballLab.getSnapshot().running || this.publishElapsed >= 0.2) { this.publish(state); this.publishElapsed = 0; }
+  }
+  draw(state: GrifballRuntimeState, refs: GrifballThreeRefs) {
+    const lab = grifballLab.getSnapshot();
+    if (!lab.open || !refs.scene || !Object.values(lab.overlays).some(Boolean)) { this.clearOverlay(); return; }
+    const plan = state.aiMatchContext.grifballTeamPlan;
+    const key = JSON.stringify([plan.revision, lab.overlays, lab.selectedBot, lab.selectedTeam]);
+    if (key === this.overlayKey) return;
+    this.clearOverlay(); this.overlayKey = key; this.overlay = new THREE.Group(); this.overlay.name = 'grifball-ai-lab';
+    const line = (points: THREE.Vector3[], color: number) => {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      this.overlay!.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.7 })));
+    };
+    for (const assignment of plan.assignments.values()) {
+      if (lab.selectedBot && assignment.botId !== lab.selectedBot || lab.selectedTeam !== 'all' && assignment.team !== lab.selectedTeam) continue;
+      const bot = state.otherPlayers.get(assignment.botId); if (!bot) continue;
+      const { x, z } = assignment.destination; const color = assignment.team === 'blue' ? 0x38bdf8 : 0xfb7185;
+      if (lab.overlays.lines) line([new THREE.Vector3(bot.pos.x, 0.15, bot.pos.z), new THREE.Vector3(x, 0.15, z)], color);
+      if (lab.overlays.destinations) { line([new THREE.Vector3(x - 0.5, 0.2, z), new THREE.Vector3(x + 0.5, 0.2, z)], color); line([new THREE.Vector3(x, 0.2, z - 0.5), new THREE.Vector3(x, 0.2, z + 0.5)], color); }
+      if (lab.overlays.routes && assignment.space) line([bot.pos.clone().setY(0.25), ...assignment.space.route.points.map(p => new THREE.Vector3(p.x, 0.25, p.z))], 0xfacc15);
+      if (lab.overlays.candidates && assignment.space) for (const candidate of assignment.space.candidates) {
+        const p = candidate.point; const tint = candidate.route === 'blocked' ? 0xef4444 : candidate.sharedExposure ? 0xf97316 : 0x4ade80;
+        line([new THREE.Vector3(p.x - 0.2, 0.3, p.z), new THREE.Vector3(p.x + 0.2, 0.3, p.z)], tint);
+      }
+      if (lab.overlays.intercepts && assignment.escort) {
+        const p = assignment.escort.destination;
+        line([new THREE.Vector3(p.x - 0.5, 0.4, p.z - 0.5), new THREE.Vector3(p.x + 0.5, 0.4, p.z + 0.5)], 0xa78bfa);
+        line([new THREE.Vector3(p.x - 0.5, 0.4, p.z + 0.5), new THREE.Vector3(p.x + 0.5, 0.4, p.z - 0.5)], 0xa78bfa);
+      }
+      if (lab.overlays.defense && assignment.defense) {
+        const p = assignment.defense.intercept;
+        line([bot.pos.clone().setY(0.6), new THREE.Vector3(p.x, 0.6, p.z)], assignment.defense.mode === 'last-defender' ? 0x34d399 : 0xe879f9);
+        line([new THREE.Vector3(p.x - 0.7, 0.6, p.z), new THREE.Vector3(p.x, 0.6, p.z + 0.7), new THREE.Vector3(p.x + 0.7, 0.6, p.z), new THREE.Vector3(p.x, 0.6, p.z - 0.7), new THREE.Vector3(p.x - 0.7, 0.6, p.z)], 0xe879f9);
+      }
+      if (lab.overlays.passes && assignment.pass) for (const candidate of assignment.pass.candidates) {
+        if (candidate !== assignment.pass.selected && !lab.overlays.candidates) continue;
+        line(candidate.path.map(p => new THREE.Vector3(p.x, p.y + 0.2, p.z)), candidate === assignment.pass.selected ? 0x22d3ee : candidate.viable ? 0x4ade80 : 0xf87171);
+      }
+      if (lab.overlays.engagements && assignment.tanking?.targetId) {
+        const target = plan.snapshot?.players.find(p => p.id === assignment.tanking!.targetId);
+        if (target) line([bot.pos.clone().setY(0.5), new THREE.Vector3(target.pos.x, 0.5, target.pos.z)], assignment.tanking.attack ? 0xf97316 : 0xa78bfa);
+      }
+      if (lab.overlays.coverage) line(Array.from({ length: 49 }, (_, i) => { const angle = i / 48 * Math.PI * 2; const radius = assignment.tuning?.coverageBoundary ?? 9; return new THREE.Vector3(x + Math.cos(angle) * radius, 0.1, z + Math.sin(angle) * radius); }), color);
+    }
+    if (lab.overlays.runnerRoutes) for (const play of Object.values(plan.runnerPlans)) {
+      const carrier = plan.snapshot?.players.find(p => p.id === play.carrierId);
+      if (lab.selectedTeam !== 'all' && carrier?.team !== lab.selectedTeam) continue;
+      for (const candidate of play.candidates) {
+        if (!candidate.route.points.length) continue;
+        line([new THREE.Vector3(play.origin.x, 0.35, play.origin.z), ...candidate.route.points.map(p => new THREE.Vector3(p.x, 0.35, p.z))], candidate === play.selected ? 0xfacc15 : 0x64748b);
+      }
+    }
+    refs.scene.add(this.overlay);
+  }
+}

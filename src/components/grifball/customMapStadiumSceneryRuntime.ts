@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getRectHalfExtents } from '../../game/arenaDimensions';
 import { type CustomMapData } from '../../types';
-import { generateCustomTexture } from './customMapAssets';
+import { applyStadiumWorldUVs, createStadiumMaterial, loadStadiumScreenTexture } from './stadiumMaterials';
 import { type GrifballThreeRefs } from './threeRefs';
 
 export function buildCustomMapStadiumSceneryForRefs({
@@ -12,264 +12,304 @@ export function buildCustomMapStadiumSceneryForRefs({
   activeCustomMap: CustomMapData;
 }): void {
   if (activeCustomMap.theme !== 'grifball_stadium') return;
-
   const scene = refs.scene;
   if (!scene) return;
 
   const stadiumGroup = new THREE.Group();
   stadiumGroup.name = 'stadium_scenery';
-
   const half = getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents);
   const bx = half.x;
   const bz = half.z;
 
-  // 1. Spectator Stands (Tiers of Bleachers)
-  // North Bleachers
-  for (let tier = 0; tier < 4; tier++) {
-    const tierBox = new THREE.Mesh(
-      new THREE.BoxGeometry(bx * 1.8, 1.2, 2.5),
-      new THREE.MeshStandardMaterial({ color: '#111317', roughness: 0.8, metalness: 0.6 })
-    );
-    tierBox.position.set(0, tier * 1.0 + 0.6, -bz - 6 - tier * 2.0);
-    tierBox.castShadow = true;
-    tierBox.receiveShadow = true;
-    stadiumGroup.add(tierBox);
+  // Scene-owned material sets; architectural textures retain their world scale.
+  const concrete = createStadiumMaterial('concrete', { color: '#e1e4e8', roughness: 0.92, metalness: 0.02 });
+  const steel = createStadiumMaterial('metal', { color: '#8795a6', roughness: 0.46, metalness: 0.78 });
+  const darkSteel = createStadiumMaterial('metal', { color: '#647084', roughness: 0.52, metalness: 0.72 });
+  const makeBox = (x: number, y: number, z: number, material: THREE.Material, tileMeters = 3) => {
+    const geometry = new THREE.BoxGeometry(x, y, z);
+    applyStadiumWorldUVs(geometry, tileMeters);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.receiveShadow = true;
+    return mesh;
+  };
+
+  // Rails, tower legs and bracing share one instanced draw call.
+  const fixtures: THREE.Matrix4[] = [];
+  const fixtureColors: THREE.Color[] = [];
+  const axisY = new THREE.Vector3(0, 1, 0);
+  const addRail = (from: THREE.Vector3, to: THREE.Vector3, radius = 0.045, color = '#8998aa') => {
+    const delta = to.clone().sub(from);
+    const length = delta.length();
+    if (length < 0.001) return;
+    fixtures.push(new THREE.Matrix4().compose(
+      from.clone().add(to).multiplyScalar(0.5),
+      new THREE.Quaternion().setFromUnitVectors(axisY, delta.divideScalar(length)),
+      new THREE.Vector3(radius, length, radius),
+    ));
+    fixtureColors.push(new THREE.Color(color));
+  };
+
+  const seatPans: THREE.Matrix4[] = [];
+  const seatBacks: THREE.Matrix4[] = [];
+  const seatColors: THREE.Color[] = [];
+  const seatTransform = new THREE.Object3D();
+  const backOffset = new THREE.Matrix4().makeTranslation(0, 0.28, -0.27);
+  const addSeat = (x: number, y: number, z: number, yaw: number, color: string) => {
+    seatTransform.position.set(x, y + 0.34, z);
+    seatTransform.rotation.set(0, yaw, 0);
+    seatTransform.updateMatrix();
+    seatPans.push(seatTransform.matrix.clone());
+    seatBacks.push(seatTransform.matrix.clone().multiply(backOffset));
+    seatColors.push(new THREE.Color(color));
+    addRail(new THREE.Vector3(x, y + 0.03, z), new THREE.Vector3(x, y + 0.34, z), 0.055, '#526273');
+  };
+  const seatColor = (column: number, teamSide: number) => column % 12 < 2
+    ? '#bc9650'
+    : teamSide < 0 ? '#38678a' : '#814957';
+  const buildStand = (side: number, alongX: boolean, tiers: number) => {
+    const length = alongX ? bx * 1.8 : bz * 2.2;
+    const edge = alongX ? bz + 6 : bx + 4;
+    const yaw = alongX ? (side < 0 ? 0 : Math.PI) : (side < 0 ? Math.PI / 2 : -Math.PI / 2);
+    const worldPoint = (along: number, y: number, outward: number) => alongX
+      ? new THREE.Vector3(along, y, side * outward)
+      : new THREE.Vector3(side * outward, y, along);
+    for (let tier = 0; tier < tiers; tier++) {
+      const distance = edge + tier * 2;
+      const top = tier + 1.2;
+      const platform = makeBox(alongX ? length : 2.5, 1.2, alongX ? 2.5 : length, concrete, 2);
+      platform.position.copy(worldPoint(0, tier + 0.6, distance));
+      platform.castShadow = true;
+      stadiumGroup.add(platform);
+      const seats = Math.max(1, Math.floor((length - 1.5) / 0.84));
+      for (let column = 0; column < seats; column++) {
+        const along = (column - (seats - 1) / 2) * 0.84;
+        // Keep two circulation aisles open through each seating bank.
+        if (Math.abs(Math.abs(along) - length * 0.25) < 0.8) continue;
+        const point = worldPoint(along, top, distance);
+        addSeat(point.x, point.y, point.z, yaw, seatColor(column, point.x));
+      }
+      for (const end of [-1, 1]) {
+        const along = end * (length / 2 - 0.18);
+        addRail(worldPoint(along, top + 0.88, distance - 1.05), worldPoint(along, top + 0.88, distance + 1.05));
+        for (const offset of [-1, 1]) {
+          addRail(worldPoint(along, top, distance + offset), worldPoint(along, top + 0.88, distance + offset));
+        }
+      }
+      if (tier === tiers - 1) {
+        const back = distance + 1.05;
+        for (const height of [0.48, 1.02]) {
+          addRail(worldPoint(-length / 2, top + height, back), worldPoint(length / 2, top + height, back));
+        }
+        for (let along = -length / 2; along <= length / 2; along += 2.4) {
+          addRail(worldPoint(along, top, back), worldPoint(along, top + 1.02, back));
+        }
+      }
+    }
+  };
+  for (const side of [-1, 1]) {
+    buildStand(side, true, 4);
+    buildStand(side, false, 3);
   }
 
-  // South Bleachers
-  for (let tier = 0; tier < 4; tier++) {
-    const tierBox = new THREE.Mesh(
-      new THREE.BoxGeometry(bx * 1.8, 1.2, 2.5),
-      new THREE.MeshStandardMaterial({ color: '#111317', roughness: 0.8, metalness: 0.6 })
-    );
-    tierBox.position.set(0, tier * 1.0 + 0.6, bz + 6 + tier * 2.0);
-    tierBox.castShadow = true;
-    tierBox.receiveShadow = true;
-    stadiumGroup.add(tierBox);
+  // Rounded molded seat shells remain two draw calls for the entire stadium.
+  const seatShape = (width: number, height: number) => {
+    const shape = new THREE.Shape();
+    const x = -width / 2, y = -height / 2, r = 0.085;
+    shape.moveTo(x + r, y);
+    shape.lineTo(x + width - r, y);
+    shape.quadraticCurveTo(x + width, y, x + width, y + r);
+    shape.lineTo(x + width, y + height - r);
+    shape.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    shape.lineTo(x + r, y + height);
+    shape.quadraticCurveTo(x, y + height, x, y + height - r);
+    shape.lineTo(x, y + r);
+    shape.quadraticCurveTo(x, y, x + r, y);
+    return new THREE.ExtrudeGeometry(shape, {
+      depth: 0.065, bevelEnabled: true, bevelSegments: 1, steps: 1,
+      bevelSize: 0.025, bevelThickness: 0.025, curveSegments: 2,
+    });
+  };
+  const panGeometry = seatShape(0.64, 0.55);
+  panGeometry.rotateX(-Math.PI / 2);
+  const backGeometry = seatShape(0.64, 0.59);
+  backGeometry.rotateX(-0.1);
+  const seatMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.58, metalness: 0.08 });
+  for (const [name, geometry, matrices] of [
+    ['stadium_seat_pans', panGeometry, seatPans],
+    ['stadium_seat_backs', backGeometry, seatBacks],
+  ] as const) {
+    const seats = new THREE.InstancedMesh(geometry, seatMaterial, matrices.length);
+    seats.name = name;
+    seats.receiveShadow = true;
+    matrices.forEach((matrix, index) => {
+      seats.setMatrixAt(index, matrix);
+      seats.setColorAt(index, seatColors[index]);
+    });
+    seats.instanceMatrix.needsUpdate = true;
+    if (seats.instanceColor) seats.instanceColor.needsUpdate = true;
+    seats.computeBoundingSphere();
+    stadiumGroup.add(seats);
   }
 
-  // West Bleachers (Behind Blue Goal)
-  for (let tier = 0; tier < 3; tier++) {
-    const tierBox = new THREE.Mesh(
-      new THREE.BoxGeometry(2.5, 1.2, bz * 2.2),
-      new THREE.MeshStandardMaterial({ color: '#0c0d12', roughness: 0.8, metalness: 0.6 })
-    );
-    tierBox.position.set(-bx - 4 - tier * 2.0, tier * 1.0 + 0.6, 0);
-    tierBox.castShadow = true;
-    tierBox.receiveShadow = true;
-    stadiumGroup.add(tierBox);
-  }
-
-  // East Bleachers (Behind Red Goal)
-  for (let tier = 0; tier < 3; tier++) {
-    const tierBox = new THREE.Mesh(
-      new THREE.BoxGeometry(2.5, 1.2, bz * 2.2),
-      new THREE.MeshStandardMaterial({ color: '#0c0d12', roughness: 0.8, metalness: 0.6 })
-    );
-    tierBox.position.set(bx + 4 + tier * 2.0, tier * 1.0 + 0.6, 0);
-    tierBox.castShadow = true;
-    tierBox.receiveShadow = true;
-    stadiumGroup.add(tierBox);
-  }
-
-  // 2. Corner Spotlight Towers with Glowing additive light cones
+  // Four braced floodlight towers, with optical lenses in a single instance batch.
+  const lampMatrices: THREE.Matrix4[] = [];
   const buildLightTower = (tx: number, tz: number, isBlue: boolean) => {
     const tower = new THREE.Group();
-
-    // Structural truss pole
-    const pillar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.3, 0.45, 13, 8),
-      new THREE.MeshStandardMaterial({ color: '#2d3748', metalness: 0.8, roughness: 0.25 })
-    );
-    pillar.position.y = 6.5;
-    pillar.castShadow = true;
-    pillar.receiveShadow = true;
-    tower.add(pillar);
-
-    // Head block for holding floodlight clusters
-    const panelMat = new THREE.MeshStandardMaterial({
-      color: '#1a202c',
-      metalness: 0.9,
-      roughness: 0.1,
-      emissive: isBlue ? '#00ccff' : '#ff3344',
-      emissiveIntensity: 2.2,
-    });
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 1.2), panelMat);
-    panel.position.set(0, 13, 0);
-    panel.rotation.x = Math.PI / 5; // Tilted down
-    panel.rotation.y = tx < 0 ? -Math.PI / 4 : Math.PI / 4;
-    tower.add(panel);
-
-    // Glowing light panel emitter (white bulb area)
-    const emitter = new THREE.Mesh(
-      new THREE.BoxGeometry(1.4, 0.8, 0.1),
-      new THREE.MeshBasicMaterial({ color: '#ffffff' })
-    );
-    emitter.position.set(0, 12.9, 0.55);
-    emitter.rotation.copy(panel.rotation);
-    tower.add(emitter);
-
-    // Volumetric cone effect (Translucent additive blending)
-    const coneGeo = new THREE.ConeGeometry(4.0, 18, 16, 1, true);
-    coneGeo.translate(0, -9, 0); // rest apex at emitter
-    const coneMat = new THREE.MeshBasicMaterial({
-      color: isBlue ? '#00e5ff' : '#ff1744',
-      transparent: true,
-      opacity: 0.12,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-    const cone = new THREE.Mesh(coneGeo, coneMat);
-    cone.position.set(0, 13, 0);
-
-    // Point beam towards center
-    cone.lookAt(new THREE.Vector3(tx * 0.5, 0.5, tz * 0.5));
-    tower.add(cone);
-
     tower.position.set(tx, 0, tz);
+    const base = makeBox(1.45, 0.35, 1.25, steel);
+    base.position.y = 0.175;
+    tower.add(base);
+    for (const x of [-0.44, 0.44]) {
+      for (const z of [-0.34, 0.34]) {
+        addRail(new THREE.Vector3(tx + x, 0.3, tz + z), new THREE.Vector3(tx + x, 12.5, tz + z), 0.085, '#687990');
+      }
+    }
+    for (let y = 0.5; y < 12; y += 1.5) {
+      for (const z of [-0.34, 0.34]) {
+        addRail(new THREE.Vector3(tx - 0.44, y, tz + z), new THREE.Vector3(tx + 0.44, y + 1.5, tz + z), 0.035);
+        addRail(new THREE.Vector3(tx + 0.44, y, tz + z), new THREE.Vector3(tx - 0.44, y + 1.5, tz + z), 0.035);
+      }
+    }
+    const direction = new THREE.Vector3(-tx * 0.62, -12.5, -tz * 0.62);
+    const beamLength = direction.length();
+    direction.normalize();
+    const headRotation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
+    const housing = makeBox(1.9, 1.05, 0.55, darkSteel);
+    housing.position.set(0, 13, 0);
+    housing.quaternion.copy(headRotation);
+    housing.castShadow = true;
+    tower.add(housing);
+    for (const y of [-0.23, 0.23]) {
+      for (const x of [-0.66, -0.22, 0.22, 0.66]) {
+        const position = new THREE.Vector3(x, y, 0.32).applyQuaternion(headRotation).add(new THREE.Vector3(tx, 13, tz));
+        lampMatrices.push(new THREE.Matrix4().compose(position, headRotation, new THREE.Vector3(1, 1, 0.45)));
+      }
+    }
+    const coneGeometry = new THREE.ConeGeometry(3.5, beamLength, 24, 1, true);
+    coneGeometry.translate(0, -beamLength / 2, 0);
+    const cone = new THREE.Mesh(coneGeometry, new THREE.MeshBasicMaterial({
+      color: isBlue ? '#a4d6ec' : '#edc6b7',
+      transparent: true, opacity: 0.026, blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide, depthWrite: false,
+    }));
+    cone.position.set(0, 13, 0);
+    // ConeGeometry extends from its apex along -Y, whereas lookAt aims +Z.
+    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), direction);
+    tower.add(cone);
     return tower;
   };
+  for (const x of [-1, 1]) {
+    for (const z of [-1, 1]) stadiumGroup.add(buildLightTower(x * (bx + 2), z * (bz + 2), x < 0));
+  }
+  const lamps = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.16, 12, 6),
+    new THREE.MeshBasicMaterial({ color: '#e8f3ff', toneMapped: false }),
+    lampMatrices.length,
+  );
+  lamps.name = 'stadium_floodlight_lenses';
+  lampMatrices.forEach((matrix, index) => lamps.setMatrixAt(index, matrix));
+  lamps.instanceMatrix.needsUpdate = true;
+  lamps.computeBoundingSphere();
+  stadiumGroup.add(lamps);
 
-  stadiumGroup.add(buildLightTower(-bx - 2, -bz - 2, true)); // NW Blue
-  stadiumGroup.add(buildLightTower(-bx - 2, bz + 2, true)); // SW Blue
-  stadiumGroup.add(buildLightTower(bx + 2, -bz - 2, false)); // NE Red
-  stadiumGroup.add(buildLightTower(bx + 2, bz + 2, false)); // SE Red
-
-  // 3. Colossal Floating Central Scoreboard
+  // Suspended four-sided display: brushed housing, tension cables, gold reveals.
   const scoreboardBox = new THREE.Group();
-
-  // Steel structural support cables / truss
-  const supportTruss = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.35, 0.35, 12, 8),
-    new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.85, roughness: 0.2 })
-  );
-  supportTruss.position.set(0, 21, 0);
-  scoreboardBox.add(supportTruss);
-
-  // Core score box shape
-  const boxFrame = new THREE.Mesh(
-    new THREE.BoxGeometry(6.4, 4.0, 6.4),
-    new THREE.MeshStandardMaterial({ color: '#090d16', metalness: 0.95, roughness: 0.15 })
-  );
-  boxFrame.position.set(0, 15, 0);
+  scoreboardBox.name = 'stadium_scoreboard';
+  const boxFrame = makeBox(6.4, 4, 6.4, darkSteel);
+  boxFrame.position.y = 15;
   boxFrame.castShadow = true;
-  boxFrame.receiveShadow = true;
   scoreboardBox.add(boxFrame);
-
-  // Scoreboard upper/lower gold neon trims
-  const trimMat = new THREE.MeshStandardMaterial({
-    color: '#1a1f2c',
-    emissive: '#eab308',
-    emissiveIntensity: 2.2,
+  const crown = makeBox(6.85, 0.28, 6.85, steel);
+  crown.position.y = 17.15;
+  scoreboardBox.add(crown);
+  const baseTrim = makeBox(6.85, 0.28, 6.85, steel);
+  baseTrim.position.y = 12.85;
+  scoreboardBox.add(baseTrim);
+  const trimMaterial = new THREE.MeshStandardMaterial({
+    color: '#a87d39', roughness: 0.3, metalness: 0.72,
+    emissive: '#b88028', emissiveIntensity: 0.65,
   });
-  const trimTop = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.2, 6.6), trimMat);
-  trimTop.position.set(0, 17, 0);
-  scoreboardBox.add(trimTop);
-  const trimBot = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.2, 6.6), trimMat);
-  trimBot.position.set(0, 13, 0);
-  scoreboardBox.add(trimBot);
-
-  // Scoreboard Screens
-  const screenTexture = generateCustomTexture('stadium_scoreboard_screen', '#06080e');
-  const screenMat = new THREE.MeshBasicMaterial({
-    map: screenTexture,
-    side: THREE.DoubleSide,
+  for (const y of [13.05, 16.95]) {
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(6.65, 0.065, 6.65), trimMaterial);
+    trim.position.y = y;
+    scoreboardBox.add(trim);
+  }
+  for (const x of [-2.7, 2.7]) {
+    for (const z of [-2.7, 2.7]) addRail(new THREE.Vector3(x, 17.2, z), new THREE.Vector3(x * 0.28, 27, z * 0.28), 0.055, '#586b80');
+  }
+  const screenMaterial = new THREE.MeshBasicMaterial({
+    map: loadStadiumScreenTexture('championship'), toneMapped: false,
   });
-
-  // 4 Scoreboard Screens (facing N, S, E, W)
-  const screenN = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.2), screenMat);
-  screenN.position.set(0, 15, -3.22);
-  screenN.rotation.y = Math.PI;
-  scoreboardBox.add(screenN);
-
-  const screenS = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.2), screenMat);
-  screenS.position.set(0, 15, 3.22);
-  scoreboardBox.add(screenS);
-
-  const screenE = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.2), screenMat);
-  screenE.position.set(3.22, 15, 0);
-  screenE.rotation.y = Math.PI / 2;
-  scoreboardBox.add(screenE);
-
-  const screenW = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 3.2), screenMat);
-  screenW.position.set(-3.22, 15, 0);
-  screenW.rotation.y = -Math.PI / 2;
-  scoreboardBox.add(screenW);
-
+  const screenGeometry = new THREE.PlaneGeometry(5.85, 3.3);
+  for (let side = 0; side < 4; side++) {
+    const angle = side * Math.PI / 2;
+    const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+    screen.position.set(Math.sin(angle) * 3.215, 15, Math.cos(angle) * 3.215);
+    screen.rotation.y = angle;
+    scoreboardBox.add(screen);
+  }
   stadiumGroup.add(scoreboardBox);
 
-  // 4. Advertising Holographic Billboards (Sapphire Burger & Gauss Soda)
-  const buildBillboard = (billboardX: number, billboardZ: number, textureType: string) => {
+  // Campaign artwork is loaded once per scene and shared by matching displays.
+  const adMaterials = {
+    sapphire: new THREE.MeshBasicMaterial({ map: loadStadiumScreenTexture('sapphire'), toneMapped: false }),
+    gauss: new THREE.MeshBasicMaterial({ map: loadStadiumScreenTexture('gauss'), toneMapped: false }),
+  };
+  const buildBillboard = (x: number, z: number, kind: keyof typeof adMaterials) => {
     const billboard = new THREE.Group();
-
-    // Metallic truss support pillars
-    const poleLeft = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.16, 0.16, 12, 8),
-      new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.8, roughness: 0.3 })
-    );
-    poleLeft.position.set(-4.5, 6, 0);
-    billboard.add(poleLeft);
-
-    const poleRight = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.16, 0.16, 12, 8),
-      new THREE.MeshStandardMaterial({ color: '#1e293b', metalness: 0.8, roughness: 0.3 })
-    );
-    poleRight.position.set(4.5, 6, 0);
-    billboard.add(poleRight);
-
-    // Screen back board
-    const frame = new THREE.Mesh(
-      new THREE.BoxGeometry(10.4, 5.4, 0.4),
-      new THREE.MeshStandardMaterial({ color: '#0f121a', metalness: 0.9, roughness: 0.15 })
-    );
-    frame.position.set(0, 11, 0);
-    billboard.add(frame);
-
-    // Ad Banner Screen mesh
-    const adTex = generateCustomTexture(textureType, '#000000');
-    const adMat = new THREE.MeshBasicMaterial({
-      map: adTex,
-      side: THREE.DoubleSide,
-    });
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(9.8, 4.8), adMat);
-    screen.position.set(0, 11, 0.22);
-    billboard.add(screen);
-
-    billboard.position.set(billboardX, 0, billboardZ);
-    if (billboardZ < 0) {
-      billboard.rotation.y = 0.1; // Angled slightly inside
-    } else {
-      billboard.rotation.y = Math.PI - 0.1;
+    billboard.position.set(x, 0, z);
+    billboard.rotation.y = z < 0 ? 0 : Math.PI;
+    for (const offset of [-4.5, 4.5]) {
+      addRail(new THREE.Vector3(x + offset, 0, z), new THREE.Vector3(x + offset, 13.2, z), 0.12, '#78879a');
     }
-
+    addRail(new THREE.Vector3(x - 4.5, 5, z), new THREE.Vector3(x + 4.5, 8.3, z), 0.06);
+    addRail(new THREE.Vector3(x + 4.5, 5, z), new THREE.Vector3(x - 4.5, 8.3, z), 0.06);
+    const frame = makeBox(10.4, 5.4, 0.42, darkSteel);
+    frame.position.y = 11;
+    billboard.add(frame);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(9.8, 4.8), adMaterials[kind]);
+    screen.position.set(0, 11, 0.225);
+    billboard.add(screen);
+    const canopy = makeBox(10.55, 0.16, 0.85, steel);
+    canopy.position.set(0, 13.76, 0.05);
+    billboard.add(canopy);
     return billboard;
   };
+  stadiumGroup.add(buildBillboard(-bx * 0.4, -bz - 8, 'sapphire'));
+  stadiumGroup.add(buildBillboard(bx * 0.4, -bz - 8, 'gauss'));
+  stadiumGroup.add(buildBillboard(-bx * 0.4, bz + 8, 'gauss'));
+  stadiumGroup.add(buildBillboard(bx * 0.4, bz + 8, 'sapphire'));
 
-  stadiumGroup.add(buildBillboard(-bx * 0.4, -bz - 8, 'stadium_advertisement_sapphire'));
-  stadiumGroup.add(buildBillboard(bx * 0.4, -bz - 8, 'stadium_advertisement_gauss'));
-  stadiumGroup.add(buildBillboard(-bx * 0.4, bz + 8, 'stadium_advertisement_gauss'));
-  stadiumGroup.add(buildBillboard(bx * 0.4, bz + 8, 'stadium_advertisement_sapphire'));
+  const rails = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(1, 1, 1, 8),
+    new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.78, roughness: 0.36 }),
+    fixtures.length,
+  );
+  rails.name = 'stadium_rails_and_trusses';
+  rails.receiveShadow = true;
+  fixtures.forEach((matrix, index) => {
+    rails.setMatrixAt(index, matrix);
+    rails.setColorAt(index, fixtureColors[index]);
+  });
+  rails.instanceMatrix.needsUpdate = true;
+  if (rails.instanceColor) rails.instanceColor.needsUpdate = true;
+  rails.computeBoundingSphere();
+  stadiumGroup.add(rails);
 
-  // 5. Atmospheric Floating Dust Motes (Glowing energy sparkles in stadium)
-  const dustCount = 400;
-  const dustGeo = new THREE.BufferGeometry();
+  // Fine airborne dust stays subtle enough to preserve combat silhouettes.
+  const dustCount = 240;
+  const dustGeometry = new THREE.BufferGeometry();
   const dustPositions = new Float32Array(dustCount * 3);
   for (let i = 0; i < dustCount; i++) {
-    dustPositions[i * 3] = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 2.8;
+    dustPositions[i * 3] = (Math.random() - 0.5) * bx * 2.5;
     dustPositions[i * 3 + 1] = Math.random() * 12 + 0.1;
-    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 2.0;
+    dustPositions[i * 3 + 2] = (Math.random() - 0.5) * bz * 2.5;
   }
-  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
-  const dustMat = new THREE.PointsMaterial({
-    color: '#eab308',
-    size: 0.14,
-    transparent: true,
-    opacity: 0.45,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const dust = new THREE.Points(dustGeo, dustMat);
+  dustGeometry.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+  const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
+    color: '#deccaa', size: 0.055, transparent: true, opacity: 0.3,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
   dust.name = 'stadium_dust_particles';
   stadiumGroup.add(dust);
 

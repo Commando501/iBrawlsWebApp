@@ -8,13 +8,37 @@
  * stripped of React/THREE coupling and rendering-only fields (camera, VFX, nameplates).
  */
 
-import { type CustomMapData, type UniversalSettings } from '../types';
+import { type CharacterModelType, type CustomMapData, type UniversalSettings } from '../types';
 import { type Vec3 } from '../game/grifballBall';
 import { type TeamId, type TeamScoresState } from '../game/teamScoring';
 import { type GrifballMatchState } from '../game/grifballMatch';
 import { type GoalPlate } from '../game/grifballGoals';
 
 export type SimWeapon = 'hammer' | 'sword' | 'ball';
+
+/** Explicit opt-in; legacy training dynamics remain the default for existing policies. */
+export type SimCombatExecution = 'legacy-v1' | 'live-player-v1' | 'live-roster-v1' | 'live-roster-v2' | 'live-mixed-v1';
+
+export const isRosterExecution = (execution: SimCombatExecution | undefined) =>
+  execution === 'live-roster-v1' || execution === 'live-roster-v2';
+
+/** Mixed execution identifies the local player explicitly; controller is not an execution role. */
+export const isMixedPlayer = (state: SimState, c: SimCombatant) =>
+  state.combatExecution === 'live-mixed-v1' && c.id === state.localPlayerId;
+export const usesRosterLifecycle = (state: SimState) =>
+  state.combatExecution === 'live-roster-v2' || state.combatExecution === 'live-mixed-v1';
+export const combatExecutionForActor = (state: SimState, c: SimCombatant): SimCombatExecution | undefined =>
+  state.combatExecution === 'live-mixed-v1'
+    ? isMixedPlayer(state, c) ? 'live-player-v1' : 'live-roster-v2' : state.combatExecution;
+
+/** Roster ready animation has no mechanical attack lockout; a retained timer
+ * can still represent AI backoff after lunge or recovery cancellation.
+ * Explicit action requests have already passed decision selection. Preserve that
+ * timer for decision consumers without inventing a mechanical weapon lockout. */
+export function weaponAttackCooldown(c: SimCombatant, execution: SimCombatExecution | undefined): number {
+  return execution === 'live-roster-v2' && !c.isLunging && c.weaponState === 'idle'
+    ? 0 : Math.max(0, c.attackCooldown);
+}
 
 /**
  * Game mode the match is running. `grifball` = carry the ball to the enemy plate;
@@ -36,11 +60,19 @@ export interface SimCombatant {
   team: TeamId;
   /** 'ai' | 'remote' in the live game; here it is just bookkeeping for policies. */
   controller: 'ai' | 'remote';
+  /** Mixed execution only: ordinary AI pauses movement/intent in inactive Grifball phases.
+   * Omitted preserves the existing authored/committed-flight execution contract. */
+  pauseDuringInactiveGrifball?: boolean;
 
   // Physics / pose
   pos: Vec3;
   vel: Vec3;
   yaw: number;
+  /** Opt-in player view geometry; absent in legacy training snapshots. */
+  pitch?: number;
+  crouchAmount?: number;
+  /** Effective gameplay model for v2 roster hit tests; absent in older snapshots means medium. */
+  modelType?: CharacterModelType;
   isCrouching: boolean;
   isJumping: boolean;
   /** Vertical velocity tracked separately from the planar move for jump/gravity. */
@@ -58,9 +90,14 @@ export interface SimCombatant {
   weaponState: SimWeaponState;
   /** Seconds remaining in the current weaponState phase. */
   weaponTimer: number;
+  /** Elapsed phase time for opt-in live execution profiles; absent in legacy snapshots. */
+  weaponPhaseElapsed?: number;
+  /** Mixed local sword-lunge recovery survives forced hammer equip; hidden sword time does not advance. */
+  playerSwordLungeRecovery?: { elapsed: number; duration: number };
   /** Seconds remaining before a weapon swap is permitted again. */
   swapLockoutTimer: number;
-  /** Seconds remaining before this combatant can attack again (cooldown). */
+  /** Attack recovery, or AI decision backoff after a v2 roster lunge.
+   * Use weaponAttackCooldown for mechanical readiness. */
   attackCooldown: number;
 
   // Movement mechanics
@@ -68,6 +105,8 @@ export interface SimCombatant {
   dashRemaining: number;
   dashDir: Vec3;
   slideActive: boolean;
+  /** Explicit ground AI slide distance; absent in legacy snapshots. */
+  aiSlideDistanceTraveled?: number;
   slideCooldownTimer: number;
   isSprinting: boolean;
 
@@ -76,15 +115,26 @@ export interface SimCombatant {
   attackKind: 'none' | 'strike' | 'swipe' | 'slash' | 'punch';
   /** Tick of this combatant's last landed attack (for the weapon-trade window). */
   lastAttackTick: number;
+  /** v2 weapon-specific commitment timestamps on combatTimeMs; absent means no history. */
+  lastSwordAttackTimeMs?: number;
+  lastHammerAttackTimeMs?: number;
   /** Seconds left before a freshly-swapped/spawned weapon can attack (`weaponReadyTime`). */
   weaponReadyTimer: number;
 
   // Hammer-jump: a hammer strike near self opens a window; jumping in it launches high.
   hammerJumpWindowTimer: number;
   hammerJumpsInAir: number;
+  /** Optional scripted-AI recovery clock, created by runaway-altitude recovery. */
+  aiHammerJumpCooldownTimer?: number;
+  /** Opt-in scheduled main-AI commitment, consumed at roster hammer impact. */
+  hammerJumpPlanned?: boolean;
+  hammerJumpType?: 'offensive' | 'defensive';
 
   // Grifball pass charge: held to wind up a throw (`grifballChargeMax`).
   passChargeTimer: number;
+  /** Mixed local pointer-equivalent pass input; absent in historical snapshots. */
+  passInputHeld?: boolean;
+  passCharging?: boolean;
   /** Runner healing delay timer while this combatant carries the ball. */
   runnerHealDelayTimer: number;
   /** Last observed runner HP, used to detect damage and restart healing delay. */
@@ -92,8 +142,15 @@ export interface SimCombatant {
 
   // Sword lunge flight
   isLunging: boolean;
+  /** Remaining seconds in v1 profiles; elapsed flight seconds in live-roster-v2. */
   lungeTimer: number;
   lungeDir: Vec3;
+  /** v2 locks the supplied tactical target and preserves committed flight across snapshots. */
+  lungeTargetId?: string;
+  /** Optional one-shot v2 commitment heading. Normalized and consumed when flight starts. */
+  lungeAimDirection?: Vec3;
+  lungeStartPos?: Vec3;
+  lungeOutcome?: 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
 
   // Objective
   /** True while this combatant carries the Grifball (mirror of ball.holderId). */
@@ -101,6 +158,15 @@ export interface SimCombatant {
 }
 
 export interface SimState {
+  /** Missing in older snapshots means legacy-v1. This is not an RL schema promotion. */
+  combatExecution?: SimCombatExecution;
+  /** Required for live-mixed-v1; preserved in JSON snapshots. */
+  localPlayerId?: string;
+  /** Explicit mixed-profile observer camera; not a match participant. Omitted
+   * preserves existing local-player and training execution. */
+  localPlayerIsObserver?: boolean;
+  /** v2 elapsed simulation milliseconds, persisted independently of render/wall time. */
+  combatTimeMs?: number;
   /** Which game mode this match is. */
   mode: SimMode;
   /** Fixed-order combatant list. Order is stable for the life of the match. */

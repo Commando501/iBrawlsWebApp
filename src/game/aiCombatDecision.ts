@@ -1,10 +1,12 @@
+import { simulationRandom } from './simulationRandom';
 import { applyPlayerModelCombatAdjustments, type PlayerModelSnapshot } from './aiPlayerModel';
 import {
   getEffectiveWeaponSwapIQ,
   NEUTRAL_MATCH_MULTIPLIERS,
   type MatchStateMultipliers,
 } from './aiTuning';
-import { type CharacterModelType } from '../types';
+import { type CharacterModelType, type UniversalSettings } from '../types';
+import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from './runnerBallSettings';
 
 export type AICombatWeapon = 'hammer' | 'sword';
 
@@ -19,7 +21,7 @@ export interface AILungeMemory {
 export interface AITacticalTarget {
   id: string;
   hp: number;
-  activeWeapon: AICombatWeapon;
+  activeWeapon: AICombatWeapon | 'ball' | 'pistol';
   weaponState: string;
   isLunging: boolean;
   invulnerabilityTimer?: number;
@@ -49,6 +51,7 @@ export interface AICombatDecisionInput {
   target: AITacticalTarget;
   attackRange: number;
   attackRadius: number;
+  grifballPunchLungeDistance?: number;
   swordLungeDistance: number;
   swordLungeSpeed: number;
   swordTradeWindowMs: number;
@@ -103,8 +106,18 @@ export function isMissedLungeMemory(memory?: AILungeMemory | null): boolean {
     (memory.outcome === 'miss_timeout' || memory.outcome === 'miss_arena');
 }
 
+/** Base spacing heuristic, before style scaling. Punches use their own projected
+ * reach and 1.5-unit splash instead of inheriting the hammer's larger volume. */
+export function resolveAICombatDangerZone(
+  settings: Pick<UniversalSettings, 'attackRange' | 'attackRadius' | 'grifballPunchLungeDistance'>,
+  targetWeapon: AITacticalTarget['activeWeapon'],
+): number {
+  return targetWeapon === 'ball' ? resolvePunchLungeDistance(settings) + GRIFBALL_PUNCH_RADIUS * 0.85
+    : settings.attackRange + settings.attackRadius * 0.85;
+}
+
 export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombatDecision {
-  const random = input.random ?? Math.random;
+  const random = input.random ?? simulationRandom;
   const pSword = input.weaponPrioritization / 100;
   const swordForbidden = pSword <= 0;
   const hammerForbidden = pSword >= 1;
@@ -129,7 +142,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
 
   const targetIsProtected = (input.target.invulnerabilityTimer ?? 0) > 0;
   const minDistance = Math.min(input.distanceToTarget, input.combatDistanceToTarget ?? input.distanceToTarget);
-  const playerDangerZone = input.attackRange + input.attackRadius * 0.85;
+  const playerDangerZone = resolveAICombatDangerZone(input, input.target.activeWeapon);
   const minLunge = playerDangerZone * 0.85;
   const maxLunge = Math.min(18.0, input.swordLungeDistance);
   const mechanicAware = isMechanicAwareDifficulty(input.difficulty, input.weaponSwapIQ, input.mechanicAwareIq, input.highIqOverride);

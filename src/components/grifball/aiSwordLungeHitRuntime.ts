@@ -3,7 +3,6 @@ import { type DeathEvent, type Combatant } from '../../types';
 import { MAIN_AI_ID } from '../../game/roster';
 import {
   createReplayHeatmapCombatantSource,
-  queueReplayHeatmapDeathEventsForState,
   type ReplayHeatmapCombatantSource,
 } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -57,6 +56,12 @@ export function applyAISwordLungeHitForState({
 
     if (state.playerHP <= 0) {
       state.playerHP = 0;
+      // Local weapon animation already ran this frame. Cancel now so a lethal
+      // incoming flight cannot leave a dead player lunging or recovering.
+      state.isLunging = false; state.lungeTimer = 0;
+      state.pSwordState = state.pWeaponState = 'ready';
+      state.pSwordTimer = state.pWeaponTimer = 0;
+      state.pSwordReady = state.pWeaponReady = true;
       state.playerRespawnTimer = 3.0;
       state.playerDeaths += 1;
       attackerBot.score = (attackerBot.score || 0) + 1;
@@ -67,21 +72,12 @@ export function applyAISwordLungeHitForState({
       }
       playDeath();
 
-      const newDeath: DeathEvent = {
-        id: Math.random().toString(36).substring(2, 9),
-        attacker: attackerBot.playerName,
-        victim: state.settings.playerName || 'Blue (You)',
-        weapon: 'sword',
-      };
-      state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
-      queueReplayHeatmapDeathEventsForState({
-        state,
+      recordDeathEvent(attackerBot.playerName, state.settings.playerName || 'Blue (You)', undefined, 'sword', {
         attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
         victim: createReplayHeatmapCombatantSource('player', undefined, {
           team: state.localPlayerTeam,
           pos: state.playerPos,
         }),
-        weapon: 'sword',
       });
       recordBotPsychKill(attackerBot.id, 'player', true);
     }
@@ -99,6 +95,8 @@ export function applyAISwordLungeHitForState({
     if (mainAi.hp <= 0) {
       mainAi.hp = 0;
       mainAi.aiState = 'RESPAWNING';
+      mainAi.respawnTimer = 3.0;
+      mainAi.deaths = (mainAi.deaths || 0) + 1;
       state.enemyRespawnTimer = 3.0;
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;

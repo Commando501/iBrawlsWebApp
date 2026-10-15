@@ -982,6 +982,7 @@ export function sanitizeCharacterLoadoutForNetwork(loadout: unknown): unknown | 
   if (!loadout || typeof loadout !== 'object' || Array.isArray(loadout)) return undefined;
   const raw = loadout as Record<string, unknown>;
   const out: Record<string, unknown> = {};
+  if (raw.characterAsset === 'iron-vanguard') out.characterAsset = 'iron-vanguard';
   for (const [key, allowed] of Object.entries(PRESET_FIELDS)) {
     const value = raw[key];
     if (typeof value === 'string' && allowed.has(value)) out[key] = value;

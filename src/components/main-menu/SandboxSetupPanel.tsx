@@ -59,7 +59,7 @@ export function SandboxSetupPanel({
           </div>
           {selectedVisualModelPolicy === 'v3' && (
             <p className="mt-2 text-xs leading-relaxed text-cyan-200/75">
-              Preview V3 player and bot models with Blender-authored movement and weapon animations in local training.
+              Use Iron Vanguard for you and every AI bot. Includes directional movement, slides, jumps, hammer attacks, sword slash/lunge, and ball carry/throw/punch. Pistol poses are provisional.
             </p>
           )}
         </div>

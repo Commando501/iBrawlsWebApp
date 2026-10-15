@@ -2,9 +2,8 @@ import * as THREE from 'three';
 import type { Combatant, UniversalSettings } from '../types';
 import {
   type BotCoordinatorState,
-  clearBotEngagements,
-  tickBotCoordinator,
 } from './aiBotCoordinator';
+import { beginAICoordinationFrame } from './aiCoordinationFrame';
 import {
   countOfflineBotSlots,
   createMainAICombatant,
@@ -37,6 +36,8 @@ export const OFFLINE_BOT_NAMES = [
 
 export interface AIOrchestratorInput {
   roster: Map<string, Combatant>;
+  /** Lab batches retain their frozen roster, including mirrored teams. */
+  rosterLocked?: boolean;
   settings: UniversalSettings;
   legacy: LegacyRosterProps;
   /** Total offline combatants including main_ai. */
@@ -264,6 +265,11 @@ export function tickAIOrchestrator(
     return { rosterChanged: false, totalCombatants: 1 + offlineBotCount };
   }
 
+  if (input.rosterLocked) {
+    beginAICoordinationFrame(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
+    return { rosterChanged: false, totalCombatants: 1 + roster.size };
+  }
+
   let rosterChanged = false;
 
   const mainAiBefore = getMainAI(roster);
@@ -294,8 +300,7 @@ export function tickAIOrchestrator(
     rosterChanged = true;
   }
 
-  tickBotCoordinator(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
-  clearBotEngagements(coordinator);
+  beginAICoordinationFrame(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
 
   return { rosterChanged, totalCombatants: 1 + offlineBotCount };
 }

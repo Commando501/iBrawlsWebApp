@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 import { AIResolvedKnobs, DerivedAIParams, deriveAIParams } from './aiTuning';
 import { resolveBehaviorTuning } from './aiBehaviorTuning';
 import { UniversalSettings } from '../types';
@@ -278,6 +279,6 @@ export function playstyleToBehavior(
 }
 
 export function pickRandomArchetype(): Exclude<AIArchetypeId, 'none'> {
-  const index = Math.floor(Math.random() * AI_ARCHETYPES.length);
+  const index = Math.floor(simulationRandom() * AI_ARCHETYPES.length);
   return AI_ARCHETYPES[index].id;
 }

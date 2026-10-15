@@ -1,3 +1,4 @@
+import { allowGrifballMessage } from '../../src/network/grifballSync';
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
 import {
   handleAccountRequest,
@@ -422,6 +423,7 @@ export function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
   if (!loadout || typeof loadout !== "object" || Array.isArray(loadout)) return undefined;
   const raw = loadout as Record<string, unknown>;
   const out: Record<string, unknown> = {};
+  if (raw.characterAsset === 'iron-vanguard') out.characterAsset = 'iron-vanguard';
   for (const [key, allowed] of Object.entries(LOADOUT_PRESETS)) {
     const value = raw[key];
     if (typeof value === "string" && allowed.has(value)) out[key] = value;
@@ -1675,12 +1677,15 @@ export class GameLobby implements DurableObject {
             const isClient = room.clients.includes(gameWs) || room.clients.some((c: any) => c.id === wsId);
             const senderRole = isHost ? 'host' : (isClient ? 'client' : 'observer');
 
+            if (!allowGrifballMessage(message, senderRole, room.lobbyConfig.gameMode, room.matchStarted)) return;
+
             // Package coordination parameters with sender role tag and senderId
             let parsedMessage = message;
             try {
               parsedMessage = {
                 ...message,
                 senderRole,
+                spawnSlot: this.getRoomSpawnSlot(room, gameWs),
                 senderId: wsId,
                 playerName: this.getSocketPublicDisplayName(gameWs),
               };

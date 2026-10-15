@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { clearDevelopmentServiceWorker } from './services/developmentServiceWorker';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -26,7 +27,17 @@ document.addEventListener('gesturestart', preventZoomGesture, { passive: false }
 document.addEventListener('gesturechange', preventZoomGesture, { passive: false });
 document.addEventListener('gestureend', preventZoomGesture, { passive: false });
 
-if ('serviceWorker' in navigator) {
+if (import.meta.env.DEV) {
+  void clearDevelopmentServiceWorker({
+    origin: window.location.origin,
+    serviceWorkers: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+    cacheStorage: 'caches' in window ? window.caches : undefined,
+  }).then((needsReload) => {
+    if (needsReload) window.location.reload();
+  }).catch((error) => {
+    console.warn('Development service worker cleanup failed:', error);
+  });
+} else if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')

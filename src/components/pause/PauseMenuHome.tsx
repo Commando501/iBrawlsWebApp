@@ -1,3 +1,4 @@
+import { grifballLab } from '../../game/grifballLabStore';
 import React from 'react';
 import {
   Activity,
@@ -216,6 +217,7 @@ export function PauseMenuHome({
 
         <div className="w-full mt-2 flex flex-col gap-2">
           <SectionHeading label="System & Dev" />
+          {!isMultiplayer && !isReplay && <button className="w-full h-10 border border-cyan-500/30 rounded-lg text-cyan-300 text-xs font-bold" onClick={() => grifballLab.open()}>Grifball AI Lab</button>}
           <button
             id="toggle-debug-btn"
             onClick={onToggleDebugMode}

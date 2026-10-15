@@ -4,6 +4,13 @@ dist/
 release/
 coverage/
 docs/*
+!docs/grifball-team-ai-plan.md
+!docs/grifball-team-ai-m2-validation.md
+!docs/grifball-team-ai-m3-validation.md
+!docs/grifball-team-ai-m4-validation.md
+!docs/grifball-team-ai-m5-validation.md
+!docs/grifball-team-ai-m6-validation.md
+!docs/grifball-team-ai-m7-validation.md
 !docs/v3/
 docs/v3/*
 !docs/v3/phase-31-readiness-baseline.md
@@ -43,3 +50,20 @@ reference/v3-source-bind/*.glb
 reference/v3-source-bind/*.GLB
 
 assets/
+.codex/
+
+# Shipped Championship Stadium material library
+!public/assets/
+public/assets/*
+!public/assets/stadium/
+!public/assets/stadium/**
+
+reference/
+
+# Shipped Iron Vanguard gameplay model
+!public/assets/iron-vanguard/
+!public/assets/iron-vanguard/**
+
+# Local animation tooling caches and dev-server process state
+/scripts/iron-vanguard/**/__pycache__/
+/.codex/ibrawls-vite.pid

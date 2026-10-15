@@ -38,12 +38,21 @@ export function updateV3GameplayBall(state: GrifballRuntimeState, refs: Grifball
   if (holderId && holderId !== previous && body?.userData.v3GameplayPlayback) {
     mesh.userData.v3GameplayPlayback = structuredClone(body.userData.v3GameplayPlayback);
   }
-  const v3 = holderId === 'player' ? localModelSystem === 'v3' : holderId ? body?.userData.modelSystem === 'v3' : localModelSystem === 'v3';
+  // Vanguard shares the skull asset, but uses its own hand-attached animation path.
+  const localVanguard = refs.hostGroup?.userData.characterAsset === 'iron-vanguard'
+    || refs.playerHammer?.userData.characterAsset === 'iron-vanguard';
+  const localPrototype = localModelSystem === 'v3' && !localVanguard;
+  const v3 = holderId === 'player' ? localPrototype : holderId ? body?.userData.modelSystem === 'v3' : localPrototype;
+  const vanguard = holderId === 'player' ? localVanguard : body?.userData.characterAsset === 'iron-vanguard';
+  if (holderId) mesh.userData.vanguardSkullBall = Boolean(vanguard);
+  if (ball.state === 'idle') mesh.userData.vanguardSkullBall = false;
+  const useSkull = v3 || vanguard || (!holderId && (localModelSystem === 'v3' || localVanguard || mesh.userData.vanguardSkullBall));
   let skull = mesh.getObjectByName('v3SkullBomb');
-  if (v3 && !skull) { skull = buildV3SkullBombModel(); mesh.add(skull); }
-  if (skull) skull.visible = v3;
+  if (useSkull && !skull) { skull = buildV3SkullBombModel(); mesh.add(skull); }
+  if (skull) skull.visible = Boolean(useSkull);
   const material = mesh.material as THREE.MeshStandardMaterial;
-  material.visible = !v3;
+  material.visible = !useSkull;
+  mesh.scale.setScalar(1);
   mesh.userData.v3BallHolder = holderId;
   if (!v3 || !holderId) { mesh.userData.v3BallCharging = false; return false; }
   const local = holderId === 'player';

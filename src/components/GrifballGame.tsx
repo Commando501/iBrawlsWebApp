@@ -1,3 +1,9 @@
+import { onlineGrifball } from './grifball/onlineGrifballRuntime';
+import { disposeIronVanguardScene } from './iron-vanguard/ironVanguardModel';
+import { GrifballValidationRuntime } from './grifball/grifballValidationRuntime';
+import { applyValidationLocalInput } from './grifball/validationLocalInputRuntime';
+import { grifballLab } from '../game/grifballLabStore';
+import { GrifballLabRuntime } from './grifball/grifballLabRuntime';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -46,6 +52,7 @@ import {
   updateGrifballObjectiveForState,
 } from './grifball/grifballObjectiveRuntime';
 import { disposeGrifballThrowTrajectoryVisualForRefs } from './grifball/grifballThrowTrajectoryRuntime';
+import { disposeStadiumResources } from './grifball/stadiumResourceDisposal';
 import {
   type LiveCameraFrameState,
 } from './grifball/liveCamera';
@@ -79,13 +86,14 @@ import {
 import { createVisualUpdateCallbacksForState } from './grifball/visualUpdateCallbacks';
 import { createWeaponActionCallbacksForState } from './grifball/weaponActionCallbacks';
 import { createVfxCallbacksForState } from './grifball/vfxCallbacks';
-import type { V3RenderOptions } from './v3/v3QualityTiers';
+import { getV3GameplayRenderOptions } from './v3/v3QualityTiers';
 
 export { createHighFidelityObjectMesh } from './grifball/customMapAssets';
 
 export const GrifballGame: React.FC<GrifballGameProps> = ({
   isPlaying,
   isPaused,
+  isMatchLoading = false,
   debugMode,
   adminSettings,
   onStatsUpdate,
@@ -94,6 +102,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   isMultiplayer = false,
   multiplayerRole = null,
   multiplayerSocket = null,
+  gameplayClientId = '',
   matchLobbyConfig = null,
   multiplayerSpawnSlot = 0,
   opponentClientId = '',
@@ -121,7 +130,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   playerLoadout,
   visualModelPolicy,
   v3QualityTier = 'desktop',
+  validationTrial,
 }) => {
+  const validationActive = Boolean(validationTrial);
+  const validationRuntimeRef = useRef<GrifballValidationRuntime | null>(null);
+  const validationTickRef = useRef<(dt: number) => void>(() => { throw new Error('Live tick not ready'); });
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
@@ -139,10 +152,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }),
     [activeVisualModelPolicy, playerLoadout]
   );
-  const activeV3RenderOptions = useMemo<V3RenderOptions>(() => ({
-    v3QualityTier,
-    v3Distance: 0,
-  }), [v3QualityTier]);
+  const activeV3RenderOptions = useMemo(() => getV3GameplayRenderOptions(v3QualityTier), [v3QualityTier]);
 
   const getActiveCustomMap = (): CustomMapData | null =>
     resolveActiveCustomMap({ customMap, replayData, selectedMap, gameMode: adminSettings.gameMode });
@@ -217,8 +227,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   }, [adminSettings.aiDifficulty, adminSettings.aiNeuralBrainId]);
 
   useEffect(() => {
-    stateRef.current.localPlayerTeam = localPlayerTeamFromRole(multiplayerRole);
-  }, [multiplayerRole]);
+    stateRef.current.localPlayerTeam = isMultiplayer && adminSettings.gameMode === 'grifball'
+      ? multiplayerSpawnSlot % 2 === 0 ? 'blue' : 'red'
+      : localPlayerTeamFromRole(multiplayerRole);
+  }, [multiplayerRole, multiplayerSpawnSlot, isMultiplayer, adminSettings.gameMode]);
 
   const {
     offlineBotCountRef,
@@ -322,6 +334,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     multiplayerRole,
     respawnCombatant: (combatant, mesh) => respawnCombatant(combatant, mesh),
     updateSingleAIEntity: (combatantId, dt) => updateSingleAIEntity(combatantId, dt),
+    getEnemyGoalPos: (team) => grifballEnemyGoalPos(team),
+    getActiveCustomMap,
     getSpectateTargetData: (target) => getSpectateTargetData(target),
     renderSwordLungeTrailVfx: (pos, color, dir, style) =>
       renderSwordLungeTrailVfx(pos, color, dir, style),
@@ -372,6 +386,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       ballChargingRef,
       ballChargeTimerRef,
       playSwing: () => sfx.playSwing(),
+      multiplayerSocket,
     });
 
   const updateGrifball = (dt: number) =>
@@ -385,6 +400,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isMultiplayer,
       activeCustomMap: getActiveCustomMap(),
       localPlayerModelSystem: visualPlayerLoadout?.modelSystem,
+      multiplayerSocket,
       placeCombatantsAtGrifballSpawns,
       pushStatsUpdate,
     });
@@ -422,6 +438,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Handle multiplayer game synchronization logic
   useEffect(() => {
     const s = stateRef.current;
+    onlineGrifball(s).localId = gameplayClientId;
+    if (multiplayerRole === 'host') s.hostClientId = gameplayClientId;
+    else if (multiplayerRole === 'client' && s.hostClientId !== gameplayClientId) s.hostClientId = opponentClientId;
     syncMultiplayerRuntimeModeForState({
       state: s,
       refs: threeRef.current,
@@ -463,7 +482,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         multiplayerSocket.removeEventListener('message', handleWsMessage);
       };
     }
-  }, [isMultiplayer, multiplayerRole, multiplayerSocket, matchLobbyConfig, multiplayerSpawnSlot, selectedMap, customMap, replayData]);
+  }, [isMultiplayer, multiplayerRole, multiplayerSocket, matchLobbyConfig, multiplayerSpawnSlot, selectedMap, customMap, replayData, gameplayClientId]);
 
   // Keep isMultiplayer and multiplayerRole in sync with props
   useEffect(() => {
@@ -489,6 +508,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   }, [adminSettings, customMap, replayData, selectedMap]);
 
   useEffect(() => {
+    if (validationActive) return;
     return resetAndLoadPersistentLocalPlayerModelForState({
       state: stateRef.current,
       replayActive: !!replayData,
@@ -628,6 +648,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     let disposed = false;
     let mountedRenderer: THREE.WebGLRenderer | null = null;
+    let mountedScene: THREE.Scene | null = null;
     let unregisterInputEventListeners: (() => void) | null = null;
 
     onLoadingStateChange?.({
@@ -640,6 +661,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const mountScene = async () => {
       const activeCustomMap = getActiveCustomMap();
       const {
+        scene,
         camera,
         renderer,
       } = await initializeGrifballMountSceneForState({
@@ -673,10 +695,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
 
       if (disposed) {
+        disposeIronVanguardScene(scene);
+        disposeStadiumResources(scene);
         renderer.dispose();
         return;
       }
       mountedRenderer = renderer;
+      mountedScene = scene;
 
       onLoadingStateChange?.({
         visible: true,
@@ -723,11 +748,32 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playDash: () => sfx.playDash(),
       });
 
-      unregisterInputEventListeners = registerGrifballInputEventListeners({
+      if (!validationActive) unregisterInputEventListeners = registerGrifballInputEventListeners({
         canvas: renderer.domElement,
         handlers: inputHandlers,
       });
 
+      if (validationActive && validationTrial) {
+        const events = buildOrchestratorEvents({ silentSpawn: true });
+        validationRuntimeRef.current = new GrifballValidationRuntime({
+          state: stateRef.current,
+          observeState: validationTrial.observeState,
+          canAdvance: validationTrial.canAdvance,
+          tick: dt => validationTickRef.current(dt),
+          resetControls: () => {
+            keysPressed.current = {}; isMouseDown.current = false;
+            ballChargingRef.current = false; ballChargeTimerRef.current = 0;
+            mobileJoystickRef.current = { x: 0, y: 0 }; mobileRightJoystickRef.current = { x: 0, y: 0 };
+            mobileRightJoystickActiveRef.current = false;
+          },
+          removeActor: id => events.onBotDespawned?.(id),
+          provisionActor: bot => createOrUpdateRemotePlayer(bot.id, bot),
+          hasActorMesh: id => Boolean(threeRef.current.otherPlayerMeshes.get(id)?.group),
+          applyLocalInput: input => applyValidationLocalInput(stateRef.current, keysPressed.current, input,
+            { triggerPlayerHammerSwing, triggerPlayerPistolFire, triggerPlayerSwordLunge }),
+        }, validationTrial.fixture, validationTrial.job);
+        validationTrial.onReady(validationRuntimeRef.current);
+      }
       renderGame();
       pushStatsUpdate();
       onLoadingStateChange?.({
@@ -739,6 +785,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     void mountScene().catch((err) => {
+      if (validationActive) validationTrial?.onError(err instanceof Error ? err : new Error(String(err)));
       console.error('Failed to mount Grifball scene:', err);
       onLoadingStateChange?.({
         visible: true,
@@ -752,6 +799,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     return () => {
       disposed = true;
+      validationRuntimeRef.current?.dispose();
+      validationRuntimeRef.current = null;
       if (secretAudioRef.current) {
         secretAudioRef.current.pause();
         secretAudioRef.current = null;
@@ -767,6 +816,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
+      disposeIronVanguardScene(mountedScene);
+      disposeStadiumResources(mountedScene);
       if (mountedRenderer) {
         mountedRenderer.dispose();
       }
@@ -784,6 +835,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   } = createReplayRuntimeCallbacksForState({
     getState: () => stateRef.current,
     getRefs: () => threeRef.current,
+    getBallMesh: () => grifballBallMeshRef.current,
     replayData,
     replayRecordingRef,
     lastRecordTimeRef,
@@ -823,13 +875,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playExplosion: () => sfx.playExplosion(),
   });
 
+  const labRuntimeRef = useRef<GrifballLabRuntime | null>(null);
+  if (!labRuntimeRef.current) labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team), getActiveCustomMap, () => ({ legacy: getLegacyRosterProps(), presets: aiPresets }));
+  useEffect(() => {
+    if (validationActive) return;
+    grifballLab.load();
+    if (!isPlaying || isMultiplayer || replayData || adminSettings.gameMode !== 'grifball') return;
+    labRuntimeRef.current?.dispose();
+    labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team), getActiveCustomMap, () => ({ legacy: getLegacyRosterProps(), presets: aiPresets }));
+    grifballLab.connect(true);
+    return () => { grifballLab.connect(false); labRuntimeRef.current?.dispose(); };
+  }, [isPlaying, isMultiplayer, replayData, adminSettings.gameMode, selectedMap, aiMatchSessionKey]);
+
   // Handle active game cycles
   useEffect(() => {
-    if (!isPlaying || isPaused) return;
+    if (!isPlaying) return;
 
-    initializeReplayRecording();
+    if (!validationActive) initializeReplayRecording();
 
-    const unregisterReplayPlaybackEvents = registerReplayPlaybackEvents();
+    const unregisterReplayPlaybackEvents = validationActive ? () => {} : registerReplayPlaybackEvents();
 
     let lastTime = performance.now();
 
@@ -855,10 +919,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (dt > 0.1) dt = 0.1;
 
       // â”€â”€â”€ Hidden Key Combo Hold Detection (GRIFB) â”€â”€â”€
-      advanceGrifballFrameForState({
+      const tick = (tickDt: number) => advanceGrifballFrameForState({
         state: s,
         refs: threeRef.current,
-        dt,
+        ballMeshRef: grifballBallMeshRef,
+        ballChargingRef,
+        ballChargeTimerRef,
+        dt: tickDt,
         isPlaying,
         isPausedRef,
         replayData,
@@ -881,7 +948,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         updateCharacterSkeletalAnimations,
         updateMatchTimers,
         enforceArenaBounds,
-        renderGame,
+        renderGame: validationActive ? () => {} : renderGame,
         updateFloatingNameplate,
         pushStatsUpdate,
         updateRadarDOM,
@@ -890,6 +957,39 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playRespawn: () => sfx.playRespawn(),
       });
 
+      validationTickRef.current = fixedDt => {
+        const paused = isPausedRef.current; isPausedRef.current = false;
+        try { tick(fixedDt); } finally { isPausedRef.current = paused; }
+      };
+      const labActive = grifballLab.getSnapshot().open && !isMultiplayer && !replayData && s.settings.gameMode === 'grifball';
+      if (validationActive) {
+        const started = performance.now();
+        // Yield regularly so cancellation and the wall watchdog can run even during accelerated trials.
+        for (let i = 0; i < 12 && performance.now() - started < 12; i++) validationRuntimeRef.current?.step();
+        if (validationRuntimeRef.current) {
+          const renderStart = performance.now(); renderGame();
+          validationRuntimeRef.current.recordRender(performance.now() - renderStart);
+        }
+      } else if (grifballLab.getSnapshot().validating && !isMultiplayer && !replayData) {
+        keysPressed.current = {};
+        renderGame();
+      } else if (labActive) {
+        keysPressed.current = {};
+        labRuntimeRef.current!.frame(s, dt, fixedDt => {
+          const paused = isPausedRef.current;
+          isPausedRef.current = false;
+          try { tick(fixedDt); } finally { isPausedRef.current = paused; }
+        });
+        labRuntimeRef.current!.draw(s, threeRef.current);
+        renderGame();
+      } else {
+        labRuntimeRef.current!.suspend();
+        if (!isPausedRef.current || (isMultiplayer && !isMatchLoading)) {
+          if (isMultiplayer && isPausedRef.current) { ballChargingRef.current = false; ballChargeTimerRef.current = 0; }
+          s.grifballTactics = grifballLab.getSnapshot().config;
+          tick(dt);
+        }
+      }
       requestRef.current = requestAnimationFrame(loop);
     };
 
@@ -902,11 +1002,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       unregisterReplayPlaybackEvents();
       // Replay is compiled and auto-saved only when the game is fully closed / unmounted.
     };
-  }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket, replayData]);
+  }, [isPlaying, isPaused, isMatchLoading, isMultiplayer, multiplayerRole, multiplayerSocket, replayData]);
 
   // Save compiled replay on unmount of GrifballGame
   useEffect(() => {
     return () => {
+      if (validationActive) return;
       saveCompiledReplay();
       persistLocalPlayerFingerprint();
       emitMatchTelemetry();
@@ -1033,6 +1134,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     recordPlayerDamageDealt,
     recordBotPsychKill,
     recordBotCalibrationDeath,
+    tryStartComboOnHit,
     evaluatePlayerKillMedals,
     executeTrade,
     applyOutgoingMultiplayerHitLocally,
@@ -1167,7 +1269,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       {/* Dynamic Instruction Overlay when Pointer Lock is not active.
           Suppressed on mobile/touch â€” those players look via touch swipe, so
           pointer lock is never acquired and the overlay would never clear. */}
-      {showPointerLockAlert && isPlaying && !isPaused && !(deviceInfo.isMobile || forceMobileControls) && (
+      {!validationActive && showPointerLockAlert && isPlaying && !isPaused && !(deviceInfo.isMobile || forceMobileControls) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs select-none pointer-events-none transition-all duration-300">
           <div className="bg-slate-950/80 backdrop-blur-md border border-white/10 px-8 py-5 rounded-2xl text-center max-w-sm shadow-2xl">
             <h4 className="text-xl font-display font-black tracking-widest text-blue-400 uppercase mb-2">

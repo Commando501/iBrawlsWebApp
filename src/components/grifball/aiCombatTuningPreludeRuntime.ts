@@ -68,8 +68,8 @@ export function resolveAICombatTuningPreludeForCombatant({
   resolveBotFlags,
   getMatchScoreContext,
 }: {
-  state: GrifballRuntimeState;
-  self: Combatant;
+  state: Pick<GrifballRuntimeState, 'settings' | 'aiMatchContext'>;
+  self: Pick<Combatant, 'aiPostLungeDecisionTimer'>;
   botId: string;
   dt: number;
   tuning: CombatBehaviorTuning;

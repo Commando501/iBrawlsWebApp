@@ -21,6 +21,7 @@ import {
   type SimCombatant,
   type SimWeapon,
   type SimMode,
+  type SimCombatExecution,
 } from './simState';
 
 /** Default kill target for a combat match (mirrors the tournament default). */
@@ -28,6 +29,7 @@ export const DEFAULT_KILL_TARGET = 25;
 
 export interface CreateMatchOptions {
   seed: number;
+  combatExecution?: SimCombatExecution;
   /** Combatants per team. Default 4v4. blue includes the human-slot id 'player'. */
   teamSizes?: { blue: number; red: number };
   /** Settings override; merged over `DEFAULT_ADMIN_SETTINGS` (grifball forced). */
@@ -204,6 +206,7 @@ export function createMatch(options: CreateMatchOptions): SimState {
 
   return {
     mode: 'grifball',
+    ...(options.combatExecution ? { combatExecution: options.combatExecution } : {}),
     combatants,
     match,
     scores,
@@ -258,6 +261,7 @@ function buildCombatMatch(options: CreateMatchOptions): SimState {
   const rng = createRng(seed);
   return {
     mode: 'combat',
+    ...(options.combatExecution ? { combatExecution: options.combatExecution } : {}),
     combatants,
     match,
     scores,

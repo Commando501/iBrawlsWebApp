@@ -17,7 +17,7 @@ const createHandler = (
 ) => createMultiplayerSyncMessageHandler({
   stateRef: { current: state },
   refs: createInitialGrifballThreeRefs(),
-  multiplayerRole: 'host',
+  multiplayerRole: state.multiplayerRole,
   secretAudioRef: { current: null },
   createOrUpdateRemotePlayer: (_clientId, data) => {
     capturedRemoteUpdates.push(data);
@@ -132,4 +132,15 @@ test('match_start visual model policy applies to later remote sync updates', () 
 
   assert.equal(capturedRemoteUpdates.length, 1);
   assert.equal((capturedRemoteUpdates[0] as any).visualModelPolicy, 'v3');
+});
+
+
+test('spectators track all roster members without mixing the primary client mirror', () => {
+  const state = createInitialGrifballRuntimeState({ debugMode: false, adminSettings: DEFAULT_ADMIN_SETTINGS, multiplayerRole: null, isMultiplayer: true });
+  state.multiplayerRole = 'observer';
+  const updates: unknown[] = [], handler = createHandler(updates, state);
+  emit(handler, { type: 'sync', senderId: 'primary', senderRole: 'client', spawnSlot: 1, pos: { x: 1, y: 0, z: 2 } });
+  emit(handler, { type: 'sync', senderId: 'third', senderRole: 'client', spawnSlot: 3, pos: { x: 30, y: 0, z: 20 } });
+  assert.equal(updates.length, 2); assert.equal(state.clientClientId, 'primary');
+  assert.equal(state.clientPos.x, 1); assert.equal(state.clientPos.z, 2);
 });

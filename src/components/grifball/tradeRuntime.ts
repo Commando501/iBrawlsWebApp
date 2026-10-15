@@ -1,3 +1,5 @@
+import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
@@ -34,60 +36,40 @@ export function resolveSwordLungeTradeReasonForState({
 }): CombatTradeReason | null {
   const swordThreshold = state.settings.swordTradeWindow ?? 350;
   const hammerThreshold = state.settings.hammerSwordTradeWindow ?? 350;
+  const now = simulationTimestamp();
+  const recent = (time: number | undefined, window: number) =>
+    typeof time === 'number' && Number.isFinite(time) && time > 0 && now >= time && now - time <= window;
 
   if (target.id === 'player') {
     if (state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
       state.isLunging ||
       state.pSwordState === 'slashing' ||
-      (Date.now() - state.lastPlayerSwordAttackTime <= swordThreshold)
+      recent(state.lastPlayerSwordAttackTime, swordThreshold)
     )) {
       return 'sword_vs_sword';
     }
     if (state.settings.enableHammerSwordTrade && state.activeWeapon === 'hammer' && (
       state.pWeaponState === 'swing_up' ||
       state.pWeaponState === 'swing_down' ||
-      (Date.now() - state.lastPlayerHammerAttackTime <= hammerThreshold)
+      recent(state.lastPlayerHammerAttackTime, hammerThreshold)
     )) {
       return 'sword_lunge_vs_hammer';
     }
     return null;
   }
 
-  if (target.id === MAIN_AI_ID) {
-    if (!mainAi) return null;
-    if (state.settings.enableSwordTrade && mainAi.activeWeapon === 'sword' && (
-      mainAi.aiState === 'LUNGING' ||
-      mainAi.weaponState === 'swing_up' ||
-      mainAi.weaponState === 'swing_down' ||
-      (Date.now() - mainAi.lastSwordAttackTime <= swordThreshold)
-    )) {
-      return 'sword_vs_sword';
-    }
-    if (state.settings.enableHammerSwordTrade && mainAi.activeWeapon === 'hammer' && (
-      mainAi.weaponState === 'swing_up' ||
-      mainAi.weaponState === 'swing_down' ||
-      (Date.now() - mainAi.lastHammerAttackTime <= hammerThreshold)
-    )) {
-      return 'sword_lunge_vs_hammer';
-    }
-    return null;
-  }
-
-  const targetBot = state.otherPlayers.get(target.id);
+  // All roster slots use the same live flight flag and weapon-specific history.
+  // Zero is the factory's no-attack sentinel; a future timestamp is not a counter.
+  const targetBot = target.id === MAIN_AI_ID ? mainAi : state.otherPlayers.get(target.id);
   if (!targetBot) return null;
   if (state.settings.enableSwordTrade && targetBot.activeWeapon === 'sword' && (
-    targetBot.isLunging ||
-    targetBot.weaponState === 'swing_up' ||
-    targetBot.weaponState === 'swing_down'
-  )) {
-    return 'sword_vs_sword';
-  }
+    targetBot.isLunging || targetBot.weaponState === 'swing_up' || targetBot.weaponState === 'swing_down' ||
+    recent(targetBot.lastSwordAttackTime, swordThreshold)
+  )) return 'sword_vs_sword';
   if (state.settings.enableHammerSwordTrade && targetBot.activeWeapon === 'hammer' && (
-    targetBot.weaponState === 'swing_up' ||
-    targetBot.weaponState === 'swing_down'
-  )) {
-    return 'sword_lunge_vs_hammer';
-  }
+    targetBot.weaponState === 'swing_up' || targetBot.weaponState === 'swing_down' ||
+    recent(targetBot.lastHammerAttackTime, hammerThreshold)
+  )) return 'sword_lunge_vs_hammer';
   return null;
 }
 
@@ -168,12 +150,11 @@ export function executeCustomBotTradeForState({
         victim: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
       });
     } else if (targetCombatant) {
+      targetCombatant.score = (targetCombatant.score || 0) + 1;
+      targetCombatant.kills = (targetCombatant.kills || 0) + 1;
       if (targetCombatant.id === MAIN_AI_ID) {
         state.scoreEnemy += 1;
         state.enemyKills += 1;
-      } else {
-        targetCombatant.score = (targetCombatant.score || 0) + 1;
-        targetCombatant.kills = (targetCombatant.kills || 0) + 1;
       }
       recordDeathEvent(
         `${targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id)} [${tradeText}]`,
@@ -213,14 +194,13 @@ export function executeCustomBotTradeForState({
   } else if (targetCombatant && targetCombatant.hp <= 0) {
     targetCombatant.hp = 0;
     targetCombatant.respawnTimer = 3.0;
+    targetCombatant.deaths = (targetCombatant.deaths || 0) + 1;
     if (targetCombatant.controller === 'ai') {
       targetCombatant.aiState = 'RESPAWNING';
     }
     if (targetCombatant.id === MAIN_AI_ID) {
       state.enemyDeaths += 1;
       recordBotCalibrationDeath(targetCombatant.id);
-    } else {
-      targetCombatant.deaths = (targetCombatant.deaths || 0) + 1;
     }
     attackerBot.score = (attackerBot.score || 0) + 1;
     attackerBot.kills = (attackerBot.kills || 0) + 1;
@@ -244,6 +224,29 @@ export function executeCustomBotTradeForState({
     );
   }
 
+  // A trade has already applied the defender's committed swing. Consume that
+  // impact so a survivor cannot hit again when the animation reaches its strike.
+  if (target.id === 'player') {
+    if (state.playerHP <= 0) {
+      state.pSwordState = state.pWeaponState = 'ready';
+      state.pSwordTimer = state.pWeaponTimer = 0;
+      state.pSwordReady = state.pWeaponReady = true;
+      state.isLunging = false; state.lungeTimer = 0;
+    } else if (state.activeWeapon === 'sword' && (state.isLunging || state.pSwordState === 'slashing')) {
+      state.pSwordRecoverDuration = state.isLunging ? state.settings.swordLungeReload : state.settings.swordSlashReload;
+      state.isLunging = false; state.lungeTimer = 0;
+      state.pSwordState = 'recovering'; state.pSwordTimer = 0; state.pSwordReady = false;
+    } else if (state.activeWeapon === 'hammer' && (state.pWeaponState === 'swing_up' || state.pWeaponState === 'swing_down')) {
+      state.pWeaponState = 'recovering'; state.pWeaponTimer = 0; state.pWeaponReady = false;
+    }
+  }
+  if (targetCombatant && targetCombatant.hp > 0 && !targetCombatant.isLunging &&
+    (targetCombatant.weaponState === 'swing_up' || targetCombatant.weaponState === 'swing_down')) {
+    targetCombatant.weaponState = 'recovering';
+    targetCombatant.weaponTimer = 0;
+    if (targetCombatant.hammerJumpPlanned !== undefined) targetCombatant.hammerJumpPlanned = false;
+    targetCombatant.hammerJumpType = undefined;
+  }
   attackerBot.isLunging = false;
   attackerBot.weaponState = 'ready';
   pushStatsUpdate();
@@ -270,18 +273,43 @@ export function executeMainAITradeForState({
   spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
   pushStatsUpdate: () => void;
 }): void {
-  if (!mainAi) return;
+  executePlayerCombatantTradeForState({ state, combatant: mainAi, reason, evaluatePlayerKillMedals,
+    recordBotCalibrationDeath, playExplosion, playDeath, spawnVoxelShockwaveParticles, pushStatsUpdate });
+}
+
+export function executePlayerCombatantTradeForState({
+  state,
+  combatant,
+  reason,
+  evaluatePlayerKillMedals,
+  recordBotCalibrationDeath,
+  playExplosion,
+  playDeath,
+  spawnVoxelShockwaveParticles,
+  pushStatsUpdate,
+}: {
+  state: GrifballRuntimeState;
+  combatant: Combatant | undefined;
+  reason: CombatTradeReason;
+  evaluatePlayerKillMedals: (victimId: string) => MedalInfo[];
+  recordBotCalibrationDeath: (botId: string) => void;
+  playExplosion: () => void;
+  playDeath: () => void;
+  spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
+  pushStatsUpdate: () => void;
+}): void {
+  if (!combatant || combatant.hp <= 0 || state.playerHP <= 0) return;
 
   state.playerHP = Math.max(0, state.playerHP - 1);
-  mainAi.hp = Math.max(0, mainAi.hp - 1);
+  combatant.hp = Math.max(0, combatant.hp - 1);
 
   playExplosion();
   playDeath();
 
   spawnVoxelShockwaveParticles(state.playerPos, '#3b82f6');
-  spawnVoxelShockwaveParticles(mainAi.pos, '#ef4444');
+  spawnVoxelShockwaveParticles(combatant.pos, '#ef4444');
 
-  state.lastStrikePos = mainAi.pos.clone();
+  state.lastStrikePos = combatant.pos.clone();
   state.lastStrikeTick = 1.2;
   state.lastAIStrikePos = state.playerPos.clone();
   state.lastAIStrikeTick = 1.2;
@@ -289,9 +317,11 @@ export function executeMainAITradeForState({
   if (state.playerHP <= 0) {
     state.playerHP = 0;
     state.playerRespawnTimer = 3.0;
-    state.scoreEnemy += 1;
+    if (combatant.id === MAIN_AI_ID) state.scoreEnemy += 1;
     state.playerDeaths += 1;
-    state.enemyKills += 1;
+    if (combatant.id === MAIN_AI_ID) state.enemyKills += 1;
+    combatant.kills = (combatant.kills ?? 0) + 1;
+    combatant.score = (combatant.score ?? 0) + 1;
   }
   state.pWeaponState = 'ready';
   state.pWeaponTimer = 0;
@@ -303,50 +333,62 @@ export function executeMainAITradeForState({
   state.lungeTimer = 0;
 
   let playerMedals: MedalInfo[] | undefined = undefined;
-  if (mainAi.hp <= 0) {
-    mainAi.hp = 0;
-    mainAi.aiState = 'RESPAWNING';
-    state.enemyRespawnTimer = 3.0;
-    state.scorePlayer += 1;
-    state.playerKills += 1;
-    state.enemyDeaths += 1;
-    recordBotCalibrationDeath(MAIN_AI_ID);
-    playerMedals = evaluatePlayerKillMedals(MAIN_AI_ID);
+  if (combatant.hp <= 0) {
+    recordPlayerMeleeKillForState(state, combatant, recordBotCalibrationDeath);
+    playerMedals = evaluatePlayerKillMedals(combatant.id);
   }
-  mainAi.weaponState = 'ready';
-  mainAi.weaponTimer = 0;
+  if (combatant.hp > 0 && combatant.isLunging) {
+    // Player contact consumes the roster flight before its next physics update.
+    // Stop flight momentum and enter reload just as a roster-initiated trade does.
+    combatant.vel.x = combatant.vel.z = 0;
+    combatant.vel.y = Math.min(combatant.vel.y, 0);
+    combatant.isJumping = combatant.pos.y > .01 || Math.abs(combatant.vel.y) > .01;
+    combatant.aiState = 'COOLDOWN';
+    combatant.aiTimer = state.settings.swordLungeReload ?? 1.2;
+  }
+  combatant.isLunging = false;
+  combatant.weaponState = 'ready';
+  combatant.weaponTimer = 0;
+  if (combatant.hammerJumpPlanned !== undefined) combatant.hammerJumpPlanned = false;
+  combatant.hammerJumpType = undefined;
 
   const { text: attackerText, weapon: tradeWeapon } = getTradePresentation(reason);
+  const playerName = state.settings.playerName || 'Blue (You)';
+  const botName = combatant.playerName || 'Red (AI)';
   const newDeath1: DeathEvent = {
     id: Math.random().toString(36).substring(2, 9),
-    attacker: `Blue (You) [${attackerText}]`,
-    victim: 'Red (AI)',
+    attacker: `${playerName} [${attackerText}]`,
+    victim: botName,
     medals: playerMedals,
     weapon: tradeWeapon,
   };
   const newDeath2: DeathEvent = {
     id: Math.random().toString(36).substring(2, 9),
-    attacker: `Red (AI) [${attackerText}]`,
-    victim: 'Blue (You)',
+    attacker: `${botName} [${attackerText}]`,
+    victim: playerName,
     weapon: tradeWeapon,
   };
 
-  state.lastDeaths = [newDeath1, newDeath2, ...state.lastDeaths].slice(0, 3);
-  if (mainAi.hp <= 0) {
+  state.lastDeaths = [
+    ...(combatant.hp <= 0 ? [newDeath1] : []),
+    ...(state.playerHP <= 0 ? [newDeath2] : []),
+    ...state.lastDeaths,
+  ].slice(0, 3);
+  if (combatant.hp <= 0) {
     queueReplayHeatmapDeathEventsForState({
       state,
       attacker: createReplayHeatmapCombatantSource('player', undefined, {
         team: state.localPlayerTeam,
         pos: state.playerPos,
       }),
-      victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      victim: createReplayHeatmapCombatantSource(combatant.id, combatant),
       weapon: tradeWeapon,
     });
   }
   if (state.playerHP <= 0) {
     queueReplayHeatmapDeathEventsForState({
       state,
-      attacker: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      attacker: createReplayHeatmapCombatantSource(combatant.id, combatant),
       victim: createReplayHeatmapCombatantSource('player', undefined, {
         team: state.localPlayerTeam,
         pos: state.playerPos,

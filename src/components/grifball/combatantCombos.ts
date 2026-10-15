@@ -1,9 +1,4 @@
-import * as THREE from 'three';
-import {
-  canUseWeaponCombos,
-  createBotComboState,
-  pickComboOnHit,
-} from '../../game/aiComboEngine';
+import { resolveAIHitCombo } from '../../game/aiHitCombo';
 import {
   getBotComboState,
   setBotComboState,
@@ -26,6 +21,7 @@ export const tryStartComboOnHitForState = ({
   knobs,
   settings = state.settings,
   targetRecovering,
+  random,
 }: {
   state: GrifballRuntimeState;
   botId: string;
@@ -36,37 +32,10 @@ export const tryStartComboOnHitForState = ({
   knobs: ComboRuntimeKnobs;
   settings?: ComboRuntimeSettings;
   targetRecovering?: boolean;
+  random?: () => number;
 }): void => {
-  if (getBotComboState(state.aiMatchContext, botId)) {
-    return;
-  }
-
-  if (!canUseWeaponCombos(knobs.difficulty, knobs.weaponSwapIQ)) {
-    return;
-  }
-
-  if (!candidate || candidate.hp <= 0 || !bot) {
-    return;
-  }
-
-  const botPos = new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z);
-  const dist = botPos.distanceTo(candidate.pos);
-  const dangerZone = settings.attackRange + settings.attackRadius * 0.85;
-  const minLungeRange = dangerZone * 0.85;
-  const maxLungeRange = Math.min(18.0, settings.swordLungeDistance ?? 14.5);
-
-  const comboId = pickComboOnHit({
-    difficulty: knobs.difficulty,
-    weaponSwapIQ: knobs.weaponSwapIQ,
-    weaponPrioritization: knobs.weaponPrioritization,
-    openingWeapon,
-    distanceToTarget: dist,
-    minLungeRange,
-    maxLungeRange,
-    targetRecovering: targetRecovering ?? candidate.weaponState === 'recovering',
-  });
-
-  if (comboId) {
-    setBotComboState(state.aiMatchContext, botId, createBotComboState(comboId, targetId));
-  }
+  const current = getBotComboState(state.aiMatchContext, botId) ?? null;
+  const next = resolveAIHitCombo({ current, targetId, openingWeapon, botPos: bot?.pos,
+    target: candidate, knobs, settings, targetRecovering, random });
+  if (next !== current) setBotComboState(state.aiMatchContext, botId, next);
 };

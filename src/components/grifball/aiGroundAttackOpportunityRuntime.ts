@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import {
   canAttemptLungeFakeout,
@@ -6,7 +7,7 @@ import {
 import { type AIBehaviorState, type Combatant, type WeaponState } from '../../types';
 import { resolveAIPressureLungeChance } from './aiPressureStateRuntime';
 import { tryStartAISwordLungeForCombatant } from './aiSwordLungeStartRuntime';
-import { resolveScaledAIWeaponReloadTime } from './aiWeaponTimingRuntime';
+import { resolveAIGroundAttackCommitment } from '../../game/aiGroundAttackCommitment';
 import { type CombatantWeapon } from './combatantActions';
 import { type TacticalTargetCandidate } from './combatGeometry';
 import { type PlayerModelObserver, type PlayerModelSnapshot } from './playerModelObservations';
@@ -47,7 +48,7 @@ export interface AIGroundAttackOpportunityTuning {
   lungeFakeoutForwardTimer: number;
 }
 
-export function resolveAIGroundAttackOpportunityForCombatant({
+export function resolveAIGroundAttackOpportunityForCombatant<TSelf>({
   state,
   self,
   frame,
@@ -86,9 +87,10 @@ export function resolveAIGroundAttackOpportunityForCombatant({
   getTargetPlayerModel,
   triggerCombatantLunge,
   recordCombatantObservation,
+  random = simulationRandom,
 }: {
-  state: GrifballRuntimeState;
-  self: Combatant;
+  state: Pick<GrifballRuntimeState, 'settings'>;
+  self: TSelf;
   frame: AIGroundAttackOpportunityFrame;
   botId: string;
   target: TacticalTargetCandidate;
@@ -117,37 +119,35 @@ export function resolveAIGroundAttackOpportunityForCombatant({
   playstyleFactor: number;
   tuning: AIGroundAttackOpportunityTuning;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
-  triggerCombatantAttack: (self: Combatant, weapon: CombatantWeapon) => void;
+  triggerCombatantAttack: (self: TSelf, weapon: CombatantWeapon) => void;
   applyTacticalWeapon: (tacticalWeapon: CombatantWeapon) => AITacticalWeaponApplyResult;
   startWeaponSwapFeintTimer: () => void;
   commitFeint: () => void;
   tryFeintRoll: (rollScale?: number) => boolean;
   getTargetPlayerModel: (targetId: string) => PlayerModelSnapshot | null;
   triggerCombatantLunge: (
-    self: Combatant,
+    self: TSelf,
     lungeDir: THREE.Vector3,
     pos: THREE.Vector3,
     vel: THREE.Vector3
   ) => void;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
+  random?: () => number;
 }): AIGroundAttackOpportunityResult {
   let feintLungeFakeout = false;
   let currentActiveWeapon = activeWeapon;
   let currentCanStartWeaponAction = canStartWeaponAction;
 
-  if (
-    enemyInKillRange &&
-    selfGrounded &&
-    currentCanStartWeaponAction &&
-    frame.weaponState === 'ready' &&
-    !slideActive
-  ) {
-    frame.vel.x = 0;
-    frame.vel.z = 0;
-    frame.aiState = 'COOLDOWN';
-    frame.timer = resolveScaledAIWeaponReloadTime(state.settings, currentActiveWeapon, cooldownMultiplier);
-    triggerCombatantAttack(self, currentActiveWeapon as CombatantWeapon);
-    frame.weaponState = 'swing_up';
+  const commitment = resolveAIGroundAttackCommitment({ enemyInKillRange, selfGrounded,
+    canStartWeaponAction: currentCanStartWeaponAction, weaponReady: frame.weaponState === 'ready',
+    slideActive, activeWeapon: currentActiveWeapon, settings: state.settings, cooldownMultiplier });
+  if (commitment) {
+    frame.vel.x = commitment.movement.x;
+    frame.vel.z = commitment.movement.z;
+    frame.aiState = commitment.aiState;
+    frame.timer = commitment.timer;
+    triggerCombatantAttack(self, commitment.weapon as CombatantWeapon);
+    frame.weaponState = commitment.weaponState;
     constrainCombatantToArena(frame.pos, frame.vel);
     return {
       mode: 'sync_return',
@@ -210,7 +210,7 @@ export function resolveAIGroundAttackOpportunityForCombatant({
       targetProtected,
       playstyleFactor,
     });
-    if (Math.random() < lungeChance) {
+    if (random() < lungeChance) {
       const lungeFakeoutEligible = canAttemptLungeFakeout({
         activeWeapon: currentActiveWeapon,
         weaponReady: frame.weaponState === 'ready',

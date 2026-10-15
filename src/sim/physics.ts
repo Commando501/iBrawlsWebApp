@@ -1,3 +1,4 @@
+import type { ScriptedAIGroundFeedback } from './scriptedAIGround';
 /**
  * Headless movement integration — a port of the player/AI movement core from
  * `GrifballGame.updatePhysics` (lines ~5740–5937). One {@link ActionInput} drives one
@@ -15,15 +16,18 @@
  *
  * Divergences (documented in README): sprint/slide input is not part of the discrete
  * action space (and `enableSprint`/`enableSlide` default off), so those branches are
- * inert; crouch height interpolation and VFX/SFX are dropped.
+ * inert; legacy execution drops crouch height interpolation and all profiles omit VFX/SFX.
  */
 
 import * as THREE from 'three';
+import { finishSimAIEngagementMotion } from './aiEngagementMotion';
+import { advanceAIDashMotion, finishAIHorizontalMotion, type AIDashMotionFrame } from '../game/aiDashMotion';
+import type { ScriptedAIDashDecision, ScriptedAIDashFeedback } from './scriptedAIMobility';
 import { type UniversalSettings } from '../types';
 import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
 import { GRAVITY_ACCELERATION } from '../components/grifball/combatGeometry';
-import { type SimState, type SimCombatant } from './simState';
+import { type SimState, type SimCombatant, combatExecutionForActor } from './simState';
 import { type ActionInput } from './actions';
 
 /** Base walk speed (m/s), live `updatePhysics` baseSpeed. */
@@ -55,6 +59,13 @@ export function rightDir(yaw: number, out: THREE.Vector3 = new THREE.Vector3()):
   return out.set(Math.cos(yaw), 0, -Math.sin(yaw));
 }
 
+/** Cooldowns sampled by a scheduled roster decision before physical movement. */
+export function tickMovementCooldowns(c: SimCombatant, dt: number): void {
+  if ((c.aiHammerJumpCooldownTimer ?? 0) > 0) c.aiHammerJumpCooldownTimer = Math.max(0, c.aiHammerJumpCooldownTimer! - dt);
+  if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
+  if (c.invulnerabilityTimer > 0) c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
+}
+
 /**
  * Advance one combatant's movement by `dt`. Mutates `c.pos`, `c.vel`, `c.yaw`, and the
  * movement-mechanic timers in place. Dead combatants are skipped (respawn owns them).
@@ -64,32 +75,68 @@ export function stepCombatantMovement(
   c: SimCombatant,
   action: ActionInput,
   settings: UniversalSettings,
-  dt: number
-): void {
+  dt: number,
+  objectiveMovement?: import('./scriptedObjectiveInput').ObjectiveGroundIntent,
+  cooldownsAdvanced = false,
+  engagementPrepared = false,
+  dashDecision?: ScriptedAIDashDecision,
+  ground?: { execute: (savedVelY: number) => ScriptedAIGroundFeedback; completed?: ScriptedAIGroundFeedback },
+  evasionHold?: { held: boolean }
+): ScriptedAIDashFeedback | undefined {
   if (!c.alive) return;
+  const playerView = combatExecutionForActor(state, c) === 'live-player-v1';
+  if (playerView && action.aimPitch !== undefined) {
+    if (!Number.isFinite(action.aimPitch)) throw new Error('Player aimPitch must be finite');
+    // Same mouse/gamepad view limit as playerInputRuntime.
+    c.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, action.aimPitch));
+  }
 
   // Timers tick down regardless of action.
-  if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
-  if (c.invulnerabilityTimer > 0) c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
+  if (!cooldownsAdvanced) tickMovementCooldowns(c, dt);
 
-  // Sword-lunge flight overrides input: facing is locked, velocity is the committed
-  // lunge heading at the configured lunge speed. The weapon FSM owns the timer/end.
+  // Flight retains its launch velocity. Local mouse look still changes the view;
+  // roster/legacy facing remains committed. The weapon FSM owns the timer/end.
   if (c.isLunging) {
+    if (playerView) c.yaw = normalizeYaw(action.aim);
+    if (state.combatExecution === 'live-mixed-v1' && c.id === state.localPlayerId) {
+      c.isCrouching = false; c.isJumping = false; c.hammerJumpsInAir = 0;
+    }
     const speed = settings.swordLungeSpeed ?? 24.0;
     c.vel.x = c.lungeDir.x * speed;
     c.vel.z = c.lungeDir.z * speed;
-    c.vel.y = 0;
-    c.pos.y = 0;
+    if (combatExecutionForActor(state, c) === 'live-roster-v2') {
+      c.vel.y -= GRAVITY_ACCELERATION * dt; c.pos.y += c.vel.y * dt;
+      if (c.pos.y <= 0) { c.pos.y = 0; c.vel.y = 0; }
+    } else { c.vel.y = 0; c.pos.y = 0; }
     c.pos.x += c.vel.x * dt;
     c.pos.z += c.vel.z * dt;
     constrainAndStore(state, c);
-    c.grounded = true;
+    c.grounded = combatExecutionForActor(state, c) === 'live-roster-v2' ? c.pos.y <= .0001 : true;
     return;
   }
 
   // Face the requested aim instantly (mouse-equivalent), normalized to (-PI, PI].
   c.yaw = normalizeYaw(action.aim);
-  c.isCrouching = action.crouch && !c.isJumping;
+  // Live local inputs allow crouching in flight; other profiles keep grounded-only stance.
+  c.isCrouching = action.crouch && (engagementPrepared || playerView || !c.isJumping);
+  const savedVelY = c.vel.y;
+  if (engagementPrepared && finishSimAIEngagementMotion(state, c, settings, dt)) return;
+  if (engagementPrepared && evasionHold && c.dashRemaining <= 0) {
+    evasionHold.held = true;
+    return;
+  }
+  if (engagementPrepared && c.dashRemaining > 0 && dashDecision) {
+    const frame: AIDashMotionFrame = { pos: c.pos, vel: c.vel, dashDir: c.dashDir, aiState: dashDecision.aiState,
+      dashRemaining: c.dashRemaining, slideActive: c.slideActive, slideCooldownTimer: c.slideCooldownTimer,
+      isSprinting: c.isSprinting, pendingPostEvasionCharge: dashDecision.pendingPostEvasionCharge };
+    advanceAIDashMotion(settings, frame, dt, dashDecision.target);
+    c.dashRemaining = frame.dashRemaining; c.slideActive = frame.slideActive;
+    c.slideCooldownTimer = frame.slideCooldownTimer; c.isSprinting = frame.isSprinting;
+    c.grounded = constrainAndStore(state, c) || c.pos.y <= .0001;
+    finishAIHorizontalMotion(c, frame);
+    return { pendingPostEvasionCharge: frame.pendingPostEvasionCharge, aiState: frame.aiState };
+  }
+  if (engagementPrepared && ground) { ground.completed = ground.execute(savedVelY); return; }
   const isRunner = c.hasBall || c.weapon === 'ball';
 
   // Dash trigger (tap): only when grounded-ready and off cooldown.
@@ -119,7 +166,15 @@ export function stepCombatantMovement(
     const speed = settings.dashDistance / (settings.dashDuration || 0.25);
     c.vel.x = c.dashDir.x * speed;
     c.vel.z = c.dashDir.z * speed;
+  } else if (objectiveMovement) {
+    // Objective steering is world-space and independent of attack facing. Live
+    // support walking uses forward speed; carriers use the runner forward rule.
+    const speed = isRunner ? 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true)
+      : 5.2 * settings.speedForward / 100;
+    c.vel.x = objectiveMovement.x * speed;
+    c.vel.z = objectiveMovement.z * speed;
   } else {
+    if (playerView) c.crouchAmount = (c.crouchAmount ?? 0) + ((c.isCrouching ? .72 : 0) - (c.crouchAmount ?? 0)) * 12 * dt;
     forwardDir(c.yaw, _f);
     rightDir(c.yaw, _r);
 

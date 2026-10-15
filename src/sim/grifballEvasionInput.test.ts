@@ -1,0 +1,266 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { resolveSimGrifballEvasionInput, type SimEvasionObservation } from './grifballEvasionInput';
+import { createMatch } from './factory';
+import { idleAction } from './actions';
+import { stepSimulation } from './step';
+import { stepCombatantWeapons } from './weapons';
+import { validateScriptedCombatInput } from './scriptedCombatInput';
+import { validateScriptedActorDecision, type ScriptedActorDecision } from './scriptedActorDecision';
+
+function fixture() {
+  const state = createMatch({ seed: 7, teamSizes: { blue: 1, red: 2 }, combatExecution: 'live-mixed-v1',
+    settings: { aiDifficulty: 'normal', swordLungeSpeed: 24, attackRadius: 2, aiTuneHammerWindupSeconds: .32 } });
+  const [actor, target, player] = state.combatants;
+  state.localPlayerId = player.id = 'player'; player.controller = 'remote'; state.match.phase = 'playing';
+  actor.id = 'main_ai'; target.id = 'target'; actor.controller = target.controller = 'ai';
+  actor.pos = { x: 0, y: 0, z: 0 }; target.pos = { x: 0, y: 0, z: 8 }; player.pos = { x: 30, y: 0, z: 30 };
+  actor.weapon = 'hammer'; target.weapon = 'sword'; actor.weaponReadyTimer = actor.swapLockoutTimer = 0;
+  target.isLunging = true; target.lungeDir = { x: 0, y: 0, z: -1 }; target.lungeTargetId = actor.id; target.lungeStartPos = { ...target.pos };
+  actor.dashCooldownTimer = 2;
+  const authority = { main_ai: 'normal' };
+  const memory = { aiState: 'APPROACHING' as const, timer: 0, cooldownMultiplier: 1 };
+  const memories: Record<string, typeof memory> = { main_ai: { ...memory }, target: { ...memory } };
+  let draws = 0;
+  const context: Parameters<typeof resolveSimGrifballEvasionInput>[4] & { observation: SimEvasionObservation } = {
+    motionPhase: 'after-engagement-gravity', observation: { targetId: target.id, distanceToTarget: 8, combatDistanceToTarget: 8,
+      toTarget: { x: 0, z: 8 }, resolvedAiReach: 3 },
+    weaponFrame: { activeWeapon: 'hammer', weaponState: 'ready', canStartWeaponAction: true,
+      readinessRemaining: 0, observedSwapLockout: 0, currentSwapLockout: 0 },
+    pendingPostEvasionCharge: false, bulltrueCounter: null, defensiveEvasionMult: 1, spatialIQ: 80, swayTimer: 0,
+    random: () => { draws++; return .01; },
+  };
+  const resolve = () => resolveSimGrifballEvasionInput(state, actor.id, authority, memories, context);
+  return { state, actor, target, player, authority, memories, context, resolve, draws: () => draws };
+}
+
+for (const id of ['main_ai', 'ordinary']) for (const dt of [1 / 60, 1 / 30])
+  test(`defensive jump preserves the live recovery/ground hold handoff ${id}/${dt}`, () => {
+    const f = fixture(); f.actor.id = id;
+    const authority = { [id]: 'normal' }, memories = { [id]: f.memories.main_ai, target: f.memories.target };
+    f.actor.vel = { x: 2, y: 0, z: -1 }; f.actor.invulnerabilityTimer = .5;
+    let completed = false;
+    const events = stepSimulation(f.state, {}, { settings: f.state.settings, dt,
+      scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: authority, prepare: () => 'engagement',
+        resolve: ({ state }) => {
+          const decision = resolveSimGrifballEvasionInput(state, id, authority, memories, f.context, dt)!;
+          assert.equal(decision.holdAfterEvasion, true);
+          assert.deepEqual(decision.commands, [{ kind: 'hammer-jump', jumpType: 'defensive' }]);
+          return { kind: 'handled', action: { ...idleAction(), aim: .4 }, ...decision,
+            ground: { version: 'scripted-ai-ground-v1', resolve: () => assert.fail('evasion must not fall through to ground policy') } };
+        }, completeTurn: ({ record }) => {
+          completed = true;
+          assert.equal(record.evasionHeld, id === 'main_ai' ? true : undefined);
+          assert.equal(record.ground, undefined); assert.equal(record.dash, undefined);
+          assert.equal(f.actor.yaw, .4); assert.equal(f.actor.attackKind, 'strike');
+          if (id === 'main_ai') {
+            assert.deepEqual(f.actor.pos, { x: 0, y: 0, z: 0 });
+            assert.deepEqual(f.actor.vel, { x: 2, y: 0, z: -1 });
+            assert.equal(f.actor.hammerJumpPlanned, true); assert.equal(f.actor.isJumping, false);
+          } else {
+            assert.equal(f.actor.isJumping, true); assert.ok(f.actor.vel.y > 0);
+            assert.equal(f.actor.pos.y, 0, 'ordinary hammer jump sets launch velocity; the next gravity tick moves it');
+            assert.ok(f.actor.vel.x > 0 && f.actor.vel.x < 2);
+          }
+        } } });
+    assert.equal(completed, true);
+    assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, id === 'main_ai' ? true : undefined);
+    assert.ok(Math.abs(f.actor.invulnerabilityTimer - (.5 - dt)) < 1e-8);
+    assert.equal(f.actor.weaponState, 'windup', 'animation still runs after the movement return');
+  });
+
+test('active dash finishes its movement before a requested evasion hold can take over', () => {
+  const f = fixture(); f.actor.dashRemaining = .01; f.actor.dashDir = { x: 1, y: 0, z: 0 };
+  const events = stepSimulation(f.state, {}, { settings: f.state.settings,
+    scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: f.authority, prepare: () => 'engagement',
+      resolve: () => ({ kind: 'handled', action: idleAction(), holdAfterEvasion: true,
+        dash: { version: 'scripted-ai-dash-v1', aiState: 'APPROACHING', pendingPostEvasionCharge: false,
+          target: { targetWeaponState: 'ready', attackDistanceToTarget: 8, resolvedAiReach: 3, targetProtected: false,
+            spatialIQ: 80, weaponReady: true } },
+        ground: { version: 'scripted-ai-ground-v1', resolve: () => assert.fail('dash still owns this frame') } }) } });
+  assert.ok(f.actor.pos.x > 0); assert.equal(f.actor.dashRemaining, 0);
+  assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, undefined);
+  assert.ok(events.actorDecisionFrame!.decisions[0].dash);
+});
+
+test('omitted or declined hold retains ordinary prepared movement', () => {
+  for (const holdAfterEvasion of [undefined, false]) {
+    const f = fixture(); f.actor.vel.x = 2;
+    const events = stepSimulation(f.state, {}, { settings: f.state.settings,
+      scriptedActorDecisions: { version: 'scripted-actor-decision-v1', scriptedBots: f.authority, prepare: () => 'engagement',
+        resolve: () => ({ kind: 'handled', action: idleAction(), holdAfterEvasion }) } });
+    assert.equal(f.actor.vel.x, 0); assert.equal(events.actorDecisionFrame!.decisions[0].evasionHeld, undefined);
+  }
+});
+
+for (const conflict of ['unprepared', 'invalid-flag', 'flight', 'carrier', 'movement', 'walk', 'jump', 'dash',
+  'attackPrimary', 'attackSecondary', 'swapWeapon', 'pickup', 'pass', 'lunge', 'no-target'] as const)
+  test(`evasion hold rejects conflicting ownership: ${conflict}`, () => {
+    const f = fixture();
+    const decision: Extract<ScriptedActorDecision, { kind: 'handled' }> = { kind: 'handled', action: idleAction(), holdAfterEvasion: true };
+    if (conflict === 'invalid-flag') (decision as any).holdAfterEvasion = 'yes';
+    if (conflict === 'flight') f.actor.isLunging = true;
+    if (conflict === 'carrier') f.actor.hasBall = true;
+    if (conflict === 'movement') decision.movement = { x: 0, z: 1 };
+    if (conflict === 'walk') decision.action.moveX = 1;
+    if (['jump', 'dash', 'attackPrimary', 'attackSecondary', 'swapWeapon', 'pickup'].includes(conflict)) (decision.action as any)[conflict] = true;
+    if (conflict === 'pass') decision.action.passCharge = .5;
+    if (conflict === 'lunge') decision.commands = [{ kind: 'lunge' } as never];
+    if (conflict === 'no-target') decision.noTarget = {} as never;
+    const before = structuredClone(f.state);
+    assert.throws(() => validateScriptedActorDecision(f.state,
+      { version: 'scripted-actor-decision-v1', scriptedBots: f.authority, resolve: () => decision },
+      f.actor.id, decision, f.state.settings, conflict !== 'unprepared'), /evasion|Evasion/);
+    assert.deepEqual(f.state, before);
+  });
+
+for (const reason of ['legacy', 'combat-mode', 'paused', 'remote', 'local', 'neural', 'authority', 'dead', 'respawn', 'flight',
+  'carrier', 'own-memory', 'target-memory', 'dead-target', 'friendly-target', 'missing-target', 'duplicate-target'] as const)
+  test(`evasion adapter explicitly hands off ${reason} without RNG or state mutation`, () => {
+    const f = fixture();
+    if (reason === 'legacy') f.state.combatExecution = 'legacy-v1';
+    if (reason === 'combat-mode') f.state.mode = 'combat';
+    if (reason === 'paused') f.state.match.phase = 'countdown';
+    if (reason === 'remote') f.actor.controller = 'remote';
+    if (reason === 'local') f.state.localPlayerId = f.actor.id;
+    if (reason === 'neural') f.authority.main_ai = 'neural-net';
+    if (reason === 'authority') delete (f.authority as Record<string, string>).main_ai;
+    if (reason === 'dead') f.actor.hp = 0;
+    if (reason === 'respawn') f.actor.respawnTimer = 1;
+    if (reason === 'flight') f.actor.isLunging = true;
+    if (reason === 'carrier') f.state.match.ball.holderId = f.actor.id;
+    if (reason === 'own-memory') delete f.memories.main_ai;
+    if (reason === 'target-memory') delete f.memories.target;
+    if (reason === 'dead-target') f.target.hp = 0;
+    if (reason === 'friendly-target') f.target.team = f.actor.team;
+    if (reason === 'missing-target') f.context.observation.targetId = 'absent';
+    if (reason === 'duplicate-target') f.state.combatants.push(structuredClone(f.target));
+    const before = structuredClone(f.state), memory = structuredClone(f.memories);
+    assert.equal(f.resolve(), null); assert.equal(f.draws(), 0); assert.deepEqual(f.state, before); assert.deepEqual(f.memories, memory);
+  });
+
+for (const field of ['distance', 'reach', 'direction', 'readiness', 'spatial', 'phase', 'rng'] as const)
+  test(`evasion adapter rejects invalid ${field}`, () => {
+    const f = fixture();
+    if (field === 'distance') f.context.observation.combatDistanceToTarget = NaN;
+    if (field === 'reach') f.context.observation.resolvedAiReach = -1;
+    if (field === 'direction') f.context.observation.toTarget.x = Infinity;
+    if (field === 'readiness') f.context.weaponFrame.readinessRemaining = -1;
+    if (field === 'spatial') f.context.spatialIQ = 101;
+    if (field === 'phase') (f.context as any).motionPhase = 'default';
+    if (field === 'rng') (f.context as any).random = undefined;
+    assert.throws(f.resolve); assert.equal(f.draws(), 0);
+  });
+
+test('rejected main jump clears its old plan before the timed dash counter', () => {
+  const f = fixture(); f.actor.dashRemaining = .2; f.actor.dashDir = { x: 1, y: 0, z: 0 };
+  f.actor.hammerJumpPlanned = true; f.actor.hammerJumpType = 'defensive';
+  const memory = structuredClone(f.memories), before = structuredClone(f.state), decision = f.resolve()!;
+  assert.deepEqual(decision.commands.map(c => c.kind), ['hammer-jump', 'melee']);
+  assert.equal(decision.frame.isEvadingLunge, false); assert.equal(decision.motion.hammerJumpPlanned, false);
+  assert.equal(decision.motion.weaponState, 'swing_up'); assert.equal(decision.weaponFrame.weaponState, 'ready', 'timed counter retains the cached live decision state');
+  assert.deepEqual(f.state, before); assert.deepEqual(f.memories, memory);
+  assert.throws(() => validateScriptedCombatInput(f.state, { version: 'scripted-combat-v4', scriptedBots: f.authority,
+    commands: { main_ai: decision.commands } }, {}, f.state.settings, { actorId: 'main_ai', mobility: false, dash: true }));
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: { version: 'scripted-actor-decision-v1',
+    scriptedBots: f.authority, prepare: () => 'engagement', resolve: () => ({ kind: 'handled', action: idleAction(), ...decision }) } });
+  assert.equal(f.actor.hammerJumpPlanned, false); assert.equal(f.actor.hammerJumpType, undefined);
+  assert.equal(f.actor.weaponState, 'windup'); assert.equal(f.actor.isJumping, false);
+  for (let i = 0; i < 60; i++) stepCombatantWeapons(f.state, f.actor, idleAction(), f.state.settings, 1 / 60, [], 'animation');
+  assert.equal(f.actor.hammerJumpsInAir, 0); assert.equal(f.actor.vel.y, 0, 'counter impact cannot launch the rejected plan');
+});
+
+test('accepted v5 jump cannot restart its swing with a trailing counter', () => {
+  const f = fixture();
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: { version: 'scripted-actor-decision-v1',
+    scriptedBots: f.authority, prepare: () => 'engagement', resolve: () => ({ kind: 'handled', action: idleAction(), commandVersion: 'scripted-combat-v5',
+      commands: [{ kind: 'hammer-jump', jumpType: 'defensive' }, { kind: 'melee', weapon: 'sword', swipe: false }] }) } });
+  assert.equal(f.actor.hammerJumpPlanned, true); assert.equal(f.actor.weapon, 'hammer'); assert.equal(f.actor.attackKind, 'strike');
+  assert.equal(f.actor.lastSwordAttackTimeMs, undefined);
+});
+
+test('local flight direction uses its committed vector even with a custom player ID', () => {
+  const f = fixture(); f.actor.weapon = 'sword'; f.context.weaponFrame.activeWeapon = 'sword';
+  f.context.weaponFrame.canStartWeaponAction = false; f.actor.dashCooldownTimer = 0;
+  f.state.localPlayerId = f.target.id = 'custom-local'; f.context.observation.targetId = f.target.id;
+  f.target.controller = 'remote'; f.target.lungeDir = { x: 1, y: 0, z: 0 }; f.target.vel = { x: 0, y: 0, z: 20 };
+  const result = f.resolve()!;
+  assert.equal(result.mobility?.kind, 'spatial-dodge'); assert.equal(Math.abs(result.mobility!.direction.x), 0);
+  assert.equal(Math.abs(result.mobility!.direction.z), 1);
+});
+
+test('main jump projection resets an earlier recovery clock after the caller readies its weapon', () => {
+  const f = fixture(); f.actor.weaponState = 'recovering'; f.actor.weaponPhaseElapsed = .4;
+  const decision = f.resolve()!;
+  assert.equal(decision.motion.weaponState, 'swing_up'); assert.equal(decision.motion.weaponTimer, 0);
+  assert.equal(f.actor.weaponPhaseElapsed, .4, 'projection leaves engine execution to the scheduler');
+});
+
+test('v5 retains prefix, rejected jump and counter order in a four-command sequence', () => {
+  const f = fixture(); f.actor.weapon = 'sword'; f.actor.weaponState = 'recovering'; f.actor.attackKind = 'slash';
+  f.actor.dashRemaining = .2; f.actor.dashDir = { x: 1, y: 0, z: 0 };
+  f.actor.hammerJumpPlanned = true; f.actor.hammerJumpType = 'defensive';
+  const decision = f.resolve()!;
+  stepSimulation(f.state, {}, { settings: f.state.settings, scriptedActorDecisions: { version: 'scripted-actor-decision-v1',
+    scriptedBots: f.authority, prepare: () => 'engagement', resolve: () => ({ kind: 'handled', action: idleAction(), ...decision,
+      commands: [{ kind: 'revert-weapon-feint' }, { kind: 'swap', weapon: 'hammer' }, ...decision.commands] }) } });
+  assert.equal(f.actor.weapon, 'hammer'); assert.equal(f.actor.weaponState, 'windup'); assert.equal(f.actor.attackKind, 'strike');
+  assert.equal(f.actor.hammerJumpPlanned, false); assert.equal(f.actor.hammerJumpsInAir, 0);
+});
+
+for (const kind of ['lunge', 'swap', 'hammer-jump'] as const) test(`v5 forbids ${kind} after a jump attempt`, () => {
+  const f = fixture();
+  const second = kind === 'lunge' ? { kind, targetId: f.target.id, direction: { x: 0, y: 0, z: 1 } }
+    : kind === 'swap' ? { kind, weapon: 'sword' as const } : { kind, jumpType: 'defensive' as const };
+  assert.throws(() => validateScriptedCombatInput(f.state, { version: 'scripted-combat-v5', scriptedBots: f.authority,
+    commands: { main_ai: [{ kind: 'hammer-jump', jumpType: 'defensive' }, second] } }, {}, f.state.settings,
+    { actorId: 'main_ai', mobility: false, dash: false }));
+});
+
+for (const version of ['scripted-combat-v4', 'scripted-combat-v5', 'scripted-combat-v6'] as const)
+  test(`combined jump mobility is explicitly versioned: ${version}`, () => {
+    const f = fixture();
+    const validate = () => validateScriptedCombatInput(f.state, { version, scriptedBots: f.authority,
+      commands: { main_ai: [{ kind: 'hammer-jump', jumpType: 'offensive', heading: { x: 0, y: 0, z: 1 } }] } }, {}, f.state.settings,
+      { actorId: 'main_ai', mobility: true, dash: false });
+    if (version === 'scripted-combat-v6') assert.doesNotThrow(validate); else assert.throws(validate);
+  });
+
+for (const kind of ['lunge', 'swap', 'sword', 'swipe'] as const) test(`v6 refuses ${kind} after a hammer opportunity`, () => {
+  const f = fixture();
+  const second = kind === 'lunge' ? { kind, targetId: f.target.id, direction: { x: 0, y: 0, z: 1 } }
+    : kind === 'swap' ? { kind, weapon: 'sword' as const }
+      : { kind: 'melee' as const, weapon: kind === 'sword' ? 'sword' as const : 'hammer' as const, swipe: kind === 'swipe' };
+  assert.throws(() => validateScriptedCombatInput(f.state, { version: 'scripted-combat-v6', scriptedBots: f.authority,
+    commands: { main_ai: [{ kind: 'melee', weapon: 'hammer', swipe: false }, second] } }, {}, f.state.settings,
+    { actorId: 'main_ai', mobility: false, dash: false }));
+});
+
+for (const phase of ['windup', 'active', 'recovering'] as const) test(`v6 cannot restart an existing ${phase} commitment`, () => {
+  const f = fixture(); f.actor.weaponState = phase; f.actor.attackKind = 'strike'; f.actor.weaponPhaseElapsed = .01;
+  stepCombatantWeapons(f.state, f.actor, idleAction(), f.state.settings, 0, [], 'intent', [
+    { kind: 'melee', weapon: 'hammer', swipe: false }, { kind: 'hammer-jump', jumpType: 'offensive' },
+    { kind: 'melee', weapon: 'hammer', swipe: false },
+  ], undefined, undefined, true, { sequentialOpportunities: true });
+  assert.equal(f.actor.weaponState, phase); assert.equal(f.actor.weaponPhaseElapsed, .01);
+  assert.equal(f.actor.lastHammerAttackTimeMs, undefined); assert.equal(!!f.actor.hammerJumpPlanned, false);
+});
+
+test('v6 main jump still refuses a dash that was already active at turn entry', () => {
+  const f = fixture(); f.actor.dashRemaining = .2;
+  stepCombatantWeapons(f.state, f.actor, idleAction(), f.state.settings, 0, [], 'intent', [
+    { kind: 'hammer-jump', jumpType: 'offensive' },
+  ], undefined, undefined, true, { sequentialOpportunities: true });
+  assert.equal(f.actor.weaponState, 'idle'); assert.equal(f.actor.hammerJumpPlanned, false);
+  assert.equal(f.actor.isJumping, false); assert.equal(f.actor.hammerJumpsInAir, 0);
+});
+
+for (const invalid of ['airborne', 'range', 'height'] as const) test(`airborne follow-up refuses invalid ${invalid}`, () => {
+  const f = fixture();
+  f.context.airborneOpportunity = { targetAirborne: true, movementComplexity: 80, resolvedDangerZone: 3,
+    tunedAnticipationFactor: 0, enemyInKillRange: false, verticalDeltaToTarget: 4 };
+  if (invalid === 'airborne') (f.context.airborneOpportunity as any).targetAirborne = undefined;
+  if (invalid === 'range') f.context.airborneOpportunity.resolvedDangerZone = Infinity;
+  if (invalid === 'height') f.context.airborneOpportunity.verticalDeltaToTarget = NaN;
+  assert.throws(f.resolve); assert.equal(f.draws(), 0);
+});

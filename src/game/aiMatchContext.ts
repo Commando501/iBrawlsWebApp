@@ -1,4 +1,6 @@
+import { isAIWeaponStrikeCommitted } from './aiTacticalWeaponSwap';
 import type { BotComboState } from './aiComboEngine';
+import { createGrifballTeamPlanState, resetGrifballTeamPlan, type GrifballTeamPlanState } from './aiGrifballTeamPlan';
 import type { BotCoordinatorState } from './aiBotCoordinator';
 import { createBotCoordinator, resetBotCoordinator } from './aiBotCoordinator';
 import type { BotPsychState } from './aiPsychologicalPressure';
@@ -7,6 +9,7 @@ import type { PlayerModel } from './aiPlayerModel';
 import type { BotCalibrationState } from './aiSkillCalibration';
 
 export interface AIMatchContext {
+  grifballTeamPlan: GrifballTeamPlanState;
   /** Per-player adaptive models keyed by combatant id (e.g. `player`). */
   playerModels: Map<string, PlayerModel>;
   /** Per-bot feint cooldown timers in seconds. */
@@ -25,6 +28,7 @@ export interface AIMatchContext {
 
 export function createAIMatchContext(): AIMatchContext {
   return {
+    grifballTeamPlan: createGrifballTeamPlanState(),
     playerModels: new Map(),
     feintCooldowns: new Map(),
     weaponSwapFeintTimers: new Map(),
@@ -36,6 +40,7 @@ export function createAIMatchContext(): AIMatchContext {
 }
 
 export function resetAIMatchContext(context: AIMatchContext): void {
+  resetGrifballTeamPlan(context.grifballTeamPlan);
   context.playerModels.clear();
   context.feintCooldowns.clear();
   context.weaponSwapFeintTimers.clear();
@@ -69,7 +74,7 @@ export function tickBotPsychState(
   return state;
 }
 
-export function tickFeintCooldown(context: AIMatchContext, botId: string, dt: number): void {
+export function tickFeintCooldown(context: Pick<AIMatchContext, 'feintCooldowns'>, botId: string, dt: number): void {
   const remaining = context.feintCooldowns.get(botId);
   if (remaining === undefined || remaining <= 0) {
     return;
@@ -90,7 +95,7 @@ export function startFeintCooldown(context: AIMatchContext, botId: string, durat
   context.feintCooldowns.set(botId, duration);
 }
 
-export function isWeaponSwapFeintActive(context: AIMatchContext, botId: string): boolean {
+export function isWeaponSwapFeintActive(context: Pick<AIMatchContext, 'weaponSwapFeintTimers'>, botId: string): boolean {
   return (context.weaponSwapFeintTimers.get(botId) ?? 0) > 0;
 }
 
@@ -98,14 +103,16 @@ export function startWeaponSwapFeint(context: AIMatchContext, botId: string, del
   context.weaponSwapFeintTimers.set(botId, delay);
 }
 
-/** Returns true when the revert timer just expired this tick. */
-export function tickWeaponSwapFeintTimer(context: AIMatchContext, botId: string, dt: number): boolean {
+/** Returns true once expiry can be consumed. An in-flight strike keeps an
+ * expired feint pending, so reverting cannot change its weapon before impact. */
+export function tickWeaponSwapFeintTimer(context: Pick<AIMatchContext, 'weaponSwapFeintTimers'>, botId: string, dt: number, canRevert = true): boolean {
   const remaining = context.weaponSwapFeintTimers.get(botId);
   if (remaining === undefined || remaining <= 0) {
     return false;
   }
   const next = remaining - dt;
   if (next <= 0) {
+    if (!canRevert) return false;
     context.weaponSwapFeintTimers.delete(botId);
     return true;
   }
@@ -113,11 +120,11 @@ export function tickWeaponSwapFeintTimer(context: AIMatchContext, botId: string,
   return false;
 }
 
-export function getBotComboState(context: AIMatchContext, botId: string): BotComboState | undefined {
+export function getBotComboState(context: Pick<AIMatchContext, 'comboState'>, botId: string): BotComboState | undefined {
   return context.comboState.get(botId);
 }
 
-export function setBotComboState(context: AIMatchContext, botId: string, state: BotComboState | null): void {
+export function setBotComboState(context: Pick<AIMatchContext, 'comboState'>, botId: string, state: BotComboState | null): void {
   if (!state) {
     context.comboState.delete(botId);
   } else {
@@ -125,6 +132,15 @@ export function setBotComboState(context: AIMatchContext, botId: string, state: 
   }
 }
 
-export function clearBotComboState(context: AIMatchContext, botId: string): void {
+export function clearBotComboState(context: Pick<AIMatchContext, 'comboState'>, botId: string): void {
   context.comboState.delete(botId);
+}
+
+/** The active flag is sampled before expiry. Combo arbitration deliberately sees
+ * that flag for this frame even when the weapon has just reverted. */
+export function advanceAIWeaponSwapFeint(context: Pick<AIMatchContext, 'weaponSwapFeintTimers'>,
+  botId: string, dt: number, activeWeapon: string, weaponState: string, hammerForbidden: boolean, isLunging = false) {
+  const swapFeintActive = isWeaponSwapFeintActive(context, botId);
+  const expired = tickWeaponSwapFeintTimer(context, botId, dt, !isLunging && !isAIWeaponStrikeCommitted(weaponState));
+  return { swapFeintActive, revert: expired && activeWeapon === 'sword' && !hammerForbidden };
 }

@@ -1,13 +1,19 @@
+import type { CustomMapData } from '../../types';
+import { resolveAIGroundState } from '../../game/aiGroundState';
+import { selectGrifballEscortEvasion } from '../../game/aiGrifballEvasion';
+import { selectGrifballRunnerEvasion } from '../../game/aiGrifballRunnerEvasion';
+import { createLiveGrifballTacticalSnapshot } from './grifballTeamPlanRuntime';
+import { finishAIHorizontalMotion, startAISpatialDodgeMotion } from '../../game/aiDashMotion';
+import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
+import { canApplyAITacticalWeaponSwap } from '../../game/aiTacticalWeaponSwap';
 import * as THREE from 'three';
-import { type AILungeOutcome } from '../../game/aiCombatDecision';
+import { resolveAICombatDangerZone, type AILungeOutcome } from '../../game/aiCombatDecision';
 import {
   getPincerApproachOffset,
   registerBotEngagement,
 } from '../../game/aiBotCoordinator';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import {
-  canAttemptChargeAbortFeint,
-  getApproachFeintWindow,
   getPlayerFeintMultiplier,
   rollFeintAttempt,
   rollFeintCooldownDuration,
@@ -18,32 +24,23 @@ import {
   startFeintCooldown,
   startWeaponSwapFeint,
   tickFeintCooldown,
-  tickWeaponSwapFeintTimer,
+  advanceAIWeaponSwapFeint,
 } from '../../game/aiMatchContext';
-import {
-  advanceAISlide,
-  getSlideSpeed,
-  shouldStartAISlide,
-} from '../../game/aiMovementMechanics';
-import {
-  accumulateStandoffTimer,
-  isInStandoffBand,
-  shouldForceStandoffCommit,
-} from '../../game/aiPsychologicalPressure';
 import {
   applyCalibrationMultipliers,
   tickCalibrationPendingCounter,
   tickCalibrationPendingDodge,
 } from '../../game/aiSkillCalibration';
-import { shouldAvoidCoinFlipTrade } from '../../game/aiTuning';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
+import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { type LoadedNeuralBrain } from '../../game/neuralBrainLoader';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant } from '../../types';
 import { resolveAIAirborneHammerOpportunityForCombatant } from './aiAirborneHammerOpportunityRuntime';
 import { resolvePreGroundMovementRecoveryForCombatant } from './aiAirborneRecoveryRuntime';
 import { syncAICombatantFrameToState, syncAICombatantPoseAndState } from './aiCombatantFrameSync';
-import { resolveAICombatRangeFrame } from './aiCombatRangeRuntime';
+import { resolveAIEngagementPreparation } from '../../game/aiEngagementPreparation';
+import { selectAIEngagementTarget } from '../../game/aiEngagementTarget';
 import { resolveAICombatTuningPreludeForCombatant } from './aiCombatTuningPreludeRuntime';
 import { resolveAIComboOrchestrationForCombatant } from './aiComboOrchestrationRuntime';
 import { shouldBlockCoordinatedAttackForFrame } from './aiCoordinationRuntime';
@@ -51,7 +48,6 @@ import { resolveAIDashMovementForCombatant } from './aiDashMovementRuntime';
 import {
   integrateTargetEngagementGravityForCombatant,
   normalizeTargetEngagementFrameState,
-  resolveCombatantCrouchPose,
   tickAIEngagementCooldowns,
 } from './aiEngagementFrameRuntime';
 import {
@@ -67,12 +63,12 @@ import { resolveAIGroundMovementPreludeForCombatant } from './aiGroundMovementPr
 import { resolveAILungeEvasionForCombatant } from './aiLungeEvasionRuntime';
 import { resolveNoTargetAIFrameForCombatant } from './aiNoTargetRuntime';
 import { resolvePostKillPressureForCombatant } from './aiPostKillPressureRuntime';
-import { resolveAIPressureStateForCombatant } from './aiPressureStateRuntime';
-import { finishAISwordLungeFrameForCombatant } from './aiSwordLungeFinishRuntime';
+import { finishAISwordLungeFrameForCombatant, finishTradedAISwordLungeForCombatant } from './aiSwordLungeFinishRuntime';
 import { resolveAISwordLungeFlightForCombatant } from './aiSwordLungeFlightRuntime';
 import { resolveAITargetPredictionFrame } from './aiTargetPredictionRuntime';
 import {
   initializeCombatantAITickDefaults,
+  pauseInactiveGrifballAI,
   tickCombatantInvulnerability,
 } from './aiTickState';
 import {
@@ -108,6 +104,7 @@ type MutableRef<T> = { current: T };
 type AISingleEntityUpdaterOptions = {
   stateRef: MutableRef<GrifballRuntimeState>;
   threeRef: MutableRef<GrifballThreeRefs>;
+  getActiveCustomMap: () => CustomMapData | null;
   playDash: () => void;
   playJump: () => void;
   playExplosion: () => void;
@@ -194,6 +191,7 @@ export function createAISingleEntityUpdaterForState({
       const pos = self.pos;
       const vel = self.vel;
       let yaw = self.yaw;
+      let newlyCommittedAimTarget: THREE.Vector3 | null = null;
       let activeWeapon = self.activeWeapon;
       let weaponState = self.weaponState || 'ready';
   
@@ -254,6 +252,12 @@ export function createAISingleEntityUpdaterForState({
       // aiDashDir setter copies into the main AI's Vector3 but assigns a fresh object on
       // a bot â€” matching each backing store's representation.
       const syncStateAndMesh = () => {
+        // Decisions may start a strike after the prediction prelude. Aim that
+        // first committed frame at the observed target, as later frames do.
+        if (newlyCommittedAimTarget && ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(self.weaponState ?? '')) {
+          const dx = newlyCommittedAimTarget.x - pos.x, dz = newlyCommittedAimTarget.z - pos.z;
+          if (dx !== 0 || dz !== 0) yaw = Math.atan2(-dx, -dz);
+        }
         syncAICombatantFrameToState({
           self,
           mesh: botMesh,
@@ -276,7 +280,7 @@ export function createAISingleEntityUpdaterForState({
         });
       };
   
-      const finishSwordLunge = (cooldownMultiplier = 1, outcome: AILungeOutcome = 'miss_timeout', targetId?: string) => {
+      const finishSwordLunge = (cooldownMultiplier = 1, outcome: AILungeOutcome = 'miss_timeout', targetId?: string, damageAlreadyRecorded = false) => {
         const lungeFinishFrame = finishAISwordLungeFrameForCombatant({
           state: s,
           self,
@@ -289,6 +293,7 @@ export function createAISingleEntityUpdaterForState({
           cooldownMultiplier,
           outcome,
           targetId,
+          damageAlreadyRecorded,
           recordCombatantObservation,
           recordBotDamageTag,
           tryEnterPressureState,
@@ -332,6 +337,10 @@ export function createAISingleEntityUpdaterForState({
               constrainCombatantToArena,
               areCombatantsHostile,
               finishSwordLunge,
+              finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
+                state: s, self: other, botId: other.id, targetId: attackerId,
+                recordCombatantObservation, recordBotDamageTag, tryEnterPressureState, tryStartComboOnHit,
+              }),
               executeCustomBotTrade: (
                 attackerBot: Combatant,
                 tradeTarget: { id: string },
@@ -348,6 +357,9 @@ export function createAISingleEntityUpdaterForState({
               pushStatsUpdate,
             });
             if (lungeFlightResult === 'trade_return') {
+              // Trade deaths retain this turn's completed AI clocks for respawn.
+              // Sync does not overwrite the death callback's HP or weapon state.
+              syncStateAndMesh();
               return;
             }
           } else {
@@ -513,6 +525,25 @@ export function createAISingleEntityUpdaterForState({
         return;
       }
   
+      if (pauseInactiveGrifballAI(s, self)) {
+        syncStateAndMesh();
+        return;
+      }
+
+      // Tick mobility/swap cooldowns even when team positioning returns before combat.
+      const advanceCombatCooldowns = () => {
+        const cooldownFrame = createAIEngagementFrameFromLocals({
+          pos, vel, aiState: state, timer, dashCooldownTimer, slideCooldownTimer, hammerJumpCooldownTimer,
+        });
+        tickAIEngagementCooldowns({ frame: cooldownFrame, self, botId, mainAIId: MAIN_AI_ID, dt });
+        ({ aiState: state, timer, dashCooldownTimer, slideCooldownTimer, hammerJumpCooldownTimer } =
+          applyAIEngagementFrameToLocals(cooldownFrame));
+      };
+      if (s.settings.gameMode === 'grifball') {
+        advanceCombatCooldowns();
+        canStartWeaponAction = canStartAIWeaponAction({ aiState: state, timer, swapCooldownTimer: self.swapCooldownTimer });
+      }
+
       const {
         difficulty,
         movementComplexity,
@@ -544,7 +575,7 @@ export function createAISingleEntityUpdaterForState({
         getMatchScoreContext,
       });
   
-      if (postKillPressure) {
+      if (postKillPressure && s.settings.gameMode !== 'grifball') {
         const postKillPressureFrame = createAIPostKillPressureFrameFromLocals({
           pos,
           vel,
@@ -605,6 +636,20 @@ export function createAISingleEntityUpdaterForState({
         botId,
         self,
         frame: primaryGrifballFrame,
+        tryRunnerEvasion: s.settings.gameMode === 'grifball' && !s.isMultiplayer ? movement => {
+          if (!(dashCooldownTimer <= 0)) return false;
+          const direction = selectGrifballRunnerEvasion({
+            snapshot: createLiveGrifballTacticalSnapshot(s, grifballEnemyGoalPos, getActiveCustomMap()),
+            assignment: s.aiMatchContext.grifballTeamPlan.assignments.get(botId), botId,
+            origin: pos, movement, distance: s.settings.dashDistance, duration: s.settings.dashDuration || .25,
+          });
+          if (!direction) return false;
+          const launch = { dashDir, dashRemaining, dashCooldownTimer };
+          startAISpatialDodgeMotion(s.settings, launch, direction);
+          ({ dashRemaining, dashCooldownTimer } = launch);
+          sfx.playDash();
+          return true;
+        } : undefined,
         alliesList,
         enemiesList,
         dt,
@@ -622,14 +667,17 @@ export function createAISingleEntityUpdaterForState({
       }
   
   
-      let target = getBestTacticalTarget(botId, pos, difficulty);
+      const teamAssignment = s.aiMatchContext.grifballTeamPlan.assignments.get(botId);
+      const assignmentThreat = teamAssignment
+        ? selectGrifballAssignmentThreat(teamAssignment, pos, s.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [])
+        : null;
+      self.pickupRequested = false;
+      const finishingMovement = self.isLunging || dashRemaining > 0 || slideActive;
       const pressureTargetId = self.aiPressureTargetId;
-      if (state === 'PRESSURING' && pressureTargetId) {
-        const lockedTarget = getTacticalTargetById(botId, pressureTargetId);
-        if (lockedTarget) {
-          target = lockedTarget;
-        }
-      }
+      const target = selectAIEngagementTarget({ hasAssignment: !!teamAssignment, assignmentThreat, finishingMovement,
+        aiState: state, pressureTargetId,
+        getById: id => getTacticalTargetById(botId, id),
+        getBest: () => getBestTacticalTarget(botId, pos, difficulty) });
   
       if (!target) {
         const noTargetFrame = createGrifballAIObjectiveFrameFromLocals({
@@ -642,7 +690,7 @@ export function createAISingleEntityUpdaterForState({
           slideActive,
           weaponState,
         });
-        const noTargetMode = resolveNoTargetAIFrameForCombatant({
+        resolveNoTargetAIFrameForCombatant({
           state: s,
           botId,
           self,
@@ -658,6 +706,9 @@ export function createAISingleEntityUpdaterForState({
             // Reload/recovery mirrors the player's configured mechanic settings exactly
             // (multiplier 1) - see cooldownMult below.
             finishSwordLunge(1, 'target_dead', undefined);
+            // The no-target frame was captured before cancellation. Retain the
+            // new reload locals through airborne/support recovery and final sync.
+            Object.assign(noTargetFrame, { aiState: state, timer, weaponState });
           },
           recoverCombatantAltitude,
           constrainCombatantToArena,
@@ -671,24 +722,14 @@ export function createAISingleEntityUpdaterForState({
           applyGrifballAIObjectiveFrameToLocals(noTargetFrame));
         self.pickupRequested = pickupRequested;
   
-        if (noTargetMode === 'airborne' || noTargetMode === 'support_objective') {
-          syncStateAndMesh();
-          return;
-        }
-  
-        syncAICombatantPoseAndState({
-          self,
-          mesh: botMesh,
-          pos,
-          vel,
-          yaw,
-          aiState: state,
-          timer: 0,
-        });
+        // Spawn guarding must also retain this frame's mobility cooldowns and
+        // cancelled commitment, just like airborne and objective recovery.
+        syncStateAndMesh();
         return;
       }
   
       registerBotEngagement(s.aiMatchContext.coordinator, botId, target.id);
+      if (!['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState)) newlyCommittedAimTarget = target.pos;
   
       // SPAWN_GUARDING is only driven by the post-kill-pressure / no-target early-return
       // paths above. If we reach here we have a live target and those holds have expired,
@@ -733,6 +774,7 @@ export function createAISingleEntityUpdaterForState({
         tunedAnticipationFactor,
         predictionAnticipationBonus: tuning.predictionAnticipationBonus,
         predictionLandingWeight: tuning.predictionLandingWeight,
+        aimAtCurrentTarget: ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState),
         movementComplexity,
         activeCustomMap,
         arenaRadius: s.arenaRadius,
@@ -741,7 +783,7 @@ export function createAISingleEntityUpdaterForState({
       yaw = targetYaw;
       botMesh.rotation.y = yaw;
   
-      const playerDangerZone = s.settings.attackRange + s.settings.attackRadius * 0.85;
+      const playerDangerZone = resolveAICombatDangerZone(s.settings, target.activeWeapon);
       const aiReach = s.settings.attackRange + s.settings.attackRadius * 0.75;
   
       // Playstyle combat spacing adjustments
@@ -771,65 +813,23 @@ export function createAISingleEntityUpdaterForState({
         tickCalibrationPendingCounter(s.aiMatchContext, botId, dt, targetIsLunging, tuning.counterResolveDelay, tuning.calibrationWindowSize);
       }
   
-      // Sliding forces a crouch posture, like the player's slide.
-      const isCrouching = resolveCombatantCrouchPose({
-        aiState: state,
-        swayTimer,
-        slideActive,
-        movementComplexity,
+      const engagementPreparation = resolveAIEngagementPreparation({
+        aiState: state, swayTimer, slideActive, movementComplexity, weaponState, coordCommitTimer,
+        psychEnabled, standoffTimer: psychState.standoffTimer, resolvedDangerZone, dt,
+        standoffRangeMinOffset: tuning.standoffRangeMinOffset, standoffRangeMaxOffset: tuning.standoffRangeMaxOffset,
+        range: { botPos: pos, botVel: vel, botIsJumping: self.isJumping, targetIsCrouching: target.isCrouching,
+          targetHp: target.hp, targetProtected: targetIsProtected, predictedTargetPos, distanceToTarget,
+          activeWeapon, attackRange: s.settings.attackRange, attackRadius: s.settings.attackRadius, resolvedAiReach },
       });
-  
-      if (isCrouching && botMesh.userData.modelSystem !== 'v3') {
-        botMesh.scale.set(1, 0.65, 1);
-      } else {
-        botMesh.scale.set(1, 1, 1);
-      }
+      const { isCrouching } = engagementPreparation;
+      if (isCrouching && botMesh.userData.modelSystem !== 'v3') botMesh.scale.set(1, 0.65, 1);
+      else botMesh.scale.set(1, 1, 1);
       self.isCrouching = isCrouching;
-  
-      // Resolve weapon-aware body distance and stationary swing commit bands.
-      const {
-        combatDistanceToTarget,
-        verticalDeltaToTarget,
-        attackDistanceToTarget,
-        guaranteedKillRange,
-        enemyInKillRange,
-        selfGrounded,
-        stationarySwingReach,
-      } = resolveAICombatRangeFrame({
-        botPos: pos,
-        botVel: vel,
-        botIsCrouching: isCrouching,
-        botIsJumping: self.isJumping,
-        targetIsCrouching: target.isCrouching,
-        targetHp: target.hp,
-        targetProtected: targetIsProtected,
-        predictedTargetPos,
-        distanceToTarget,
-        activeWeapon,
-        attackRange: s.settings.attackRange,
-        attackRadius: s.settings.attackRadius,
-        resolvedAiReach,
-      });
-  
-      const inCoordCommitBand =
-        attackDistanceToTarget <= resolvedAiReach + 0.5 &&
-        weaponState === 'ready' &&
-        !targetIsProtected &&
-        target.hp > 0;
-      if (inCoordCommitBand) {
-        coordCommitTimer += dt;
-      } else {
-        coordCommitTimer = 0;
-      }
-  
-      if (psychEnabled) {
-        psychState.standoffTimer = accumulateStandoffTimer(
-          psychState.standoffTimer,
-          isInStandoffBand(distanceToTarget, resolvedDangerZone, tuning.standoffRangeMinOffset, tuning.standoffRangeMaxOffset),
-          dt
-        );
-      }
-  
+      const { combatDistanceToTarget, verticalDeltaToTarget, attackDistanceToTarget, guaranteedKillRange,
+        enemyInKillRange, selfGrounded, stationarySwingReach } = engagementPreparation.range;
+      coordCommitTimer = engagementPreparation.coordCommitTimer;
+      psychState.standoffTimer = engagementPreparation.standoffTimer;
+
       // Adaptive learning: sample this acting combatant's OWN position (edge proximity) and
       // approach speed into its own model, so opponents that target it can read those
       // tendencies. Both samplers self-throttle (position rate-limits to ~0.25s).
@@ -840,29 +840,11 @@ export function createAISingleEntityUpdaterForState({
         botVel: vel,
         targetId: target.id,
         distanceToTarget,
-        nowSeconds: performance.now() / 1000,
+        nowSeconds: simulationSeconds(),
         mapShape: activeCustomMap?.mapShape,
       });
   
-      const cooldownFrame = createAIEngagementFrameFromLocals({
-        pos,
-        vel,
-        aiState: state,
-        timer,
-        dashCooldownTimer,
-        slideCooldownTimer,
-        hammerJumpCooldownTimer,
-      });
-      tickAIEngagementCooldowns({
-        frame: cooldownFrame,
-        self,
-        botId,
-        mainAIId: MAIN_AI_ID,
-        dt,
-      });
-      ({ aiState: state, timer, dashCooldownTimer, slideCooldownTimer, hammerJumpCooldownTimer } =
-        applyAIEngagementFrameToLocals(cooldownFrame));
-  
+      if (s.settings.gameMode !== 'grifball') advanceCombatCooldowns();
       const aiContext = s.aiMatchContext;
       tickFeintCooldown(aiContext, botId, dt);
   
@@ -909,11 +891,12 @@ export function createAISingleEntityUpdaterForState({
         timeRemaining: self.aiPostLungeDecisionTimer || 0,
       } : null;
   
+      const carrierInterception = s.settings.gameMode === 'grifball' && !!s.grifball.ball.holderId &&
+        teamAssignment?.tuning?.enabled === true && teamAssignment.defense?.targetId === s.grifball.ball.holderId &&
+        (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.mode === 'last-defender' || teamAssignment.defense.emergency);
       const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
-        if (tacticalWeapon === activeWeapon) return;
-        if (tacticalWeapon === 'sword' && swordForbidden) return;
-        if (tacticalWeapon === 'hammer' && hammerForbidden) return;
-        if (!force && (self.swapLockoutTimer ?? 0) > 0) return;
+        if (!canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon: tacticalWeapon, weaponState,
+          swordForbidden, hammerForbidden, force, isLunging: self.isLunging, swapLockoutTimer: self.swapLockoutTimer ?? 0 })) return;
         swapCombatantWeapon(self, tacticalWeapon, true);
         activeWeapon = tacticalWeapon;
         weaponState = 'ready';
@@ -931,7 +914,7 @@ export function createAISingleEntityUpdaterForState({
         weaponState = 'ready';
       };
   
-      if (tickWeaponSwapFeintTimer(aiContext, botId, dt)) {
+      if (advanceAIWeaponSwapFeint(aiContext, botId, dt, activeWeapon, weaponState, hammerForbidden, !!self.isLunging).revert) {
         revertWeaponSwapFeint();
       }
   
@@ -962,6 +945,8 @@ export function createAISingleEntityUpdaterForState({
         activeWeapon,
         canStartWeaponAction,
         tacticalWeapon: tacticalDecision.weapon,
+        preserveReadyStrike: carrierInterception && target.id === s.grifball.ball.holderId &&
+          enemyInKillRange && selfGrounded && !slideActive && dashRemaining <= 0,
         swapFeintActive,
         targetProtected: targetIsProtected,
         targetAirborne,
@@ -1120,6 +1105,10 @@ export function createAISingleEntityUpdaterForState({
           constrainCombatantToArena,
           areCombatantsHostile,
           finishSwordLunge,
+          finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
+            state: s, self: other, botId: other.id, targetId: attackerId,
+            recordCombatantObservation, recordBotDamageTag, tryEnterPressureState, tryStartComboOnHit,
+          }),
           executeCustomBotTrade: (
             attackerBot: Combatant,
             tradeTarget: { id: string },
@@ -1137,6 +1126,9 @@ export function createAISingleEntityUpdaterForState({
         });
   
         if (lungeFlightResult === 'trade_return') {
+          // Trade deaths retain this turn's completed AI clocks for respawn.
+          // Sync does not overwrite the death callback's HP or weapon state.
+          syncStateAndMesh();
           return;
         }
       } else {
@@ -1298,6 +1290,8 @@ export function createAISingleEntityUpdaterForState({
           return;
         }
         if (groundAttackOpportunity.mode === 'return') {
+          // Launch skips further movement, but must retain this turn's AI clocks.
+          syncStateAndMesh();
           return;
         }
   
@@ -1307,351 +1301,36 @@ export function createAISingleEntityUpdaterForState({
         const coordLateral = getPincerApproachOffset(coordRoleInput);
         const totalApproachLateral = approachLateral + coordLateral;
   
-        if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
-          if (startAIHammerJump(self, pos, vel, lookHeading, 'offensive')) {
-            weaponState = 'swing_up';
-          }
-        }
-  
-        if (state === 'APPROACHING') {
-          // Begin a slide as a committed ground gap-closer when conditions allow.
-          if (!slideActive && shouldStartAISlide({
-            enableSlide: s.settings.enableSlide,
-            slideCooldownRemaining: slideCooldownTimer,
-            state,
-            distanceToTarget,
-            engageRange: resolvedDangerZone,
-            movementComplexity,
-            isDashing: false,
-            isSliding: slideActive,
-            targetProtected: targetIsProtected,
-            minComplexity: tuning.slideMinComplexity,
-            minGap: tuning.slideMinGap,
-            maxGap: tuning.slideMaxGap,
-            triggerChance: tuning.slideTriggerChance,
-          })) {
-            slideActive = true;
-            slideDistanceTraveled = 0;
-            isSprinting = false;
-            sfx.playDash();
-          }
-  
-          if (slideActive) {
-            const slideSpeed = getSlideSpeed(s.settings.speedSlide, tuning.aiBaseGroundSpeed);
-            vel.copy(spatialLookHeading).multiplyScalar(slideSpeed);
-            pos.addScaledVector(vel, dt);
-            const advanced = advanceAISlide({
-              distanceTraveled: slideDistanceTraveled,
-              slideSpeed,
-              dt,
-              maxSlideDistance: s.settings.slideDistance ?? 8.0,
-            });
-            slideDistanceTraveled = advanced.distanceTraveled;
-            // End the slide if it is exhausted, the toggle was turned off, or we have
-            // closed into engage range.
-            if (advanced.finished || !s.settings.enableSlide || distanceToTarget <= (resolvedDangerZone + 1.5)) {
-              slideActive = false;
-              slideCooldownTimer = s.settings.slideCooldown ?? 1.5;
-            }
-          } else {
-            vel.copy(spatialLookHeading).multiplyScalar(4.0 * (s.settings.speedForward / 100) * spatialBias.aggressionMult * sprintMult);
-            if (totalApproachLateral !== 0) {
-              vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.9);
-            }
-            pos.addScaledVector(vel, dt);
-          }
-  
-          if (!slideActive && distanceToTarget <= (resolvedDangerZone + 3.2)) {
-            state = 'SIDE_STEPPING';
-            timer = Math.random() * 0.7 + 0.3;
-          }
-        }
-        else if (state === 'SIDE_STEPPING') {
-          const dir = Math.sin(swayTimer * 2.2) > 0 ? 1 : -1;
-          vel.copy(sidewayHeading).multiplyScalar(3.2 * (s.settings.speedSide / 100) * dir);
-          
-          // Hold inside our own weapon's hit range, not just outside the enemy danger
-          // zone. With a hammer, resolvedDangerZone + 1.2 (~8.6m default) sits *beyond*
-          // the hammer's own ~7m sphere reach, so two hammer bots would otherwise park
-          // where neither can land a blow and circle forever. Capping to just inside
-          // guaranteedKillRange makes them close until a swing actually connects.
-          const desiredDist = activeWeapon === 'sword'
-            ? (maxLungeRange * 0.7)
-            : Math.min(resolvedDangerZone + 1.2, guaranteedKillRange - 0.6);
-          const approachBias = distanceToTarget > desiredDist ? 0.35 : -0.45;
-          const approachSpeed = approachBias * 1.5 * (approachBias > 0 ? (s.settings.speedForward / 100) : (s.settings.speedBackward / 100));
-          const approachAggression = approachBias > 0 ? spatialBias.aggressionMult : 1;
-          vel.addScaledVector(spatialLookHeading, approachSpeed * approachAggression);
-          if (totalApproachLateral !== 0) {
-            vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.35);
-          }
-          
-          if (isCrouching) {
-            vel.multiplyScalar(0.45);
-          }
-          pos.addScaledVector(vel, dt);
-  
-          if (dashCooldownTimer <= 0 && distanceToTarget < (resolvedDangerZone + 2.0) && Math.random() < 0.015 && (movementComplexity >= 40)) {
-            const sideDir = Math.random() > 0.5 ? 1 : -1;
-            dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
-            dashRemaining = s.settings.dashDuration || 0.25;
-            dashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-          }
-  
-          if (target.weaponState === 'swing_up' && !targetIsProtected) {
-            const reactChance = tuning.reactChanceBase + (tunedAnticipationFactor * tuning.reactChanceAnticipation);
-            
-            const myHP = self.hp;
-            const targetHP = target.hp;
-            const shouldAvoidTrade = shouldAvoidCoinFlipTrade({
-              difficulty,
-              playstyleFactor,
-              botHP: myHP,
-              targetHP,
-              multipliers: matchMultipliers,
-            });
-  
-            if (shouldAvoidTrade || Math.random() < reactChance) {
-              state = 'DANCING_BACKWARD';
-              timer = effectiveReactionLatency + 0.35;
-  
-              if (dashCooldownTimer <= 0) {
-                dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-                dashRemaining = s.settings.dashDuration || 0.25;
-                dashCooldownTimer = s.settings.dashCooldown || 2.0;
-                sfx.playDash();
-              }
-            }
-          }
-  
-          if (targetIsProtected) {
-            state = 'DANCING_BACKWARD';
-            timer = 0.5;
-          }
-  
-          if (timer <= 0) {
-            const forceStandoffCommit = psychEnabled && shouldForceStandoffCommit(
-              psychState.standoffTimer,
-              playstyleFactor,
-              matchMultipliers,
-              Math.random()
-            );
-            if (forceStandoffCommit && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-              state = 'CHARGE_ATTACK';
-              psychState.standoffTimer = 0;
-            } else if (attackDistanceToTarget <= (resolvedAiReach + 0.5) && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-              state = 'CHARGE_ATTACK';
-            } else {
-              state = 'DANCING_FORWARD';
-              timer = Math.random() * 0.5 + 0.25;
-            }
-          }
-        } 
-        else if (state === 'DANCING_FORWARD') {
-          const approachFeintWindow = getApproachFeintWindow({
-            timerRemaining: timer,
-            targetProtected: targetIsProtected,
-            feintEligible: feintChance > 0,
-          });
-          if (approachFeintWindow !== null && tryFeintRoll(approachFeintWindow)) {
-            state = 'DANCING_BACKWARD';
-            timer = tuning.approachFeintBackTimer;
-            commitFeint();
-            vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
-            pos.addScaledVector(vel, dt);
-          } else {
-          const forwardSpeed = feintLungeFakeout ? 6.2 : 5.0;
-          vel.copy(lookHeading).multiplyScalar(forwardSpeed * (s.settings.speedForward / 100) * sprintMult);
-          if (totalApproachLateral !== 0) {
-            vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.5);
-          }
-          pos.addScaledVector(vel, dt);
-  
-          if (target.weaponState === 'swing_up' && !targetIsProtected) {
-            state = 'DANCING_BACKWARD';
-            timer = 0.65;
-            if (dashCooldownTimer <= 0 && Math.random() < 0.7) {
-              dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-              dashRemaining = s.settings.dashDuration || 0.25;
-              dashCooldownTimer = s.settings.dashCooldown || 2.0;
-              sfx.playDash();
-            }
-          } else if (attackDistanceToTarget <= resolvedAiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-            state = 'CHARGE_ATTACK';
-          }
-  
-          if (targetIsProtected) {
-            state = 'DANCING_BACKWARD';
-            timer = 0.5;
-          }
-  
-          if (timer <= 0) {
-            state = 'SIDE_STEPPING';
-            timer = Math.random() * 0.7 + 0.3;
-          }
-          }
-        } 
-        else if (state === 'DANCING_BACKWARD') {
-          vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
-          pos.addScaledVector(vel, dt);
-  
-          if (target.weaponState === 'recovering' && attackDistanceToTarget <= (resolvedAiReach + 2.5) && !targetIsProtected) {
-            state = 'CHARGE_ATTACK';
-          }
-  
-          if (timer <= 0) {
-            state = 'SIDE_STEPPING';
-            timer = 0.4;
-          }
-        } 
-        else if (state === 'CHARGE_ATTACK') {
-          if (
-            canAttemptChargeAbortFeint({
-              targetWeaponState: target.weaponState,
-              dashCooldownRemaining: dashCooldownTimer,
-              targetProtected: targetIsProtected,
-              feintEligible: feintChance > 0,
-            }) &&
-            tryFeintRoll(0.7)
-          ) {
-            const sideDir = Math.random() > 0.5 ? 1 : -1;
-            dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
-            dashRemaining = s.settings.dashDuration || 0.25;
-            dashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-            state = 'SIDE_STEPPING';
-            timer = tuning.chargeAbortSidestepTimer;
-            commitFeint();
-          } else {
-          if (dashCooldownTimer <= 0 && (movementComplexity >= 40) && !targetIsProtected) {
-            dashDir.copy(lookHeading).normalize();
-            dashRemaining = s.settings.dashDuration || 0.25;
-            dashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-          }
-  
-          vel.copy(lookHeading).multiplyScalar(6.5 * (s.settings.speedForward / 100));
-          pos.addScaledVector(vel, dt);
-  
-          if (attackDistanceToTarget <= stationarySwingReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
-            if (isCoordAttackBlocked()) {
-              state = 'SIDE_STEPPING';
-              timer = 0.25;
-            } else {
-            const myHP = self.hp;
-            const targetHP = target.hp;
-            const shouldAvoidTrade = shouldAvoidCoinFlipTrade({
-              difficulty,
-              playstyleFactor,
-              botHP: myHP,
-              targetHP,
-              multipliers: matchMultipliers,
-              requireTargetOnCooldown: true,
-              targetOnCooldown: isTargetOnCooldown(target),
-            });
-            const targetIsSwinging = target.weaponState === 'swing_up' || target.weaponState === 'swing_down';
-  
-            if (shouldAvoidTrade && targetIsSwinging) {
-              state = 'DANCING_BACKWARD';
-              timer = 0.6;
-              if (dashCooldownTimer <= 0) {
-                dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-                dashRemaining = s.settings.dashDuration || 0.25;
-                dashCooldownTimer = s.settings.dashCooldown || 2.0;
-                sfx.playDash();
-              }
-            } else {
-              state = 'COOLDOWN';
-              timer = resolveScaledAIWeaponReloadTime(s.settings, activeWeapon, cooldownMult);
-              triggerCombatantAttack(self, activeWeapon);
-            }
-            }
-          } else if (attackDistanceToTarget > (resolvedAiReach + 2.0) || targetIsProtected) {
-            state = 'SIDE_STEPPING';
-            timer = 0.4;
-          }
-          }
-        }
-        else if (state === 'PRESSURING') {
-          const pressureFrame = resolveAIPressureStateForCombatant({
-            state: s,
-            frame: {
-              pos,
-              vel,
-              dashDir,
-              aiState: state,
-              timer,
-              dashRemaining,
-              dashCooldownTimer,
-              weaponState,
-            },
-            botId,
-            target,
-            pressureTargetId,
-            attackDistanceToTarget,
-            resolvedAiReach,
-            maxLungeRange,
-            effectivePressureAggression,
-            lookHeading,
-            sidewayHeading,
-            totalApproachLateral,
-            dt,
-            sprintMult,
-            activeWeapon,
-            stationarySwingReach,
-            minLungeRange,
-            targetProtected: targetIsProtected,
-            canStartWeaponAction,
-            cooldownMultiplier: cooldownMult,
-            playstyleFactor,
-            clearPressureTarget,
-            isCoordAttackBlocked,
-            triggerCombatantAttack: (weapon) => triggerCombatantAttack(self, weapon),
-            playDash: () => sfx.playDash(),
-          });
-          state = pressureFrame.aiState;
-          timer = pressureFrame.timer;
-          dashRemaining = pressureFrame.dashRemaining;
-          dashCooldownTimer = pressureFrame.dashCooldownTimer;
-          weaponState = pressureFrame.weaponState;
-        }
-        else if (state === 'COOLDOWN') {
-          vel.copy(lookHeading).multiplyScalar(-1.5 * (s.settings.speedBackward / 100));
-          if (isCrouching) {
-            vel.multiplyScalar(0.45);
-          }
-          pos.addScaledVector(vel, dt);
-  
-          if (timer <= 0) {
-            state = 'SIDE_STEPPING';
-            timer = 0.7;
-          }
-        }
-  
-        // Restore vertical velocity after FSM horizontal movement calculations
-        vel.y = savedVelY;
+        const groundStateFrame = resolveAIGroundState({
+          settings: s.settings,
+          frame: { pos, vel, dashDir, aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer,
+            slideActive, slideDistanceTraveled, slideCooldownTimer, isSprinting },
+          target, botId, botHP: self.hp, pressureTargetId, distanceToTarget, attackDistanceToTarget,
+          resolvedDangerZone, resolvedAiReach, guaranteedKillRange, maxLungeRange, minLungeRange,
+          stationarySwingReach, activeWeapon, canStartWeaponAction, targetIsProtected, difficulty,
+          movementComplexity, playstyleFactor, tunedAnticipationFactor, effectiveReactionLatency,
+          effectivePressureAggression, cooldownMult, dt, swayTimer, savedVelY, lookHeading,
+          spatialLookHeading, sidewayHeading, spatialBias, totalApproachLateral, sprintMult,
+          isCrouching, feintChance, feintLungeFakeout, psychEnabled, psychState, matchMultipliers, tuning,
+          startOffensiveHammerJump: heading => startAIHammerJump(self, pos, vel, heading, 'offensive'),
+          playDash: () => sfx.playDash(), tryFeintRoll, commitFeint,
+          isTargetOnCooldown: () => isTargetOnCooldown(target), isCoordAttackBlocked, clearPressureTarget,
+          triggerCombatantAttack: weapon => triggerCombatantAttack(self, weapon),
+          selectDefensiveDashDirection: s.settings.gameMode === 'grifball' && !s.isMultiplayer ? (origin, fallback) =>
+            selectGrifballEscortEvasion({ snapshot: createLiveGrifballTacticalSnapshot(s, grifballEnemyGoalPos, getActiveCustomMap()),
+              assignment: s.aiMatchContext.grifballTeamPlan.assignments.get(botId), botId, origin, fallback,
+              distance: s.settings.dashDistance, duration: s.settings.dashDuration || .25 }) : undefined,
+        });
+        ({ aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer, slideActive,
+          slideDistanceTraveled, slideCooldownTimer, isSprinting } = groundStateFrame);
       }
   
+      }
       constrainCombatantToArena(pos, vel);
-  
-      // Unified vertical handling for every combatant: while airborne we keep the
-      // integrated vel.y; once grounded (and not lunging) we zero it and clear the jump
-      // flag. (For the main AI vel === mai()!.vel, so this is the same data either way.)
-      if (state !== 'LUNGING' && !(self.isJumping || pos.y > 0.01)) {
-        vel.y = 0;
-        self.isJumping = false;
-      }
-  
-      const isAirborne = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;
-  
-      if (isAirborne && state !== 'LUNGING') {
-        // Heavily restrict horizontal movement in the air so they don't "walk across the air"
-        vel.x *= 0.05;
-        vel.z *= 0.05;
-      }
-  
+
+      finishAIHorizontalMotion(self, { pos, vel, aiState: state });
+
+      // Flight completion also writes back its reload, pressure and AI clocks.
       syncStateAndMesh();
-    };
     };
 }

@@ -18,6 +18,7 @@ export function resolveAITargetPredictionFrame({
   movementComplexity,
   activeCustomMap,
   arenaRadius,
+  aimAtCurrentTarget = false,
 }: {
   botPos: THREE.Vector3;
   target: Pick<TacticalTargetCandidate, 'pos' | 'vel'>;
@@ -28,6 +29,8 @@ export function resolveAITargetPredictionFrame({
   movementComplexity: number;
   activeCustomMap: CustomMapData | null;
   arenaRadius: number;
+  /** Committed melee follows the current target rather than a movement forecast. */
+  aimAtCurrentTarget?: boolean;
 }): {
   predictedTargetPos: THREE.Vector3;
   targetAirborne: boolean;
@@ -57,6 +60,9 @@ export function resolveAITargetPredictionFrame({
 
   clampVectorXZToArenaBounds({ pos: movementTargetPos, activeCustomMap, arenaRadius });
 
+  // A movement forecast can cross behind the attacker before the actual target.
+  // Keep steering prediction while aiming committed melee at the visible target.
+  const aimTargetPos = aimAtCurrentTarget ? target.pos : movementTargetPos;
   const toTarget = movementTargetPos.clone().sub(botPos);
   toTarget.y = 0;
 
@@ -66,6 +72,6 @@ export function resolveAITargetPredictionFrame({
     movementTargetPos,
     toTarget,
     distanceToTarget: toTarget.length(),
-    yaw: getYawForHeading(toTarget.x, toTarget.z),
+    yaw: getYawForHeading(aimTargetPos.x - botPos.x, aimTargetPos.z - botPos.z),
   };
 }

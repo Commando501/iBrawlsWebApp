@@ -109,7 +109,8 @@ export function getGrifballRunnerSteering(
   myPos: { x: number; z: number },
   goalPos: { x: number; z: number },
   enemies: { x: number; z: number }[],
-  avoidRadius: number = 8.0
+  avoidRadius: number = 8.0,
+  closeThreatRadius: number = 0
 ): { x: number; z: number } {
   const dx = goalPos.x - myPos.x;
   const dz = goalPos.z - myPos.z;
@@ -142,6 +143,14 @@ export function getGrifballRunnerSteering(
 
         avoidX += px * steerSign * weight * 3.5;
         avoidZ += pz * steerSign * weight * 3.5;
+        count++;
+      } else if (dist < closeThreatRadius) {
+        // A close flank can attack while we pass even after it leaves the
+        // forward cone. Open lateral clearance without steering back toward
+        // pursuit; a directly trailing opponent adds no sideways detour.
+        const weight = (closeThreatRadius - dist) / closeThreatRadius * 3.5;
+        avoidX -= (toEnemyX - dot * dirX) * weight;
+        avoidZ -= (toEnemyZ - dot * dirZ) * weight;
         count++;
       }
     }

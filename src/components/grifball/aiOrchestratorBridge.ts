@@ -90,6 +90,7 @@ export function runGrifballAIOrchestratorForState({
   tickAIOrchestrator(
     {
       roster: state.otherPlayers,
+      rosterLocked: state.settings.gameMode === 'grifball' && state.grifballLabRosterLocked,
       settings: state.settings,
       legacy,
       offlineBotCount,

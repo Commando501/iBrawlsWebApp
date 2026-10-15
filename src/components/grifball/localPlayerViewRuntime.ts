@@ -1,3 +1,5 @@
+import { createVanguardSwordView, animateVanguardSwordView } from '../iron-vanguard/ironVanguardSwordView';
+import { createIronVanguardModel, isIronVanguardLoadout, animateIronVanguard } from '../iron-vanguard/ironVanguardModel';
 import * as THREE from 'three';
 import {
   buildGravityHammerModel,
@@ -24,9 +26,9 @@ const buildLocalFirstPersonWeaponSet = (
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {}
 ) => ({
-  hammer: loadout?.modelSystem === 'v3' ? buildV3HammerModel(hue, { ...v3Options, loadout }) : buildGravityHammerModel(hue, loadout?.hammerPreset),
-  sword: loadout?.modelSystem === 'v3' ? buildV3SwordModel(hue, { ...v3Options, loadout }) : buildKatarSwordModel(hue, loadout?.swordPreset),
-  pistol: loadout?.modelSystem === 'v3' ? buildV3PistolModel(hue, { ...v3Options, loadout }) : buildPistolModel(hue),
+  hammer: isIronVanguardLoadout(loadout) ? createIronVanguardModel(hue, true) : loadout?.modelSystem === 'v3' && !isIronVanguardLoadout(loadout) ? buildV3HammerModel(hue, { ...v3Options, loadout }) : buildGravityHammerModel(hue, loadout?.hammerPreset),
+  sword: isIronVanguardLoadout(loadout) ? createVanguardSwordView(hue) : loadout?.modelSystem === 'v3' && !isIronVanguardLoadout(loadout) ? buildV3SwordModel(hue, { ...v3Options, loadout }) : buildKatarSwordModel(hue, loadout?.swordPreset),
+  pistol: loadout?.modelSystem === 'v3' && !isIronVanguardLoadout(loadout) ? buildV3PistolModel(hue, { ...v3Options, loadout }) : buildPistolModel(hue),
 });
 
 const applyLocalV3FirstPersonPose = (
@@ -64,7 +66,7 @@ export function buildLocalPlayerViewForRefs({
   const firstPersonRig = createFirstPersonWeaponRig(camera);
   const weaponGrip = firstPersonRig.attachments.firstPersonWeaponGrip;
   const localWeapons = buildLocalFirstPersonWeaponSet(adminSettings.playerHue, playerLoadout, v3Options);
-  const isV3Loadout = playerLoadout?.modelSystem === 'v3';
+  const isV3Loadout = playerLoadout?.modelSystem === 'v3' && !isIronVanguardLoadout(playerLoadout);
 
   const playerHammer = localWeapons.hammer;
   if (isV3Loadout) {
@@ -73,11 +75,14 @@ export function buildLocalPlayerViewForRefs({
     playerHammer.position.set(0.35, -0.38, -0.65);
     playerHammer.rotation.set(0.15, -0.3, -0.15);
   }
+  if (isIronVanguardLoadout(playerLoadout)) animateIronVanguard(playerHammer, { weaponState: 'ready', weaponTimer: 0, dt: 0 });
   attachToAttachmentPoint(weaponGrip, playerHammer);
   refs.playerHammer = playerHammer;
 
   const playerSword = localWeapons.sword;
-  if (isV3Loadout) {
+  if (isIronVanguardLoadout(playerLoadout)) {
+    animateVanguardSwordView(playerSword, { weaponState: 'ready', weaponTimer: 0 });
+  } else if (isV3Loadout) {
     applyLocalV3FirstPersonPose(playerSword, 'sword');
   } else {
     playerSword.position.set(0.35, -0.38, -0.5);

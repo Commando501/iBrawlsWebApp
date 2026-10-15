@@ -1,3 +1,4 @@
+import { animateIronVanguard, isIronVanguardModel } from '../iron-vanguard/ironVanguardModel';
 import * as THREE from 'three';
 import {
   applyWeaponPose,
@@ -217,4 +218,8 @@ export function updatePlayerHammerAnimationForState({
   } else {
     playerHammer.visible = false;
   }
+  if (isIronVanguardModel(playerHammer)) animateIronVanguard(playerHammer, {
+    activeWeapon: state.activeWeapon, weaponState: state.pWeaponState,
+    weaponTimer: state.pWeaponTimer, dt, settings: state.settings,
+  });
 }

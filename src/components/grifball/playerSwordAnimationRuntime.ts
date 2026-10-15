@@ -1,3 +1,5 @@
+import { animateVanguardSwordView } from '../iron-vanguard/ironVanguardSwordView';
+import { applyVanguardFirstPersonSword } from '../iron-vanguard/ironVanguardSword';
 import * as THREE from 'three';
 import {
   applyWeaponPose,
@@ -8,7 +10,7 @@ import {
 import { type GrifballRuntimeState } from './runtimeState';
 import { sampleV3GameplayFirstPersonWeaponPose as sampleV3FirstPersonWeaponPose } from './v3GameplayAnimation';
 
-const applyV3SwordPose = (
+const applyImportedSwordPose = (
   playerSword: THREE.Group,
   state: GrifballRuntimeState,
   weaponState: string,
@@ -16,8 +18,14 @@ const applyV3SwordPose = (
   isLunging: boolean,
   idleXBob: number,
   idleYBob: number,
-  idleZRotBob: number
+  idleZRotBob: number,
+  dt: number
 ): void => {
+  if (playerSword.userData.ironVanguardSword) {
+    const animate = playerSword.userData.ironVanguardSwordView ? animateVanguardSwordView : applyVanguardFirstPersonSword;
+    animate(playerSword, { dt, weaponState, weaponTimer, isLunging, lungeHit: state.swordLungeHit, lungeTime: isLunging ? state.lungeTimer : undefined, settings: { ...state.settings, swordSlashReload: state.pSwordRecoverDuration ?? state.settings.swordSlashReload } }, [idleXBob, idleYBob, idleZRotBob]);
+    return;
+  }
   const pose = sampleV3FirstPersonWeaponPose({
     activeWeapon: 'sword',
     weaponState,
@@ -49,15 +57,15 @@ export function updatePlayerSwordAnimationForState({
   applyPlayerSwordSlashImpact: () => boolean;
 }): boolean {
   if (!playerSword) return false;
-  const isV3Sword = playerSword.userData.modelSystem === 'v3';
+  const isImportedSword = playerSword.userData.modelSystem === 'v3' || playerSword.userData.ironVanguardSword === true;
 
   if (state.activeWeapon === 'sword') {
     playerSword.visible = true;
     if (playerHammer) playerHammer.visible = false;
 
     if (state.isLunging) {
-      if (isV3Sword) {
-        applyV3SwordPose(playerSword, state, 'ready', state.lungeTimer, true, idleXBob, idleYBob, idleZRotBob);
+      if (isImportedSword) {
+        applyImportedSwordPose(playerSword, state, 'ready', state.lungeTimer, true, idleXBob, idleYBob, idleZRotBob, dt);
       } else if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
         const pose = getFirstPersonSwordLungePose(state.lungeTimer, idleYBob);
         pose.position[2] += idleXBob;
@@ -70,8 +78,8 @@ export function updatePlayerSwordAnimationForState({
       state.pSwordReady = false;
       state.pSwordCooldown = 0.5;
     } else if (state.pSwordState === 'ready') {
-      if (isV3Sword) {
-        applyV3SwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob);
+      if (isImportedSword) {
+        applyImportedSwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob, dt);
       } else {
         playerSword.position.set(0.35, -0.38 + idleYBob, -0.5 + idleXBob);
         playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
@@ -91,8 +99,8 @@ export function updatePlayerSwordAnimationForState({
       const duration = state.settings.swordSlashSpeed ?? 0.22;
       const pct = Math.min(1.0, state.pSwordTimer / duration);
 
-      if (isV3Sword) {
-        applyV3SwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob);
+      if (isImportedSword) {
+        applyImportedSwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob, dt);
       } else if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerSword, getFirstPersonSwordSlashPose('slash', pct, idleYBob));
       } else {
@@ -121,8 +129,8 @@ export function updatePlayerSwordAnimationForState({
       const recover = state.pSwordRecoverDuration ?? 0.6;
       const pct = Math.min(1.0, state.pSwordTimer / recover);
 
-      if (isV3Sword) {
-        applyV3SwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob);
+      if (isImportedSword) {
+        applyImportedSwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob, dt);
       } else if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerSword, getFirstPersonSwordSlashPose('recover', pct, idleYBob));
       } else {

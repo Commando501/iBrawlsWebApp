@@ -23,6 +23,7 @@ interface AISwordLungeFinishContext {
   cooldownMultiplier?: number;
   outcome?: AILungeOutcome;
   targetId?: string;
+  damageAlreadyRecorded?: boolean;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
   recordBotDamageTag: (botId: string, targetId: string) => void;
   tryEnterPressureState: (
@@ -51,13 +52,8 @@ const getCombatantTargetVitals = (
     };
   }
 
-  if (targetId === 'main_ai') {
-    return {
-      hp: state.aiHP ?? 0,
-      invulnerabilityTimer: state.aiInvulnerabilityTimer ?? 0,
-    };
-  }
-
+  // main_ai is a roster combatant too. Legacy aliases are not updated by
+  // damage/trades and must not decide whether this target survived contact.
   const target = state.otherPlayers.get(targetId);
   return {
     hp: target?.hp ?? 0,
@@ -65,7 +61,14 @@ const getCombatantTargetVitals = (
   };
 };
 
-export function finishAISwordLungeForCombatant({
+export function finishAISwordLungeForCombatant(context: AISwordLungeFinishContext & { frame: AISwordLungeFinishFrame }): void {
+  finishAISwordLungeWithVitals({ ...context,
+    targetVitals: context.targetId ? getCombatantTargetVitals(context.state, context.targetId) : { hp: 0, invulnerabilityTimer: 0 } });
+}
+
+/** Shared completion owner. Each host supplies its current post-contact vitals;
+ * callbacks own pressure, combo selection and adaptive observations. */
+export function finishAISwordLungeWithVitals({
   state,
   self,
   frame,
@@ -73,14 +76,21 @@ export function finishAISwordLungeForCombatant({
   cooldownMultiplier = 1,
   outcome = 'miss_timeout',
   targetId,
+  damageAlreadyRecorded = false,
   recordCombatantObservation,
   recordBotDamageTag,
   tryEnterPressureState,
   tryStartComboOnHit,
-}: AISwordLungeFinishContext & {
+  targetVitals,
+}: Omit<AISwordLungeFinishContext, 'state' | 'self'> & {
+  state: Pick<GrifballRuntimeState, 'settings'>;
+  self: Pick<Combatant, 'isLunging' | 'swordLungeHit' | 'weaponState' | 'aiLastLungeOutcome' | 'aiLastLungeTargetId' |
+    'aiPostLungeDecisionTimer' | 'lungeStartPos' | 'aiTimer' | 'isJumping' | 'vel'>;
+  targetVitals: { hp: number; invulnerabilityTimer: number };
   frame: AISwordLungeFinishFrame;
 }): void {
   self.isLunging = false;
+  self.swordLungeHit = outcome === 'hit';
   self.weaponState = 'ready';
   self.aiLastLungeOutcome = outcome;
   self.aiLastLungeTargetId = targetId;
@@ -94,9 +104,8 @@ export function finishAISwordLungeForCombatant({
   let enteredPressure = false;
   if (outcome === 'hit' && targetId) {
     recordBotDamageTag(botId, targetId);
-    recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
+    if (!damageAlreadyRecorded) recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
 
-    const targetVitals = getCombatantTargetVitals(state, targetId);
     enteredPressure = tryEnterPressureState(
       botId,
       targetId,
@@ -156,4 +165,13 @@ export function finishAISwordLungeFrameForCombatant({
     timer: frame.timer,
     weaponState: frame.weaponState,
   };
+}
+
+/** Finish another roster actor's traded flight before its next AI tick can hit again. */
+export function finishTradedAISwordLungeForCombatant(context: Omit<AISwordLungeFinishContext, 'outcome' | 'damageAlreadyRecorded'>): void {
+  const self = context.self;
+  const result = finishAISwordLungeFrameForCombatant({ ...context, outcome: 'hit', damageAlreadyRecorded: true,
+    pos: self.pos, vel: self.vel, aiState: self.aiState, timer: self.aiTimer ?? 0, weaponState: self.weaponState ?? 'ready' });
+  self.aiState = result.aiState;
+  self.aiTimer = result.timer;
 }

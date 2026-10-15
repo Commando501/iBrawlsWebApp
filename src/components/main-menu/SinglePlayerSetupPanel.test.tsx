@@ -56,7 +56,7 @@ test('SinglePlayerSetupPanel exposes Sandbox Experience and AI Behavior Editor m
   assert.match(html, /Sandbox Experience[\s\S]*AI Behavior Editor[\s\S]*Training Sandbox Setup[\s\S]*Tournament Setup/);
 });
 
-test('SinglePlayerSetupPanel exposes V3 sandbox preview for non-admin players', () => {
+test('SinglePlayerSetupPanel exposes Iron Vanguard for non-admin players', () => {
   const html = renderToStaticMarkup(
     <SinglePlayerSetupPanel
       {...baseSinglePlayerProps()}
@@ -67,12 +67,12 @@ test('SinglePlayerSetupPanel exposes V3 sandbox preview for non-admin players', 
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /Version 3 Preview/);
+  assert.match(html, /Version 3 Iron Vanguard/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('SinglePlayerSetupPanel exposes V3 sandbox preview for admin players', () => {
+test('SinglePlayerSetupPanel exposes Iron Vanguard for admin players', () => {
   const html = renderToStaticMarkup(
     <SinglePlayerSetupPanel
       {...baseSinglePlayerProps()}
@@ -84,8 +84,8 @@ test('SinglePlayerSetupPanel exposes V3 sandbox preview for admin players', () =
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /aria-pressed="true"[^>]*>Version 3 Preview/);
-  assert.match(html, /Preview V3 player and bot models with Blender-authored movement and weapon animations in local training/);
+  assert.match(html, /aria-pressed="true"[^>]*>Version 3 Iron Vanguard/);
+  assert.match(html, /Use Iron Vanguard for you and every AI bot/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });

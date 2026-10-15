@@ -130,6 +130,9 @@ export function updatePlayerPhysicsForState({
   pushStatsUpdate: () => void;
   onPauseToggle: () => void;
 }): void {
+  if (isMultiplayer && (isPaused || (state.settings.gameMode === 'grifball' && state.grifball.phase !== 'playing'))) {
+    state.playerVel.set(0, 0, 0); return;
+  }
   applyMobileRightJoystickLookForState({
     state,
     joystick: mobileRightJoystick,
@@ -138,7 +141,8 @@ export function updatePlayerPhysicsForState({
     dt,
   });
 
-  const gamepad = getPrimaryGamepad();
+  // Frozen validation fixtures own all local inputs, including on machines with a connected controller.
+  const gamepad = state.grifballValidationSlots ? null : getPrimaryGamepad();
   applyGamepadLookForState({
     state,
     gamepad,

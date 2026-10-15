@@ -332,6 +332,8 @@ export function buildExposedTuneDefaults(): Partial<UniversalSettings> {
   return seed;
 }
 
+const TUNE_SETTING_BINDINGS = Object.entries(AI_TUNE_SETTING_KEYS) as [keyof AIBehaviorTuning, keyof UniversalSettings][];
+
 /**
  * Resolve the effective behavior tuning by overlaying any `settings.aiTune*`
  * overrides on top of the defaults. A field falls back to its default whenever
@@ -342,12 +344,13 @@ export function resolveBehaviorTuning(settings: Partial<UniversalSettings> | und
     return { ...DEFAULT_AI_BEHAVIOR_TUNING };
   }
   const resolved = { ...DEFAULT_AI_BEHAVIOR_TUNING };
-  (Object.keys(AI_TUNE_SETTING_KEYS) as (keyof AIBehaviorTuning)[]).forEach((field) => {
-    const settingKey = AI_TUNE_SETTING_KEYS[field];
+  // Reuse the fixed field mapping, but read current settings on every call so
+  // in-place editor changes and removed overrides take effect immediately.
+  for (const [field, settingKey] of TUNE_SETTING_BINDINGS) {
     const override = settings[settingKey];
     if (typeof override === 'number' && Number.isFinite(override)) {
       resolved[field] = override;
     }
-  });
+  }
   return resolved;
 }

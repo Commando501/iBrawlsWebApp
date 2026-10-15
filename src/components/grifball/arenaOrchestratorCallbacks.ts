@@ -64,16 +64,20 @@ export function createArenaOrchestratorCallbacksForState({
     const fallback = resolveActiveSpawnPoints(activeCustomMap, spawnPoints);
     const used: THREE.Vector3[] = [];
 
-    const playerSpawn = getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, fallback, used);
-    state.playerPos.copy(playerSpawn);
-    state.playerVel.set(0, 0, 0);
-    state.yaw = playerSpawn.spawnYaw ?? getInwardSpawnYaw(playerSpawn);
-    used.push(playerSpawn.clone());
+    // An observer is a camera, not a participant reserving a team spawn.
+    if (!state.isObserverMode) {
+      const playerSpawn = getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, fallback, used, state.isMultiplayer ? Math.floor(state.multiplayerSpawnSlot / 2) : 0);
+      state.playerPos.copy(playerSpawn);
+      state.playerVel.set(0, 0, 0);
+      state.yaw = playerSpawn.spawnYaw ?? getInwardSpawnYaw(playerSpawn);
+      used.push(playerSpawn.clone());
+    }
 
     for (const bot of state.otherPlayers.values()) {
-      if (bot.controller !== 'ai') continue;
+      if (bot.controller !== 'ai' || bot.isObserver) continue;
       const team = bot.team || 'red';
       const spawn = getGrifballTeamSpawn(activeCustomMap, team, fallback, used);
+      bot.lastSwordAttackTime = bot.lastHammerAttackTime = 0;
       bot.pos.copy(spawn);
       bot.vel.set(0, 0, 0);
       bot.yaw = spawn.spawnYaw ?? getInwardSpawnYaw(spawn);
@@ -94,7 +98,7 @@ export function createArenaOrchestratorCallbacksForState({
     const updateData = data?.controller === 'ai'
       ? {
           ...data,
-          visualModelPolicy: data.visualModelPolicy ?? getVisualModelPolicy(),
+          visualModelPolicy: getVisualModelPolicy(),
         }
       : data;
 

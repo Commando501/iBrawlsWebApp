@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import {
   type CharacterLoadout,
   DEFAULT_LOADOUT,
@@ -35,7 +36,16 @@ export function loadStoredPlayerLoadout(storage: LoadoutStorage = localStorage):
 
 export function normalizeStoredPlayerLoadout(value: unknown): CharacterLoadout {
   const sanitized = sanitizeCharacterLoadoutForNetwork(value) as CharacterLoadout | undefined;
+  if (sanitized?.modelSystem === 'v3' || sanitized?.characterAsset === 'iron-vanguard') {
+    return resolveLoadoutForVisualPolicy({ visualModelPolicy: 'v3', loadout: sanitized });
+  }
   return sanitized ? { ...DEFAULT_LOADOUT, ...sanitized } : DEFAULT_LOADOUT;
+}
+
+// Storage loaders parse fresh objects. Preserve identity when their contents have
+// not changed: the game scene uses the loadout as an initialization dependency.
+export function retainUnchangedCustomization<T>(current: T, stored: T): T {
+  return JSON.stringify(current) === JSON.stringify(stored) ? current : stored;
 }
 
 export function useCustomizationState() {
@@ -55,9 +65,12 @@ export function useCustomizationState() {
 
   useEffect(() => {
     const refreshStoredCustomization = () => {
-      setPlayerLoadout(loadStoredPlayerLoadout());
-      setCustomArmorCatalog(loadCustomArmorCatalog());
-      setV3SuitProfileCatalog(loadV3SuitProfileCatalog());
+      const storedLoadout = loadStoredPlayerLoadout();
+      const storedArmorCatalog = loadCustomArmorCatalog();
+      const storedSuitCatalog = loadV3SuitProfileCatalog();
+      setPlayerLoadout(current => retainUnchangedCustomization(current, storedLoadout));
+      setCustomArmorCatalog(current => retainUnchangedCustomization(current, storedArmorCatalog));
+      setV3SuitProfileCatalog(current => retainUnchangedCustomization(current, storedSuitCatalog));
     };
 
     const handleStorage = (event: StorageEvent) => {
