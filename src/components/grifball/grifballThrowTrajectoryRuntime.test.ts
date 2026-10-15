@@ -34,26 +34,20 @@ test('updateGrifballThrowTrajectoryVisualForState uses configured color and thic
 
   assert.ok(refs.grifballThrowTrajectoryLine);
   assert.equal(refs.grifballThrowTrajectoryLine.visible, true);
-  assert.ok(refs.grifballThrowTrajectoryDashes);
-  assert.equal(refs.grifballThrowTrajectoryDashes.visible, true);
-  assert.ok(refs.grifballThrowTrajectoryDashes.children.length >= 8);
-  const firstDash = refs.grifballThrowTrajectoryDashes.children[0];
-  assert.ok(firstDash instanceof THREE.Mesh);
-  assert.ok(firstDash.geometry instanceof THREE.CylinderGeometry);
-  assert.ok(firstDash.material instanceof THREE.MeshBasicMaterial);
-  assert.equal(firstDash.material.color.getHexString(), '00ff88');
-  assert.equal(firstDash.geometry.parameters.radiusTop, 0.011);
+  assert.equal(refs.grifballThrowTrajectoryLine.material.color.getHexString(), '00ff88');
+  assert.ok(Math.abs(refs.grifballThrowTrajectoryLine.material.linewidth - 2.2) < 1e-6);
+  assert.equal(refs.grifballThrowTrajectoryLine.material.worldUnits, false);
+  assert.equal(refs.grifballThrowTrajectoryLine.material.alphaToCoverage, true);
   assert.ok(refs.grifballThrowTrajectoryMarker);
   assert.equal(refs.grifballThrowTrajectoryMarker.visible, true);
   assert.ok(refs.grifballThrowTrajectoryMarker.material instanceof THREE.MeshBasicMaterial);
   assert.equal(refs.grifballThrowTrajectoryMarker.material.color.getHexString(), '00ff88');
   assert.equal(scene.children.includes(refs.grifballThrowTrajectoryLine), true);
-  assert.equal(scene.children.includes(refs.grifballThrowTrajectoryDashes), true);
+  assert.equal(scene.children.length, 2);
 
   updateGrifballThrowTrajectoryVisualForState({ state, refs, chargingHolderId: null });
 
   assert.equal(refs.grifballThrowTrajectoryLine?.visible, false);
-  assert.equal(refs.grifballThrowTrajectoryDashes?.visible, false);
   assert.equal(refs.grifballThrowTrajectoryMarker?.visible, false);
 
   disposeGrifballThrowTrajectoryVisualForRefs(refs);
@@ -154,19 +148,15 @@ test('throw preview follows the animated grip while preserving the predicted lan
   const landing = refs.grifballThrowTrajectoryMarker!.position.clone();
   for (const grip of [new THREE.Vector3(0.4, 1.6, 0.2), new THREE.Vector3(0.6, 1.9, 0.3)]) {
     updateGrifballThrowTrajectoryVisualForState({ state, refs, chargingHolderId: 'player', visualOrigin: grip });
-    const points = refs.grifballThrowTrajectoryLine!.geometry.getAttribute('position');
+    const points = refs.grifballThrowTrajectoryLine!.geometry.getAttribute('instanceStart');
     assert.ok(new THREE.Vector3().fromBufferAttribute(points, 0).distanceTo(grip) < 1e-6);
     assert.ok(refs.grifballThrowTrajectoryMarker!.position.distanceTo(landing) < 1e-6);
-    const segments = refs.grifballThrowTrajectoryDashes!.children as THREE.Mesh<THREE.CylinderGeometry>[];
-    assert.equal(segments.length, points.count - 1);
-    for (let index = 0; index < segments.length; index += 1) {
-      const segment = segments[index];
-      segment.updateMatrixWorld(true);
-      const start = new THREE.Vector3(0, -segment.geometry.parameters.height / 2, 0).applyMatrix4(segment.matrixWorld);
-      const end = new THREE.Vector3(0, segment.geometry.parameters.height / 2, 0).applyMatrix4(segment.matrixWorld);
-      assert.ok(start.distanceTo(new THREE.Vector3().fromBufferAttribute(points, index)) < 1e-5);
-      assert.ok(end.distanceTo(new THREE.Vector3().fromBufferAttribute(points, index + 1)) < 1e-5);
-      assert.equal(segment.geometry.parameters.radiusTop, 0.007);
+    // Away from walls, the whole arc has constant acceleration: no hand-to-path kink.
+    const vectors = Array.from({ length: points.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(points, i));
+    const acceleration = vectors[2].clone().add(vectors[0]).addScaledVector(vectors[1], -2);
+    for (let index = 2; index < vectors.length - 1; index += 1) {
+      const nextAcceleration = vectors[index + 1].clone().add(vectors[index - 1]).addScaledVector(vectors[index], -2);
+      assert.ok(nextAcceleration.distanceTo(acceleration) < 1e-5, 'arc must remain parabolic through the hand transition');
     }
   }
   disposeGrifballThrowTrajectoryVisualForRefs(refs);

@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import {
   BALL_REST_Y,
   predictThrowTrajectory,
@@ -15,7 +18,7 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
 const TRAJECTORY_COLOR = '#ff2b2b';
-const TRAJECTORY_SAMPLES = 32;
+const TRAJECTORY_SAMPLES = 128;
 const TRAJECTORY_Y_OFFSET = 0.05;
 const THROW_START_HEIGHT = 1.1;
 
@@ -80,30 +83,19 @@ function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
   material.dispose();
 }
 
-function disposeObjectGeometryAndMaterial(object: THREE.Object3D): void {
-  const mesh = object as THREE.Mesh;
-  if (mesh.geometry) mesh.geometry.dispose();
-  if (mesh.material) disposeMaterial(mesh.material);
-}
-
-function clearTrajectoryDashGroup(group: THREE.Group): void {
-  for (const child of group.children) {
-    disposeObjectGeometryAndMaterial(child);
-  }
-  group.clear();
-}
-
 function ensureThrowTrajectoryVisuals(refs: GrifballThreeRefs): void {
   if (!refs.scene) return;
 
   if (!refs.grifballThrowTrajectoryLine) {
-    const line = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({
+    const line = new Line2(
+      new LineGeometry(),
+      new LineMaterial({
         color: TRAJECTORY_COLOR,
-        linewidth: 1,
+        linewidth: 1.4,
+        worldUnits: false,
+        alphaToCoverage: true,
         transparent: true,
-        opacity: 0.95,
+        opacity: 1,
         depthTest: false,
         depthWrite: false,
       })
@@ -112,14 +104,6 @@ function ensureThrowTrajectoryVisuals(refs: GrifballThreeRefs): void {
     line.renderOrder = 70;
     refs.scene.add(line);
     refs.grifballThrowTrajectoryLine = line;
-  }
-
-  if (!refs.grifballThrowTrajectoryDashes) {
-    const dashes = new THREE.Group();
-    dashes.frustumCulled = false;
-    dashes.renderOrder = 72;
-    refs.scene.add(dashes);
-    refs.grifballThrowTrajectoryDashes = dashes;
   }
 
   if (!refs.grifballThrowTrajectoryMarker) {
@@ -148,8 +132,10 @@ function applyThrowTrajectoryStyle(
   thickness: number
 ): void {
   const line = refs.grifballThrowTrajectoryLine;
-  if (line?.material instanceof THREE.LineBasicMaterial) {
+  if (line) {
     line.material.color.set(color);
+    // Keep the existing stored thickness scale, rendered as a uniform screen-space width.
+    line.material.linewidth = Math.max(1, thickness * 100);
   }
 
   const marker = refs.grifballThrowTrajectoryMarker;
@@ -165,7 +151,6 @@ function applyThrowTrajectoryStyle(
 
 export function hideGrifballThrowTrajectoryVisualForRefs(refs: GrifballThreeRefs): void {
   if (refs.grifballThrowTrajectoryLine) refs.grifballThrowTrajectoryLine.visible = false;
-  if (refs.grifballThrowTrajectoryDashes) refs.grifballThrowTrajectoryDashes.visible = false;
   if (refs.grifballThrowTrajectoryMarker) refs.grifballThrowTrajectoryMarker.visible = false;
 }
 
@@ -176,58 +161,11 @@ export function disposeGrifballThrowTrajectoryVisualForRefs(refs: GrifballThreeR
     disposeMaterial(refs.grifballThrowTrajectoryLine.material);
     refs.grifballThrowTrajectoryLine = null;
   }
-  if (refs.grifballThrowTrajectoryDashes) {
-    refs.grifballThrowTrajectoryDashes.parent?.remove(refs.grifballThrowTrajectoryDashes);
-    clearTrajectoryDashGroup(refs.grifballThrowTrajectoryDashes);
-    refs.grifballThrowTrajectoryDashes = null;
-  }
   if (refs.grifballThrowTrajectoryMarker) {
     refs.grifballThrowTrajectoryMarker.parent?.remove(refs.grifballThrowTrajectoryMarker);
     refs.grifballThrowTrajectoryMarker.geometry.dispose();
     disposeMaterial(refs.grifballThrowTrajectoryMarker.material);
     refs.grifballThrowTrajectoryMarker = null;
-  }
-}
-
-function addTrajectorySegment(
-  group: THREE.Group,
-  start: THREE.Vector3,
-  end: THREE.Vector3,
-  radius: number,
-  color: string
-): void {
-  const delta = end.clone().sub(start);
-  const length = delta.length();
-  if (length <= 0.0001) return;
-
-  const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, length, 12, 1, false),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.92,
-      depthTest: false,
-      depthWrite: false,
-    })
-  );
-  mesh.position.copy(start).addScaledVector(delta, 0.5);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 72;
-  group.add(mesh);
-}
-
-function rebuildTrajectorySegments(
-  group: THREE.Group,
-  points: THREE.Vector3[],
-  radius: number,
-  color: string
-): void {
-  clearTrajectoryDashGroup(group);
-  if (points.length < 2) return;
-
-  for (let index = 1; index < points.length; index += 1) {
-    addTrajectorySegment(group, points[index - 1], points[index], radius, color);
   }
 }
 
@@ -252,9 +190,8 @@ export function updateGrifballThrowTrajectoryVisualForState({
 
   ensureThrowTrajectoryVisuals(refs);
   const line = refs.grifballThrowTrajectoryLine;
-  const dashes = refs.grifballThrowTrajectoryDashes;
   const marker = refs.grifballThrowTrajectoryMarker;
-  if (!line || !dashes || !marker) return;
+  if (!line || !marker) return;
   const color = resolveTrajectoryLineColor(state.settings);
   const thickness = resolveTrajectoryLineThickness(state.settings);
   applyThrowTrajectoryStyle(refs, color, thickness);
@@ -265,19 +202,18 @@ export function updateGrifballThrowTrajectoryVisualForState({
     arenaBounds: arenaBounds ?? { arenaRadius: state.arenaRadius },
   }).map((point) => new THREE.Vector3(point.x, point.y + TRAJECTORY_Y_OFFSET, point.z));
 
-  // Join the animated grip to the physical arc without moving its landing/bounce prediction.
+  // A linear offset over the whole flight preserves the parabolic curvature and landing.
+  // Pulling only the first few samples to the hand creates a visible S-bend.
   if (visualOrigin) {
     const offset = visualOrigin.clone().sub(points[0]);
-    for (let index = 0; index < 4; index += 1) {
-      points[index].addScaledVector(offset, 1 - THREE.MathUtils.smoothstep(index, 0, 4));
+    for (let index = 0; index < points.length; index += 1) {
+      points[index].addScaledVector(offset, 1 - index / (points.length - 1));
     }
   }
 
   line.geometry.dispose();
-  line.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  line.geometry = new LineGeometry().setPositions(points.flatMap(point => [point.x, point.y, point.z]));
   line.visible = true;
-  rebuildTrajectorySegments(dashes, points, thickness / 2, color);
-  dashes.visible = true;
 
   const landing = points[points.length - 1];
   marker.position.set(landing.x, BALL_REST_Y + TRAJECTORY_Y_OFFSET, landing.z);

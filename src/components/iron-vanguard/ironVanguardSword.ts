@@ -526,15 +526,14 @@ export function applyVanguardSword(
 export function applyVanguardFirstPersonSword(
   root: THREE.Group,
   input: VanguardSwordInput,
-  bob = [0, 0, 0],
+  _bob = [0, 0, 0],
 ) {
   const pose = sampleVanguardSword({ ...input, localRecovery: true });
   root.position.set(
     0.3 + pose.offset.x,
-    -0.34 + pose.offset.y + bob[1],
-    -0.52 + pose.offset.z + bob[0],
+    -0.34 + pose.offset.y,
+    -0.52 + pose.offset.z,
   );
   root.quaternion.copy(pose.rotation).multiply(referenceRotation);
-  root.rotateZ(bob[2]);
   root.userData.ironVanguardSwordPhase = pose.phase;
 }
