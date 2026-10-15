@@ -74,6 +74,7 @@ function validateAsset(value: GLTF) {
 interface Runtime {
   disposed: boolean;
   firstPerson: boolean;
+  firstPersonHoldRotation: THREE.Quaternion;
   hue: number;
   hammer: THREE.Group;
   scene?: THREE.Group;
@@ -127,6 +128,7 @@ export function createIronVanguardModel(
     facingFrame,
     disposed: false,
     firstPerson,
+    firstPersonHoldRotation: new THREE.Quaternion(),
     hue,
     hammer,
     bones: {},
@@ -277,6 +279,12 @@ function attachAsset(root: THREE.Group, value: GLTF) {
   runtime.action.clampWhenFinished = true;
   runtime.action.play();
   seek(root, 0);
+  if (runtime.firstPerson) {
+    const handle = runtime.bones.weapon_hammer.getWorldPosition(new THREE.Vector3());
+    const head = runtime.bones.weapon_hammer_tip.getWorldPosition(new THREE.Vector3());
+    const axis = root.worldToLocal(head).sub(root.worldToLocal(handle)).normalize();
+    runtime.firstPersonHoldRotation.setFromUnitVectors(axis, new THREE.Vector3(0, 1, 0));
+  }
   runtime.restHand
     .copy(localBoneQuaternion(root, runtime.bones.RightHand))
     .invert();
@@ -420,8 +428,18 @@ export function animateIronVanguard(
   if (!runtime.scene) return true;
   runtime.hammer.visible = activeWeapon === "hammer";
   if (runtime.firstPerson) {
-    root.position.set(0.45, -1.65, -0.4);
-    root.rotation.set(0, 0, 0);
+    // Park the heavy head beside the sightline; ease back onto the authored
+    // attack path during wind-up, then settle into the side hold on recovery.
+    const holdWeight =
+      1 - THREE.MathUtils.smoothstep(frame, 0, 24) +
+      THREE.MathUtils.smoothstep(frame, 42, 70);
+    // Straighten the handle around its head so the upright hold retains its
+    // right-side framing. The authored third-person skeleton stays untouched.
+    root.worldToLocal(runtime.bones.weapon_hammer_tip.getWorldPosition(worldPosition));
+    root.quaternion.identity().slerp(runtime.firstPersonHoldRotation, holdWeight);
+    root.position.set(0.45 + 0.30 * holdWeight, -1.65 - 0.12 * holdWeight, -0.4);
+    root.position.add(worldPosition);
+    root.position.sub(worldPosition.applyQuaternion(root.quaternion));
     root.scale.setScalar(1);
     return true;
   }

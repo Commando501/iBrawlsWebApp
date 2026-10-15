@@ -38,7 +38,6 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import {
   hideGrifballThrowTrajectoryVisualForRefs,
-  updateGrifballThrowTrajectoryVisualForState,
 } from './grifballThrowTrajectoryRuntime';
 import { resolveHeldGrifballBallVisualPosition } from './grifballBallCarryVisuals';
 import { updateV3GameplayBall } from './v3GameplayBall';
@@ -594,16 +593,4 @@ function renderGrifballObjective({ state, refs, ballMeshRef, ballChargingRef, dt
     updateV3GameplayBall(state, refs, mesh, dt, localPlayerModelSystem);
   }
 
-  const chargingHolderId =
-    ballChargingRef.current && g.ball.holderId === 'player'
-      ? 'player'
-      : g.ball.holderId && (state.otherPlayers.get(g.ball.holderId)?.grifballPassCharge ?? 0) > 0
-        ? g.ball.holderId
-        : null;
-  updateGrifballThrowTrajectoryVisualForState({
-    state,
-    refs,
-    chargingHolderId,
-    arenaBounds: activeCustomMap ?? { arenaRadius: state.arenaRadius },
-  });
 }

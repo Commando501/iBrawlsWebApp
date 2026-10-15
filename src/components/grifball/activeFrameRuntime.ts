@@ -1,6 +1,8 @@
 import { isOnlineGrifballAuthority } from './onlineGrifballRuntime';
 import { prepareIronVanguardBallVisuals, finishIronVanguardBallVisuals } from "./ironVanguardBallRuntime";
 import * as THREE from 'three';
+import type { BallArenaBounds } from '../../game/grifballBall';
+import { updateGrifballThrowTrajectoryVisualForState } from './grifballThrowTrajectoryRuntime';
 import { type ReplayFile } from '../../types';
 import {
   buildGrifbSecretSyncPayload,
@@ -20,6 +22,7 @@ export function advanceGrifballFrameForState({
   ballMeshRef,
   ballChargingRef,
   ballChargeTimerRef,
+  arenaBounds,
   dt,
   isPlaying,
   isPausedRef,
@@ -56,6 +59,7 @@ export function advanceGrifballFrameForState({
   ballMeshRef: MutableRef<THREE.Mesh | null>;
   ballChargingRef: MutableRef<boolean>;
   ballChargeTimerRef: MutableRef<number>;
+  arenaBounds?: BallArenaBounds | null;
   dt: number;
   isPlaying: boolean;
   isPausedRef: MutableRef<boolean>;
@@ -156,6 +160,19 @@ export function advanceGrifballFrameForState({
   if (!isMultiplayer || isOnlineGrifballAuthority(state)) reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
 
   finishIronVanguardBallVisuals(state, refs, ballMeshRef.current, dt);
+  const holderId = state.grifball.ball.holderId;
+  const chargingHolderId = ballChargingRef.current && holderId === 'player'
+    ? 'player'
+    : holderId && (state.otherPlayers.get(holderId)?.grifballPassCharge ?? 0) > 0
+      ? holderId
+      : null;
+  updateGrifballThrowTrajectoryVisualForState({
+    state,
+    refs,
+    chargingHolderId,
+    arenaBounds,
+    visualOrigin: ballMeshRef.current?.getWorldPosition(new THREE.Vector3()),
+  });
   renderGame();
   updateFloatingNameplate();
   pushStatsUpdate();

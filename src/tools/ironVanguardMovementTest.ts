@@ -41,7 +41,7 @@ const labels = (name: string) =>
     .join(" ");
 document.querySelector("#swing-test")!.innerHTML = `
 <header><a href="/">iBrawls</a><span class="divider">/</span><strong>Iron Vanguard</strong><span class="badge">MOVEMENT REVIEW</span></header>
-<main><section class="stage" aria-label="3D movement preview"><div id="viewport"></div><div class="scene-note"><span class="live-dot"></span><span id="load-state" role="status">Loading…</span></div><div class="view-buttons"><button data-view="three">Three-quarter</button><button data-view="front">Front</button><button data-view="side">Side</button><button id="first-person" data-view="first" hidden>First-person</button></div><div class="scene-hint">Drag to orbit · Scroll to zoom</div></section>
+<main><section class="stage" aria-label="3D movement preview"><div id="viewport"></div><div class="scene-note"><span class="live-dot"></span><span id="load-state" role="status">Loading…</span></div><div class="view-buttons"><button data-view="three">Three-quarter</button><button data-view="front">Front</button><button data-view="side">Side</button><button id="first-person" data-view="first">First-person</button></div><div class="scene-hint">Drag to orbit · Scroll to zoom</div></section>
 <aside><p class="eyebrow">ANIMATION LIBRARY</p><h1>Move the Vanguard.</h1><p class="description">Review movement on the gameplay model. Weapon timing stays independent of movement. Hammer: 1.60 s. Sword: 0.22 s slash + 0.60 s recovery.</p>
 <label class="scrub-label" for="weapon">Weapon</label><select id="weapon" style="width:100%;padding:10px;background:#102231;color:#e3f2ff;border:1px solid #345066;border-radius:8px"><option value="hammer">Hammer</option><option value="sword">Sword</option><option value="ball">Ball</option></select><div id="ball-controls" hidden><label class="scrub-label" for="ball-action">Ball action</label><select id="ball-action" style="width:100%;padding:10px;background:#102231;color:#e3f2ff;border:1px solid #345066;border-radius:8px"><option value="throw">Charge → football throw</option><option value="punch">Free-hand punch</option></select><div id="throw-controls"><label class="scrub-label" for="throw-hold">Throw hold time <output id="throw-hold-value">1.20 s</output></label><input id="throw-hold" aria-label="Throw hold time" style="width:100%" type="range" min="0" max="2.4" step="0.05" value="1.2"><p class="scope-note" id="throw-charge-status" role="status"></p></div></div><div id="sword-controls" hidden><label class="scrub-label" for="sword-action">Sword action</label><select id="sword-action" style="width:100%;padding:10px;background:#102231;color:#e3f2ff;border:1px solid #345066;border-radius:8px"><option value="slash">Slash</option><option value="lunge">Lunge → contact slash</option><option value="lunge-miss">Lunge → miss</option></select><div id="lunge-controls" hidden><label class="scrub-label" for="lunge-duration">Lunge travel time</label><input id="lunge-duration" type="range" min="0.12" max="0.8" step="0.01" value="0.5" style="width:100%"></div></div><label class="scrub-label" for="clip">Animation</label><select id="clip" style="width:100%;padding:12px;background:#102231;color:#e3f2ff;border:1px solid #345066;border-radius:8px"><option value="jump-moving">Jump While Moving</option><option value="look-moving">Look While Moving / Turn in Place</option><option value="slide-moving">Slide While Moving</option><option value="slide-sequence">Slide Sequence (in place)</option>${VANGUARD_MOVEMENT_CLIPS.map((n) => `<option value="${n}">${labels(n)}</option>`).join("")}</select>
 <div id="travel-controls" hidden style="margin-top:16px">
@@ -122,6 +122,7 @@ resize.observe(host);
 let model: THREE.Group | undefined,
   sword: THREE.Group | undefined,
   swordView: THREE.Group | undefined,
+  hammerView: THREE.Group | undefined,
   elapsed = 0,
   attackElapsed = 0,
   playing = true,
@@ -154,8 +155,6 @@ const attackDuration = () =>
 weapon.onchange = () => {
   resetSwordPreview();
   attackElapsed = 0;
-  get("first-person").hidden = weapon.value === "hammer";
-  if (weapon.value === "hammer") firstPerson = false;
   get("sword-controls").hidden = weapon.value !== "sword";
   get("ball-controls").hidden = weapon.value !== "ball";
   get<HTMLInputElement>("attack-scrub").max = String(attackDuration());
@@ -365,6 +364,9 @@ Promise.all([preloadIronVanguard(), preloadVanguardSword()])
     swordView = createVanguardSwordView(200, source, swordSource);
     firstCamera.add(swordView);
     swordView.visible = false;
+    hammerView = createIronVanguardModel(200, true, source);
+    firstCamera.add(hammerView);
+    hammerView.visible = false;
     get("load-state").textContent =
       `${VANGUARD_MOVEMENT_CLIPS.length} movement clips · gameplay mesh`;
   })
@@ -472,6 +474,11 @@ function animatePreview(dt: number, attackTime = attackElapsed) {
         settings,
         ...(playing ? {} : { previewTime: elapsed }),
       });
+  }
+  if (hammerView) {
+    hammerView.visible = firstPerson && activeWeapon === "hammer";
+    if (hammerView.visible)
+      animateIronVanguard(hammerView, { weaponState, weaponTimer, dt, settings });
   }
   model.visible = !firstPerson;
   if (movingPreview()) {
@@ -709,7 +716,7 @@ renderer.setAnimationLoop((now) => {
     ? "first-person"
     : "third-person";
   document.querySelector(".scene-hint")!.textContent = firstPerson
-    ? `${weapon.value === "ball" ? "Ball" : "Sword"} and arms · local player view`
+    ? `${labels(weapon.value)} · local player view`
     : "Drag to orbit · Scroll to zoom";
   renderer.render(scene, firstPerson ? firstCamera : camera);
 });
@@ -720,6 +727,7 @@ window.addEventListener("pagehide", () => {
   controls.dispose();
   if (model) disposeIronVanguard(model);
   if (swordView) disposeIronVanguard(swordView);
+  if (hammerView) disposeIronVanguard(hammerView);
   previewBallFlight.traverse((object) => {
     if (!(object instanceof THREE.Mesh)) return;
     object.geometry.dispose();
