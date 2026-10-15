@@ -50,7 +50,7 @@ export function resolveRunnerThrustAllowed(settings: UniversalSettings): boolean
 }
 
 export function resolveTrajectoryLineThickness(settings: UniversalSettings): number {
-  return clamp(finiteNumber(settings.grifballTrajectoryLineThickness, 0.14), 0.04, 0.35);
+  return clamp(finiteNumber(settings.grifballTrajectoryLineThickness, 0.014), 0.004, 0.035);
 }
 
 export function resolveTrajectoryLineColor(settings: UniversalSettings): string {

@@ -920,6 +920,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // â”€â”€â”€ Hidden Key Combo Hold Detection (GRIFB) â”€â”€â”€
       const tick = (tickDt: number) => advanceGrifballFrameForState({
+        arenaBounds: getActiveCustomMap(),
         state: s,
         refs: threeRef.current,
         ballMeshRef: grifballBallMeshRef,

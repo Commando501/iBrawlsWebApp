@@ -21,7 +21,7 @@ test('updateGrifballThrowTrajectoryVisualForState uses configured color and thic
       ...DEFAULT_ADMIN_SETTINGS,
       gameMode: 'grifball',
       grifballTrajectoryLineColor: '#00ff88',
-      grifballTrajectoryLineThickness: 0.22,
+      grifballTrajectoryLineThickness: 0.022,
     } as any,
     multiplayerRole: null,
     isMultiplayer: false,
@@ -42,7 +42,7 @@ test('updateGrifballThrowTrajectoryVisualForState uses configured color and thic
   assert.ok(firstDash.geometry instanceof THREE.CylinderGeometry);
   assert.ok(firstDash.material instanceof THREE.MeshBasicMaterial);
   assert.equal(firstDash.material.color.getHexString(), '00ff88');
-  assert.equal(firstDash.geometry.parameters.radiusTop, 0.22);
+  assert.equal(firstDash.geometry.parameters.radiusTop, 0.011);
   assert.ok(refs.grifballThrowTrajectoryMarker);
   assert.equal(refs.grifballThrowTrajectoryMarker.visible, true);
   assert.ok(refs.grifballThrowTrajectoryMarker.material instanceof THREE.MeshBasicMaterial);
@@ -137,4 +137,38 @@ test('updateGrifballThrowTrajectoryVisualForState draws the post-bounce landing 
   assert.ok(refs.grifballThrowTrajectoryMarker.position.x < 4, 'marker should show the inward post-bounce landing');
 
   disposeGrifballThrowTrajectoryVisualForRefs(refs);
+});
+
+test('throw preview follows the animated grip while preserving the predicted landing', () => {
+  const refs = createInitialGrifballThreeRefs();
+  refs.scene = new THREE.Scene();
+  const state = createInitialGrifballRuntimeState({
+    debugMode: false,
+    adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball' },
+    multiplayerRole: null,
+    isMultiplayer: false,
+  });
+  state.grifballPassCharge = 1;
+  attachBallTo(state.grifball.ball, 'player');
+  updateGrifballThrowTrajectoryVisualForState({ state, refs, chargingHolderId: 'player' });
+  const landing = refs.grifballThrowTrajectoryMarker!.position.clone();
+  for (const grip of [new THREE.Vector3(0.4, 1.6, 0.2), new THREE.Vector3(0.6, 1.9, 0.3)]) {
+    updateGrifballThrowTrajectoryVisualForState({ state, refs, chargingHolderId: 'player', visualOrigin: grip });
+    const points = refs.grifballThrowTrajectoryLine!.geometry.getAttribute('position');
+    assert.ok(new THREE.Vector3().fromBufferAttribute(points, 0).distanceTo(grip) < 1e-6);
+    assert.ok(refs.grifballThrowTrajectoryMarker!.position.distanceTo(landing) < 1e-6);
+    const segments = refs.grifballThrowTrajectoryDashes!.children as THREE.Mesh<THREE.CylinderGeometry>[];
+    assert.equal(segments.length, points.count - 1);
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      segment.updateMatrixWorld(true);
+      const start = new THREE.Vector3(0, -segment.geometry.parameters.height / 2, 0).applyMatrix4(segment.matrixWorld);
+      const end = new THREE.Vector3(0, segment.geometry.parameters.height / 2, 0).applyMatrix4(segment.matrixWorld);
+      assert.ok(start.distanceTo(new THREE.Vector3().fromBufferAttribute(points, index)) < 1e-5);
+      assert.ok(end.distanceTo(new THREE.Vector3().fromBufferAttribute(points, index + 1)) < 1e-5);
+      assert.equal(segment.geometry.parameters.radiusTop, 0.007);
+    }
+  }
+  disposeGrifballThrowTrajectoryVisualForRefs(refs);
+  assert.equal(refs.scene.children.length, 0);
 });

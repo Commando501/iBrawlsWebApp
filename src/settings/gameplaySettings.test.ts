@@ -25,7 +25,7 @@ test('default gameplay settings include Runner / Ball mechanics controls', () =>
   assert.equal(defaults.grifballRunnerSpeedSide, 130);
   assert.equal(defaults.grifballRunnerSpeedBackward, 130);
   assert.equal(defaults.grifballAllowThrowing, true);
-  assert.equal(defaults.grifballTrajectoryLineThickness, 0.14);
+  assert.equal(defaults.grifballTrajectoryLineThickness, 0.014);
   assert.equal(defaults.grifballTrajectoryLineColor, '#ff2b2b');
   assert.equal(defaults.grifballPunchLungeDistance, 1.8);
   assert.equal(defaults.grifballPunchCooldown, 0.5);
@@ -43,7 +43,7 @@ test('saved gameplay settings backfill Runner / Ball defaults', () => {
   assert.equal(settings.grifballRunnerSpeedSide, 130);
   assert.equal(settings.grifballRunnerSpeedBackward, 130);
   assert.equal(settings.grifballAllowThrowing, true);
-  assert.equal(settings.grifballTrajectoryLineThickness, 0.14);
+  assert.equal(settings.grifballTrajectoryLineThickness, 0.014);
   assert.equal(settings.grifballTrajectoryLineColor, '#ff2b2b');
   assert.equal(settings.grifballPunchLungeDistance, 1.8);
   assert.equal(settings.grifballPunchCooldown, 0.5);

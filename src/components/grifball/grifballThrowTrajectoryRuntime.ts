@@ -17,8 +17,6 @@ import { type GrifballThreeRefs } from './threeRefs';
 const TRAJECTORY_COLOR = '#ff2b2b';
 const TRAJECTORY_SAMPLES = 32;
 const TRAJECTORY_Y_OFFSET = 0.05;
-const TRAJECTORY_DASH_LENGTH = 0.95;
-const TRAJECTORY_DASH_GAP = 0.42;
 const THROW_START_HEIGHT = 1.1;
 
 type ThrowTrajectoryInput = {
@@ -101,11 +99,9 @@ function ensureThrowTrajectoryVisuals(refs: GrifballThreeRefs): void {
   if (!refs.grifballThrowTrajectoryLine) {
     const line = new THREE.Line(
       new THREE.BufferGeometry(),
-      new THREE.LineDashedMaterial({
+      new THREE.LineBasicMaterial({
         color: TRAJECTORY_COLOR,
-        dashSize: 0.75,
-        gapSize: 0.35,
-        linewidth: 3,
+        linewidth: 1,
         transparent: true,
         opacity: 0.95,
         depthTest: false,
@@ -152,9 +148,8 @@ function applyThrowTrajectoryStyle(
   thickness: number
 ): void {
   const line = refs.grifballThrowTrajectoryLine;
-  if (line?.material instanceof THREE.LineDashedMaterial) {
+  if (line?.material instanceof THREE.LineBasicMaterial) {
     line.material.color.set(color);
-    line.material.linewidth = Math.max(1, thickness * 24);
   }
 
   const marker = refs.grifballThrowTrajectoryMarker;
@@ -194,7 +189,7 @@ export function disposeGrifballThrowTrajectoryVisualForRefs(refs: GrifballThreeR
   }
 }
 
-function addThickTrajectoryDash(
+function addTrajectorySegment(
   group: THREE.Group,
   start: THREE.Vector3,
   end: THREE.Vector3,
@@ -203,7 +198,7 @@ function addThickTrajectoryDash(
 ): void {
   const delta = end.clone().sub(start);
   const length = delta.length();
-  if (length <= 0.03) return;
+  if (length <= 0.0001) return;
 
   const mesh = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, length, 12, 1, false),
@@ -222,7 +217,7 @@ function addThickTrajectoryDash(
   group.add(mesh);
 }
 
-function rebuildThickTrajectoryDashes(
+function rebuildTrajectorySegments(
   group: THREE.Group,
   points: THREE.Vector3[],
   radius: number,
@@ -231,36 +226,8 @@ function rebuildThickTrajectoryDashes(
   clearTrajectoryDashGroup(group);
   if (points.length < 2) return;
 
-  const cumulativeDistances: number[] = [0];
   for (let index = 1; index < points.length; index += 1) {
-    cumulativeDistances[index] = cumulativeDistances[index - 1] + points[index].distanceTo(points[index - 1]);
-  }
-  const totalDistance = cumulativeDistances[cumulativeDistances.length - 1];
-  if (totalDistance <= 0.0001) return;
-
-  const pointAtDistance = (targetDistance: number): THREE.Vector3 => {
-    const clampedDistance = Math.min(totalDistance, Math.max(0, targetDistance));
-    for (let index = 1; index < cumulativeDistances.length; index += 1) {
-      if (cumulativeDistances[index] >= clampedDistance) {
-        const previousDistance = cumulativeDistances[index - 1];
-        const segmentDistance = cumulativeDistances[index] - previousDistance;
-        const t = segmentDistance <= 0.0001 ? 0 : (clampedDistance - previousDistance) / segmentDistance;
-        return points[index - 1].clone().lerp(points[index], t);
-      }
-    }
-    return points[points.length - 1].clone();
-  };
-
-  const patternLength = TRAJECTORY_DASH_LENGTH + TRAJECTORY_DASH_GAP;
-  for (let dashStartDistance = 0; dashStartDistance < totalDistance; dashStartDistance += patternLength) {
-    const dashEndDistance = Math.min(dashStartDistance + TRAJECTORY_DASH_LENGTH, totalDistance);
-    addThickTrajectoryDash(
-      group,
-      pointAtDistance(dashStartDistance),
-      pointAtDistance(dashEndDistance),
-      radius,
-      color
-    );
+    addTrajectorySegment(group, points[index - 1], points[index], radius, color);
   }
 }
 
@@ -269,11 +236,13 @@ export function updateGrifballThrowTrajectoryVisualForState({
   refs,
   chargingHolderId,
   arenaBounds,
+  visualOrigin,
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
   chargingHolderId: string | null;
   arenaBounds?: BallArenaBounds | null;
+  visualOrigin?: THREE.Vector3;
 }): void {
   const trajectoryInput = resolveThrowTrajectoryInput(state, chargingHolderId);
   if (!trajectoryInput || !refs.scene) {
@@ -296,11 +265,18 @@ export function updateGrifballThrowTrajectoryVisualForState({
     arenaBounds: arenaBounds ?? { arenaRadius: state.arenaRadius },
   }).map((point) => new THREE.Vector3(point.x, point.y + TRAJECTORY_Y_OFFSET, point.z));
 
+  // Join the animated grip to the physical arc without moving its landing/bounce prediction.
+  if (visualOrigin) {
+    const offset = visualOrigin.clone().sub(points[0]);
+    for (let index = 0; index < 4; index += 1) {
+      points[index].addScaledVector(offset, 1 - THREE.MathUtils.smoothstep(index, 0, 4));
+    }
+  }
+
   line.geometry.dispose();
   line.geometry = new THREE.BufferGeometry().setFromPoints(points);
-  line.computeLineDistances();
   line.visible = true;
-  rebuildThickTrajectoryDashes(dashes, points, thickness, color);
+  rebuildTrajectorySegments(dashes, points, thickness / 2, color);
   dashes.visible = true;
 
   const landing = points[points.length - 1];

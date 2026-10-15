@@ -96,7 +96,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   grifballRunnerSpeedSide: 130,
   grifballRunnerSpeedBackward: 130,
   grifballAllowThrowing: true,
-  grifballTrajectoryLineThickness: 0.14,
+  grifballTrajectoryLineThickness: 0.014,
   grifballTrajectoryLineColor: '#ff2b2b',
   grifballPunchLungeDistance: 1.8,
   grifballPunchCooldown: 0.5,
