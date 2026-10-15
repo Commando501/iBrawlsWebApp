@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Line2 } from 'three/addons/lines/Line2.js';
 import { type CombatantMeshRig } from './combatantModels';
 import { type SkyAtmosphereRuntime } from './skyAtmosphereRuntime';
 import type { V3DeathVoxelBurstInstance } from './v3DeathVoxelBurst';
@@ -51,8 +52,7 @@ export interface GrifballThreeRefs {
     maxLife: number;
     material: THREE.Material;
   }[];
-  grifballThrowTrajectoryLine?: THREE.Line | null;
-  grifballThrowTrajectoryDashes?: THREE.Group | null;
+  grifballThrowTrajectoryLine?: Line2 | null;
   grifballThrowTrajectoryMarker?: THREE.Mesh | null;
   otherPlayerMeshes: Map<string, CombatantMeshRig>;
   v3DeathVoxelBursts: Map<string, V3DeathVoxelBurstInstance>;
@@ -95,7 +95,6 @@ export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
     burnDecals: [],
     tracers: [],
     grifballThrowTrajectoryLine: null,
-    grifballThrowTrajectoryDashes: null,
     grifballThrowTrajectoryMarker: null,
   };
 }

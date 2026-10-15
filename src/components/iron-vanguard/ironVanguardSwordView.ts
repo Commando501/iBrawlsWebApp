@@ -126,8 +126,9 @@ export function animateVanguardSwordView(
   root.userData.ironVanguardSwordPhase = sampleVanguardSword(input).phase;
   const runtime = root.userData.ironVanguard;
   if (!root.userData.swordViewReady || runtime.disposed) return;
-  root.position.set(-0.05, -1.95 + bob[1], -0.32 + bob[0]);
-  root.rotation.set(0, 0, bob[2]);
+  // Keep the ready hold fixed in camera space; only attacks move the view rig.
+  root.position.set(-0.05, -1.95, -0.32);
+  root.rotation.set(0, 0, 0);
   updateVanguardSwordLunge(runtime.sword, {
     ...input,
     dt: input.dt ?? 0,
@@ -143,6 +144,8 @@ export function animateVanguardSwordView(
       dt: input.dt ?? 0,
       lungeTime:
         input.lungeTime ?? (input.isLunging ? input.weaponTimer : undefined),
+      // Freeze the underlying idle pose without stopping slash/lunge clocks.
+      previewTime: 0,
       localRecovery: input.localRecovery ?? true,
       viewHandOffset: new THREE.Vector3(0, 0.51, -0.02),
     },
