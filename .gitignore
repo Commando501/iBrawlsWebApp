@@ -50,6 +50,7 @@ reference/v3-source-bind/*.glb
 reference/v3-source-bind/*.GLB
 
 assets/
+.codex/
 
 # Shipped Championship Stadium material library
 !public/assets/
