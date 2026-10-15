@@ -66,7 +66,7 @@ export function createArenaOrchestratorCallbacksForState({
 
     // An observer is a camera, not a participant reserving a team spawn.
     if (!state.isObserverMode) {
-      const playerSpawn = getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, fallback, used);
+      const playerSpawn = getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, fallback, used, state.isMultiplayer ? Math.floor(state.multiplayerSpawnSlot / 2) : 0);
       state.playerPos.copy(playerSpawn);
       state.playerVel.set(0, 0, 0);
       state.yaw = playerSpawn.spawnYaw ?? getInwardSpawnYaw(playerSpawn);
@@ -98,7 +98,7 @@ export function createArenaOrchestratorCallbacksForState({
     const updateData = data?.controller === 'ai'
       ? {
           ...data,
-          visualModelPolicy: data.visualModelPolicy ?? getVisualModelPolicy(),
+          visualModelPolicy: getVisualModelPolicy(),
         }
       : data;
 

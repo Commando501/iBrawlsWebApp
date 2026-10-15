@@ -15,10 +15,22 @@ export interface ReplayEntityComparisonState {
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   yaw: number;
+  pitch?: number;
+  weaponTimer?: number;
+  lungeTimer?: number;
+  isSprinting?: boolean;
+  isSliding?: boolean;
+  isDashing?: boolean;
+  ballCharge?: number;
+  ballThrowTime?: number;
+  ballReleaseCharge?: number;
   hp: number;
   activeWeapon: string;
   weaponState: string;
   isCrouching: boolean;
+  isJumping?: boolean;
+  isLunging?: boolean;
+  swordLungeHit?: boolean;
   score: number;
   kills: number;
   deaths: number;
@@ -34,11 +46,17 @@ export interface ReplayInterpolatedPlayer {
   activeWeapon: string;
   weaponState: string;
   isCrouching: boolean;
+  isJumping?: boolean;
   isLunging: boolean;
+  swordLungeHit?: boolean;
   isDashing: boolean;
   isSprinting: boolean;
   isSliding: boolean;
   weaponTimer: number;
+  lungeTimer?: number;
+  ballCharge?: number;
+  ballThrowTime?: number;
+  ballReleaseCharge?: number;
   score: number;
   kills: number;
   deaths: number;
@@ -142,6 +160,9 @@ const interpolateReplayPlayer = (
   const crouchScaleY = crouchA + (crouchB - crouchA) * alpha;
 
   const nearestState = alpha > 0.5 ? stateB : stateA;
+  const sameAction = stateA.activeWeapon === stateB.activeWeapon && stateA.weaponState === stateB.weaponState;
+  const clock = (a: number | undefined, b: number | undefined, fallback: number | undefined) =>
+    a !== undefined && b !== undefined && b >= a ? THREE.MathUtils.lerp(a, b, alpha) : fallback;
   const team = nearestState.team ?? (
     replayData.gameMode === 'grifball' ? resolveGrifballTeam(id) : undefined
   );
@@ -156,11 +177,18 @@ const interpolateReplayPlayer = (
     activeWeapon: nearestState.activeWeapon,
     weaponState: nearestState.weaponState,
     isCrouching: nearestState.isCrouching,
+    isJumping: nearestState.isJumping,
     isLunging: nearestState.isLunging || false,
+    swordLungeHit: nearestState.swordLungeHit,
     isDashing: nearestState.isDashing || false,
     isSprinting: nearestState.isSprinting || false,
     isSliding: nearestState.isSliding || false,
-    weaponTimer: nearestState.weaponTimer || 0,
+    weaponTimer: sameAction ? clock(stateA.weaponTimer, stateB.weaponTimer, nearestState.weaponTimer) ?? 0 : nearestState.weaponTimer ?? 0,
+    lungeTimer: stateA.isLunging && stateB.isLunging ? clock(stateA.lungeTimer, stateB.lungeTimer, nearestState.lungeTimer) : nearestState.lungeTimer,
+    ballCharge: stateA.activeWeapon === 'ball' && stateB.activeWeapon === 'ball'
+      ? THREE.MathUtils.lerp(stateA.ballCharge ?? 0, stateB.ballCharge ?? 0, alpha) : nearestState.ballCharge,
+    ballThrowTime: clock(stateA.ballThrowTime, stateB.ballThrowTime, nearestState.ballThrowTime),
+    ballReleaseCharge: nearestState.ballReleaseCharge,
     score: nearestState.score,
     kills: nearestState.kills,
     deaths: nearestState.deaths,
@@ -262,10 +290,22 @@ export const hasReplayEntityStateChanged = (
     posDiff >= 0.001 ||
     velDiff >= 0.001 ||
     yawDiff >= 0.005 ||
+    Math.abs((current.pitch ?? 0) - (prev.pitch ?? 0)) >= 0.001 ||
+    current.weaponTimer !== prev.weaponTimer ||
+    current.lungeTimer !== prev.lungeTimer ||
+    current.isSprinting !== prev.isSprinting ||
+    current.isSliding !== prev.isSliding ||
+    current.isDashing !== prev.isDashing ||
+    current.ballCharge !== prev.ballCharge ||
+    current.ballThrowTime !== prev.ballThrowTime ||
+    current.ballReleaseCharge !== prev.ballReleaseCharge ||
     current.hp !== prev.hp ||
     current.activeWeapon !== prev.activeWeapon ||
     current.weaponState !== prev.weaponState ||
     current.isCrouching !== prev.isCrouching ||
+    current.isJumping !== prev.isJumping ||
+    current.isLunging !== prev.isLunging ||
+    current.swordLungeHit !== prev.swordLungeHit ||
     current.score !== prev.score ||
     current.kills !== prev.kills ||
     current.deaths !== prev.deaths

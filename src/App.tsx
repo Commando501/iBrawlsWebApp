@@ -723,6 +723,7 @@ export default function App() {
 	        isMultiplayer={isMultiplayer}
 	        multiplayerRole={multiplayerRole}
 	        multiplayerSocket={multiplayerSocket}
+            gameplayClientId={gameplayClientId}
 	        matchLobbyConfig={matchLobbyConfig}
 	        multiplayerSpawnSlot={multiplayerSpawnSlot}
 	        opponentClientId={opponentClientId}

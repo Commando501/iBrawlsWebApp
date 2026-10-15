@@ -1,4 +1,6 @@
+import { resolveFriendlyArmorTeam } from './combatantTeamArmor';
 import * as THREE from 'three';
+import { isIronVanguardLoadout } from '../iron-vanguard/ironVanguardModel';
 import { createRemoteCombatant } from '../../game/roster';
 import { DEFAULT_AI_TEAM, PLAYER_TEAM, type TeamId } from '../../game/teamScoring';
 import { type CharacterModelType, type UniversalSettings } from '../../types';
@@ -8,7 +10,7 @@ import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { createCombatantMeshRig } from './combatantModels';
-import { syncCombatantTeamOutline } from './combatantTeamOutlines';
+import { syncCombatantTeamArmor } from './combatantTeamArmor';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type CustomMapData } from '../../types';
 import { getMultiplayerSpawnPoint } from './arenaSpawns';
@@ -28,6 +30,11 @@ type RemoteCombatantUpdate = {
   hue?: number;
   isCrouching?: boolean;
   isSliding?: boolean;
+  isJumping?: boolean;
+  isSprinting?: boolean;
+  isLunging?: boolean;
+  swordLungeHit?: boolean;
+  lungeTimer?: number;
   activeWeapon?: string;
   respawnTimer?: number;
   invulnerabilityTimer?: number;
@@ -104,8 +111,9 @@ const inferGrifballRemoteTeam = (
   clientId: string,
   data: RemoteCombatantUpdate
 ): TeamId | undefined => {
-  if (data.team) return data.team;
+  if (data.team && !state.isMultiplayer) return data.team;
   if (state.settings.gameMode !== 'grifball') return undefined;
+  if (data.spawnSlot !== undefined && Number.isInteger(data.spawnSlot)) return data.spawnSlot % 2 === 0 ? PLAYER_TEAM : DEFAULT_AI_TEAM;
   if (data.role === 'host' || clientId === state.hostClientId) return PLAYER_TEAM;
   if (data.role === 'client' || clientId === state.clientClientId) return DEFAULT_AI_TEAM;
   return undefined;
@@ -173,7 +181,16 @@ export function createOrUpdateRemoteCombatantForState({
   if (data.maxHp !== undefined) playerState.maxHp = data.maxHp;
   if (data.isCrouching !== undefined) playerState.isCrouching = data.isCrouching;
   if (data.isSliding !== undefined) playerState.aiSlideActive = data.isSliding;
+  if (typeof data.isJumping === 'boolean') playerState.isJumping = data.isJumping;
+  if (typeof data.isSprinting === 'boolean') playerState.aiIsSprinting = data.isSprinting;
+  if (typeof data.isLunging === 'boolean') playerState.isLunging = data.isLunging;
+  if (typeof data.swordLungeHit === 'boolean') playerState.swordLungeHit = data.swordLungeHit;
+  if (Number.isFinite(data.lungeTimer)) playerState.lungeTimer = Math.max(0, data.lungeTimer!);
   if (data.activeWeapon !== undefined) playerState.activeWeapon = data.activeWeapon as any;
+  if (state.isMultiplayer && state.settings.gameMode === 'grifball') {
+    if (state.grifball.ball.holderId === clientId) playerState.activeWeapon = 'ball';
+    else if (playerState.activeWeapon === 'ball') playerState.activeWeapon = 'hammer';
+  }
   if (data.respawnTimer !== undefined) playerState.respawnTimer = data.respawnTimer;
   if (data.hue !== undefined) playerState.hue = data.hue;
   if (data.playerName) playerState.playerName = data.playerName;
@@ -185,7 +202,7 @@ export function createOrUpdateRemoteCombatantForState({
   if (incomingTeam) {
     playerState.team = incomingTeam;
   }
-  const teamOutlineTeam = state.settings.gameMode === 'grifball'
+  const teamArmorTeam = state.settings.gameMode === 'grifball'
     ? playerState.team ?? incomingTeam ?? null
     : null;
 
@@ -193,7 +210,7 @@ export function createOrUpdateRemoteCombatantForState({
   const hue = data.hue ?? playerState.hue;
   const visualLoadout = createVisualLoadout(data, resolveCharacterModelType(playerState.modelType, 'v2'));
   const visualLoadoutKey = JSON.stringify(visualLoadout);
-  const qualityChanged = visualLoadout.modelSystem === 'v3' && (
+  const qualityChanged = visualLoadout.modelSystem === 'v3' && !isIronVanguardLoadout(visualLoadout) && (
     meshes?.group.userData.appliedV3QualityTier !== v3Options.v3QualityTier ||
     meshes?.group.userData.appliedV3Distance !== v3Options.v3Distance
   );
@@ -202,14 +219,14 @@ export function createOrUpdateRemoteCombatantForState({
       clearV3DeathVoxelBurstForCombatant(refs, `combatant:${clientId}`);
       scene.remove(meshes.group);
     }
-    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options, teamOutlineTeam, state.settings);
+    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options, teamArmorTeam, resolveFriendlyArmorTeam(state));
     meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
     refs.otherPlayerMeshes.set(clientId, meshes);
     playerState.hue = hue;
   }
 
   const { group, hammer, sword, pistol } = meshes;
-  syncCombatantTeamOutline(group, teamOutlineTeam, state.settings);
+  syncCombatantTeamArmor(group, teamArmorTeam, resolveFriendlyArmorTeam(state));
   group.position.copy(playerState.pos);
   group.rotation.y = playerState.yaw;
 

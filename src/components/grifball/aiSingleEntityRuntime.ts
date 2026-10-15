@@ -896,7 +896,7 @@ export function createAISingleEntityUpdaterForState({
         (teamAssignment.defense.mode === 'intercept' || teamAssignment.defense.mode === 'last-defender' || teamAssignment.defense.emergency);
       const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
         if (!canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon: tacticalWeapon, weaponState,
-          swordForbidden, hammerForbidden, force, swapLockoutTimer: self.swapLockoutTimer ?? 0 })) return;
+          swordForbidden, hammerForbidden, force, isLunging: self.isLunging, swapLockoutTimer: self.swapLockoutTimer ?? 0 })) return;
         swapCombatantWeapon(self, tacticalWeapon, true);
         activeWeapon = tacticalWeapon;
         weaponState = 'ready';
@@ -914,7 +914,7 @@ export function createAISingleEntityUpdaterForState({
         weaponState = 'ready';
       };
   
-      if (advanceAIWeaponSwapFeint(aiContext, botId, dt, activeWeapon, weaponState, hammerForbidden).revert) {
+      if (advanceAIWeaponSwapFeint(aiContext, botId, dt, activeWeapon, weaponState, hammerForbidden, !!self.isLunging).revert) {
         revertWeaponSwapFeint();
       }
   

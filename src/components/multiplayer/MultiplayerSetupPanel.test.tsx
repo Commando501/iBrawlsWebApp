@@ -123,7 +123,7 @@ test('MultiplayerSetupPanel staging summary shows the lobby model policy', () =>
   assert.match(html, /Version 2 Rigged/);
 });
 
-test('MultiplayerSetupPanel staging summary clamps V3 policy for non-admin players', () => {
+test('MultiplayerSetupPanel staging summary shows Iron Vanguard for non-admin players', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -145,11 +145,11 @@ test('MultiplayerSetupPanel staging summary clamps V3 policy for non-admin playe
   );
 
   assert.match(html, /Models/);
-  assert.match(html, /Version 2 Rigged/);
+  assert.match(html, /Version 3 Iron Vanguard/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
 });
 
-test('MultiplayerSetupPanel staging summary clamps V3 policy for admin players', () => {
+test('MultiplayerSetupPanel staging summary shows Iron Vanguard for admin players', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -172,6 +172,6 @@ test('MultiplayerSetupPanel staging summary clamps V3 policy for admin players',
   );
 
   assert.match(html, /Models/);
-  assert.match(html, /Version 2 Rigged/);
+  assert.match(html, /Version 3 Iron Vanguard/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
 });

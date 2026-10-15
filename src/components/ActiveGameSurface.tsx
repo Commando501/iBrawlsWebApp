@@ -60,6 +60,7 @@ interface ActiveGameSurfaceProps {
   isMultiplayer: boolean;
   multiplayerRole: GameplayMultiplayerRole;
   multiplayerSocket: WebSocket | null;
+  gameplayClientId?: string;
   matchLobbyConfig: MatchLobbyConfig | null;
   multiplayerSpawnSlot: number;
   opponentClientId: string | undefined;
@@ -139,6 +140,7 @@ export function ActiveGameSurface({
   isMultiplayer,
   multiplayerRole,
   multiplayerSocket,
+  gameplayClientId,
   matchLobbyConfig,
   multiplayerSpawnSlot,
   opponentClientId,
@@ -214,6 +216,7 @@ export function ActiveGameSurface({
           visualModelPolicy={visualModelPolicy ?? undefined}
           v3QualityTier={v3QualityTier}
           isPaused={isPaused || isMatchLoadingActive}
+          isMatchLoading={isMatchLoadingActive}
           debugMode={debugMode}
           adminSettings={activeGameSettings}
           onStatsUpdate={onStatsUpdate}
@@ -222,6 +225,7 @@ export function ActiveGameSurface({
           isMultiplayer={isMultiplayer}
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
+          gameplayClientId={gameplayClientId}
           matchLobbyConfig={isMultiplayer ? matchLobbyConfig : null}
           multiplayerSpawnSlot={multiplayerSpawnSlot}
           opponentClientId={opponentClientId}

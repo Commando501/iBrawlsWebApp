@@ -124,8 +124,8 @@ export const updateLiveSpectatorModelVisibilityForState = ({
       !state.hideLocalObserverAvatar && (state.observerCamMode !== 'first' || state.observerTarget !== 'host') && hostData.hp > 0;
 
     if (refs.hostHammer && refs.hostSword) {
-      refs.hostHammer.visible = hostData.activeWeapon === 'hammer';
-      refs.hostSword.visible = hostData.activeWeapon === 'sword';
+      refs.hostHammer.visible = hostData.activeWeapon === 'hammer' && (refs.hostGroup.userData.characterAsset !== 'iron-vanguard' || refs.hostGroup.userData.vanguardBallThrowTime === undefined);
+      refs.hostSword.visible = hostData.activeWeapon === 'sword' && (refs.hostGroup.userData.characterAsset !== 'iron-vanguard' || refs.hostGroup.userData.vanguardBallThrowTime === undefined);
     }
   }
 
@@ -134,8 +134,8 @@ export const updateLiveSpectatorModelVisibilityForState = ({
       (state.observerCamMode !== 'first' || state.observerTarget !== 'client') && clientData.hp > 0;
 
     if (refs.enemyHammer && refs.enemySword) {
-      refs.enemyHammer.visible = clientData.activeWeapon === 'hammer';
-      refs.enemySword.visible = clientData.activeWeapon === 'sword';
+      refs.enemyHammer.visible = clientData.activeWeapon === 'hammer' && (refs.enemyGroup.userData.characterAsset !== 'iron-vanguard' || refs.enemyGroup.userData.vanguardBallThrowTime === undefined);
+      refs.enemySword.visible = clientData.activeWeapon === 'sword' && (refs.enemyGroup.userData.characterAsset !== 'iron-vanguard' || refs.enemyGroup.userData.vanguardBallThrowTime === undefined);
     }
   }
 };

@@ -106,3 +106,9 @@ test("worker loadout sanitation treats v3 custom armor as medium profile", () =>
   assert.equal(Object.hasOwn(loadout, "modelType"), false);
   assert.equal(Object.hasOwn(loadout, "customArmor"), false);
 });
+
+test('worker loadouts retain only the supported Iron Vanguard character id', () => {
+  const normalize = getHelper('normalizePlayerLoadout');
+  assert.equal(normalize({ characterAsset: 'iron-vanguard', modelSystem: 'v2' })?.characterAsset, 'iron-vanguard');
+  assert.equal(normalize({ characterAsset: 'arbitrary-asset' }), undefined);
+});

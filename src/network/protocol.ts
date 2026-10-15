@@ -1,3 +1,4 @@
+import type { GrifballInput, GrifballSnapshot } from './grifballSync';
 import { type RemotePlayerState, type CustomMapData } from '../types';
 import { type CharacterLoadout } from '../components/VoxelModels';
 import { type VisualModelPolicy } from '../model/modelSystem';
@@ -112,6 +113,8 @@ export type GameplayClientMessage =
   | GameplaySyncMessage;
 
 export type GameplaySyncAction =
+  | 'grifball_input'
+  | 'grifball_state'
   | 'chat'
   | 'unlock_secret'
   | 'request_map'
@@ -128,6 +131,9 @@ export type GameplaySyncAction =
 export interface GameplaySyncMessage {
   type: 'sync';
   action?: GameplaySyncAction;
+  objective?: GrifballSnapshot;
+  objectiveInput?: GrifballInput;
+  spawnSlot?: number;
   senderId?: string;
   senderRole?: GameRole;
   targetId?: string;
@@ -145,6 +151,12 @@ export interface GameplaySyncMessage {
   hp?: number;
   maxHp?: number;
   isCrouching?: boolean;
+  isJumping?: boolean;
+  isSprinting?: boolean;
+  isSliding?: boolean;
+  isLunging?: boolean;
+  swordLungeHit?: boolean;
+  lungeTimer?: number;
   activeWeapon?: RemotePlayerState['activeWeapon'];
   respawnTimer?: number;
   invulnerabilityTimer?: number;

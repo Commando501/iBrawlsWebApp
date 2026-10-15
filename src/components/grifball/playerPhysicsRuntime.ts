@@ -130,6 +130,9 @@ export function updatePlayerPhysicsForState({
   pushStatsUpdate: () => void;
   onPauseToggle: () => void;
 }): void {
+  if (isMultiplayer && (isPaused || (state.settings.gameMode === 'grifball' && state.grifball.phase !== 'playing'))) {
+    state.playerVel.set(0, 0, 0); return;
+  }
   applyMobileRightJoystickLookForState({
     state,
     joystick: mobileRightJoystick,

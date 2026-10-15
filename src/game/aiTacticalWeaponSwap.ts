@@ -14,11 +14,11 @@ export function isAIWeaponStrikeCommitted(weaponState: string): boolean {
  * reinterpret the geometry and timing of an already committed strike. */
 export function canApplyAITacticalWeaponSwap(context: TacticalWeaponSwapContext & {
   activeWeapon: string; requestedWeapon: 'hammer' | 'sword';
-  weaponState: string; swapLockoutTimer: number; force?: boolean;
+  weaponState: string; swapLockoutTimer: number; force?: boolean; isLunging?: boolean;
 }): boolean {
   // Possession owns the carrier weapon, including combat fallbacks during motion.
   if (context.activeWeapon === 'ball' || context.requestedWeapon === context.activeWeapon) return false;
-  if (isAIWeaponStrikeCommitted(context.weaponState)) return false;
+  if (context.isLunging || isAIWeaponStrikeCommitted(context.weaponState)) return false;
   if (context.requestedWeapon === 'sword' ? context.swordForbidden : context.hammerForbidden) return false;
   return !!context.force || context.swapLockoutTimer <= 0;
 }

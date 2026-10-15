@@ -16,7 +16,7 @@ import {
   resolveSessionVisualModelPolicy,
 } from './modelSystem';
 
-const V3_INTERNAL_PROTOTYPE_LABEL = 'V3 Internal Prototype - Not Player Ready';
+const V3_LABEL = 'Version 3 Iron Vanguard';
 
 test('model system helpers accept v1, v2, and v3 only', () => {
   assert.deepEqual(MODEL_SYSTEMS, ['v1', 'v2', 'v3']);
@@ -58,7 +58,7 @@ test('visual model policy labels expose every supported visual policy', () => {
     },
     {
       value: 'v3',
-      label: V3_INTERNAL_PROTOTYPE_LABEL,
+      label: V3_LABEL,
       recommended: false,
     },
   ]);
@@ -70,32 +70,32 @@ test('visual model policy labels expose every supported visual policy', () => {
   assert.equal(isRecommendedVisualModelPolicy('bad'), false);
   assert.equal(getVisualModelPolicyLabel('v1'), 'Version 1 Classic');
   assert.equal(getVisualModelPolicyLabel('v2'), 'Version 2 Rigged');
-  assert.equal(getVisualModelPolicyLabel('v3'), V3_INTERNAL_PROTOTYPE_LABEL);
+  assert.equal(getVisualModelPolicyLabel('v3'), V3_LABEL);
   assert.equal(getVisualModelPolicyLabel('bad'), 'Version 2 Rigged');
 });
 
-test('selectable visual model policies hide V3 from player-facing selection', () => {
+test('selectable visual model policies expose Iron Vanguard in every player-facing selection', () => {
   assert.deepEqual(
     getSelectableVisualModelPolicyOptions(false).map((option) => option.value),
-    ['v1', 'v2']
+    ['v1', 'v2', 'v3']
   );
   assert.deepEqual(
     getSelectableVisualModelPolicyOptions(true).map((option) => option.value),
-    ['v1', 'v2']
+    ['v1', 'v2', 'v3']
   );
 
-  assert.equal(normalizeSelectableVisualModelPolicy('v3', false), 'v2');
-  assert.equal(normalizeSelectableVisualModelPolicy('v3', true), 'v2');
-  assert.equal(normalizeSelectableVisualModelPolicy('bad', false, 'v3'), 'v2');
-  assert.equal(normalizeSelectableVisualModelPolicy('bad', true, 'v3'), 'v2');
+  assert.equal(normalizeSelectableVisualModelPolicy('v3', false), 'v3');
+  assert.equal(normalizeSelectableVisualModelPolicy('v3', true), 'v3');
+  assert.equal(normalizeSelectableVisualModelPolicy('bad', false, 'v3'), 'v3');
+  assert.equal(normalizeSelectableVisualModelPolicy('bad', true, 'v3'), 'v3');
 });
 
-test('training selection exposes V3 without enabling it for other contexts', () => {
+test('training and standard selection both support Iron Vanguard', () => {
   for (const isAdmin of [false, true]) {
     assert.deepEqual(getSelectableVisualModelPolicyOptions(isAdmin, 'trainingSandbox').map(option => option.value), ['v1', 'v2', 'v3']);
     assert.equal(normalizeSelectableVisualModelPolicy('v3', isAdmin, undefined, 'trainingSandbox'), 'v3');
     assert.equal(normalizeSelectableVisualModelPolicy('bad', isAdmin, undefined, 'trainingSandbox'), 'v2');
-    assert.equal(normalizeSelectableVisualModelPolicy('v3', isAdmin), 'v2');
+    assert.equal(normalizeSelectableVisualModelPolicy('v3', isAdmin), 'v3');
   }
 });
 
@@ -104,8 +104,8 @@ test('local training honors its selected model and ignores stale lobby settings'
   assert.equal(resolveSessionVisualModelPolicy(input), 'v3');
   assert.equal(resolveSessionVisualModelPolicy({ ...input, localPolicy: 'v1' }), 'v1');
   assert.equal(resolveSessionVisualModelPolicy({ ...input, localPolicy: 'v2' }), 'v2');
-  assert.equal(resolveSessionVisualModelPolicy({ ...input, isLocalTraining: false }), 'v2');
-  assert.equal(resolveSessionVisualModelPolicy({ ...input, isReplay: true }), 'v2');
+  assert.equal(resolveSessionVisualModelPolicy({ ...input, isLocalTraining: false }), 'v3');
+  assert.equal(resolveSessionVisualModelPolicy({ ...input, isReplay: true }), 'v3');
   assert.equal(resolveSessionVisualModelPolicy({ ...input, isMultiplayer: true }), 'v1');
-  assert.equal(resolveSessionVisualModelPolicy({ ...input, isMultiplayer: true, lobbyPolicy: 'v3' }), 'v2');
+  assert.equal(resolveSessionVisualModelPolicy({ ...input, isMultiplayer: true, lobbyPolicy: 'v3' }), 'v3');
 });

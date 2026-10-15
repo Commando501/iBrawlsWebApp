@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import type { ReplayFile, ReplayFrame } from '../../types';
 import { updateReplayCombatantVisualsForFrame } from './replayPlaybackVisuals';
-import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
-import { RUNNER_ARMOR_ORANGE } from './runnerVisualState';
+import { getCombatantTeamArmorState } from './combatantTeamArmor';
+import { RUNNER_ARMOR_COLOR } from './combatantTeamArmor';
 import { buildReplayPlaybackFrameSlice } from './replayHelpers';
 import {
   collectReplayPlaybackEventsForFrame,
@@ -48,6 +48,8 @@ function firstGroupVertexHex(group: THREE.Group): string | null {
   let hex: string | null = null;
   group.traverse((child) => {
     if (hex || !(child instanceof THREE.Mesh) || child.userData.teamOutlineMesh === true) return;
+    const material = (Array.isArray(child.material) ? child.material[0] : child.material) as THREE.MeshStandardMaterial;
+    if (!material.vertexColors && material.color) { hex = material.color.getHexString(); return; }
     const colors = child.geometry.getAttribute('color');
     if (colors instanceof THREE.BufferAttribute) {
       hex = new THREE.Color(colors.getX(0), colors.getY(0), colors.getZ(0)).getHexString();
@@ -352,10 +354,10 @@ test('replay visuals use legacy V1 loadout when replay has no visual policy', ()
   const meshes = refs.otherPlayerMeshes.get('player');
   assert.ok(meshes);
   assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
-  assert.notEqual(meshes.group.userData.modelSystem, 'v3');
+  assert.notEqual(meshes.group.userData.characterAsset, 'iron-vanguard');
 });
 
-test('grifball replay visuals attach team body outline from replay player team', () => {
+test('grifball replay visuals attach solid team armor from replay player team', () => {
   const scene = new THREE.Scene();
   const refs = {
     scene,
@@ -417,10 +419,10 @@ test('grifball replay visuals attach team body outline from replay player team',
 
   const meshes = refs.otherPlayerMeshes.get('bot_3');
   assert.ok(meshes);
-  assert.equal(getCombatantTeamOutlineState(meshes.group)?.team, 'red');
+  assert.equal(getCombatantTeamArmorState(meshes.group)?.team, 'red');
 });
 
-test('grifball replay visuals paint recorded ball carrier orange', () => {
+test('grifball replay visuals paint the ball carrier golden yellow-orange', () => {
   const scene = new THREE.Scene();
   const refs = {
     scene,
@@ -482,10 +484,10 @@ test('grifball replay visuals paint recorded ball carrier orange', () => {
 
   const meshes = refs.otherPlayerMeshes.get('bot_runner');
   assert.ok(meshes);
-  assert.equal(firstGroupVertexHex(meshes.group), RUNNER_ARMOR_ORANGE.getHexString());
+  assert.equal(firstGroupVertexHex(meshes.group), RUNNER_ARMOR_COLOR.slice(1));
 });
 
-test('replay V3 visual policy preserves advanced visuals', () => {
+test('replay V3 visual policy selects Iron Vanguard', () => {
   const scene = new THREE.Scene();
   const refs = {
     scene,
@@ -555,13 +557,13 @@ test('replay V3 visual policy preserves advanced visuals', () => {
 
   const meshes = refs.otherPlayerMeshes.get('player');
   assert.ok(meshes);
-  assert.equal(meshes.group.userData.modelSystem, 'v3');
+  assert.equal(meshes.group.userData.characterAsset, 'iron-vanguard');
   const appliedLoadout = JSON.parse(meshes.group.userData.appliedLoadoutKey);
   assert.equal(appliedLoadout.helmet, 'odst');
   assert.equal(appliedLoadout.modelSystem, 'v3');
 });
 
-test('replay V3 body animation receives active weapon, lunge state, and pitch', () => {
+test('replay Iron Vanguard body bypasses prototype animation', () => {
   const scene = new THREE.Scene();
   const refs = {
     scene,
@@ -624,7 +626,8 @@ test('replay V3 body animation receives active weapon, lunge state, and pitch', 
 
   assert.equal(calls.length, 0, 'V3 replay uses the object API with recorded posture');
   const body = refs.otherPlayerMeshes.get('player').group;
-  assert.equal(body.userData.v3GameplaySample.clipId, 'clean_sword_lunge');
-  assert.equal(body.userData.v3GameplayPlayback.weapon, 'sword');
-  assert.equal(body.userData.v3GameplayPlayback.lunging, true);
+  assert.equal(body.userData.characterAsset, 'iron-vanguard');
+  assert.equal(body.userData.v3GameplaySample, undefined);
+  assert.equal(refs.otherPlayerMeshes.get('player').hammer.visible, false);
+  assert.equal(refs.otherPlayerMeshes.get('player').sword.visible, true);
 });

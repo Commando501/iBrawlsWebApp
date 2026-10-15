@@ -139,8 +139,8 @@ export function clearBotComboState(context: Pick<AIMatchContext, 'comboState'>, 
 /** The active flag is sampled before expiry. Combo arbitration deliberately sees
  * that flag for this frame even when the weapon has just reverted. */
 export function advanceAIWeaponSwapFeint(context: Pick<AIMatchContext, 'weaponSwapFeintTimers'>,
-  botId: string, dt: number, activeWeapon: string, weaponState: string, hammerForbidden: boolean) {
+  botId: string, dt: number, activeWeapon: string, weaponState: string, hammerForbidden: boolean, isLunging = false) {
   const swapFeintActive = isWeaponSwapFeintActive(context, botId);
-  const expired = tickWeaponSwapFeintTimer(context, botId, dt, !isAIWeaponStrikeCommitted(weaponState));
+  const expired = tickWeaponSwapFeintTimer(context, botId, dt, !isLunging && !isAIWeaponStrikeCommitted(weaponState));
   return { swapFeintActive, revert: expired && activeWeapon === 'sword' && !hammerForbidden };
 }

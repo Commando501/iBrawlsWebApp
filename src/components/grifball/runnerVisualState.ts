@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { RUNNER_ARMOR_COLOR, syncCombatantRunnerArmor } from './combatantTeamArmor';
 
-export const RUNNER_ARMOR_ORANGE = new THREE.Color('#f97316');
+export const RUNNER_ARMOR_ORANGE = new THREE.Color(RUNNER_ARMOR_COLOR);
 export const RUNNER_DAMAGE_RED = new THREE.Color('#ef4444');
 export const RUNNER_HEAL_BLUE = new THREE.Color('#38bdf8');
 
@@ -86,7 +87,7 @@ const findMaterialSnapshot = (
 
 const captureVisualState = (group: THREE.Group, state: RunnerVisualState): void => {
   group.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || child.userData.teamOutlineMesh === true || child === state.wave) return;
+    if (!(child instanceof THREE.Mesh) || child.userData.teamArmorMesh === true || child === state.wave) return;
 
     const colorAttribute = child.geometry.getAttribute('color');
     if (
@@ -233,6 +234,7 @@ const clearHealWave = (group: THREE.Group, state: RunnerVisualState): void => {
 
 export const clearRunnerVisualStateForGroup = (group: THREE.Group | null | undefined): void => {
   if (!group) return;
+  syncCombatantRunnerArmor(group, false);
   const state = group.userData.runnerVisualState as RunnerVisualState | undefined;
   if (!state || typeof state !== 'object') return;
   restoreVertexColors(state);
@@ -254,6 +256,7 @@ export const updateRunnerVisualStateForGroup = ({
     clearRunnerVisualStateForGroup(group);
     return;
   }
+  syncCombatantRunnerArmor(group, true);
   const state = getRunnerVisualState(group);
   captureVisualState(group, state);
 

@@ -7,7 +7,7 @@ import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { createOrUpdateRemoteCombatantForState } from './remoteCombatantProvisioning';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
-import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
+import { ENEMY_ARMOR_COLOR, FRIENDLY_ARMOR_COLOR, getCombatantTeamArmorState } from './combatantTeamArmor';
 
 const createStateAndRefs = (
   adminSettings = DEFAULT_ADMIN_SETTINGS
@@ -99,7 +99,7 @@ test('offline AI explicit V3 visual policy preserves V3 visuals', () => {
 
   const meshes = refs.otherPlayerMeshes.get(bot.id);
   assert.ok(meshes);
-  assert.equal(meshes.group.userData.modelSystem, 'v3');
+  assert.equal(meshes.group.userData.characterAsset, 'iron-vanguard');
   const appliedLoadout = getAppliedLoadout(refs, bot.id) as any;
   assert.equal(appliedLoadout.modelSystem, 'v3');
   assert.equal(appliedLoadout.helmet, 'odst');
@@ -107,13 +107,13 @@ test('offline AI explicit V3 visual policy preserves V3 visuals', () => {
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'medium');
 });
 
-test('grifball AI roster visuals attach team body outlines from combatant team', () => {
+test('grifball AI roster visuals attach solid team armor from combatant team', () => {
   const { state, refs } = createStateAndRefs({
     ...DEFAULT_ADMIN_SETTINGS,
     gameMode: 'grifball',
   });
   const bot = createOfflineBotCombatant({
-    id: 'bot_blue_outline',
+    id: 'bot_blue_armor',
     playerName: 'Blue Bot',
     team: 'blue',
     spawnPos: new THREE.Vector3(1, 0, 0),
@@ -128,16 +128,26 @@ test('grifball AI roster visuals attach team body outlines from combatant team',
 
   const meshes = refs.otherPlayerMeshes.get(bot.id);
   assert.ok(meshes);
-  const outline = getCombatantTeamOutlineState(meshes.group);
-  assert.ok(outline);
-  assert.equal(outline.team, 'blue');
-  assert.ok(outline.meshes.length > 0);
+  const armor = getCombatantTeamArmorState(meshes.group);
+  assert.ok(armor);
+  assert.equal(armor.team, 'blue');
+  assert.ok(armor.meshes.length > 0);
+  assert.equal(armor.material.color.getHexString(), FRIENDLY_ARMOR_COLOR.slice(1));
+
+  state.localPlayerTeam = 'red';
+  provisionCombatant(state, refs, bot.id, bot);
+  assert.equal(refs.otherPlayerMeshes.get(bot.id)?.group, meshes.group);
+  assert.equal(armor.material.color.getHexString(), ENEMY_ARMOR_COLOR.slice(1));
+
+  bot.team = 'red';
+  provisionCombatant(state, refs, bot.id, bot);
+  assert.equal(armor.material.color.getHexString(), FRIENDLY_ARMOR_COLOR.slice(1));
 });
 
-test('sandbox roster visuals do not keep Grifball team body outlines', () => {
+test('sandbox roster visuals do not keep Grifball solid team armor', () => {
   const { state, refs } = createStateAndRefs();
   const bot = createOfflineBotCombatant({
-    id: 'bot_sandbox_outline',
+    id: 'bot_sandbox_armor',
     playerName: 'Sandbox Bot',
     team: 'red',
     spawnPos: new THREE.Vector3(1, 0, 0),
@@ -152,7 +162,7 @@ test('sandbox roster visuals do not keep Grifball team body outlines', () => {
 
   const meshes = refs.otherPlayerMeshes.get(bot.id);
   assert.ok(meshes);
-  assert.equal(getCombatantTeamOutlineState(meshes.group), null);
+  assert.equal(getCombatantTeamArmorState(meshes.group), null);
 });
 
 test('offline AI explicit V3 visual policy does not change gameplay model type', () => {
@@ -182,7 +192,7 @@ test('offline AI explicit V3 visual policy does not change gameplay model type',
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'large');
   const appliedLoadout = getAppliedLoadout(refs, bot.id) as any;
   assert.equal(appliedLoadout.modelSystem, 'v3');
-  assert.equal(appliedLoadout.modelType, 'large');
+  assert.equal(appliedLoadout.modelType, 'medium');
 });
 
 test('offline AI explicit V2 visual policy applies gameplay model type to V2 visuals', () => {
@@ -312,11 +322,11 @@ test('remote human visual policy v3 keeps V3 visuals without letting V3 personal
 
   const appliedLoadout = getAppliedLoadout(refs, remote.id);
   assert.equal(appliedLoadout.modelSystem, 'v3');
-  assert.equal(appliedLoadout.modelType, 'large');
+  assert.equal(appliedLoadout.modelType, 'medium');
   assert.equal(state.otherPlayers.get(remote.id)?.modelType, 'medium');
 });
 
-test('remote V3 visual policy rebuilds when V3 render quality changes', () => {
+test('Iron Vanguard does not rebuild for prototype quality settings', () => {
   const { state, refs } = createStateAndRefs();
   const data = {
     controller: 'remote',
@@ -329,14 +339,14 @@ test('remote V3 visual policy rebuilds when V3 render quality changes', () => {
   const firstMeshes = refs.otherPlayerMeshes.get('peer');
   assert.ok(firstMeshes);
   const appliedLoadoutKey = firstMeshes.group.userData.appliedLoadoutKey;
-  assert.equal(firstMeshes.group.userData.modelSystem, 'v3');
+  assert.equal(firstMeshes.group.userData.characterAsset, 'iron-vanguard');
 
   provisionCombatant(state, refs, 'peer', data, { v3QualityTier: 'desktop' });
   const secondMeshes = refs.otherPlayerMeshes.get('peer');
   assert.ok(secondMeshes);
-  assert.notEqual(secondMeshes.group, firstMeshes.group);
+  assert.equal(secondMeshes.group, firstMeshes.group);
   assert.equal(secondMeshes.group.userData.appliedLoadoutKey, appliedLoadoutKey);
-  assert.equal(secondMeshes.group.userData.modelSystem, 'v3');
+  assert.equal(secondMeshes.group.userData.characterAsset, 'iron-vanguard');
 });
 
 test('remote V3 visual policy preserves sanitized V3 role paint while forced V1 and V2 remain legacy visual policies', () => {
@@ -387,7 +397,7 @@ test('remote V3 visual policy preserves sanitized V3 role paint while forced V1 
   assert.equal(v2Applied.paintJob.v3RoleColors.invalid, undefined);
 });
 
-test('remote V3 visual policy triggers death voxel burst on alive-to-dead transition only', () => {
+test('Iron Vanguard hides on death and restores on respawn without prototype voxel effects', () => {
   const { state, refs } = createStateAndRefs();
   const data = {
     controller: 'remote',
@@ -409,7 +419,7 @@ test('remote V3 visual policy triggers death voxel burst on alive-to-dead transi
   const firstBurst = refs.v3DeathVoxelBursts.get('combatant:peer-burst');
   const meshes = refs.otherPlayerMeshes.get('peer-burst');
 
-  assert.ok(firstBurst);
+  assert.equal(firstBurst, undefined);
   assert.ok(meshes);
   assert.equal(meshes.group.visible, false);
   assert.equal(meshes.hammer.visible, false);
@@ -422,10 +432,10 @@ test('remote V3 visual policy triggers death voxel burst on alive-to-dead transi
 
   provisionCombatant(state, refs, 'peer-burst', data, { v3QualityTier: 'mobileLow' });
   assert.equal(refs.v3DeathVoxelBursts.has('combatant:peer-burst'), false);
-  assert.equal(firstBurst.disposed, true);
+  assert.equal(refs.v3DeathVoxelBursts.size, 0);
 });
 
-test('remote V3 visual policy clears death voxel burst state when rebuilt while dead', () => {
+test('Iron Vanguard remains hidden when rebuilt while dead', () => {
   const { state, refs } = createStateAndRefs();
   const data = {
     controller: 'remote',
@@ -443,7 +453,7 @@ test('remote V3 visual policy clears death voxel burst state when rebuilt while 
     hp: 0,
   }, { v3QualityTier: 'mobileLow' });
   const firstBurst = refs.v3DeathVoxelBursts.get('combatant:peer-burst-rebuild');
-  assert.ok(firstBurst);
+  assert.equal(firstBurst, undefined);
 
   provisionCombatant(state, refs, 'peer-burst-rebuild', {
     ...data,
@@ -451,9 +461,9 @@ test('remote V3 visual policy clears death voxel burst state when rebuilt while 
     hue: 220,
   }, { v3QualityTier: 'mobileLow' });
 
-  assert.equal(firstBurst.disposed, true);
+  assert.equal(refs.v3DeathVoxelBursts.size, 0);
   assert.equal(refs.v3DeathVoxelBursts.has('combatant:peer-burst-rebuild'), false);
-  assert.equal(refs.v3DeathAliveState.get('combatant:peer-burst-rebuild'), false);
+  assert.equal(refs.otherPlayerMeshes.get('peer-burst-rebuild')!.group.visible, false);
 });
 
 test('remote V2 visual policy does not trigger V3 death voxel burst', () => {
@@ -473,4 +483,33 @@ test('remote V2 visual policy does not trigger V3 death voxel burst', () => {
   });
 
   assert.equal(refs.v3DeathVoxelBursts.size, 0);
+});
+
+
+test('remote lunge flight and contact survive sync updates without starting a second sword attack', () => {
+  const { state, refs } = createStateAndRefs();
+  provisionCombatant(state, refs, 'peer', { activeWeapon: 'sword', isLunging: true, swordLungeHit: false, lungeTimer: 0.3 });
+  const actor = state.otherPlayers.get('peer')!;
+  assert.equal(actor.isLunging, true);
+  assert.equal(actor.lungeTimer, 0.3);
+  actor.weaponState = 'ready'; // The lunge-start action sets this separately from position sync.
+  provisionCombatant(state, refs, 'peer', { isLunging: false, swordLungeHit: true });
+  assert.equal(actor.isLunging, false);
+  assert.equal(actor.swordLungeHit, true);
+  assert.equal(actor.weaponState, 'ready');
+  provisionCombatant(state, refs, 'peer', { yaw: 1 });
+  assert.equal(actor.swordLungeHit, true, 'packets without the optional fields preserve the outcome');
+  provisionCombatant(state, refs, 'peer', { isLunging: true, swordLungeHit: false, lungeTimer: 0 });
+  assert.equal(actor.swordLungeHit, false);
+});
+
+
+test('remote jump and sprint flags survive partial updates and explicitly clear on landing/walk', () => {
+  const { state, refs } = createStateAndRefs();
+  provisionCombatant(state, refs, 'moving-peer', {isJumping: true, isSprinting: true, isSliding: true});
+  const actor = state.otherPlayers.get('moving-peer')!;
+  provisionCombatant(state, refs, 'moving-peer', {yaw: 1});
+  assert.equal(actor.isJumping, true); assert.equal(actor.aiIsSprinting, true); assert.equal(actor.aiSlideActive, true);
+  provisionCombatant(state, refs, 'moving-peer', {isJumping: false, isSprinting: false, isSliding: false});
+  assert.equal(actor.isJumping, false); assert.equal(actor.aiIsSprinting, false); assert.equal(actor.aiSlideActive, false);
 });

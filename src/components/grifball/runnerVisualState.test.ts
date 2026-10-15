@@ -190,49 +190,65 @@ test('material-colored carriers keep their healing wave blue across updates', ()
   assert.equal(group.getObjectByName('runner-heal-wave'), undefined);
 });
 
-test('roster visual sync applies runner orange to live ball holder', () => {
-  const scene = new THREE.Scene();
-  const refs = createInitialGrifballThreeRefs();
-  refs.scene = scene;
-  const meshes = createCombatantMeshRig(scene, 200, false);
-  refs.otherPlayerMeshes.set('bot_1', meshes);
+for (const controller of ['ai', 'remote'] as const) {
+  for (const team of ['blue', 'red'] as const) {
+    test(`live ${controller} ${team} ball holder becomes gold and restores team color`, () => {
+      const scene = new THREE.Scene();
+      const refs = createInitialGrifballThreeRefs();
+      refs.scene = scene;
+      const meshes = createCombatantMeshRig(scene, 200, false);
+      refs.otherPlayerMeshes.set('bot_1', meshes);
 
-  const state = {
-    isMultiplayer: false,
-    grifball: { ball: { state: 'held', holderId: 'bot_1' } },
-    settings: {
-      enableSprint: false,
-      enableSlide: false,
-      hammerReloadTime: 0.6,
-      hammerMeleeReload: 0.5,
-    },
-    otherPlayers: new Map([['bot_1', {
-      id: 'bot_1',
-      playerName: 'Bot',
-      controller: 'ai',
-      pos: new THREE.Vector3(),
-      vel: new THREE.Vector3(),
-      yaw: 0,
-      isCrouching: false,
-      hp: 2,
-      maxHp: 2,
-      respawnTimer: 0,
-      score: 0,
-      kills: 0,
-      deaths: 0,
-      activeWeapon: 'ball',
-      weaponState: 'ready',
-      weaponTimer: 0,
-    }]]),
-  } as unknown as GrifballRuntimeState;
+      const state = {
+        isMultiplayer: false,
+        localPlayerTeam: 'blue',
+        grifball: { ball: { state: 'held', holderId: 'bot_1' } },
+        settings: {
+          gameMode: 'grifball',
+          enableSprint: false,
+          enableSlide: false,
+          hammerReloadTime: 0.6,
+          hammerMeleeReload: 0.5,
+        },
+        otherPlayers: new Map([['bot_1', {
+          id: 'bot_1',
+          playerName: 'Bot',
+          controller,
+          team,
+          pos: new THREE.Vector3(),
+          vel: new THREE.Vector3(),
+          yaw: 0,
+          isCrouching: false,
+          hp: 2,
+          maxHp: 2,
+          respawnTimer: 0,
+          score: 0,
+          kills: 0,
+          deaths: 0,
+          activeWeapon: 'ball',
+          weaponState: 'ready',
+          weaponTimer: 0,
+        }]]),
+      } as unknown as GrifballRuntimeState;
 
-  updateRosterCombatantVisualsForState({
-    refs,
-    state,
-    dt: 0.016,
-    renderSwordLungeTrailVfx: () => {},
-    applyBotMeleeImpact: () => {},
-  });
+      updateRosterCombatantVisualsForState({
+        refs,
+        state,
+        dt: 0.016,
+        renderSwordLungeTrailVfx: () => {},
+        applyBotMeleeImpact: () => {},
+      });
 
-  assert.equal(firstGroupVertexHex(meshes.group), RUNNER_ARMOR_ORANGE.getHexString());
-});
+      const armor = meshes.group.userData.teamArmorState;
+      assert.equal(armor.material.color.getHexString(), RUNNER_ARMOR_ORANGE.getHexString());
+      state.grifball.ball.state = 'loose';
+      state.grifball.ball.holderId = null;
+      updateRosterCombatantVisualsForState({
+        refs, state, dt: 0.016,
+        renderSwordLungeTrailVfx: () => {}, applyBotMeleeImpact: () => {},
+      });
+      assert.equal(armor.material.color.getHexString(), team === 'blue' ? '2563eb' : 'dc2626');
+    });
+
+  }
+}

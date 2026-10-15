@@ -25,7 +25,7 @@ test('visual policy v2 forces v2 model system', () => {
   );
 });
 
-test('visual policy v3 preserves advanced visual model system', () => {
+test('visual policy v3 selects the Iron Vanguard model set', () => {
   assert.equal(
     resolveCombatantVisualModelSystem({
       visualModelPolicy: 'v3',
@@ -55,7 +55,7 @@ test('v2 visual policy forces v2 and normalizes v3 model type to medium', () => 
   );
 });
 
-test('v3 visual policy preserves sanitized advanced visual loadout details', () => {
+test('v3 visual policy selects Iron Vanguard while retaining saved customization', () => {
   const loadout = resolveLoadoutForVisualPolicy({
       visualModelPolicy: 'v3',
       loadout: {
@@ -66,6 +66,16 @@ test('v3 visual policy preserves sanitized advanced visual loadout details', () 
     }) as any;
 
   assert.equal(loadout.modelSystem, 'v3');
+  assert.equal(loadout.characterAsset, 'iron-vanguard');
+  assert.equal(loadout.modelType, 'medium');
   assert.equal(loadout.helmet, 'odst');
   assert.equal(loadout.hammerPreset, 'gravity-axe');
 });
+
+for (const visualModelPolicy of ['v1', 'v2'] as const) {
+  test(`${visualModelPolicy} restores its own model after Iron Vanguard was selected`, () => {
+    const loadout = resolveLoadoutForVisualPolicy({visualModelPolicy, loadout: {modelSystem:'v3',characterAsset:'iron-vanguard'}});
+    assert.equal(loadout.modelSystem, visualModelPolicy);
+    assert.equal(loadout.characterAsset, undefined);
+  });
+}

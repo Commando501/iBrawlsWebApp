@@ -1,6 +1,6 @@
 import { removeMainAIFromRoster } from '../../game/roster';
 import { type CustomMapData } from '../../types';
-import { getMultiplayerSpawnPoint } from './arenaSpawns';
+import { getGrifballTeamSpawn, resolveActiveSpawnPoints, getMultiplayerSpawnPoint } from './arenaSpawns';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -51,8 +51,11 @@ export function syncMultiplayerRuntimeModeForState({
 
   removeMainAIFromRoster(state.otherPlayers);
   state.multiplayerSpawnSlot = multiplayerSpawnSlot;
+  if (isMultiplayer && state.settings.gameMode === 'grifball') state.localPlayerTeam = multiplayerSpawnSlot % 2 === 0 ? 'blue' : 'red';
   if (multiplayerRole === 'client' || multiplayerRole === 'host') {
-    const spawnPos = getMultiplayerSpawnPoint(activeCustomMap, spawnPoints, multiplayerSpawnSlot);
+    const spawnPos = state.settings.gameMode === 'grifball'
+      ? getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, resolveActiveSpawnPoints(activeCustomMap, spawnPoints), [], Math.floor(multiplayerSpawnSlot / 2))
+      : getMultiplayerSpawnPoint(activeCustomMap, spawnPoints, multiplayerSpawnSlot);
     state.playerPos.copy(spawnPos);
     state.yaw = spawnPos.spawnYaw ?? getInwardSpawnYaw(spawnPos);
   }
@@ -72,6 +75,7 @@ export function syncMultiplayerPropsForState({
   state.isMultiplayer = isMultiplayer;
   state.multiplayerRole = multiplayerRole;
   state.multiplayerSpawnSlot = multiplayerSpawnSlot;
+  if (isMultiplayer && state.settings.gameMode === 'grifball') state.localPlayerTeam = multiplayerSpawnSlot % 2 === 0 ? 'blue' : 'red';
   if (isMultiplayer) {
     removeMainAIFromRoster(state.otherPlayers);
   }

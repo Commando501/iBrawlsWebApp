@@ -70,7 +70,7 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
       weaponSwapFeintTimers: new Map(memory.swapRemaining === undefined ? [] : [[botId, memory.swapRemaining]]),
     };
     tickFeintCooldown(feints, botId, dt);
-    const expiry = advanceAIWeaponSwapFeint(feints, botId, dt, activeWeapon, weaponState, tuning.weaponPrioritization >= 100);
+    const expiry = advanceAIWeaponSwapFeint(feints, botId, dt, activeWeapon, weaponState, tuning.weaponPrioritization >= 100, self.isLunging);
     swapFeintActive = expiry.swapFeintActive;
     if (expiry.revert) {
       commands.push({ kind: 'revert-weapon-feint' });
@@ -109,7 +109,7 @@ export function resolveSimGrifballComboInput(state: SimState, plan: GrifballTeam
     swapLockoutRemaining: observedSwapLockout, cooldownMultiplier: memories[botId].cooldownMultiplier,
     getTargetPlayerModel: () => context.playerModel ?? null, random: context.random,
     applyTacticalWeapon: requestedWeapon => {
-      if (canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon, weaponState, swapLockoutTimer: lockout,
+      if (canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon, weaponState, isLunging: self.isLunging, swapLockoutTimer: lockout,
         swordForbidden: tuning.weaponPrioritization <= 0, hammerForbidden: tuning.weaponPrioritization >= 100 })) {
         commands.push({ kind: 'swap', weapon: requestedWeapon });
         activeWeapon = requestedWeapon; weaponState = 'ready';

@@ -1,3 +1,4 @@
+import { onlineGrifball, sendGrifballInput, noteOnlineGrifballThrow, isOnlineGrifballAuthority, advanceOnlineGrifballCharges, publishOnlineGrifball, applyPendingOnlineGrifball } from './onlineGrifballRuntime';
 import { canStartAIWeaponAction } from './aiWeaponTimingRuntime';
 import { planGrifballPass } from '../../game/aiGrifballPassing';
 import { createSnapshotRouters } from '../../game/aiGrifballRunner';
@@ -217,13 +218,15 @@ export function reconcileGrifballCarrierForState({ state, refs, ballMeshRef, bal
   ballChargingRef: MutableRef<boolean>;
   ballChargeTimerRef: MutableRef<number>;
 }): boolean {
-  if (state.isMultiplayer || state.settings.gameMode !== 'grifball') return false;
+  if ((state.isMultiplayer && !isOnlineGrifballAuthority(state)) || state.settings.gameMode !== 'grifball') return false;
   const ball = state.grifball.ball, holderId = ball.holderId;
   if (ball.state !== 'held' || !holderId) return false;
   const holder = getGrifballCombatantRefForState(state, holderId);
-  if (holder?.alive) return false;
+  if (holder?.alive && !(holderId === 'player' && state.isObserverMode) && !state.otherPlayers.get(holderId)?.isObserver) return false;
 
-  dropBall(ball, holder ? holder.pos : ball.home);
+  // A newly observing player has already moved to the spectator camera position.
+  const observing = holderId === 'player' ? state.isObserverMode : state.otherPlayers.get(holderId)?.isObserver;
+  dropBall(ball, holder && !observing ? holder.pos : ball.pos);
   setGrifballCarrierForState({ state, refs, id: holderId, carrying: false });
   if (holderId === 'player') {
     state.playerPickupRequested = false;
@@ -325,7 +328,9 @@ export function throwPlayerGrifballPassForState({
   ballChargingRef,
   ballChargeTimerRef,
   playSwing,
+  multiplayerSocket,
 }: {
+  multiplayerSocket?: WebSocket | null;
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
   ballChargingRef: MutableRef<boolean>;
@@ -333,12 +338,18 @@ export function throwPlayerGrifballPassForState({
   playSwing: () => void;
 }): void {
   const g = state.grifball;
-  if (g.ball.holderId !== 'player' || !resolveRunnerThrowAllowed(state.settings)) {
+  if (g.phase !== 'playing' || state.playerHP <= 0 || g.ball.holderId !== 'player' || !resolveRunnerThrowAllowed(state.settings)) {
     ballChargingRef.current = false;
     ballChargeTimerRef.current = 0;
     return;
   }
-  const chargeMax = state.settings.grifballChargeMax ?? 1.2;
+  if (state.isMultiplayer && !isOnlineGrifballAuthority(state)) {
+    sendGrifballInput(state, multiplayerSocket, false, true);
+    ballChargingRef.current = false; ballChargeTimerRef.current = 0;
+    playSwing();
+    return;
+  }
+  const chargeMax = Math.max(0.001, state.settings.grifballChargeMax ?? 1.2);
   const t = Math.min(1, ballChargeTimerRef.current / chargeMax);
   const minSpeed = state.settings.grifballPassSpeedMin ?? 9;
   const maxSpeed = state.settings.grifballPassSpeedMax ?? 26;
@@ -346,6 +357,7 @@ export function throwPlayerGrifballPassForState({
   const forwardHeading = getForwardHeadingForYaw(state.yaw);
   const heading = { x: forwardHeading.x, y: 0, z: forwardHeading.z };
   throwBall(g.ball, { x: state.playerPos.x, y: state.playerPos.y + 1.1, z: state.playerPos.z }, heading, speed);
+  noteOnlineGrifballThrow(state, 'player', t);
   setGrifballCarrierForState({ state, refs, id: 'player', carrying: false });
   ballChargingRef.current = false;
   ballChargeTimerRef.current = 0;
@@ -354,6 +366,7 @@ export function throwPlayerGrifballPassForState({
 
 /** Execute a shared pass intent once per frame, after movement, through the existing throw rules. */
 export function tickScriptedGrifballPassForState(state: GrifballRuntimeState, refs: GrifballThreeRefs, dt: number): boolean {
+  if (state.isMultiplayer) return false;
   const plan = state.aiMatchContext.grifballTeamPlan, ball = state.grifball.ball;
   const bot = state.otherPlayers.get(ball.holderId ?? '');
   const assignment = bot && plan.assignments.get(bot.id), selected = assignment?.pass?.selected;
@@ -412,6 +425,7 @@ export function updateGrifballObjectiveForState({
   ballChargeTimerRef,
   dt,
   isMultiplayer,
+  multiplayerSocket,
   activeCustomMap,
   localPlayerModelSystem,
   placeCombatantsAtGrifballSpawns,
@@ -424,22 +438,58 @@ export function updateGrifballObjectiveForState({
   ballChargeTimerRef: MutableRef<number>;
   dt: number;
   isMultiplayer: boolean;
+  multiplayerSocket?: WebSocket | null;
   activeCustomMap: CustomMapData | null;
   localPlayerModelSystem?: unknown;
   placeCombatantsAtGrifballSpawns: () => void;
   pushStatsUpdate: () => void;
 }): void {
-  if (state.settings.gameMode !== 'grifball' || isMultiplayer) {
+  if (state.settings.gameMode !== 'grifball') {
     hideGrifballThrowTrajectoryVisualForRefs(refs);
     clearGrifballPickupRequestsForState(state);
     return;
   }
   ensureGrifballBallMeshForRefs({ refs, ballMeshRef });
+  const follower = isMultiplayer && !isOnlineGrifballAuthority(state);
+  if (follower) applyPendingOnlineGrifball(state, refs, placeCombatantsAtGrifballSpawns);
+  const throwingAllowed = resolveRunnerThrowAllowed(state.settings);
+  if (!throwingAllowed) {
+    ballChargingRef.current = false;
+    ballChargeTimerRef.current = 0;
+    for (const bot of state.otherPlayers.values()) {
+      bot.grifballPassCharge = 0;
+    }
+  }
+  if (state.grifball.phase !== 'playing' || state.grifball.ball.holderId !== 'player' || state.playerHP <= 0) {
+    ballChargingRef.current = false; ballChargeTimerRef.current = 0;
+  }
+  if (throwingAllowed && ballChargingRef.current) ballChargeTimerRef.current += dt;
+  state.grifballPassCharge = ballChargingRef.current
+    ? Math.min(1, ballChargeTimerRef.current / Math.max(0.001, state.settings.grifballChargeMax ?? 1.2))
+    : 0;
+
+  if (follower) {
+    const net = onlineGrifball(state);
+    net.sendTimer += dt;
+    if (state.multiplayerRole !== 'observer' && (state.playerPickupRequested || net.sendTimer >= 0.05)) {
+      sendGrifballInput(state, multiplayerSocket, ballChargingRef.current);
+      net.sendTimer = 0;
+    }
+    if (state.grifball.ball.holderId === 'player') tickGrifballRunnerHealingForState(state, 'player', dt);
+    renderGrifballObjective({ state, refs, ballMeshRef, ballChargingRef, dt, activeCustomMap, localPlayerModelSystem });
+    return;
+  }
+  if (isMultiplayer) advanceOnlineGrifballCharges(state, dt);
   const g = state.grifball;
   const config = resolveMatchConfig(state.settings);
 
+  if (isMultiplayer && state.gameTime <= 0) g.phase = 'matchEnd';
   const result = tickGrifballMatch(g, dt, config);
   if (result.roundReset) {
+    if (isMultiplayer) {
+      state.playerHP = state.settings.maxHP ?? 1; state.playerRespawnTimer = 0;
+      state.playerSlideActive = false; state.isLunging = false;
+    }
     placeCombatantsAtGrifballSpawns();
     returnBallHome(g.ball);
     setGrifballCarrierForState({ state, refs, id: 'player', carrying: false });
@@ -458,27 +508,14 @@ export function updateGrifballObjectiveForState({
     coord.priorityAge = 0;
   }
 
-  const throwingAllowed = resolveRunnerThrowAllowed(state.settings);
-  if (!throwingAllowed) {
-    ballChargingRef.current = false;
-    ballChargeTimerRef.current = 0;
-    for (const bot of state.otherPlayers.values()) {
-      bot.grifballPassCharge = 0;
-    }
-  }
-  if (throwingAllowed && ballChargingRef.current) ballChargeTimerRef.current += dt;
-  state.grifballPassCharge = ballChargingRef.current
-    ? Math.min(1, ballChargeTimerRef.current / (state.settings.grifballChargeMax ?? 1.2))
-    : 0;
-
   tickScriptedGrifballPassForState(state, refs, dt);
   if (g.ball.state === 'held' && g.ball.holderId) {
     const holderId = g.ball.holderId;
     const ref = getGrifballCombatantRefForState(state, holderId);
-    if (!ref || !ref.alive) {
+    if (!ref || !ref.alive || (holderId === 'player' && state.isObserverMode) || state.otherPlayers.get(holderId)?.isObserver) {
       reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
     } else {
-      tickGrifballRunnerHealingForState(state, holderId, dt);
+      if (!isMultiplayer || holderId === 'player') tickGrifballRunnerHealingForState(state, holderId, dt);
       g.ball.pos.x = ref.pos.x;
       g.ball.pos.y = ref.pos.y + 1.1;
       g.ball.pos.z = ref.pos.z;
@@ -499,7 +536,7 @@ export function updateGrifballObjectiveForState({
         candidates.push({ id: 'player', pos: { x: state.playerPos.x, y: state.playerPos.y, z: state.playerPos.z }, alive: true });
       }
       for (const bot of state.otherPlayers.values()) {
-        if (bot.pickupRequested === true && bot.controller === 'ai' && bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0) {
+        if (bot.pickupRequested === true && (bot.controller === 'ai' || isMultiplayer) && !bot.isObserver && bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0) {
           candidates.push({ id: bot.id, pos: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z }, alive: true });
         }
       }
@@ -533,6 +570,15 @@ export function updateGrifballObjectiveForState({
 
   clearGrifballPickupRequestsForState(state);
 
+  if (isMultiplayer) publishOnlineGrifball(state, multiplayerSocket, dt);
+  renderGrifballObjective({ state, refs, ballMeshRef, ballChargingRef, dt, activeCustomMap, localPlayerModelSystem });
+}
+
+function renderGrifballObjective({ state, refs, ballMeshRef, ballChargingRef, dt, activeCustomMap, localPlayerModelSystem }: {
+  state: GrifballRuntimeState; refs: GrifballThreeRefs; ballMeshRef: MutableRef<THREE.Mesh | null>;
+  ballChargingRef: MutableRef<boolean>; dt: number; activeCustomMap: CustomMapData | null; localPlayerModelSystem?: unknown;
+}) {
+  const g = state.grifball;
   const mesh = ballMeshRef.current;
   if (mesh) {
     const basePosition = new THREE.Vector3(g.ball.pos.x, g.ball.pos.y, g.ball.pos.z);

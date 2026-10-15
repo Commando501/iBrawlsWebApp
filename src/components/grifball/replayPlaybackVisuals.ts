@@ -1,9 +1,10 @@
+import { isIronVanguardLoadout, isIronVanguardModel } from '../iron-vanguard/ironVanguardModel';
 import * as THREE from 'three';
 import { resolveGrifballTeam } from '../../game/grifballTeams';
 import { type ReplayFile, type UniversalSettings } from '../../types';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
-import { syncCombatantTeamOutline } from './combatantTeamOutlines';
+import { syncCombatantTeamArmor } from './combatantTeamArmor';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
 import { updateRunnerVisualStateForGroup } from './runnerVisualState';
@@ -63,14 +64,16 @@ export function updateReplayCombatantVisualsForFrame({
   const scene = refs.scene;
   if (!scene) return;
 
+  const target = updatedPlayers.get(targetId);
+  const friendlyTeam = target ? target.team ?? resolveGrifballTeam(targetId) : 'blue';
   updatedPlayers.forEach((player, id) => {
     let meshes = refs.otherPlayerMeshes.get(id);
-    const teamOutlineTeam = replayData?.gameMode === 'grifball'
+    const teamArmorTeam = replayData?.gameMode === 'grifball'
       ? player.team ?? resolveGrifballTeam(id)
       : null;
     const visualLoadout = resolveReplayCombatantVisualLoadout(replayData, id);
     const visualLoadoutKey = JSON.stringify(visualLoadout);
-    const qualityChanged = visualLoadout.modelSystem === 'v3' && (
+    const qualityChanged = visualLoadout.modelSystem === 'v3' && !isIronVanguardLoadout(visualLoadout) && (
       meshes?.group.userData.appliedV3QualityTier !== v3Options.v3QualityTier ||
       meshes?.group.userData.appliedV3Distance !== v3Options.v3Distance
     );
@@ -79,23 +82,27 @@ export function updateReplayCombatantVisualsForFrame({
         clearV3DeathVoxelBurstForCombatant(refs, `replay:${id}`);
         scene.remove(meshes.group);
       }
-      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options, teamOutlineTeam, settings);
+      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options, teamArmorTeam, friendlyTeam);
       meshes.group.userData.appliedHue = player.hue;
       meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
       refs.otherPlayerMeshes.set(id, meshes);
     }
 
     const { group, hammer, sword, pistol } = meshes;
-    syncCombatantTeamOutline(group, teamOutlineTeam, settings);
+    syncCombatantTeamArmor(group, teamArmorTeam, friendlyTeam);
     group.position.copy(player.pos);
     group.rotation.y = player.yaw;
     group.scale.set(1, group.userData.modelSystem === 'v3' ? 1 : player.crouchScaleY, 1);
 
-    if (group.userData.modelSystem === 'v3') animateSpartanCombatantModel({
+    group.userData.vanguardBallCharge = player.ballCharge ?? 0;
+    group.userData.vanguardBallThrowTime = player.ballThrowTime;
+    group.userData.vanguardBallReleaseCharge = player.ballReleaseCharge;
+    if (group.userData.modelSystem === 'v3' || isIronVanguardModel(group)) animateSpartanCombatantModel({
       refs, mesh: group, vel: player.vel, yaw: player.yaw, hp: player.hp,
       weaponState: player.weaponState, weaponTimer: player.weaponTimer || 0, dt,
       activeWeapon: player.activeWeapon, isSliding: player.isSliding, isSprinting: player.isSprinting,
-      isLunging: !!player.isLunging, isCrouching: player.isCrouching,
+      lungeHit: player.swordLungeHit, lungeTime: player.lungeTimer,
+      isLunging: !!player.isLunging, isCrouching: player.isCrouching, isJumping: player.isJumping,
       crouchProgress: (1 - player.crouchScaleY) / .35,
       lookPitch: player.pitch, settings, isLocalV3Animation: true,
     });
@@ -114,6 +121,7 @@ export function updateReplayCombatantVisualsForFrame({
       player.pitch
     );
 
+    const throwingVanguard = isIronVanguardModel(group) && player.ballThrowTime !== undefined;
     const alive = player.hp > 0 && player.respawnTimer <= 0;
     const isSpectatedInFirstPerson = observerCamMode === 'first' && targetId === id;
     syncV3DeathVoxelBurstForCombatant({
@@ -126,9 +134,9 @@ export function updateReplayCombatantVisualsForFrame({
       qualityTier: group.userData.appliedV3QualityTier,
     });
     group.visible = alive && !isSpectatedInFirstPerson;
-    hammer.visible = alive && player.activeWeapon === 'hammer';
-    sword.visible = alive && player.activeWeapon === 'sword';
-    if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
+    hammer.visible = alive && !throwingVanguard && player.activeWeapon === 'hammer';
+    sword.visible = alive && !throwingVanguard && player.activeWeapon === 'sword';
+    if (pistol) pistol.visible = alive && !throwingVanguard && player.activeWeapon === 'pistol';
     updateRunnerVisualStateForGroup({
       group,
       carrying: player.activeWeapon === 'ball',
@@ -149,9 +157,9 @@ export function updateReplayCombatantVisualsForFrame({
         settings: settings ?? {},
         combatantModel: group,
       });
-      hammer.visible = alive && player.activeWeapon === 'hammer';
-      sword.visible = alive && player.activeWeapon === 'sword';
-      if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
+      hammer.visible = alive && !throwingVanguard && player.activeWeapon === 'hammer';
+      sword.visible = alive && !throwingVanguard && player.activeWeapon === 'sword';
+      if (pistol) pistol.visible = alive && !throwingVanguard && player.activeWeapon === 'pistol';
     } else if (player.weaponState !== 'ready') {
       if (player.activeWeapon === 'hammer') {
         if (player.weaponState === 'swing_up') {

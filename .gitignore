@@ -50,3 +50,19 @@ reference/v3-source-bind/*.glb
 reference/v3-source-bind/*.GLB
 
 assets/
+
+# Shipped Championship Stadium material library
+!public/assets/
+public/assets/*
+!public/assets/stadium/
+!public/assets/stadium/**
+
+reference/
+
+# Shipped Iron Vanguard gameplay model
+!public/assets/iron-vanguard/
+!public/assets/iron-vanguard/**
+
+# Local animation tooling caches and dev-server process state
+/scripts/iron-vanguard/**/__pycache__/
+/.codex/ibrawls-vite.pid

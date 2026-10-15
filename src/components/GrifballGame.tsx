@@ -1,3 +1,5 @@
+import { onlineGrifball } from './grifball/onlineGrifballRuntime';
+import { disposeIronVanguardScene } from './iron-vanguard/ironVanguardModel';
 import { GrifballValidationRuntime } from './grifball/grifballValidationRuntime';
 import { applyValidationLocalInput } from './grifball/validationLocalInputRuntime';
 import { grifballLab } from '../game/grifballLabStore';
@@ -50,6 +52,7 @@ import {
   updateGrifballObjectiveForState,
 } from './grifball/grifballObjectiveRuntime';
 import { disposeGrifballThrowTrajectoryVisualForRefs } from './grifball/grifballThrowTrajectoryRuntime';
+import { disposeStadiumResources } from './grifball/stadiumResourceDisposal';
 import {
   type LiveCameraFrameState,
 } from './grifball/liveCamera';
@@ -83,13 +86,14 @@ import {
 import { createVisualUpdateCallbacksForState } from './grifball/visualUpdateCallbacks';
 import { createWeaponActionCallbacksForState } from './grifball/weaponActionCallbacks';
 import { createVfxCallbacksForState } from './grifball/vfxCallbacks';
-import type { V3RenderOptions } from './v3/v3QualityTiers';
+import { getV3GameplayRenderOptions } from './v3/v3QualityTiers';
 
 export { createHighFidelityObjectMesh } from './grifball/customMapAssets';
 
 export const GrifballGame: React.FC<GrifballGameProps> = ({
   isPlaying,
   isPaused,
+  isMatchLoading = false,
   debugMode,
   adminSettings,
   onStatsUpdate,
@@ -98,6 +102,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   isMultiplayer = false,
   multiplayerRole = null,
   multiplayerSocket = null,
+  gameplayClientId = '',
   matchLobbyConfig = null,
   multiplayerSpawnSlot = 0,
   opponentClientId = '',
@@ -147,10 +152,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }),
     [activeVisualModelPolicy, playerLoadout]
   );
-  const activeV3RenderOptions = useMemo<V3RenderOptions>(() => ({
-    v3QualityTier,
-    v3Distance: 0,
-  }), [v3QualityTier]);
+  const activeV3RenderOptions = useMemo(() => getV3GameplayRenderOptions(v3QualityTier), [v3QualityTier]);
 
   const getActiveCustomMap = (): CustomMapData | null =>
     resolveActiveCustomMap({ customMap, replayData, selectedMap, gameMode: adminSettings.gameMode });
@@ -225,8 +227,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   }, [adminSettings.aiDifficulty, adminSettings.aiNeuralBrainId]);
 
   useEffect(() => {
-    stateRef.current.localPlayerTeam = localPlayerTeamFromRole(multiplayerRole);
-  }, [multiplayerRole]);
+    stateRef.current.localPlayerTeam = isMultiplayer && adminSettings.gameMode === 'grifball'
+      ? multiplayerSpawnSlot % 2 === 0 ? 'blue' : 'red'
+      : localPlayerTeamFromRole(multiplayerRole);
+  }, [multiplayerRole, multiplayerSpawnSlot, isMultiplayer, adminSettings.gameMode]);
 
   const {
     offlineBotCountRef,
@@ -382,6 +386,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       ballChargingRef,
       ballChargeTimerRef,
       playSwing: () => sfx.playSwing(),
+      multiplayerSocket,
     });
 
   const updateGrifball = (dt: number) =>
@@ -395,6 +400,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isMultiplayer,
       activeCustomMap: getActiveCustomMap(),
       localPlayerModelSystem: visualPlayerLoadout?.modelSystem,
+      multiplayerSocket,
       placeCombatantsAtGrifballSpawns,
       pushStatsUpdate,
     });
@@ -432,6 +438,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Handle multiplayer game synchronization logic
   useEffect(() => {
     const s = stateRef.current;
+    onlineGrifball(s).localId = gameplayClientId;
+    if (multiplayerRole === 'host') s.hostClientId = gameplayClientId;
+    else if (multiplayerRole === 'client' && s.hostClientId !== gameplayClientId) s.hostClientId = opponentClientId;
     syncMultiplayerRuntimeModeForState({
       state: s,
       refs: threeRef.current,
@@ -473,7 +482,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         multiplayerSocket.removeEventListener('message', handleWsMessage);
       };
     }
-  }, [isMultiplayer, multiplayerRole, multiplayerSocket, matchLobbyConfig, multiplayerSpawnSlot, selectedMap, customMap, replayData]);
+  }, [isMultiplayer, multiplayerRole, multiplayerSocket, matchLobbyConfig, multiplayerSpawnSlot, selectedMap, customMap, replayData, gameplayClientId]);
 
   // Keep isMultiplayer and multiplayerRole in sync with props
   useEffect(() => {
@@ -639,6 +648,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     let disposed = false;
     let mountedRenderer: THREE.WebGLRenderer | null = null;
+    let mountedScene: THREE.Scene | null = null;
     let unregisterInputEventListeners: (() => void) | null = null;
 
     onLoadingStateChange?.({
@@ -651,6 +661,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const mountScene = async () => {
       const activeCustomMap = getActiveCustomMap();
       const {
+        scene,
         camera,
         renderer,
       } = await initializeGrifballMountSceneForState({
@@ -684,10 +695,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
 
       if (disposed) {
+        disposeIronVanguardScene(scene);
+        disposeStadiumResources(scene);
         renderer.dispose();
         return;
       }
       mountedRenderer = renderer;
+      mountedScene = scene;
 
       onLoadingStateChange?.({
         visible: true,
@@ -802,6 +816,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
+      disposeIronVanguardScene(mountedScene);
+      disposeStadiumResources(mountedScene);
       if (mountedRenderer) {
         mountedRenderer.dispose();
       }
@@ -819,6 +835,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   } = createReplayRuntimeCallbacksForState({
     getState: () => stateRef.current,
     getRefs: () => threeRef.current,
+    getBallMesh: () => grifballBallMeshRef.current,
     replayData,
     replayRecordingRef,
     lastRecordTimeRef,
@@ -967,7 +984,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         renderGame();
       } else {
         labRuntimeRef.current!.suspend();
-        if (!isPausedRef.current) {
+        if (!isPausedRef.current || (isMultiplayer && !isMatchLoading)) {
+          if (isMultiplayer && isPausedRef.current) { ballChargingRef.current = false; ballChargeTimerRef.current = 0; }
           s.grifballTactics = grifballLab.getSnapshot().config;
           tick(dt);
         }
@@ -984,7 +1002,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       unregisterReplayPlaybackEvents();
       // Replay is compiled and auto-saved only when the game is fully closed / unmounted.
     };
-  }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket, replayData]);
+  }, [isPlaying, isPaused, isMatchLoading, isMultiplayer, multiplayerRole, multiplayerSocket, replayData]);
 
   // Save compiled replay on unmount of GrifballGame
   useEffect(() => {

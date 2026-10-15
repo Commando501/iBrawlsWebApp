@@ -167,3 +167,15 @@ for (const groundContinuation of [false, true]) for (const id of ['main_ai', 'bo
       if (combo && kind === 'ready' && !groundContinuation) assert.equal(target.hp, 19, 'combo follow-up must land after expiry and reload');
       if (groundContinuation && kind === 'ready') assert.ok(target.hp < 20, 'composed priorities must reach real contact after reload');
     });
+
+
+test('an expired weapon feint stays pending throughout a committed lunge', () => {
+  const context = { weaponSwapFeintTimers: new Map([['bot_2', 1 / 120]]) };
+  for (let frame = 0; frame < 48; frame++) {
+    const result = advanceAIWeaponSwapFeint(context, 'bot_2', 1 / 60, 'sword', 'ready', false, true);
+    assert.equal(result.revert, false);
+    assert.equal(result.swapFeintActive, true);
+  }
+  assert.equal(advanceAIWeaponSwapFeint(context, 'bot_2', 1 / 60, 'sword', 'ready', false, false).revert, true);
+  assert.equal(context.weaponSwapFeintTimers.has('bot_2'), false);
+});

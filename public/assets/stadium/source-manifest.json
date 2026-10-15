@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "acquiredDate": "2026-10-07",
+  "normalConvention": "OpenGL (+Y)",
+  "colorSpace": {
+    "albedo": "sRGB",
+    "allOtherMaps": "linear / no color space"
+  },
+  "materials": [
+    {
+      "id": "metal-panels",
+      "provider": "ambientCG",
+      "sourceId": "MetalPlates017A",
+      "sourceUrl": "https://ambientcg.com/view?id=MetalPlates017A",
+      "downloadUrl": "https://ambientcg.com/get?file=MetalPlates017A_2K-JPG.zip",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://docs.ambientcg.com/license/",
+      "sourceTileMeters": null,
+      "maps": {
+        "ao": {
+          "path": "/assets/stadium/metal-panels/ao.jpg",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 1822127,
+          "sha256": "ac4a5f32496240535ed528955d1961d57e7b410589e2831951d2f5cbe059985c",
+          "sourceFile": "MetalPlates017A_2K-JPG_AmbientOcclusion.jpg"
+        },
+        "albedo": {
+          "path": "/assets/stadium/metal-panels/albedo.jpg",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 1625159,
+          "sha256": "668c8040076499c32caa8c1b1801cacd05beab5ea07bab6cbfb57a8efa5538f4",
+          "sourceFile": "MetalPlates017A_2K-JPG_Color.jpg"
+        },
+        "metalness": {
+          "path": "/assets/stadium/metal-panels/metalness.jpg",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 587988,
+          "sha256": "b3f56d9f8e5306b3d1fd811c994ec9bbe81796d5e63cf248b4b68679479e8dac",
+          "sourceFile": "MetalPlates017A_2K-JPG_Metalness.jpg"
+        },
+        "normal-gl": {
+          "path": "/assets/stadium/metal-panels/normal-gl.jpg",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 4939308,
+          "sha256": "82d7826f2bd86cfb0c074de7802025ab970a319ac07ddfc8ec3d156dd2746a0c",
+          "sourceFile": "MetalPlates017A_2K-JPG_NormalGL.jpg"
+        },
+        "roughness": {
+          "path": "/assets/stadium/metal-panels/roughness.jpg",
+          "width": 2048,
+          "height": 2048,
+          "bytes": 1497616,
+          "sha256": "65cefe93873da07a3d302794dc252422a53418e7386c9a813da89254ce35966f",
+          "sourceFile": "MetalPlates017A_2K-JPG_Roughness.jpg"
+        }
+      }
+    },
+    {
+      "id": "concrete",
+      "provider": "ambientCG",
+      "sourceId": "Concrete034",
+      "sourceUrl": "https://ambientcg.com/view?id=Concrete034",
+      "downloadUrl": "https://ambientcg.com/get?file=Concrete034_2K-JPG.zip",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://docs.ambientcg.com/license/",
+      "sourceTileMeters": [
+        1.1,
+        0.55
+      ],
+      "maps": {
+        "albedo": {
+          "path": "/assets/stadium/concrete/albedo.jpg",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 1156573,
+          "sha256": "fa27982687596d7aa080db1e9b88c30f48a3c32eb3e50b27a2ea27c431e4cde9",
+          "sourceFile": "Concrete034_2K-JPG_Color.jpg"
+        },
+        "normal-gl": {
+          "path": "/assets/stadium/concrete/normal-gl.jpg",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 3325261,
+          "sha256": "b077dfe6b3b8fbe794d82b9014d030fa01984a25ab67d2e21310995e6ea5b881",
+          "sourceFile": "Concrete034_2K-JPG_NormalGL.jpg"
+        },
+        "roughness": {
+          "path": "/assets/stadium/concrete/roughness.jpg",
+          "width": 2048,
+          "height": 1024,
+          "bytes": 879275,
+          "sha256": "fd39973b8ef8212d1c99d18b6665595db3ab96f1c124e062fea52b9bda4ffa63",
+          "sourceFile": "Concrete034_2K-JPG_Roughness.jpg"
+        }
+      }
+    }
+  ]
+}

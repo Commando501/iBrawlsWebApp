@@ -1,3 +1,4 @@
+import { syncCombatantTeamArmor, resolveFriendlyArmorTeam } from './combatantTeamArmor';
 import * as THREE from 'three';
 import { type Combatant, type Keybindings } from '../../types';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
@@ -31,23 +32,16 @@ export function updateObserverCombatantVisualsForState({
   const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
   const animationClockMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
+  const friendlyTeam = resolveFriendlyArmorTeam(state);
   if (refs.hostGroup) {
+    syncCombatantTeamArmor(refs.hostGroup, state.settings.gameMode === 'grifball' ? (multiplayerRole === 'observer' ? 'blue' : state.localPlayerTeam) : null, friendlyTeam);
     const hostData = getSpectateTargetData('host');
     const hostVel = multiplayerRole === 'observer' ? state.hostVel : state.playerVel;
     const hostSpeed = hostVel.length();
-    let moveForward = 0;
-    if (keysPressed[keybindings.moveForward] || keysPressed.arrowup) moveForward += 1;
-    if (keysPressed[keybindings.moveBackward] || keysPressed.arrowdown) moveForward -= 1;
-
-    const isHostSprinting =
-      state.settings.enableSprint &&
-      (multiplayerRole === 'observer'
-        ? hostSpeed > 6.0
-        : keysPressed[keybindings.sprint] &&
-          moveForward > 0 &&
-          !state.isCrouching &&
-          !state.isJumping &&
-          state.playerDashRemaining <= 0);
+    const hostActor = state.hostClientId ? state.otherPlayers.get(state.hostClientId) : undefined;
+    const isHostSprinting = state.settings.enableSprint && (multiplayerRole === 'observer'
+      ? hostActor?.aiIsSprinting ?? (hostSpeed > 6.0)
+      : state.playerIsSprinting);
     const isHostSliding =
       state.settings.enableSlide &&
       (multiplayerRole === 'observer'
@@ -74,8 +68,10 @@ export function updateObserverCombatantVisualsForState({
       isCrouching: multiplayerRole === 'observer' ? !!hostData.isCrouching : state.isCrouching,
       refs,
       mesh: refs.hostGroup,
+      isJumping: multiplayerRole === 'observer' ? (state.hostClientId ? state.otherPlayers.get(state.hostClientId)?.isJumping : undefined) : state.isJumping,
       vel: hostVel,
       yaw: hostData.yaw,
+      lookPitch: hostData.pitch,
       hp: hostData.hp,
       activeWeapon: hostData.activeWeapon || 'hammer',
       weaponState: hostWeaponState,
@@ -84,6 +80,8 @@ export function updateObserverCombatantVisualsForState({
       isSliding: isHostSliding,
       isSprinting: isHostSprinting,
       isLunging: hostIsLunging,
+      lungeHit: multiplayerRole === 'observer' ? (state.hostClientId ? state.otherPlayers.get(state.hostClientId)?.swordLungeHit : false) : state.swordLungeHit,
+      lungeTime: hostIsLunging ? (multiplayerRole === 'observer' ? (state.hostClientId ? state.otherPlayers.get(state.hostClientId)?.lungeTimer : undefined) : state.lungeTimer) : undefined,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
@@ -128,17 +126,16 @@ export function updateObserverCombatantVisualsForState({
   }
 
   if (refs.enemyGroup) {
+    const enemyTeam = multiplayerRole === 'observer' ? 'red' : mainAI?.team ?? (state.localPlayerTeam === 'blue' ? 'red' : 'blue');
+    syncCombatantTeamArmor(refs.enemyGroup, state.settings.gameMode === 'grifball' ? enemyTeam : null, friendlyTeam);
     const clientData = getSpectateTargetData('client');
     if (multiplayerRole === 'observer' || mainAI) {
       const enemyVel = multiplayerRole === 'observer' ? state.clientVel : mainAI ? mainAI.vel : new THREE.Vector3();
       const enemySpeed = enemyVel.length();
-      const isClientSprinting =
-        state.settings.enableSprint &&
-        (multiplayerRole === 'observer'
-          ? enemySpeed > 6.0
-          : mainAI
-            ? mainAI.aiState === 'APPROACHING' && enemySpeed > 4.5 && !mainAI.isCrouching
-            : false);
+      const clientActor = state.clientClientId ? state.otherPlayers.get(state.clientClientId) : undefined;
+      const isClientSprinting = state.settings.enableSprint && (multiplayerRole === 'observer'
+        ? clientActor?.aiIsSprinting ?? (enemySpeed > 6.0)
+        : mainAI?.aiIsSprinting ?? (mainAI?.aiState === 'APPROACHING' && enemySpeed > 4.5 && !mainAI.isCrouching));
       const isClientSliding =
         state.settings.enableSlide &&
         (multiplayerRole === 'observer'
@@ -167,8 +164,10 @@ export function updateObserverCombatantVisualsForState({
         isCrouching: multiplayerRole === 'observer' ? !!clientData.isCrouching : !!mainAI?.isCrouching,
         refs,
         mesh: refs.enemyGroup,
+        isJumping: multiplayerRole === 'observer' ? (state.clientClientId ? state.otherPlayers.get(state.clientClientId)?.isJumping : undefined) : mainAI?.isJumping,
         vel: enemyVel,
         yaw: clientData.yaw,
+        lookPitch: multiplayerRole === 'observer' ? clientData.pitch : mainAI?.pitch,
         hp: clientData.hp,
         activeWeapon: clientData.activeWeapon || 'hammer',
         weaponState: enemyWeaponState,
@@ -177,6 +176,7 @@ export function updateObserverCombatantVisualsForState({
         isSliding: isClientSliding,
         isSprinting: isClientSprinting,
         isLunging: enemyIsLunging,
+        lungeHit: multiplayerRole === 'observer' ? (state.clientClientId ? state.otherPlayers.get(state.clientClientId)?.swordLungeHit : false) : mainAI?.swordLungeHit,
         hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
         hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
         hammerSlamWindupTime: hammerSlamTiming.windupTime,

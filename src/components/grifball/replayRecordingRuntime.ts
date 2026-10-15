@@ -1,3 +1,4 @@
+import type * as THREE from 'three';
 import { cacheReplay, savePlayerFingerprint } from '../../game/theaterDatabase';
 import {
   getMatchBehaviorStats,
@@ -21,6 +22,7 @@ import {
 } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type LastRecordedReplayEntityState } from './runtimeRefs';
+import type { GrifballThreeRefs } from './threeRefs';
 
 type MutableRef<T> = { current: T };
 
@@ -93,12 +95,16 @@ export function initializeReplayRecordingForState({
 
 export function recordReplayFrameForState({
   state,
+  refs,
+  ballMesh,
   time,
   replayRecordingRef,
   lastRecordedStateRef,
   isMultiplayer,
 }: {
   state: GrifballRuntimeState;
+  refs?: GrifballThreeRefs;
+  ballMesh?: THREE.Mesh | null;
   time: number;
   replayRecordingRef: MutableRef<ReplayFile | null>;
   lastRecordedStateRef: MutableRef<Map<string, LastRecordedReplayEntityState>>;
@@ -116,7 +122,16 @@ export function recordReplayFrameForState({
   const hasPlayerChanged = (id: string, current: ReplayEntityComparisonState) =>
     hasReplayEntityStateChanged(current, lastRecordedStateRef.current.get(id));
 
-  const pSpeed = state.playerVel.length();
+  const releasePose = (id: string) => {
+    const release = ballMesh?.userData.ironVanguardBallVisual?.release;
+    if (release?.id === id) return { ballThrowTime: release.time as number, ballReleaseCharge: release.charge as number };
+    const body = id === 'player' ? refs?.hostGroup : refs?.otherPlayerMeshes.get(id)?.group;
+    const ballThrowTime = body?.userData.vanguardBallThrowTime as number | undefined;
+    return {
+      ballThrowTime,
+      ballReleaseCharge: ballThrowTime === undefined ? undefined : body?.userData.vanguardBallReleaseCharge as number | undefined,
+    };
+  };
   const playerState = {
     pos: { x: state.playerPos.x, y: state.playerPos.y, z: state.playerPos.z },
     vel: { x: state.playerVel.x, y: state.playerVel.y, z: state.playerVel.z },
@@ -126,12 +141,16 @@ export function recordReplayFrameForState({
     isCrouching: state.isCrouching,
     isJumping: state.isJumping || false,
     isLunging: state.isLunging || false,
+    swordLungeHit: state.swordLungeHit,
     isDashing: state.playerDashRemaining > 0,
-    isSprinting: state.settings.enableSprint && (pSpeed > 5.5 && !state.isCrouching && !state.isJumping && state.playerDashRemaining <= 0),
+    isSprinting: state.playerIsSprinting,
     isSliding: state.playerSlideActive || false,
-    weaponTimer: state.activeWeapon === 'hammer' ? state.pWeaponTimer : state.pSwordTimer,
+    weaponTimer: state.activeWeapon === 'sword' ? state.pSwordTimer : state.activeWeapon === 'pistol' ? state.pPistolTimer : state.pWeaponTimer,
+    lungeTimer: state.isLunging ? state.lungeTimer : undefined,
+    ballCharge: state.activeWeapon === 'ball' ? state.grifballPassCharge : 0,
+    ...releasePose('player'),
     activeWeapon: state.activeWeapon,
-    weaponState: state.pWeaponState === 'ready' && state.pSwordState !== 'ready' ? state.pSwordState : state.pWeaponState,
+    weaponState: state.activeWeapon === 'sword' ? state.pSwordState : state.activeWeapon === 'pistol' ? state.pPistolState : state.pWeaponState,
     score: state.scorePlayer,
     kills: state.playerKills ?? 0,
     deaths: state.playerDeaths ?? 0,
@@ -140,32 +159,11 @@ export function recordReplayFrameForState({
     team: state.localPlayerTeam,
   };
 
-  const playerCompState = {
-    pos: state.playerPos,
-    vel: state.playerVel,
-    yaw: state.yaw,
-    hp: state.playerHP,
-    activeWeapon: playerState.activeWeapon,
-    weaponState: playerState.weaponState,
-    isCrouching: playerState.isCrouching,
-    score: playerState.score,
-    kills: playerState.kills,
-    deaths: playerState.deaths,
-  };
-
+  const playerCompState = { ...playerState, pos: state.playerPos, vel: state.playerVel };
   if (hasPlayerChanged('player', playerCompState)) {
     frame.player = playerState as ReplayFrame['player'];
     lastRecordedStateRef.current.set('player', {
-      pos: state.playerPos.clone(),
-      vel: state.playerVel.clone(),
-      yaw: state.yaw,
-      hp: state.playerHP,
-      activeWeapon: playerState.activeWeapon,
-      weaponState: playerState.weaponState,
-      isCrouching: playerState.isCrouching,
-      score: playerState.score,
-      kills: playerState.kills,
-      deaths: playerState.deaths,
+      ...playerCompState, pos: state.playerPos.clone(), vel: state.playerVel.clone(),
     });
   }
 
@@ -182,11 +180,16 @@ export function recordReplayFrameForState({
         pitch: bot.pitch || 0,
         hp: bot.hp,
         isCrouching: bot.isCrouching,
+        isJumping: bot.isJumping,
         isLunging: bot.isLunging || bot.aiState === 'LUNGING' || false,
+        swordLungeHit: bot.swordLungeHit,
         isDashing: (bot.aiDashRemaining || 0) > 0,
         isSprinting: bot.aiIsSprinting || false,
         isSliding: bot.aiSlideActive || false,
         weaponTimer: bot.weaponTimer ?? 0,
+        lungeTimer: bot.isLunging || bot.aiState === 'LUNGING' ? bot.lungeTimer : undefined,
+        ballCharge: bot.activeWeapon === 'ball' ? bot.grifballPassCharge ?? 0 : 0,
+        ...releasePose(id),
         activeWeapon: bot.activeWeapon,
         weaponState: bot.weaponState || 'ready',
         score: id === MAIN_AI_ID ? state.scoreEnemy : (bot.score ?? 0),
@@ -197,18 +200,7 @@ export function recordReplayFrameForState({
         team: bot.team,
       };
 
-      const botCompState = {
-        pos: bot.pos,
-        vel: bot.vel,
-        yaw: bot.yaw,
-        hp: bot.hp,
-        activeWeapon: botState.activeWeapon,
-        weaponState: botState.weaponState,
-        isCrouching: botState.isCrouching,
-        score: botState.score,
-        kills: botState.kills,
-        deaths: botState.deaths,
-      };
+      const botCompState = { ...botState, pos: bot.pos, vel: bot.vel };
 
       if (hasPlayerChanged(id, botCompState)) {
         const visualLoadout = sanitizeCharacterLoadoutForNetwork((bot as { loadout?: unknown }).loadout);
@@ -220,16 +212,7 @@ export function recordReplayFrameForState({
         }
         frame.otherPlayers!.push(botState as ReplayParticipantFrame);
         lastRecordedStateRef.current.set(id, {
-          pos: bot.pos.clone(),
-          vel: bot.vel.clone(),
-          yaw: bot.yaw,
-          hp: bot.hp,
-          activeWeapon: botState.activeWeapon,
-          weaponState: botState.weaponState,
-          isCrouching: botState.isCrouching,
-          score: botState.score,
-          kills: botState.kills,
-          deaths: botState.deaths,
+          ...botCompState, pos: bot.pos.clone(), vel: bot.vel.clone(),
         });
       }
     });
@@ -247,11 +230,16 @@ export function recordReplayFrameForState({
         pitch: bot.pitch || 0,
         hp: bot.hp,
         isCrouching: bot.isCrouching,
+        isJumping: bot.isJumping,
         isLunging: bot.isLunging || bot.aiState === 'LUNGING' || false,
+        swordLungeHit: bot.swordLungeHit,
         isDashing: (bot.aiDashRemaining || 0) > 0,
         isSprinting: bot.aiIsSprinting || false,
         isSliding: bot.aiSlideActive || false,
         weaponTimer: bot.weaponTimer ?? 0,
+        lungeTimer: bot.isLunging || bot.aiState === 'LUNGING' ? bot.lungeTimer : undefined,
+        ballCharge: bot.activeWeapon === 'ball' ? bot.grifballPassCharge ?? 0 : 0,
+        ...releasePose(id),
         activeWeapon: bot.activeWeapon,
         weaponState: bot.weaponState || 'ready',
         score: bot.score ?? 0,
@@ -262,18 +250,7 @@ export function recordReplayFrameForState({
         team: bot.team,
       };
 
-      const botCompState = {
-        pos: bot.pos,
-        vel: bot.vel,
-        yaw: bot.yaw,
-        hp: bot.hp,
-        activeWeapon: botState.activeWeapon,
-        weaponState: botState.weaponState,
-        isCrouching: botState.isCrouching,
-        score: botState.score,
-        kills: botState.kills,
-        deaths: botState.deaths,
-      };
+      const botCompState = { ...botState, pos: bot.pos, vel: bot.vel };
 
       if (hasPlayerChanged(id, botCompState)) {
         const visualLoadout = sanitizeCharacterLoadoutForNetwork((bot as { loadout?: unknown }).loadout);
@@ -285,16 +262,7 @@ export function recordReplayFrameForState({
         }
         frame.otherPlayers!.push(botState as ReplayParticipantFrame);
         lastRecordedStateRef.current.set(id, {
-          pos: bot.pos.clone(),
-          vel: bot.vel.clone(),
-          yaw: bot.yaw,
-          hp: bot.hp,
-          activeWeapon: botState.activeWeapon,
-          weaponState: botState.weaponState,
-          isCrouching: botState.isCrouching,
-          score: botState.score,
-          kills: botState.kills,
-          deaths: botState.deaths,
+          ...botCompState, pos: bot.pos.clone(), vel: bot.vel.clone(),
         });
       }
     });

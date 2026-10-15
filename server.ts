@@ -1,3 +1,4 @@
+import { allowGrifballMessage } from './src/network/grifballSync';
 import express from "express";
 import path from "path";
 import http from "http";
@@ -979,12 +980,15 @@ async function startServer() {
             const isClient = room.clients.includes(ws) || room.clients.some((c: any) => c.id === wsId);
             const senderRole = isHost ? 'host' : (isClient ? 'client' : 'observer');
 
+            if (!allowGrifballMessage(message, senderRole, room.lobbyConfig.gameMode, room.matchStarted)) return;
+
             // Package coordination parameters with sender role tag and senderId
             let parsedMessage = message;
             try {
               parsedMessage = {
                 ...message,
                 senderRole,
+                spawnSlot: getRoomSpawnSlot(room, ws),
                 senderId: wsId
               };
             } catch (err) {}
@@ -1138,6 +1142,10 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "custom",
     });
+    // Full-detail artist review assets are local-only and never copied into production builds.
+    app.get("/assets/iron-vanguard/hammer-v018-review.glb", (_req, res) => {
+      res.sendFile(path.join(process.cwd(), "output/iron-vanguard/runtime-v018/hammer-v018-review.glb"));
+    });
     app.use(vite.middlewares);
     const sendDevHtml = async (req: express.Request, res: express.Response, next: express.NextFunction, fileName: string) => {
       try {
@@ -1155,6 +1163,8 @@ async function startServer() {
       "/mapmaker.html",
       "/grifball-validation.html",
       "/animation-editor.html",
+      "/iron-vanguard-swing-test.html",
+      "/iron-vanguard-animation-test.html",
       "/armor-model-editor.html",
       "/v3-performance-smoke.html",
       "/v3-readiness-dashboard.html",

@@ -53,6 +53,7 @@ export const triggerCombatantLungeAction = ({
   playDash: () => void;
 }): void => {
   self.isLunging = true;
+  self.swordLungeHit = false;
   self.lungeTimer = 0;
   self.lungeStartPos = { x: pos.x, y: pos.y, z: pos.z };
   self.lungeTargetDir = { x: lungeDir.x, y: lungeDir.y, z: lungeDir.z };

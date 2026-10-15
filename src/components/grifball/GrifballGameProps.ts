@@ -27,6 +27,7 @@ export interface GrifballGameProps {
   };
   isPlaying: boolean;
   isPaused: boolean;
+  isMatchLoading?: boolean;
   debugMode: boolean;
   adminSettings: UniversalSettings;
   onStatsUpdate: (stats: GameStats) => void;
@@ -35,6 +36,7 @@ export interface GrifballGameProps {
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;
   multiplayerSocket?: WebSocket | null;
+  gameplayClientId?: string;
   matchLobbyConfig?: MatchLobbyConfig | null;
   multiplayerSpawnSlot?: number;
   opponentClientId?: string;

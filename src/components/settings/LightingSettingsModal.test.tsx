@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { LightingSettingsModal } from './LightingSettingsModal';
 
-test('LightingSettingsModal exposes team outline controls', () => {
+test('LightingSettingsModal no longer exposes removed team overlay controls', () => {
   const html = renderToStaticMarkup(
     <LightingSettingsModal
       adminSettings={{
@@ -20,9 +20,9 @@ test('LightingSettingsModal exposes team outline controls', () => {
     />
   );
 
-  assert.match(html, /Team Outline Thickness/);
-  assert.match(html, /Team Outline Brightness/);
-  assert.match(html, /Team Outline Color/);
-  assert.match(html, /type="color"/);
-  assert.match(html, /value="#facc15"/);
+  assert.doesNotMatch(html, /Team Outline Thickness/);
+  assert.doesNotMatch(html, /Team Outline Brightness/);
+  assert.doesNotMatch(html, /Team Outline Color/);
+
+
 });

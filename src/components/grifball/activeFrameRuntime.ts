@@ -1,3 +1,5 @@
+import { isOnlineGrifballAuthority } from './onlineGrifballRuntime';
+import { prepareIronVanguardBallVisuals, finishIronVanguardBallVisuals } from "./ironVanguardBallRuntime";
 import * as THREE from 'three';
 import { type ReplayFile } from '../../types';
 import {
@@ -144,14 +146,16 @@ export function advanceGrifballFrameForState({
   }
   updateAI(dt);
   updateGrifball(dt);
+  prepareIronVanguardBallVisuals(state, refs, ballMeshRef.current, dt);
   updateCharacterSkeletalAnimations(dt);
   updateTransientVfxForFrame(refs, dt);
   updateMatchTimers(dt);
   enforceArenaBounds(dt);
   // Skeletal melee impacts can kill a carrier after the objective has already advanced.
   // Repair ownership once all combat/bounds work is done, before rendering and recording.
-  if (!isMultiplayer) reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
+  if (!isMultiplayer || isOnlineGrifballAuthority(state)) reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
 
+  finishIronVanguardBallVisuals(state, refs, ballMeshRef.current, dt);
   renderGame();
   updateFloatingNameplate();
   pushStatsUpdate();
@@ -160,6 +164,7 @@ export function advanceGrifballFrameForState({
   if (isMultiplayer && multiplayerRole !== 'observer' && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
     multiplayerSocket.send(JSON.stringify({
       type: 'sync',
+      spawnSlot: state.multiplayerSpawnSlot,
       pos: { x: state.playerPos.x, y: state.playerPos.y, z: state.playerPos.z },
       vel: { x: state.playerVel.x, y: state.playerVel.y, z: state.playerVel.z },
       yaw: state.yaw,
@@ -167,7 +172,12 @@ export function advanceGrifballFrameForState({
       hp: state.playerHP,
       maxHp: state.playerMaxHP,
       isCrouching: state.isCrouching,
+      isJumping: state.isJumping,
+      isSprinting: state.playerIsSprinting,
       isSliding: state.playerSlideActive,
+      isLunging: state.isLunging,
+      swordLungeHit: state.swordLungeHit,
+      lungeTimer: state.lungeTimer,
       activeWeapon: state.activeWeapon,
       respawnTimer: state.playerRespawnTimer,
       invulnerabilityTimer: state.playerInvulnerabilityTimer,

@@ -15,6 +15,6 @@ export function resolveSimGrifballTacticalWeaponSwapInput(state: SimState, botId
   if (!actor || actor.hasBall || actor.weapon === 'ball' || actor.weaponState !== 'idle' ||
     state.match.ball.state === 'held' && state.match.ball.holderId === botId) return null;
   if (!canApplyAITacticalWeaponSwap({ ...context, activeWeapon: actor.weapon, requestedWeapon,
-    weaponState: 'ready', swapLockoutTimer: remainingDecisionSwapTime(actor.swapLockoutTimer, dt, clockPhase) })) return null;
+    weaponState: 'ready', isLunging: actor.isLunging, swapLockoutTimer: remainingDecisionSwapTime(actor.swapLockoutTimer, dt, clockPhase) })) return null;
   return { ...idleAction(), aim: actor.yaw, crouch: actor.isCrouching, swapWeapon: true };
 }

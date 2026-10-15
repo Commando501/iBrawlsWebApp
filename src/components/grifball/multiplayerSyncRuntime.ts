@@ -1,3 +1,4 @@
+import { receiveOnlineGrifballMessage } from './onlineGrifballRuntime';
 import * as THREE from 'three';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import type { MatchLobbyConfig } from '../../network/protocol';
@@ -115,6 +116,9 @@ export function createMultiplayerSyncMessageHandler({
         pushStatsUpdate();
       } else if (data.type === 'match_start') {
         updateActiveVisualModelPolicy(data.lobbyConfig);
+      } else if (data.type === 'opponent_role_changed') {
+        const actor = state.otherPlayers.get(data.clientId);
+        if (actor) actor.isObserver = data.role === 'observer';
       } else if (data.type === 'player_left') {
         const scene = refs.scene;
         const clientId = data.leftPlayerId;
@@ -131,6 +135,7 @@ export function createMultiplayerSyncMessageHandler({
         resizeArena(1 + state.otherPlayers.size);
         pushStatsUpdate();
       } else if (data.type === 'sync') {
+        if (receiveOnlineGrifballMessage(state, refs, data)) return;
         if (data.action === 'match_loading_status') {
           return;
         }
@@ -215,6 +220,7 @@ export function createMultiplayerSyncMessageHandler({
               player.weaponState = 'ready';
               player.weaponTimer = 0;
               player.isLunging = true;
+              player.swordLungeHit = false;
               player.lungeTimer = 0;
               player.lastSwordAttackTime = Date.now();
               playDash();
@@ -318,6 +324,11 @@ export function createMultiplayerSyncMessageHandler({
           }
           pushStatsUpdate();
         } else if (multiplayerRole === 'observer') {
+          if (data.senderId) {
+            createOrUpdateRemotePlayer(data.senderId, withVisualModelPolicy(data));
+            if (data.senderRole === 'host') state.hostClientId = data.senderId;
+            else if (data.spawnSlot === 1 || !state.clientClientId) state.clientClientId = data.senderId;
+          }
           if (data.senderRole === 'host') {
             if (data.pos) state.hostPos.set(data.pos.x, data.pos.y, data.pos.z);
             if (data.vel) state.hostVel.set(data.vel.x, data.vel.y, data.vel.z);
@@ -341,7 +352,7 @@ export function createMultiplayerSyncMessageHandler({
             if (data.killsClient !== undefined) state.enemyKills = data.killsClient;
             if (data.deathsClient !== undefined) state.enemyDeaths = data.deathsClient;
             if (data.gameTime !== undefined) state.gameTime = data.gameTime;
-          } else if (data.senderRole === 'client') {
+          } else if (data.senderRole === 'client' && data.senderId === state.clientClientId) {
             if (data.pos) state.clientPos.set(data.pos.x, data.pos.y, data.pos.z);
             if (data.vel) state.clientVel.set(data.vel.x, data.vel.y, data.vel.z);
             if (data.yaw !== undefined) state.clientYaw = data.yaw;

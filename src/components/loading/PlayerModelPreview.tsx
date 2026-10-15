@@ -5,7 +5,7 @@ import { buildCombatantRigForModel } from '../grifball/combatantRig';
 import { disposePreviewObject, getPreviewLoadoutSignature } from '../previewModelUtils';
 import type { VisualModelPolicy } from '../../model/modelSystem';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
-import type { V3RenderOptions } from '../v3/v3QualityTiers';
+import { getV3GameplayRenderOptions } from '../v3/v3QualityTiers';
 
 interface PlayerModelPreviewProps {
   hue: number;
@@ -19,10 +19,7 @@ const resolvePreviewLoadout = (
   visualModelPolicy: VisualModelPolicy | null | undefined
 ): CharacterLoadout => resolveLoadoutForVisualPolicy({ visualModelPolicy, loadout });
 
-const PREVIEW_V3_RENDER_OPTIONS: V3RenderOptions = {
-  v3QualityTier: 'desktop',
-  v3Distance: 0,
-};
+const PREVIEW_V3_RENDER_OPTIONS = getV3GameplayRenderOptions();
 
 const getResolvedPreviewLoadoutSignature = ({
   loadout,

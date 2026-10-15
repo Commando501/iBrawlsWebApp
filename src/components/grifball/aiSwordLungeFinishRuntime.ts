@@ -84,12 +84,13 @@ export function finishAISwordLungeWithVitals({
   targetVitals,
 }: Omit<AISwordLungeFinishContext, 'state' | 'self'> & {
   state: Pick<GrifballRuntimeState, 'settings'>;
-  self: Pick<Combatant, 'isLunging' | 'weaponState' | 'aiLastLungeOutcome' | 'aiLastLungeTargetId' |
+  self: Pick<Combatant, 'isLunging' | 'swordLungeHit' | 'weaponState' | 'aiLastLungeOutcome' | 'aiLastLungeTargetId' |
     'aiPostLungeDecisionTimer' | 'lungeStartPos' | 'aiTimer' | 'isJumping' | 'vel'>;
   targetVitals: { hp: number; invulnerabilityTimer: number };
   frame: AISwordLungeFinishFrame;
 }): void {
   self.isLunging = false;
+  self.swordLungeHit = outcome === 'hit';
   self.weaponState = 'ready';
   self.aiLastLungeOutcome = outcome;
   self.aiLastLungeTargetId = targetId;

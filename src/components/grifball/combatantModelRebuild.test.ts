@@ -11,7 +11,7 @@ import {
 } from './combatantModelRebuild';
 import { getRandomLoadout } from './combatantModels';
 import { createViewTargetCallbacksForState } from './viewTargetCallbacks';
-import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
+import { getCombatantTeamArmorState } from './combatantTeamArmor';
 import { syncV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 test('random bot loadouts stay on the V1 model system', () => {
@@ -191,7 +191,7 @@ test('host combatant rebuild clears stale V3 death burst state', () => {
   assert.equal(refs.v3DeathAliveState.has('observer:host'), false);
 });
 
-test('grifball host and enemy rebuilds attach perspective-correct team body outlines', () => {
+test('grifball host and enemy rebuilds attach perspective-correct solid team armor', () => {
   const scene = new THREE.Scene();
   const refs = createInitialGrifballThreeRefs();
   refs.scene = scene;
@@ -236,6 +236,6 @@ test('grifball host and enemy rebuilds attach perspective-correct team body outl
 
   assert.ok(refs.hostGroup);
   assert.ok(refs.enemyGroup);
-  assert.equal(getCombatantTeamOutlineState(refs.hostGroup)?.team, 'blue');
-  assert.equal(getCombatantTeamOutlineState(refs.enemyGroup)?.team, 'red');
+  assert.equal(getCombatantTeamArmorState(refs.hostGroup)?.team, 'blue');
+  assert.equal(getCombatantTeamArmorState(refs.enemyGroup)?.team, 'red');
 });

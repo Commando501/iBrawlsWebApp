@@ -1,3 +1,4 @@
+import { syncCombatantTeamArmor, resolveFriendlyArmorTeam } from './combatantTeamArmor';
 import * as THREE from 'three';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
@@ -30,6 +31,7 @@ export function updateRosterCombatantVisualsForState({
   state.otherPlayers.forEach((player, clientId) => {
     const meshes = refs.otherPlayerMeshes.get(clientId);
     if (!meshes?.group) return;
+    syncCombatantTeamArmor(meshes.group, state.settings.gameMode === 'grifball' ? player.team : null, resolveFriendlyArmorTeam(state));
 
     let weaponState = player.weaponState || 'ready';
     let weaponTimer = player.weaponTimer || 0;
@@ -129,10 +131,12 @@ export function updateRosterCombatantVisualsForState({
 
     const didAnimate = animateSpartanCombatantModel({
       isCrouching: !!player.isCrouching,
+      isJumping: player.isJumping,
       refs,
       mesh: meshes.group,
       vel: playerVelocity,
       yaw: player.yaw,
+      lookPitch: player.pitch,
       hp: player.hp,
       activeWeapon: player.activeWeapon || 'hammer',
       weaponState,
@@ -141,6 +145,8 @@ export function updateRosterCombatantVisualsForState({
       isSliding: isPlayerSliding,
       isSprinting: isPlayerSprinting,
       isLunging: Boolean(player.isLunging),
+      lungeHit: player.swordLungeHit,
+      lungeTime: player.isLunging ? player.lungeTimer : undefined,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,

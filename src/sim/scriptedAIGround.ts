@@ -170,7 +170,7 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
       triggerCombatantAttack: (_self, weapon) => { syncPose(); actions.push(`attack-${weapon}`); swing(weapon); },
       applyTacticalWeapon: requestedWeapon => {
         if (canApplyAITacticalWeaponSwap({ activeWeapon: policy.activeWeapon, requestedWeapon,
-          weaponState: frame.weaponState, swapLockoutTimer: actor.swapLockoutTimer,
+          weaponState: frame.weaponState, isLunging: actor.isLunging, swapLockoutTimer: actor.swapLockoutTimer,
           swordForbidden: o.swordForbidden, hammerForbidden: o.hammerForbidden })) {
           actor.weapon = requestedWeapon; policy.activeWeapon = requestedWeapon; frame.weaponState = 'ready';
           if (actor.weaponState === 'recovering' && actor.attackKind !== 'swipe') actor.attackKind = requestedWeapon === 'sword' ? 'slash' : 'strike';

@@ -146,3 +146,13 @@ test('zero delays allow a ready roster actor to swap and strike in the same fram
     { ...sim.settings, weaponReadyTime: 0, weaponSwapLockout: 0 }, dt, []);
   assert.equal(actor.weapon, 'sword'); assert.equal(actor.weaponState, 'windup'); assert.equal(actor.attackKind, 'slash');
 });
+
+
+test('a committed lunge retains the sword until flight ends, including forced swaps', () => {
+  for (const force of [false, true]) {
+    const request = { ...context, activeWeapon: 'sword', requestedWeapon: 'hammer' as const,
+      weaponState: 'ready', swapLockoutTimer: 0, force, isLunging: true };
+    assert.equal(canApplyAITacticalWeaponSwap(request), false);
+    assert.equal(canApplyAITacticalWeaponSwap({ ...request, isLunging: false }), true);
+  }
+});

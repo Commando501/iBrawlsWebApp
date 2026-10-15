@@ -75,7 +75,7 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
     constrainCombatantToArena: () => {},
     triggerCombatantAttack: (_self, weapon) => commands.push({ kind: 'melee', weapon, swipe: false }),
     applyTacticalWeapon: requestedWeapon => {
-      if (canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon, weaponState, swapLockoutTimer: lockout,
+      if (canApplyAITacticalWeaponSwap({ activeWeapon, requestedWeapon, weaponState, isLunging: self.isLunging, swapLockoutTimer: lockout,
         swordForbidden: tuning.weaponPrioritization <= 0, hammerForbidden: tuning.weaponPrioritization >= 100 })) {
         commands.push({ kind: 'swap', weapon: requestedWeapon }); activeWeapon = requestedWeapon; weaponState = 'ready';
         const timers = resolveAIWeaponSwapTimers(state.settings, lockout, readiness); lockout = timers.lockout; readiness = timers.readiness;

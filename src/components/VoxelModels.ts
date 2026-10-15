@@ -1,3 +1,4 @@
+import { createIronVanguardModel, isIronVanguardLoadout } from './iron-vanguard/ironVanguardModel';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -71,6 +72,7 @@ export interface ArmorPaintJob {
 }
 
 export interface CharacterLoadout {
+  characterAsset?: 'iron-vanguard';
   helmet?: HelmetPreset;
   torso?: TorsoPreset;
   arm?: ArmPreset;
@@ -1759,6 +1761,7 @@ export function buildVoxelSpartanModel(
   loadout: CharacterLoadout = DEFAULT_LOADOUT,
   v3Options: V3RenderOptions = {}
 ): THREE.Group {
+  if (isIronVanguardLoadout(loadout)) return createIronVanguardModel(customHue ?? (isEnemy ? 0 : 200));
   if (loadout.modelSystem === 'v3') {
     return buildV3SpartanModel({ isEnemy, customHue, loadout, ...v3Options });
   }

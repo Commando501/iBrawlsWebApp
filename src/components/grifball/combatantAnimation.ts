@@ -1,3 +1,4 @@
+import { animateIronVanguard, isIronVanguardModel } from '../iron-vanguard/ironVanguardModel';
 import * as THREE from 'three';
 import { getYawForHeading } from '../../game/yaw';
 import {
@@ -106,7 +107,7 @@ export const applyCombatantArmPose = (
   dt: number
 ): void => {
   if (!mesh) return;
-  if (mesh.userData.modelSystem === 'v3') return;
+  if (mesh.userData.modelSystem === 'v3' || isIronVanguardModel(mesh)) return;
   const rightArm = mesh.userData.rightArm as THREE.Group | undefined;
   const leftArm = mesh.userData.leftArm as THREE.Group | undefined;
   if (!rightArm || !leftArm) return;
@@ -412,11 +413,14 @@ export function animateSpartanCombatantModel({
   weaponState,
   weaponTimer,
   dt,
+  isJumping,
   isCrouching = false,
   crouchProgress,
   isSliding = false,
   isSprinting = false,
   isLunging = false,
+  lungeHit,
+  lungeTime,
   hammerReloadTime = 0.6,
   hammerMeleeReload = 0.5,
   hammerSlamWindupTime = DEFAULT_HAMMER_SLAM_WINDUP_TIME,
@@ -436,11 +440,14 @@ export function animateSpartanCombatantModel({
   weaponState: string;
   weaponTimer: number;
   dt: number;
+  isJumping?: boolean;
   isCrouching?: boolean;
   crouchProgress?: number;
   isSliding?: boolean;
   isSprinting?: boolean;
   isLunging?: boolean;
+  lungeHit?: boolean;
+  lungeTime?: number;
   hammerReloadTime?: number;
   hammerMeleeReload?: number;
   hammerSlamWindupTime?: number;
@@ -452,6 +459,10 @@ export function animateSpartanCombatantModel({
   lookPitch?: number;
 }): boolean {
   if (!mesh) return false;
+  if (isIronVanguardModel(mesh)) return animateIronVanguard(mesh, {
+    activeWeapon, weaponState, weaponTimer, dt, vel, yaw, lookPitch, hp, isCrouching, isSliding, isSprinting, isJumping, isLunging, lungeHit, lungeTime,
+    settings: { hammerReloadTime, hammerSlamWindupTime, hammerSlamAttackTime, ...settings },
+  });
 
   if (mesh.userData.modelSystem === 'v3') {
     mesh.scale.y = 1;
@@ -696,6 +707,8 @@ export function animateCombatantWeaponMeshes({
     });
     return;
   }
+
+  if (isIronVanguardModel(combatantModel) && (activeWeapon === 'hammer' || activeWeapon === 'sword')) return;
 
   // Animating Gravity Hammer
   if (hammerModel && activeWeapon === 'hammer') {

@@ -105,6 +105,7 @@ export function triggerPlayerSwordLungeForState({
   const lungeDistance = lungeDir.length();
 
   state.isLunging = true;
+  state.swordLungeHit = false;
   state.lungeTimer = 0;
   state.lungeStartPos.copy(state.playerPos);
   state.lungeTargetDir.copy(lungeDir).normalize();
@@ -129,6 +130,7 @@ export function finishPlayerSwordLungeRecoveryForState({
   recordLungeEnd: (hit: boolean) => void;
 }): void {
   state.isLunging = false;
+  state.swordLungeHit = hit;
   recordLungeEnd(hit);
   state.pSwordState = 'recovering';
   state.pSwordTimer = 0;

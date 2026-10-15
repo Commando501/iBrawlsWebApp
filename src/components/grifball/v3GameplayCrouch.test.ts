@@ -145,16 +145,17 @@ it('the bot roster routes actual crouch input without mistaking crouch-walking f
   assert.equal(rig.group.scale.y, 1);
 });
 
-it('replay visuals apply recorded crouch to V3 bodies without legacy squashing', () => {
+it('Iron Vanguard replay uses provisional crouch scaling until a dedicated clip exists', () => {
   const refs = createInitialGrifballThreeRefs(); refs.scene = new THREE.Scene();
   const player: ReplayInterpolatedPlayer = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), yaw: 0, pitch: 0, crouchScaleY: .65, hp: 100, activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, isCrouching: true, isLunging: false, isDashing: false, isSprinting: false, isSliding: false, respawnTimer: 0, invulnerabilityTimer: 0, hue: 120, name: 'Test', score: 0, kills: 0, deaths: 0 };
   const replayData = { visualModelPolicy: 'v3' } as ReplayFile;
   const update = () => updateReplayCombatantVisualsForFrame({ refs, replayData, updatedPlayers: new Map([['player', player]]), targetId: 'free', observerCamMode: 'free', replayPlayerName: 'Test', dt: 0, animateSpartanModel: () => assert.fail('V3 must use recorded posture'), renderSwordLungeTrailVfx: () => {}, updateBlinking: () => {} });
   update();
   const group = refs.otherPlayerMeshes.get('player')!.group;
-  assert.equal(group.scale.y, 1);
-  assert.equal(group.userData.v3GameplaySample.clipId, 'clean_crouch_hammer');
+  assert.equal(group.userData.characterAsset, 'iron-vanguard');
+  assert.equal(group.scale.y, .65);
   player.crouchScaleY = 1; player.isCrouching = false;
   update();
-  assert.equal(group.userData.v3GameplaySample.clipId, 'clean_hammer_carry');
+  assert.equal(group.scale.y, 1);
+  assert.equal(group.userData.v3GameplaySample, undefined);
 });

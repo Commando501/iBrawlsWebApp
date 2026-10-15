@@ -105,11 +105,15 @@ export function useMatchLoadingGate({
     if (!isPlaying) {
       setGameLoadingState(INITIAL_GAME_LOADING_STATE);
       setMultiplayerLoadingRoster({});
-      setGameplayClientId('');
       return;
     }
     resetMatchLoading(selectedReplayId ? 'Preparing replay' : 'Preparing match');
-  }, [isPlaying, selectedReplayId, selectedMap, lobbyCustomMapData, resetMatchLoading, setGameplayClientId]);
+  }, [isPlaying, selectedReplayId, selectedMap, lobbyCustomMapData, resetMatchLoading]);
+
+  // The socket identity is also needed by objective ownership after leaving the lobby.
+  useEffect(() => {
+    if (!multiplayerSocket) setGameplayClientId('');
+  }, [multiplayerSocket, setGameplayClientId]);
 
   useEffect(() => {
     if (!isPlaying || !isMultiplayer || !isMatchLoadingActive) return;

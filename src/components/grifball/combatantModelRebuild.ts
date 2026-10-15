@@ -1,4 +1,6 @@
+import { resolveFriendlyArmorTeam } from './combatantTeamArmor';
 import * as THREE from 'three';
+import { isIronVanguardLoadout } from '../iron-vanguard/ironVanguardModel';
 import { type Combatant } from '../../types';
 import { type CharacterLoadout } from '../VoxelModels';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
@@ -16,7 +18,7 @@ import { clearV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 type MultiplayerRole = 'host' | 'client' | 'observer' | null;
 
-const resolveEnemyTeamOutlineTeam = ({
+const resolveEnemyTeamArmorTeam = ({
   state,
   isMultiplayer,
   multiplayerRole,
@@ -33,7 +35,7 @@ const resolveEnemyTeamOutlineTeam = ({
   return opponentTeamId(state.localPlayerTeam);
 };
 
-const resolveHostTeamOutlineTeam = ({
+const resolveHostTeamArmorTeam = ({
   state,
   multiplayerRole,
 }: {
@@ -73,11 +75,11 @@ export function rebuildEnemyCombatantModelForState({
     ? state.clientActiveWeapon
     : (mainAI?.activeWeapon || 'hammer'));
   const enemyLoadout = isEnemyBot
-    ? undefined
+    ? (isIronVanguardLoadout(playerLoadout) ? playerLoadout : undefined)
     : isLocalClient ? playerLoadout : undefined;
   clearV3DeathVoxelBurstForCombatant(refs, 'combatant:main_ai');
   clearV3DeathVoxelBurstForCombatant(refs, 'observer:client');
-  const teamOutlineTeam = resolveEnemyTeamOutlineTeam({
+  const teamArmorTeam = resolveEnemyTeamArmorTeam({
     state,
     isMultiplayer,
     multiplayerRole,
@@ -93,8 +95,8 @@ export function rebuildEnemyCombatantModelForState({
     position: multiplayerRole === 'observer' ? state.clientPos : (mainAI ? mainAI.pos : new THREE.Vector3(0, 0, 0)),
     activeWeapon,
     v3Options,
-    teamOutlineTeam,
-    teamOutlineOptions: state.settings,
+    teamArmorTeam,
+    friendlyTeam: resolveFriendlyArmorTeam(state),
   });
   refs.enemyGroup = enemyGroup;
   refs.enemyHammer = enemyHammer;
@@ -123,7 +125,7 @@ export function rebuildHostCombatantModelForState({
 
   const isLocalHost = !isMultiplayer || multiplayerRole === 'host';
   const activeWeapon = ballAsHammer(multiplayerRole === 'observer' ? state.hostActiveWeapon : state.activeWeapon);
-  const teamOutlineTeam = resolveHostTeamOutlineTeam({ state, multiplayerRole });
+  const teamArmorTeam = resolveHostTeamArmorTeam({ state, multiplayerRole });
   clearV3DeathVoxelBurstForCombatant(refs, 'observer:host');
   const { group: hostGroup, hammer: hostHammer, sword: hostSword } = rebuildDualWeaponCombatantModel({
     scene,
@@ -134,8 +136,8 @@ export function rebuildHostCombatantModelForState({
     position: multiplayerRole === 'observer' ? state.hostPos : state.playerPos,
     activeWeapon,
     v3Options,
-    teamOutlineTeam,
-    teamOutlineOptions: state.settings,
+    teamArmorTeam,
+    friendlyTeam: resolveFriendlyArmorTeam(state),
   });
   refs.hostGroup = hostGroup;
   refs.hostHammer = hostHammer;
