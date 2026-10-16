@@ -2,11 +2,9 @@ import React from 'react';
 import { applyArchetypeToSettings, type AIArchetypeId } from '../../game/aiPersonalities';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
 import type { UniversalSettings } from '../../types';
-import { BotSetupModal } from './BotSetupModal';
+import { BotSetupModal, type BotSetupModalProps } from './BotSetupModal';
 
-type BotSetupModalProps = React.ComponentProps<typeof BotSetupModal>;
-
-interface BotSetupOverlayProps extends Omit<BotSetupModalProps, 'onToggleGrifballMode' | 'onMainAiArchetypeChange'> {
+export interface BotSetupOverlayProps extends Omit<BotSetupModalProps, 'onToggleGrifballMode' | 'onMainAiArchetypeChange'> {
   isOpen: boolean;
   setAdminSettings: React.Dispatch<React.SetStateAction<UniversalSettings>>;
 }

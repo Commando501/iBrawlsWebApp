@@ -793,3 +793,17 @@ test('ArmorModelEditor does not equip full suit when live catalog rejects batch 
     fakeDom.restore();
   }
 });
+
+test('Iron Vanguard hides incompatible Standard customization without deleting it', () => {
+  const props = baseProps('v3');
+  props.playerLoadout.characterAsset = 'iron-vanguard';
+  props.v3SuitProfileCatalog = profileCatalogFor();
+  const html = renderToStaticMarkup(<ArmoryPanel {...props} />);
+  assert.match(html, /Iron Vanguard/);
+  assert.match(html, /More loadouts/);
+  assert.match(html, /Armor color hue/);
+  assert.match(html, /Weapon preview/);
+  assert.doesNotMatch(html, /Start Paint Job|V3 Material Roles|Apply Suit|Alpha Suit/);
+  assert.doesNotMatch(html, /Cyan Classic|Twin Arc|V2 \(Rigged\)/);
+  assert.equal(props.playerLoadout.characterAsset, 'iron-vanguard');
+});

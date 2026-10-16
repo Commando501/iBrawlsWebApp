@@ -64,6 +64,10 @@ reference/
 !public/assets/iron-vanguard/
 !public/assets/iron-vanguard/**
 
+# Menu captures rendered from the actual game assets
+!public/assets/menu/
+!public/assets/menu/**
+
 # Local animation tooling caches and dev-server process state
 /scripts/iron-vanguard/**/__pycache__/
 /.codex/ibrawls-vite.pid

@@ -1472,14 +1472,9 @@ export class GameLobby implements DurableObject {
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
             const normalizedTargetCode = normalizePublicRoomCode(targetIpOrId);
-            let room = this.rooms.get(normalizedTargetCode || targetIpOrId);
-            
-            // Local network fallback (same as original server.ts)
-            if (!room && this.rooms.size > 0) {
-              const singleKey = Array.from(this.rooms.keys())[0];
-              room = this.rooms.get(singleKey);
-              console.log(`Fallback: Lobby lookup under "${targetIpOrId}" not found. Auto-paired with active lobby (key: ${singleKey})`);
-            }
+            // Codes and direct-IP aliases must identify the requested room.
+            // A stale or mistyped target must never enter another active match.
+            const room = this.rooms.get(normalizedTargetCode || targetIpOrId);
 
             if (!room) {
               try {

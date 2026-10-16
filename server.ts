@@ -703,16 +703,9 @@ async function startServer() {
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
             const normalizedTargetCode = normalizePublicRoomCode(targetIpOrId);
-            let room = rooms.get(normalizedTargetCode || targetIpOrId);
-            
-            // Local network fallback: If target is not found by exact string match,
-            // but this server hosts exactly ONE active room (which always happens on local direct plays),
-            // auto-fallback to that single lobby.
-            if (!room && rooms.size > 0) {
-              const singleKey = Array.from(rooms.keys())[0];
-              room = rooms.get(singleKey);
-              console.log(`Fallback: Lobby lookup under "${targetIpOrId}" not found. Auto-paired with active lobby (key: ${singleKey})`);
-            }
+            // Codes and direct-IP aliases must identify the requested room.
+            // A stale or mistyped target must never enter another active match.
+            const room = rooms.get(normalizedTargetCode || targetIpOrId);
 
             if (!room) {
               ws.send(JSON.stringify({ type: "error", message: `Match not found for: ${targetIpOrId}` }));

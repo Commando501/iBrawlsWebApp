@@ -22,6 +22,13 @@ import { useAppSessionState } from './components/useAppSessionState';
 import { useAppLifecycleActions, useCloseTournamentGameAction } from './components/useAppLifecycleActions';
 import { useAppStatsUpdateHandler } from './components/useAppStatsUpdateHandler';
 import { MainMenuOverlay } from './components/main-menu/MainMenuOverlay';
+import './components/main-menu/MenuShell.css';
+import './components/main-menu/ArmoryCareer.css';
+import './components/main-menu/profile-social.css';
+import './components/main-menu/TrainingMenu.css';
+import './components/main-menu/TournamentMenu.css';
+import './components/multiplayer/OnlineMenu.css';
+import './components/replay/TheaterLibraryPanel.css';
 import { getMainMenuContentParent, useMainMenuNav, type MainMenuTab } from './components/main-menu/useMainMenuNav';
 import { useMainMenuAdminState } from './components/main-menu/useMainMenuAdminState';
 import { useBotSetupState } from './components/main-menu/useBotSetupState';
@@ -195,6 +202,9 @@ export default function App() {
 
   const {
     nav: mainMenuNav,
+    location: menuLocation,
+    selectDestination: navigateMenu,
+    goBack: goBackMenu,
     selectParent: selectMainMenuParent,
     selectPlayChild: selectMainMenuPlayChild,
     selectCustomizationChild: selectMainMenuCustomizationChild,
@@ -214,6 +224,8 @@ export default function App() {
     savedReplays,
     cachedReplays,
     replaySizes,
+    theaterLibraryStatus,
+    theaterLibraryError,
     replayUploadStatus,
     heatmapOnlyReplay,
     heatmapOnlyTime,
@@ -253,7 +265,7 @@ export default function App() {
     handleCloseSaveCachedModal,
     handleCommitCachedReplay,
   } = useTheaterReplays({
-    isTheaterTabActive: activeMenuContentParent === 'play' && mainMenuNav.playChild === 'theater',
+    isTheaterTabActive: menuLocation.screen === 'theater',
     onWatchReplay: handleReplayWatchSelected,
   });
 
@@ -442,9 +454,17 @@ export default function App() {
   });
 
   useEffect(() => {
-    handleHostGameRef.current = handleHostGame;
-    handleJoinGameRef.current = handleJoinGame;
-  }, [handleHostGame, handleJoinGame]);
+    handleHostGameRef.current = (code, config, password) => {
+      setConnectionMode('relay');
+      selectMainMenuPlayChild('multi');
+      handleHostGame(code, config, password, 'relay');
+    };
+    handleJoinGameRef.current = (target, observer, password, inviteToken) => {
+      setConnectionMode('relay');
+      selectMainMenuPlayChild('multi');
+      handleJoinGame(target, observer, password, inviteToken, 'relay');
+    };
+  }, [handleHostGame, handleJoinGame, selectMainMenuPlayChild, setConnectionMode]);
 
   const handleJoinRelayLobby = useCallback((
     target: string,
@@ -691,6 +711,40 @@ export default function App() {
     }
   }, [isPlaying, selectedReplay, singlePlayerMode, isMultiplayer, statMatchGameMode]);
 
+  const trainingSetupProps: React.ComponentProps<typeof MainMenuOverlay>['trainingSetup'] = {
+          isOpen: showBotSetupMenu,
+          isPlaying,
+          offlineBotCount,
+          onOfflineBotCountChange: setOfflineBotCount,
+          adminSettings,
+          setAdminSettings,
+          playerName,
+          selectedMap,
+          onSelectedMapChange: setSelectedMap,
+          lobbyCustomMapData,
+          onCustomMapDataChange: setLobbyCustomMapData,
+          botColors,
+          setBotColors,
+          botDifficulties,
+          setBotDifficulties,
+          botArchetypes,
+          setBotArchetypes,
+          botModelTypes,
+          setBotModelTypes,
+          aiPresets,
+          onClose: () => setShowBotSetupMenu(false),
+          onApplyAndResume: () => {
+            setShowBotSetupMenu(false);
+            setIsPaused(false);
+          },
+          onInitializeSimulation: () => {
+            setShowBotSetupMenu(false);
+            setIsLocalTrainingSession(true);
+            setSinglePlayerMode('sandbox');
+            handleStartGame();
+          },
+          };
+
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
       {/* BACKGROUND ARENA SIMULATION GRID */}
@@ -780,6 +834,9 @@ export default function App() {
 
       <MainMenuOverlay
         isVisible={!isPlaying && !isTerminated}
+        navigation={{ location: menuLocation, onNavigate: navigateMenu, onBack: goBackMenu }}
+        trainingSetup={trainingSetupProps}
+        settingsOptions={{ forceMobileControls, onForceMobileControlsChange: setForceMobileControls }}
         showAdminDashboard={showAdminDashboard}
         adminDashboard={{
           account,
@@ -843,6 +900,7 @@ export default function App() {
           tournamentRoundCount,
           setTournamentRoundCount,
           onInitializeTournament: (...args) => {
+            handleCancelHostOrJoin();
             setIsLocalTrainingSession(false);
             handleInitializeTournament(...args);
           },
@@ -860,6 +918,7 @@ export default function App() {
           chatMessages,
           isPlaying,
           onStartTournamentMatch: () => {
+            handleCancelHostOrJoin();
             setIsLocalTrainingSession(false);
             handleStartTournamentMatch();
           },
@@ -889,6 +948,8 @@ export default function App() {
           savedReplays,
           cachedReplays,
           replaySizes,
+          theaterLibraryStatus,
+          theaterLibraryError,
           replayUploadStatus,
           theaterSearchQuery,
           theaterMapFilter,
@@ -901,7 +962,10 @@ export default function App() {
           onContributeReplay: handleContributeReplay,
           onOpenHeatmapReplay: handleOpenHeatmapReplay,
           onSaveCachedReplay: handleSaveCachedReplay,
-          onWatchReplay: handleWatchReplay,
+          onWatchReplay: (replay) => {
+            handleCancelHostOrJoin();
+            handleWatchReplay(replay);
+          },
           keybindings,
           setKeybindings,
           rebindingAction,
@@ -1044,44 +1108,11 @@ export default function App() {
           invite: activeInvite,
           onAccept: (roomCode, inviteToken) => {
             clearActiveInvite();
-            setConnectionMode('relay');
-            handleJoinGame(roomCode, false, undefined, inviteToken, 'relay');
+            handleJoinRelayLobby(roomCode, false, undefined, inviteToken);
           },
           onDecline: declineInvite,
         }}
-        botSetup={{
-          isOpen: showBotSetupMenu,
-          isPlaying,
-          offlineBotCount,
-          onOfflineBotCountChange: setOfflineBotCount,
-          adminSettings,
-          setAdminSettings,
-          playerName,
-          selectedMap,
-          onSelectedMapChange: setSelectedMap,
-          lobbyCustomMapData,
-          onCustomMapDataChange: setLobbyCustomMapData,
-          botColors,
-          setBotColors,
-          botDifficulties,
-          setBotDifficulties,
-          botArchetypes,
-          setBotArchetypes,
-          botModelTypes,
-          setBotModelTypes,
-          aiPresets,
-          onClose: () => setShowBotSetupMenu(false),
-          onApplyAndResume: () => {
-            setShowBotSetupMenu(false);
-            setIsPaused(false);
-          },
-          onInitializeSimulation: () => {
-            setShowBotSetupMenu(false);
-            setIsLocalTrainingSession(true);
-            setSinglePlayerMode('sandbox');
-            handleStartGame();
-          },
-        }}
+        botSetup={trainingSetupProps}
         replayEdit={{
           isVisible: showEditModal,
           props: {

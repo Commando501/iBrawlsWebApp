@@ -6,7 +6,7 @@ import type {
   GameplayMultiplayerRole,
 } from './multiplayer/multiplayerConnectionConstants';
 
-type SinglePlayerMode = 'sandbox' | 'tournament';
+type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
 
 export interface LocalGameMultiplayerReset {
@@ -130,29 +130,33 @@ export function useAppLifecycleActions({
 
   const handleApplyMatchmakerUrl = useCallback(() => {
     if (applyMatchmakerUrl()) {
+      cancelHostOrJoin();
+      setQuickPlayStatus('idle');
       closeMenuSocket();
     }
-  }, [applyMatchmakerUrl, closeMenuSocket]);
+  }, [applyMatchmakerUrl, cancelHostOrJoin, closeMenuSocket, setQuickPlayStatus]);
 
   const handleResetMatchmakerUrl = useCallback(() => {
     if (resetMatchmakerUrl()) {
+      cancelHostOrJoin();
+      setQuickPlayStatus('idle');
       closeMenuSocket();
     }
-  }, [closeMenuSocket, resetMatchmakerUrl]);
+  }, [cancelHostOrJoin, closeMenuSocket, resetMatchmakerUrl, setQuickPlayStatus]);
 
   const handleStartGame = useCallback(() => {
     sfx.init();
     sfx.resume();
     sfx.playRespawn();
 
+    // This also cancels a socket whose host/join acknowledgement is still pending.
+    cancelHostOrJoin();
+    setQuickPlayStatus('idle');
     const reset = createLocalGameMultiplayerReset();
     setIsMultiplayer(reset.isMultiplayer);
     setMultiplayerRole(reset.multiplayerRole);
     setMultiplayerPlayerCount(reset.multiplayerPlayerCount);
     setMultiplayerSpawnSlot(reset.multiplayerSpawnSlot);
-    if (multiplayerSocket) {
-      multiplayerSocket.close();
-    }
     setMultiplayerSocket(reset.multiplayerSocket);
 
     setIsPlaying(true);
@@ -161,7 +165,8 @@ export function useAppLifecycleActions({
     closeGamePanels();
   }, [
     closeGamePanels,
-    multiplayerSocket,
+    cancelHostOrJoin,
+    setQuickPlayStatus,
     setIsMultiplayer,
     setIsPaused,
     setIsPlaying,
@@ -207,9 +212,7 @@ export function useAppLifecycleActions({
   }, []);
 
   const handleReturnToMain = useCallback(() => {
-    if (multiplayerSocket) {
-      multiplayerSocket.close();
-    }
+    cancelHostOrJoin();
     const reset = createReturnToMainMultiplayerReset();
     setIsPlaying(false);
     setIsPaused(false);
@@ -224,7 +227,7 @@ export function useAppLifecycleActions({
     setOpponentClientId(reset.opponentClientId);
   }, [
     closeGamePanels,
-    multiplayerSocket,
+    cancelHostOrJoin,
     setConnectionStatus,
     setIsMultiplayer,
     setIsPaused,

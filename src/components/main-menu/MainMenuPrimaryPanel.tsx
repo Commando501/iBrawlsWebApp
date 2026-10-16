@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, SetStateAction, ReactNode } from 'react';
 import type { AIPreset, Keybindings, ReplayFile, TournamentState, UniversalSettings } from '../../types';
 import type { CustomMapData } from '../../types';
 import type { MatchLobbyConfig } from '../../network/protocol';
@@ -22,6 +22,7 @@ import {
   type TheaterMapFilter,
   type TheaterModeFilter,
 } from '../replay/TheaterLibraryPanel';
+import type { TheaterLibraryStatus } from '../replay/theaterLibrary';
 import { ManualControlsPanel } from './ManualControlsPanel';
 import { VisualGamepadMapper } from './VisualGamepadMapper';
 import { ArmoryPanel, type PreviewWeapon } from './ArmoryPanel';
@@ -33,6 +34,14 @@ type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
 
 interface MainMenuPrimaryPanelProps {
+  active?: boolean;
+  focusedSinglePlayer?: boolean;
+  lobbyBrowser?: ReactNode;
+  requestedOnlineView?: 'home' | 'browse' | 'host' | 'join';
+  onlineViewRequestToken?: number;
+  onOpenArmory?: () => void;
+  onOpenProfile?: () => void;
+  onFindMatch?: () => void;
   parent: MainMenuContentParent;
   playChild: MainMenuTab;
   customizationChild: CustomizationChild;
@@ -106,6 +115,8 @@ interface MainMenuPrimaryPanelProps {
   cachedReplays: ReplayFile[];
   replaySizes: Record<string, number>;
   replayUploadStatus: Record<string, ReplayUploadStatus>;
+  theaterLibraryStatus?: TheaterLibraryStatus;
+  theaterLibraryError?: string;
   theaterSearchQuery: string;
   theaterMapFilter: TheaterMapFilter;
   theaterModeFilter: TheaterModeFilter;
@@ -157,6 +168,7 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
       {parent === 'play' && (
         playChild === 'single' ? (
           <SinglePlayerSetupPanel
+            focused={props.focusedSinglePlayer}
             singlePlayerMode={props.singlePlayerMode}
             setSinglePlayerMode={props.setSinglePlayerMode}
             adminSettings={props.adminSettings}
@@ -186,6 +198,9 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
           />
         ) : playChild === 'multi' ? (
           <MultiplayerSetupPanel
+            lobbyBrowser={props.lobbyBrowser}
+            requestedView={props.requestedOnlineView}
+            viewRequestToken={props.onlineViewRequestToken}
             connectionMode={props.connectionMode}
             onConnectionModeChange={props.onConnectionModeChange}
             isOnline={props.isOnline}
@@ -223,6 +238,9 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
           />
         ) : (
           <TheaterLibraryPanel
+            active={props.active}
+            libraryStatus={props.theaterLibraryStatus}
+            libraryError={props.theaterLibraryError}
             savedReplays={props.savedReplays}
             cachedReplays={props.cachedReplays}
             replaySizes={props.replaySizes}
@@ -287,7 +305,7 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
 
       {parent === 'system' && (
         systemChild === 'service' ? (
-          <ServiceRecordPanel isSignedIn={props.isSignedIn} />
+          <ServiceRecordPanel isSignedIn={props.isSignedIn} playerHue={props.playerHue} active={props.active} onOpenArmory={props.onOpenArmory} onOpenProfile={props.onOpenProfile} onFindMatch={props.onFindMatch} />
         ) : (
           <SaveCodesPanel
             saveSystemStatus={props.saveSystemStatus}

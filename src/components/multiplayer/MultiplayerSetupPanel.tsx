@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
 import type { CustomMapData, UniversalSettings } from '../../types';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
@@ -31,8 +31,12 @@ import { HeroCtaButton } from '../main-menu/HeroCtaButton';
 import type { GameplayConnectionMode, GameplayConnectionStatus, GameplayMultiplayerRole } from './multiplayerConnectionConstants';
 
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
+export type OnlineMenuView = 'home' | 'browse' | 'host' | 'join';
 
 interface MultiplayerSetupPanelProps {
+  lobbyBrowser?: ReactNode;
+  requestedView?: OnlineMenuView;
+  viewRequestToken?: number;
   connectionMode: GameplayConnectionMode;
   onConnectionModeChange: (mode: GameplayConnectionMode) => void;
   isOnline: boolean;
@@ -72,6 +76,9 @@ interface MultiplayerSetupPanelProps {
 const toMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
 
 export function MultiplayerSetupPanel({
+  lobbyBrowser,
+  requestedView = 'home',
+  viewRequestToken,
   connectionMode,
   onConnectionModeChange,
   isOnline,
@@ -107,6 +114,7 @@ export function MultiplayerSetupPanel({
   onApplyMatchmakerUrl,
   onResetMatchmakerUrl,
 }: MultiplayerSetupPanelProps) {
+  const [view, setView] = useState<OnlineMenuView>(requestedView);
   const [access, setAccess] = useState<MatchLobbyAccess>('open');
   const [password, setPassword] = useState('');
   const [gameMode, setGameMode] = useState<MatchLobbyGameMode>(adminSettings.gameMode ?? 'sandbox');
@@ -163,11 +171,17 @@ export function MultiplayerSetupPanel({
     ),
   });
   const isStaging = Boolean(multiplayerSocket && matchLobbyConfig && (connectionStatus === 'hosting' || connectionStatus === 'connected'));
+  const isIdle = (connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle';
   const canCreateLobby = access !== 'password' || password.trim().length > 0;
   const canStartMatch = multiplayerRole === 'host' && multiplayerSocket?.readyState === WebSocket.OPEN;
+  const stagedRoomCode = multiplayerRole === 'host' ? hostIdCode : joinIpOrId;
+
+  useEffect(() => {
+    setView(requestedView);
+  }, [requestedView, viewRequestToken]);
 
   const handleJoinKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' && joinIpOrId.trim()) {
       onJoinGame(joinIpOrId, false, joinPasswordInput || undefined);
     }
   };
@@ -194,14 +208,14 @@ export function MultiplayerSetupPanel({
 
   if (isStaging) {
     return (
-      <div className="flex flex-col h-full min-h-0 gap-4">
+      <div className="menu-online-staging">
         <PanelTitle title="Lobby Staging" />
 
-        <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg p-3.5 flex flex-col gap-3">
+        <div className="menu-online-room bg-emerald-500/10 border border-emerald-500/25 rounded-lg p-3.5 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[10px] text-emerald-300 font-black uppercase tracking-widest">Room Code</p>
-              <p className="font-mono text-xl text-white font-black tracking-widest">{hostIdCode}</p>
+              <p className="font-mono text-xl text-white font-black tracking-widest">{stagedRoomCode}</p>
             </div>
             <span className="shrink-0 text-[10px] text-white/45 uppercase tracking-wider">
               {multiplayerPlayerCount}/{stagedConfig.maxPlayers} players
@@ -211,7 +225,7 @@ export function MultiplayerSetupPanel({
           <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
             <LobbyStat label="Mode" value={getMatchLobbyModeLabel(stagedConfig.gameMode)} />
             <LobbyStat label="Access" value={stagedConfig.access === 'password' ? 'Password' : stagedConfig.access} />
-            <LobbyStat label="Map" value={stagedConfig.customMap?.name || selectedPremadeMap?.name || stagedConfig.selectedMap} />
+            <LobbyStat label="Map" value={stagedConfig.customMap?.name || PREMADE_MAPS.find(map => map.id === stagedConfig.selectedMap)?.name || (stagedConfig.selectedMap === 'hangar' ? 'Industrial Hangar' : stagedConfig.selectedMap === 'circle' ? 'Circle Arena' : stagedConfig.selectedMap)} />
             <LobbyStat label="Timer" value={formatMatchTimerLabel(stagedConfig.matchTimerSeconds)} />
             <LobbyStat label="Target" value={getMatchLobbyTargetLabel(stagedConfig)} />
             <LobbyStat label="Models" value={getVisualModelPolicyLabel(stagedConfig.visualModelPolicy)} />
@@ -219,7 +233,7 @@ export function MultiplayerSetupPanel({
           </div>
         </div>
 
-        <div className="bg-black/35 border border-white/5 rounded-lg p-3 min-h-0 flex flex-col gap-2">
+        <div className="menu-online-participants bg-black/35 border border-white/5 rounded-lg p-3 min-h-0 flex flex-col gap-2">
           <p className="text-[10px] text-[#38bdf8] font-black uppercase tracking-widest">Participants</p>
           <div className="min-h-0 max-h-44 overflow-y-auto flex flex-col gap-1.5 pr-1">
             {participantRows.map((participant) => (
@@ -241,7 +255,7 @@ export function MultiplayerSetupPanel({
           canSend={multiplayerSocket?.readyState === WebSocket.OPEN}
         />
 
-        <div className="flex flex-col gap-2 mt-auto">
+        <div className="menu-online-stage-actions flex flex-col gap-2 mt-auto">
           <HeroCtaButton
             label="Start Match"
             variant="emerald"
@@ -261,73 +275,34 @@ export function MultiplayerSetupPanel({
     );
   }
 
-  const isIdle = (connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle';
-
   return (
-    <div className="flex flex-col h-full min-h-0 justify-between gap-4">
-      <div className="flex flex-col gap-3 shrink-0">
-        <PanelTitle title="Multiplayer Setup" />
-
-        {!isOnline && (
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-left">
-            <p className="text-xs font-black uppercase tracking-widest text-amber-300">Offline Mode</p>
-            <p className="mt-1 text-xs text-white/60 leading-relaxed">
-              Multiplayer, matchmaker chat, invites, and public IP discovery will reconnect when the network is back.
-            </p>
-          </div>
-        )}
-
-        {isIdle && (
-          <div className="flex flex-col gap-3">
-            <HeroCtaButton
-              label={isOnline ? 'Quick Play Matchmaking' : 'Quick Play (Offline)'}
-              variant="quickplay"
-              onClick={onQuickPlay}
-              disabled={!isOnline}
-              title={isOnline ? 'Find an open public lobby automatically' : 'Reconnect to the network to use matchmaking'}
-              icon={(
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                </svg>
-              )}
-            />
-            <p className="text-[10px] text-white/35 font-mono uppercase tracking-widest text-center">
-              Or host your own lobby / join a friend below
-            </p>
-
-            <div className="bg-white/[0.035] border border-white/5 rounded-lg p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">Model Set</span>
-                <span className="text-[9px] text-cyan-300 font-black uppercase tracking-widest">
-                  Visual Only
-                </span>
-              </div>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {selectableVisualModelPolicyOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setVisualModelPolicy(option.value)}
-                    className={`min-h-10 rounded px-2 text-[10px] font-black uppercase tracking-wider border transition-all ${
-                      selectedVisualModelPolicy === option.value
-                        ? 'bg-cyan-400/15 border-cyan-300/45 text-cyan-200'
-                        : 'bg-black/30 border-white/10 text-white/45 hover:text-white/70'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <AdvancedSection sectionId="multiplayer-host" title="Host a Lobby" badge={`room ${hostIdCode || '—'}`}>
-            <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-3">
+    <div className="menu-online-screen" data-view={view}>
+      {!isOnline && <div className="menu-online-notice" role="status"><strong>Offline mode</strong><p>Multiplayer, global chat, invites, and public IP discovery reconnect when the network is back. Local LAN settings are available below.</p></div>}
+      {connectionStatus === 'error' && <div className="menu-online-error" role="alert"><strong>Could not connect</strong><p>{connectionError || 'Connection failed. Your lobby setup is still here.'}</p></div>}
+      {isIdle ? <>
+        <nav className="menu-online-navigation" aria-label="Online Play sections">
+          {(['home', 'browse', 'host', 'join'] as const).map(item => <button type="button" key={item} aria-pressed={view === item} onClick={() => setView(item)}>{item === 'home' ? 'Overview' : item === 'browse' ? 'Browse lobbies' : item === 'host' ? 'Host a lobby' : 'Join by code'}</button>)}
+        </nav>
+        <div className="menu-online-home" hidden={view !== 'home'}>
+          <section className="menu-online-routes" aria-label="Ways to play online">
+            <div className="menu-online-squad"><img src="/assets/menu/online-iron-vanguard.png" alt="Four V3 Iron Vanguard game models standing ready" /><div><h2>Find your next match.</h2><p>Jump in with Quick Play, or set up a room of your own.</p></div></div>
+            <button type="button" className="menu-online-route" onClick={() => setView('browse')}><span aria-hidden="true">01</span><span><strong>Browse lobbies</strong><small>Choose a room, check its rules, and join.</small></span><span aria-hidden="true">→</span></button>
+            <button type="button" className="menu-online-route" onClick={() => setView('host')}><span aria-hidden="true">02</span><span><strong>Host a lobby</strong><small>Choose the arena, match rules, and who can join.</small></span><span aria-hidden="true">→</span></button>
+            <button type="button" className="menu-online-route" onClick={() => setView('join')}><span aria-hidden="true">03</span><span><strong>Join by code</strong><small>Enter a room code or IP. Play or observe.</small></span><span aria-hidden="true">→</span></button>
+          </section>
+          <aside className="menu-online-quickplay"><figure><img src="/assets/menu/stadium-gameplay.png" alt="Actual Championship Stadium gameplay" /><figcaption>Championship Stadium · Gameplay capture</figcaption></figure><div><span className="menu-online-kicker">Quick Play</span><h2>Less setup.<br />More arena.</h2><p>Find an open public lobby with room to play.</p></div><div className="menu-online-quickplay-action"><HeroCtaButton label={isOnline ? 'Quick Play' : 'Quick Play (Offline)'} variant="quickplay" onClick={onQuickPlay} disabled={!isOnline} title={isOnline ? 'Find an open public lobby automatically' : 'Reconnect to the network to use matchmaking'} /><p>You can cancel while searching.</p></div></aside>
+        </div>
+        <section className="menu-online-browser" hidden={view !== 'browse'} aria-label="Lobby browser">{lobbyBrowser ?? <div className="menu-online-empty"><h2>No lobby directory available</h2><p>Try Quick Play, host a room, or enter a room code.</p><button type="button" className="menu-online-secondary" onClick={() => setView('join')}>Join by code</button></div>}</section>
+        <section className="menu-online-host" hidden={view !== 'host'} aria-labelledby="menu-online-host-title">
+          <div className="menu-online-form"><h2 id="menu-online-host-title">Set the arena.</h2><p className="menu-online-intro">Choose your match rules, then open the room.</p>
+            <div className="menu-online-host-fields bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-3">
               <div className="grid grid-cols-3 gap-1.5">
                 {(['open', 'private', 'password'] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
                     onClick={() => setAccess(option)}
+                    aria-pressed={access === option}
                     className={`h-9 rounded text-[10px] font-black uppercase tracking-wider border transition-all ${
                       access === option
                         ? 'bg-emerald-500/20 border-emerald-400/45 text-emerald-300'
@@ -344,7 +319,7 @@ export function MultiplayerSetupPanel({
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Lobby password"
+                  aria-label="Lobby password" placeholder="Lobby password"
                   className="w-full h-10 bg-black/60 border border-white/10 rounded px-3 text-xs text-white placeholder:text-white/25 focus:border-emerald-400 outline-none"
                 />
               )}
@@ -355,6 +330,7 @@ export function MultiplayerSetupPanel({
                     key={mode}
                     type="button"
                     onClick={() => setGameMode(mode)}
+                    aria-pressed={gameMode === mode}
                     className={`h-10 rounded text-xs font-black uppercase tracking-wider border transition-all ${
                       gameMode === mode
                         ? 'bg-[#38bdf8]/20 border-[#38bdf8]/45 text-[#7dd3fc]'
@@ -417,23 +393,53 @@ export function MultiplayerSetupPanel({
                 Create Lobby
               </button>
             </div>
-            </AdvancedSection>
 
-            <AdvancedSection sectionId="multiplayer-join" title="Join or Observe">
+          </div>
+          <aside className="menu-online-summary"><span className="menu-online-kicker">Your lobby</span><h2>{getMatchLobbyModeLabel(gameMode)}</h2><dl><div><dt>Map</dt><dd>{lobbyCustomMapData && selectedMap === 'custom_file' ? lobbyCustomMapData.name : selectedPremadeMap?.name || (selectedMap === 'hangar' ? 'Industrial Hangar' : selectedMap === 'circle' ? 'Circle Arena' : selectedMap)}</dd></div><div><dt>Capacity</dt><dd>{activeConfig.maxPlayers} players</dd></div><div><dt>Target</dt><dd>{getMatchLobbyTargetLabel(activeConfig)}</dd></div><div><dt>Timer</dt><dd>{formatMatchTimerLabel(activeConfig.matchTimerSeconds)}</dd></div><div><dt>Access</dt><dd>{access === 'password' ? 'Password required' : access === 'private' ? 'Private' : 'Open'}</dd></div><div><dt>Observers</dt><dd>{allowObservers ? 'Allowed' : 'Off'}</dd></div></dl><div className="menu-online-model-options">
+            <div className="bg-white/[0.035] border border-white/5 rounded-lg p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">Model Set</span>
+                <span className="text-[9px] text-cyan-300 font-black uppercase tracking-widest">
+                  Visual Only
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {selectableVisualModelPolicyOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setVisualModelPolicy(option.value)}
+                    aria-pressed={selectedVisualModelPolicy === option.value}
+                    className={`min-h-10 rounded px-2 text-[10px] font-black uppercase tracking-wider border transition-all ${
+                      selectedVisualModelPolicy === option.value
+                        ? 'bg-cyan-400/15 border-cyan-300/45 text-cyan-200'
+                        : 'bg-black/30 border-white/10 text-white/45 hover:text-white/70'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+
+          </div><p>Players review these rules before the host starts the match.</p></aside>
+        </section>
+        <section className="menu-online-join" hidden={view !== 'join'} aria-labelledby="menu-online-join-title"><div className="menu-online-form"><span className="menu-online-kicker">Join a friend</span><h2 id="menu-online-join-title">The same room.<br />A new match.</h2><p className="menu-online-intro">Enter a room code or host IP address. Add a password if the room requires one.</p>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={joinIpOrId}
                 onChange={(event) => onJoinIpOrIdChange(event.target.value)}
                 onKeyDown={handleJoinKeyDown}
-                placeholder="Room Code or IP..."
+                aria-label="Room Code or IP..." placeholder="Room Code or IP..."
                 className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-3 text-center font-mono text-xs tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none"
               />
               <input
                 type="password"
                 value={joinPasswordInput}
                 onChange={(event) => setJoinPasswordInput(event.target.value)}
-                placeholder="Password"
+                aria-label="Password" placeholder="Password"
                 className="w-24 h-11 bg-black/60 border border-white/10 rounded px-2 text-center font-mono text-xs text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none"
               />
             </div>
@@ -466,25 +472,19 @@ export function MultiplayerSetupPanel({
             <p className="text-[10px] text-white/40 leading-snug">
               Observe joins as a camera-only spectator: fly between brawlers with WASD + Space and cycle targets, without affecting the match.
             </p>
-            </AdvancedSection>
-          </div>
-        )}
 
-        {connectionStatus === 'connecting' && <StatusCard title="Connecting Protocol" body="Attaching to host lobby..." onCancel={onCancelHostOrJoin} />}
-        {quickPlayStatus === 'searching' && <StatusCard title="Searching for Match" body="Scanning open public lobbies." onCancel={onCancelQuickPlay} />}
-        {quickPlayStatus === 'matching' && <StatusCard title="Match Found" body="Configuring arena host credentials..." />}
-        {connectionStatus === 'error' && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-center">
-            <p className="text-xs text-red-400 font-black uppercase tracking-wider mb-0.5">Sync Timeout</p>
-            <p className="text-xs text-white/70">{connectionError || 'Connection failed.'}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-auto border-t border-white/5 pt-3">
+        </div><aside className="menu-online-join-art"><img src="/assets/menu/online-iron-vanguard.png" alt="Actual V3 Iron Vanguard game models" /><div><span className="menu-online-kicker">Play or observe</span><h3>A place in the arena.</h3><p>Join the players, or watch the action as a camera-only spectator.</p></div></aside></section>
+      </> : <div className="menu-online-connecting" role="status">
+        {connectionStatus === 'connecting' && <StatusCard title="Connecting" body="Joining the host lobby…" onCancel={onCancelHostOrJoin} />}
+        {quickPlayStatus === 'searching' && <StatusCard title="Searching for a match" body="Finding an open public lobby with room to play." onCancel={onCancelQuickPlay} />}
+        {quickPlayStatus === 'matching' && <StatusCard title="Match found" body="Preparing the arena connection…" />}
+        {quickPlayStatus === 'idle' && connectionStatus === 'hosting' && <StatusCard title="Creating your lobby" body="Waiting for the room connection…" onCancel={onCancelHostOrJoin} />}
+        {quickPlayStatus === 'idle' && connectionStatus === 'connected' && <StatusCard title="Joining the lobby" body="Waiting for the host's match settings…" onCancel={onCancelHostOrJoin} />}
+      </div>}
+      <div className="menu-online-connection">
         <AdvancedSection
           sectionId="multiplayer-advanced"
-          title="Advanced Settings"
+          title="Connection settings"
           badge={connectionMode === 'local' ? 'LAN mode' : undefined}
         >
           <div className="flex flex-col gap-1.5">
@@ -532,7 +532,7 @@ export function MultiplayerSetupPanel({
               type="text"
               value={customUrlInput}
               onChange={(event) => onCustomUrlInputChange(event.target.value)}
-              placeholder="wss://..."
+              aria-label="wss://..." placeholder="wss://..."
               className="w-full h-10 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none"
             />
             <div className="flex gap-2.5">
@@ -577,7 +577,7 @@ function MatchLobbyChatBox({
   };
 
   return (
-    <div className="bg-black/35 border border-white/5 rounded-lg p-3 min-h-[13rem] flex flex-col gap-2">
+    <div className="menu-online-lobby-chat bg-black/35 border border-white/5 rounded-lg p-3 min-h-[13rem] flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <MessageSquare className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
@@ -590,6 +590,7 @@ function MatchLobbyChatBox({
 
       <div
         ref={scrollRef}
+        role="log" aria-label="Match lobby messages" aria-live="polite" aria-relevant="additions"
         className="flex-1 min-h-0 max-h-36 overflow-y-auto rounded border border-white/5 bg-black/35 p-2.5 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-white/10"
       >
         {messages.length === 0 ? (
@@ -623,7 +624,7 @@ function MatchLobbyChatBox({
           type="text"
           value={inputText}
           onChange={(event) => setInputText(event.target.value)}
-          placeholder={canSend ? 'Message this lobby...' : 'Lobby socket offline'}
+          aria-label="Match lobby message" placeholder={canSend ? 'Message this lobby...' : 'Lobby socket offline'}
           disabled={!canSend}
           maxLength={120}
           autoComplete="off"
