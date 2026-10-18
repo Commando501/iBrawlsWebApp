@@ -1,0 +1,13 @@
+# Rainy Cyber Streets surfaces and light
+
+Run `node scripts/rainy-textures/author-surfaces.mjs` to reproduce the four shipped PNGs and their SHA-256 manifest. The dependency-free authoring script produces original periodic PBR maps without downloads or source imagery.
+
+The 6 m asphalt tile contains flush 3 by 6 m expansion seals, shallow aggregate relief and broad moisture variation. Seals are below 3 mm deep in the normal map only. Color contrast stays quiet: luminance standard deviation is 1.14/255, with no emissive floor grid, mirror puddles, debris or geometry displacement. Moisture changes roughness between roughly 0.56 and 0.80; the floor remains readable during combat. Architecture reuses the established Stadium concrete and V3 ceramic coating, with pale ceramic, slate alloy and graphite materials. Small guarded sodium lamps and windows provide restrained emission; foliage remains opaque and unlit.
+
+High and Balanced use 1024 px sRGB albedo, OpenGL (+Y) tangent normals and linear roughness. Low uses averaged 512 px albedo and scalar roughness. The original maps total 1,486,550 bytes (approximately 1.42 MiB). The manifest records dimensions, physical scale, luminance statistics, file sizes and hashes. Tests check periodic edges, physical relief, texture budgets and floor contrast.
+
+Billboards reuse `generateCustomTexture('rainy_streets_dog_billboard', '#06b6d4')`, the actual existing game dog graphic. Its canvas is downsampled into an independently owned 1024 px High/Balanced or 512 px Low texture, preserving authored screen UVs and glTF image orientation. The screen is opaque and needs no transparency pass. No generated character imagery is used.
+
+Image sources are shared through independently owned texture handles. The loading gate covers both the new asphalt and shared Stadium coatings/concrete. Missing or stalled requests settle to neutral one-pixel fallbacks within eight seconds; late callbacks cannot resize terminal fallback textures. Tests cover reuse, surviving scenes, early disposal and stale downloads.
+
+The static shader sky uses broad steel-blue cloud masses and subdued sodium city haze. It needs no image download, animation or postprocessing. A warm neutral key and two unshadowed cool fill lights keep actual V3 armor readable. The existing directional key remains the sole shadow light; it fits the current rectangular half-extents without changing user light intensity. A static reflection probe bakes once at 256 px on High or 128 px on Balanced/Low. Scratch geometry, owned probe targets and explicitly marked skies are released without touching another map's resources.

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "generator": "scripts/rainy-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": {
+    "floor": 6
+  },
+  "slabMeters": [
+    3,
+    6
+  ],
+  "statistics": {
+    "floor": {
+      "min": 220.00306085150535,
+      "max": 234.0706982714024,
+      "mean": 231.54210636845653,
+      "standardDeviation": 1.1392258017403516
+    }
+  },
+  "files": [
+    {
+      "path": "assets/rainy/surfaces/asphalt-floor-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 200225,
+      "sha256": "bf022d747b98e018c8703a9eb7ecc267ccd327cb7367c3d3d38b668acbad6b23",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/rainy/surfaces/asphalt-floor-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 925360,
+      "sha256": "d3610240681d19141f8968feef813fc9e8483f2260ff337afcacafc267211db8",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/rainy/surfaces/asphalt-floor-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 282898,
+      "sha256": "9ea4c65a85a65dd6c9f5630ae657b579549123e023014902cc59e906090362b2",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/rainy/surfaces/asphalt-floor-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 78067,
+      "sha256": "a7913b4d7cf957f4ee0bb5a6e57c082af7eaa4e36a5b2c93059423605d1cb344",
+      "colorSpace": "sRGB"
+    }
+  ],
+  "design": "Quiet wet asphalt with broad restrained moisture roughness and shallow aggregate normals. Flush 3 by 6 metre expansion seals stay below three millimetres in the normal map. No baked shadows, glowing floor grid, mirror puddles, loose debris, or displacement. Architecture separately reuses approved Stadium concrete and V3 coating."
+}

@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-16",
+  "map": "championship_stadium",
+  "kind": "First playable environment pilot",
+  "environment": {
+    "server": "localhost development Vite",
+    "browser": "Playwright Chromium",
+    "gpu": "NVIDIA GeForce RTX 4090 via ANGLE Direct3D11",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "canvas": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "models": "Actual Iron Vanguard; local player + seven AI combatants",
+    "mode": "Grifball 4v4"
+  },
+  "method": "Two independent live matches, stationary first-person camera, 2 seconds warmup followed by 15 seconds requestAnimationFrame interval sampling. CPU build/typecheck tasks stopped. Not a deterministic cross-device benchmark. Draw and triangle counters include rendered passes/shadows.",
+  "performance": {
+    "high": {
+      "frames": 1870,
+      "meanFrameMs": 8.025080213903744,
+      "averageFps": 124.60934673785917,
+      "p50Ms": 7,
+      "p95Ms": 13.9,
+      "p99Ms": 14,
+      "maxDrawCalls": 300,
+      "maxRenderedTriangles": 808656,
+      "geometries": 173,
+      "textures": 34
+    },
+    "low": {
+      "frames": 1963,
+      "meanFrameMs": 7.644931227712685,
+      "averageFps": 130.80562314598595,
+      "p50Ms": 7,
+      "p95Ms": 13.9,
+      "p99Ms": 14,
+      "maxDrawCalls": 296,
+      "maxRenderedTriangles": 453680,
+      "geometries": 156,
+      "textures": 28
+    }
+  },
+  "checks": {
+    "singleStadiumAndFloor": true,
+    "actualVanguardOnAllSevenBots": true,
+    "keyboardMovement": true,
+    "qualitySavedAndAppliedNextMatch": true,
+    "quitDisposesEnvironmentAndStadium": true,
+    "blockedAllStadiumDownloads": {
+      "architectureStatus": "fallback",
+      "activeAI": 7,
+      "phase": "playing",
+      "pageErrors": [],
+      "neutralTextures": [
+        1,
+        1
+      ]
+    },
+    "unitTests": 35,
+    "typecheck": "passed"
+  },
+  "captures": [
+    "output/playwright/stadium-upgrade/high-overview.png",
+    "output/playwright/stadium-upgrade/high-gameplay.png",
+    "output/playwright/stadium-upgrade/low-gameplay.png",
+    "output/playwright/stadium-upgrade/quality-settings.png",
+    "output/playwright/stadium-upgrade/missing-assets-fallback.png"
+  ],
+  "limits": "60 FPS target validated only on this tested high-end GPU at 1080p. Lower-powered GPUs, mobile, and higher resolutions still require measurements. Geometry/collision/rules unchanged. This is an environment pilot, not a claim of AAA production parity."
+}

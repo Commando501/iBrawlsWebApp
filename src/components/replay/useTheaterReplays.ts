@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, PointerEvent as ReactPointerEvent, SetStateAction } from 'react';
 import type { ReplayFile } from '../../types';
 import {
@@ -11,6 +11,7 @@ import {
 } from '../../game/theaterDatabase';
 import { contributeReplay } from '../../services/replayUpload';
 import type { ReplayUploadStatus, TheaterMapFilter, TheaterModeFilter } from './TheaterLibraryPanel';
+import type { TheaterLibraryStatus } from './theaterLibrary';
 
 interface ReplayHeatmapPanelSize {
   width: number;
@@ -32,6 +33,9 @@ export const useTheaterReplays = ({
   onWatchReplay,
 }: UseTheaterReplaysOptions) => {
   const [selectedReplay, setSelectedReplay] = useState<ReplayFile | null>(null);
+  const [theaterLibraryStatus, setTheaterLibraryStatus] = useState<TheaterLibraryStatus>('loading');
+  const [theaterLibraryError, setTheaterLibraryError] = useState('');
+  const libraryLoadRequest = useRef(0);
   const [savedReplays, setSavedReplays] = useState<ReplayFile[]>([]);
   const [cachedReplays, setCachedReplays] = useState<ReplayFile[]>([]);
   const [replaySizes, setReplaySizes] = useState<Record<string, number>>({});
@@ -60,20 +64,30 @@ export const useTheaterReplays = ({
   const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
 
   const loadTheaterReplays = useCallback(async () => {
+    const request = ++libraryLoadRequest.current;
+    setTheaterLibraryStatus('loading');
+    setTheaterLibraryError('');
     try {
-      const saved = await getSavedReplays();
-      const cached = await getCachedReplays();
-      setSavedReplays(saved);
-      setCachedReplays(cached);
+      const [saved, cached] = await Promise.all([getSavedReplays(), getCachedReplays()]);
       const sizes: Record<string, number> = {};
       for (const replay of [...saved, ...cached]) {
         sizes[replay.id] = getReplayStorageSizeBytes(replay);
       }
+      // A newer refresh may follow an edit/delete while an older read is still pending.
+      if (request !== libraryLoadRequest.current) return;
+      setSavedReplays(saved);
+      setCachedReplays(cached);
       setReplaySizes(sizes);
+      setTheaterLibraryStatus('ready');
     } catch (err) {
+      if (request !== libraryLoadRequest.current) return;
       console.error('Failed to load theater replays from IndexedDB:', err);
+      setTheaterLibraryError('Your replay library could not be read. Close Theater and try again. Your recordings have not been changed.');
+      setTheaterLibraryStatus('error');
     }
   }, []);
+
+  useEffect(() => () => { libraryLoadRequest.current += 1; }, []);
 
   useEffect(() => {
     if (isTheaterTabActive) {
@@ -214,6 +228,8 @@ export const useTheaterReplays = ({
     setSelectedReplay: setSelectedReplay as Dispatch<SetStateAction<ReplayFile | null>>,
     savedReplays,
     cachedReplays,
+    theaterLibraryStatus,
+    theaterLibraryError,
     replaySizes,
     replayUploadStatus,
     heatmapOnlyReplay,

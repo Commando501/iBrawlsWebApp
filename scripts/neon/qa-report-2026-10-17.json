@@ -1,0 +1,245 @@
+{
+  "date": "2026-10-17",
+  "map": "synthwave_grid_arena",
+  "kind": "Neon Outrun Grid environment upgrade",
+  "environment": {
+    "server": "Local Vite development server, port3000",
+    "browser": "Playwright Chromium",
+    "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "models": "Actual V3 Iron Vanguard local player and seven AI combatants"
+  },
+  "method": "Three independent final-asset live matches: High and Low combat sandbox, and High 4v4 Grifball. Stationary first-person player with seven active AI bots; combat samples include deaths, respawns and impact effects. Two seconds warmup then15 seconds of requestAnimationFrame sampling. Grifball waited for playing phase. All runtime edits, asset authoring, tests, typecheck and build finished before samples. Overview camera overrides were used only for separate screenshots. Draw/triangle counters include shadows and rendered passes. Variable combat means these are workload samples, not controlled tier comparisons; the sandbox's unused Grifball phase field stays at countdown.",
+  "performance": {
+    "combatHigh": {
+      "tier": "high",
+      "frames": 1507,
+      "meanMs": 9.958261446582616,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.899999999997817,
+      "maxCalls": 1795,
+      "maxTriangles": 477116,
+      "memory": {
+        "geometries": 41,
+        "textures": 29
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 100.41913494279372
+    },
+    "combatLow": {
+      "tier": "low",
+      "frames": 1774,
+      "meanMs": 8.471138669673053,
+      "p50Ms": 7,
+      "p95Ms": 13.900000000001455,
+      "p99Ms": 14,
+      "maxCalls": 1263,
+      "maxTriangles": 310167,
+      "memory": {
+        "geometries": 39,
+        "textures": 27
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 118.04788458723169
+    },
+    "grifballHigh": {
+      "tier": "high",
+      "frames": 1907,
+      "meanMs": 7.869428421604614,
+      "p50Ms": 7,
+      "p95Ms": 13.900000000001455,
+      "p99Ms": 14,
+      "maxCalls": 163,
+      "maxTriangles": 450859,
+      "memory": {
+        "geometries": 53,
+        "textures": 26
+      },
+      "actors": 7,
+      "phase": "playing",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 127.07403211834477
+    }
+  },
+  "assets": {
+    "highSourceTriangles": 17888,
+    "lowSourceTriangles": 6852,
+    "highGlbBytes": 876704,
+    "lowGlbBytes": 419264,
+    "sourceMaterialBatches": 17,
+    "instancedSandboxArchitectureBatches": 20,
+    "subdeckBatches": 3,
+    "highSandboxEnvironmentTriangles": 157416,
+    "lowSandboxEnvironmentTriangles": 35528,
+    "highTowerInstances": 12,
+    "lowTowerInstances": 6,
+    "highPalmInstances": 8,
+    "lowPalmInstances": 4,
+    "originalSurfacePackBytes": 1269171,
+    "provenance": "Original Blender armored beacons, goal buffers, terraced city towers and opaque sculptural alloy palms. Original deterministic physical panel-floor textures. Shared approved Stadium ceramic/coating maps. Actual shipped V3 characters unchanged."
+  },
+  "checks": {
+    "architectureReadyHighAndLow": true,
+    "allSevenBotsUseVanguard": true,
+    "pointerLock": true,
+    "keyboardMovement": {
+      "key": "W",
+      "durationMs": 450,
+      "before": [
+        12,
+        0,
+        -8
+      ],
+      "after": [
+        9.721213935879305,
+        0,
+        -6.48080929058621
+      ]
+    },
+    "pauseMenu": true,
+    "skyStableDuringUnrelatedLightingChange": true,
+    "qualitySavedThroughUIAndAppliedNextMatch": true,
+    "qualityPreferenceRestoredToAuto": true,
+    "quitCleanup": {
+      "environment": null,
+      "remainingNeonRoots": [],
+      "sky": false,
+      "props": 0
+    },
+    "blockedDownloads": {
+      "status": "fallback",
+      "kit": false,
+      "actors": 7,
+      "visibleFallbackProps": 8,
+      "radius": 27.5,
+      "floorMap": [
+        1,
+        1
+      ],
+      "requested": [
+        "http://127.0.0.1:3000/assets/neon/surfaces/panel-floor-albedo.png",
+        "http://127.0.0.1:3000/assets/neon/surfaces/panel-floor-normal-gl.png",
+        "http://127.0.0.1:3000/assets/neon/surfaces/panel-floor-roughness.png",
+        "http://127.0.0.1:3000/assets/stadium/ceramic/albedo.jpg",
+        "http://127.0.0.1:3000/assets/stadium/surfaces/ceramic-coating-normal-gl.png",
+        "http://127.0.0.1:3000/assets/stadium/surfaces/ceramic-coating-roughness.png",
+        "http://127.0.0.1:3000/assets/neon/architecture/kit-v1.glb"
+      ],
+      "errors": [],
+      "blockedRequests": 7
+    },
+    "grifball": {
+      "floor": {
+        "width": 104,
+        "height": 0.2,
+        "depth": 46,
+        "widthSegments": 1,
+        "heightSegments": 1,
+        "depthSegments": 1
+      },
+      "goalPositions": [
+        {
+          "id": "grifball_goal_blue",
+          "position": [
+            -47,
+            0.06,
+            0
+          ]
+        },
+        {
+          "id": "grifball_goal_red",
+          "position": [
+            47,
+            0.06,
+            0
+          ]
+        }
+      ],
+      "spawn": [
+        -43,
+        0,
+        -9
+      ],
+      "activePhase": "playing",
+      "actors": 7,
+      "architecture": {
+        "architectureStatus": "ready",
+        "halfExtents": {
+          "x": 52,
+          "z": 23
+        },
+        "detail": "high"
+      }
+    },
+    "gameplayData": "Sandbox48x24m with eight authored props and eight spawns unchanged. Grifball104x46m with existing obstacle filtering/scaling, goal positions and team spawns unchanged. Collision and movement code untouched. Rectangular floor remains unchanged by existing roster resizing. All remote city/palm geometry stays more than3m outside the full floor; all added structural detail and palm supports remain below it.",
+    "tests": {
+      "neonAndShared": 57,
+      "asteroidAndShared": 56,
+      "jungleAndShared": 56,
+      "cyberAndShared": 55,
+      "hangarAndShared": 53,
+      "canyonAndShared": 53,
+      "stadiumAndShared": 66,
+      "note": "Shared suites overlap; counts are not unique."
+    },
+    "typecheck": "passed",
+    "productionClientBuild": "passed",
+    "glbContractValidation": "passed",
+    "integrationReview": "No actionable shared-integration issues found. Live visual review prompted structural cantilevers and plinths beneath the palms; contact, underside attachment and below-floor placement pass geometry tests."
+  },
+  "limits": [
+    "Short local samples support the60FPS target on this machine, not a locked frame rate on slower GPUs or higher resolutions.",
+    "High combat p99 reaches approximately21ms. High/Low samples have different random combat loads.",
+    "Existing undefined-emissive and THREE.Clock warnings remain. Normal measured matches had zero console errors; the seven fallback network errors were deliberately induced.",
+    "Production build retains existing large-chunk warnings."
+  ],
+  "captures": {
+    "before": "output/playwright/neon-upgrade/before-gameplay.png",
+    "highGameplay": "output/playwright/neon-upgrade/high-gameplay.png",
+    "lowGameplay": "output/playwright/neon-upgrade/low-gameplay.png",
+    "grifballGameplay": "output/playwright/neon-upgrade/grifball-high-gameplay.png",
+    "overview": "output/playwright/neon-upgrade/high-overview.png",
+    "fallback": "output/playwright/neon-upgrade/missing-assets-fallback.png",
+    "quality": "output/playwright/neon-upgrade/quality-settings.png"
+  },
+  "sourceSha256": {
+    "src/components/grifball/neonArchitecture.test.ts": "26e572113213e104745ccdcff6606f74cabbea01ed0e41b5cebbb198d51d6c26",
+    "src/components/grifball/neonArchitecture.ts": "a964911fb5404e704a9676325e4a1b0df85e527c1545576706197b38274aa7a8",
+    "src/components/grifball/neonArenaRuntime.ts": "ff8f75b540d8f097e70a4972048994a976951f02d29d36090703cd5a7b818005",
+    "src/components/grifball/neonIntegration.test.ts": "59b8f2a3e50a6e7c09cf54c8294d15c5ba489a865964aa732a56ea1a127a6715",
+    "src/components/grifball/neonLighting.test.ts": "349d3d0d65c974e51685dcdceaf7564e13c0ca46b6e54d9c8e7cff9aec70a9c0",
+    "src/components/grifball/neonLighting.ts": "f70e72befeb311148acaacbb6eeea0474dcc0273fbea6a9d3fd83eb5b4a16459",
+    "src/components/grifball/neonMaterials.test.ts": "e9454504847c543700135ed3b40fdd2fafdee906dfd07c1ab8c0866c58c80fb4",
+    "src/components/grifball/neonMaterials.ts": "86e57f15f4d5b1d919158803245d1961445e4c3d7c0ea1b10fc55432d2c15409",
+    "src/components/grifball/neonResourceDisposal.test.ts": "334b824976d79ea1ce5a49aa7040622b7a4407eb852212c51380d635b551f980",
+    "src/components/grifball/neonResourceDisposal.ts": "eac609917b3b7f9bf7ef3a68d83c383a1bc29c993f3cafc2d608785abbc84a22",
+    "src/components/grifball/customMapArenaRuntime.ts": "be5a6ab10a8a38b896bc6e04609f0d57e4557a9f15a3081d4ae77dbd1215c411",
+    "src/components/grifball/customMapSynthwaveSceneryRuntime.ts": "2a86f326b4718af97c4cdc2a47862bda7cebf70c6e074f99ad3bcedfacfab672",
+    "src/components/grifball/arenaSceneInitializationRuntime.ts": "81a21c552d90fde6e249f21fc371ba024569941a4781a9b64801e8d816882854",
+    "src/components/grifball/mountSceneRuntime.ts": "12efaab0af2fcd45f8136e1e04b3b98b887a5b57559fb51e1ee0de7cc1f1851b",
+    "src/components/grifball/arenaSpawns.ts": "f752f388ef9335e9509296a2a2b2d73bb34c0ad7fffd7a2863e7816624224fe9",
+    "src/components/grifball/visualState.ts": "075f96ff7fb3900703eaa34ea30f62dbae0f9ddd6e05c3a87cfbdd731c494044",
+    "src/components/GrifballGame.tsx": "f4e1cc12236a6afc9f006635288f0466d52e71494beb4588ea2ffaa17b92d718",
+    "src/game/premadeMaps.ts": "46c7c175dc5a1f13f4eea685a1bb08e7716e3898abb350110aec95097bb1e846",
+    "public/assets/neon/architecture/kit-v1.glb": "ffd44220f03bfb78d1209d6d2e54899fcc2e0691b3b0bf90645338d4c4bfa2e6",
+    "public/assets/neon/architecture/kit-low-v1.glb": "002b965a256eff069a6e26bf1df3ddbecae18743d1e87e835701ba7196016d2c"
+  }
+}

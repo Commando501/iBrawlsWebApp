@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "generator": "scripts/stadium-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "floorTileMeters": 6,
+  "ceramicTileMeters": 3,
+  "floorPanelMeters": [
+    6,
+    3
+  ],
+  "floorAlbedoStatistics": {
+    "min": 217,
+    "max": 238,
+    "mean": 233.7110471725464,
+    "standardDeviation": 1.269416863748429
+  },
+  "files": [
+    {
+      "path": "assets/stadium/surfaces/floor-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 179674,
+      "sha256": "7983b04d1db80b913d83edc07203eca49031c5803bf21d0b3ba83ffc829ca893",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/stadium/surfaces/floor-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 58791,
+      "sha256": "095c6e45dad9fb08d22fde64af6a7690583513f717a55033961a9230e74ba62e",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/stadium/surfaces/floor-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 644309,
+      "sha256": "805819ce2dc47dcb84decf46175a5ee0eac6f03a6bba8406f507d0a7d0d53617",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/stadium/surfaces/floor-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 354555,
+      "sha256": "39d50790d049dd8c4e42dc20353a4ee7f93f39e108459e026369a027f0c481a8",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/stadium/surfaces/ceramic-coating-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 784421,
+      "sha256": "75691a5b86335ede048ded8e5e0eeb75dcd0611bc7da7564c2545d1b5ad2aed9",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/stadium/surfaces/ceramic-coating-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 477700,
+      "sha256": "82799de2d932afef1c6b98ddfcad84bff41ff9b4a04aff30206f7ced0fcc8a21",
+      "colorSpace": "linear / no color space"
+    }
+  ],
+  "design": "Quiet slate composite court with narrow rounded expansion joints, shallow grain and broad roughness variation. Ceramic coating data maps complement the approved generated albedo. No baked lighting, lettering, logos or high-contrast grunge."
+}

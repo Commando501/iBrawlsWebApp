@@ -20,6 +20,11 @@ interface CharacterPreviewProps {
   hue: number;
   heldWeapon: 'none' | 'hammer' | 'sword';
   loadout?: CharacterLoadout;
+  autoRotate?: boolean;
+  rotation?: number;
+  onRotationChange?: (rotation: number) => void;
+  onReady?: () => void;
+  onError?: () => void;
 }
 
 const PREVIEW_V3_RENDER_OPTIONS = getV3GameplayRenderOptions();
@@ -28,14 +33,14 @@ export function getCharacterPreviewLoadoutSignature(loadout?: CharacterLoadout):
   return getPreviewLoadoutSignature(loadout);
 }
 
-export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWeapon, loadout }) => {
+export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWeapon, loadout, autoRotate = true, rotation, onRotationChange, onReady, onError }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const loadoutSignature = getCharacterPreviewLoadoutSignature(loadout);
 
-  const paramsRef = useRef({ hue, heldWeapon, loadout, loadoutSignature });
+  const paramsRef = useRef({ hue, heldWeapon, loadout, loadoutSignature, autoRotate, rotation, onRotationChange, onReady, onError });
   useEffect(() => {
-    paramsRef.current = { hue, heldWeapon, loadout, loadoutSignature };
-  }, [hue, heldWeapon, loadout, loadoutSignature]);
+    paramsRef.current = { hue, heldWeapon, loadout, loadoutSignature, autoRotate, rotation, onRotationChange, onReady, onError };
+  }, [hue, heldWeapon, loadout, loadoutSignature, autoRotate, rotation, onRotationChange, onReady, onError]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -51,31 +56,37 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     camera.position.set(0, 0.95, 4.2);
     camera.lookAt(0, 0.85, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    let renderer: THREE.WebGLRenderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch { paramsRef.current.onError?.(); return; }
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
     container.appendChild(renderer.domElement);
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight('#ffffff', 0.65);
+    const ambientLight = new THREE.HemisphereLight(0xdceeff, 0x2e3a4a, 0.8);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight('#ffffff', 1.3);
-    dirLight.position.set(5, 10, 5);
+    const dirLight = new THREE.DirectionalLight(0xffeee0, 2.2);
+    dirLight.position.set(-3, 6, 4);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 512;
     dirLight.shadow.mapSize.height = 512;
+    dirLight.shadow.normalBias = 0.025;
     scene.add(dirLight);
 
-    const spotLight = new THREE.SpotLight('#38bdf8', 2.0, 10, Math.PI / 6, 0.5, 1);
-    spotLight.position.set(-3, 5, 2);
+    const spotLight = new THREE.DirectionalLight(0x54c7eb, 2.5);
+    spotLight.position.set(3, 3, -3);
     scene.add(spotLight);
 
     // Right-side fill light for pauldron highlights
-    const fillLight = new THREE.PointLight('#ffffff', 0.5, 8);
-    fillLight.position.set(3, 3, 1);
+    const fillLight = new THREE.DirectionalLight(0x99baff, 0.65);
+    fillLight.position.set(3, 1, 4);
     scene.add(fillLight);
 
     // Floor platform
@@ -112,6 +123,17 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
 
       characterGroup = buildVoxelSpartanModel(false, h, lo ?? DEFAULT_LOADOUT, PREVIEW_V3_RENDER_OPTIONS);
       characterGroup.position.set(0, 0, 0);
+      characterGroup.rotation.y = paramsRef.current.rotation ?? 0;
+      // Iron Vanguard faces -Z, matching the production gameplay rig.
+      const isVanguard = isIronVanguardModel(characterGroup);
+      const facing = isVanguard ? -1 : 1;
+      camera.fov = isVanguard ? 33 : 42;
+      camera.position.set(0, isVanguard ? 1.15 : 0.95, (isVanguard ? 4.5 : 4.2) * facing);
+      camera.updateProjectionMatrix();
+      dirLight.position.z = 4 * facing;
+      spotLight.position.z = -3 * facing;
+      fillLight.position.z = 4 * facing;
+      camera.lookAt(0, isVanguard ? 1.03 : 0.85, 0);
       buildCombatantRigForModel(characterGroup);
       scene.add(characterGroup);
 
@@ -147,6 +169,8 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     buildCharacter(currentHue, currentWeapon, currentLoadout);
 
     let isHovering = false;
+    let isFocused = false;
+    let currentRotation = paramsRef.current.rotation;
     let isDragging = false;
     let previousPointerX = 0;
 
@@ -160,7 +184,10 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       if (isDragging) {
         const deltaX = e.clientX - previousPointerX;
         previousPointerX = e.clientX;
-        if (characterGroup) characterGroup.rotation.y += deltaX * 0.008;
+        if (characterGroup) {
+          characterGroup.rotation.y += deltaX * 0.008;
+          paramsRef.current.onRotationChange?.(characterGroup.rotation.y);
+        }
         platform.rotation.y += deltaX * 0.008;
         platformRing.rotation.y += deltaX * 0.008;
       }
@@ -169,7 +196,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     const onPointerUp = (e: PointerEvent) => {
       if (isDragging) {
         isDragging = false;
-        container.releasePointerCapture(e.pointerId);
+        if (container.hasPointerCapture(e.pointerId)) container.releasePointerCapture(e.pointerId);
       }
     };
 
@@ -177,10 +204,24 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     container.addEventListener('pointermove', onPointerMove);
     container.addEventListener('pointerup', onPointerUp);
     container.addEventListener('pointercancel', onPointerUp);
-    container.addEventListener('pointerenter', () => { isHovering = true; });
-    container.addEventListener('pointerleave', () => { isHovering = false; });
+    const onPointerEnter = () => { isHovering = true; };
+    const onPointerLeave = () => { isHovering = false; };
+    const onFocus = () => { isFocused = true; };
+    const onBlur = () => { isFocused = false; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key) || !characterGroup) return;
+      event.preventDefault();
+      event.stopPropagation();
+      characterGroup.rotation.y = event.key === 'Home' ? 0.22 : characterGroup.rotation.y + (event.key === 'ArrowLeft' ? -Math.PI / 12 : Math.PI / 12);
+      paramsRef.current.onRotationChange?.(characterGroup.rotation.y);
+    };
+    container.addEventListener('pointerenter', onPointerEnter);
+    container.addEventListener('pointerleave', onPointerLeave);
+    container.addEventListener('focus', onFocus);
+    container.addEventListener('blur', onBlur);
+    container.addEventListener('keydown', onKeyDown);
 
-    const clock = new THREE.Clock();
+    const startedAt = performance.now();
     let animationFrameId: number;
 
     const animate = () => {
@@ -199,13 +240,17 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         ringMat.color.set(new THREE.Color(`hsl(${currentHue}, 85%, 60%)`));
       }
 
-      if (!isHovering && !isDragging) {
+      if (paramsRef.current.rotation !== currentRotation) {
+        currentRotation = paramsRef.current.rotation;
+        if (characterGroup && currentRotation !== undefined) characterGroup.rotation.y = currentRotation;
+      }
+      if (paramsRef.current.autoRotate && !reducedMotion.matches && !isHovering && !isDragging && !isFocused && !document.hidden) {
         if (characterGroup) characterGroup.rotation.y += 0.012;
         platform.rotation.y += 0.012;
         platformRing.rotation.y += 0.012;
       }
 
-      const elapsed = clock.getElapsedTime();
+      const elapsed = reducedMotion.matches ? 0 : (performance.now() - startedAt) / 1000;
       if (characterGroup && isIronVanguardModel(characterGroup)) {
         animateIronVanguard(characterGroup, {
           activeWeapon: currentWeapon, weaponState: 'ready', weaponTimer: 0,
@@ -227,25 +272,37 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         }
       });
 
-      renderer.render(scene, camera);
+      if (!document.hidden) renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(animate);
     };
 
     animate();
+    paramsRef.current.onReady?.();
 
     const handleResize = () => {
       if (!container) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const w = Math.max(1, container.clientWidth);
+      const h = Math.max(1, container.clientHeight);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(container);
+    const onContextLost = (event: Event) => { event.preventDefault(); paramsRef.current.onError?.(); };
+    renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+      container.removeEventListener('pointerenter', onPointerEnter);
+      container.removeEventListener('pointerleave', onPointerLeave);
+      container.removeEventListener('focus', onFocus);
+      container.removeEventListener('blur', onBlur);
+      container.removeEventListener('keydown', onKeyDown);
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
@@ -259,6 +316,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         container.removeChild(renderer.domElement);
       }
       renderer.dispose();
+      renderer.forceContextLoss();
       platformMat.dispose();
       platformGeo.dispose();
       ringMat.dispose();
@@ -269,6 +327,9 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
   return (
     <div
       ref={containerRef}
+      tabIndex={0}
+      role="group"
+      aria-label="Character preview. Drag or use left and right arrows to rotate. Home resets the view."
       className="w-full h-full rounded-xl border border-white/5 bg-slate-950/40 relative flex items-center justify-center overflow-hidden shadow-inner cursor-grab active:cursor-grabbing select-none"
     >
       <div className="absolute top-3 left-3 w-3 h-3 border-t border-l border-[#38bdf8]/40" />

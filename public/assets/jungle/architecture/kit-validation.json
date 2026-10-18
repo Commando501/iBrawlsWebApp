@@ -1,0 +1,129 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 13752,
+      "batches": 16,
+      "bytes": 856700,
+      "modules": {
+        "relic-spire": {
+          "dimensions": [
+            1.2,
+            4,
+            1.2
+          ],
+          "triangles": 2828,
+          "materialBatches": 5,
+          "maximumHorizontalRadius": 0.6,
+          "pivot": "center"
+        },
+        "moss-boulder": {
+          "dimensions": [
+            3,
+            3,
+            3
+          ],
+          "triangles": 688,
+          "materialBatches": 2,
+          "maximumHorizontalRadius": 1.620158,
+          "pivot": "center"
+        },
+        "ancient-trunk": {
+          "dimensions": [
+            2,
+            7,
+            2
+          ],
+          "triangles": 800,
+          "materialBatches": 2,
+          "maximumHorizontalRadius": 1,
+          "pivot": "center"
+        },
+        "ruined-wall": {
+          "dimensions": [
+            3,
+            2,
+            0.6
+          ],
+          "triangles": 3048,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 1.521521,
+          "pivot": "center"
+        },
+        "jungle-canopy": {
+          "dimensions": [
+            12,
+            24,
+            12
+          ],
+          "triangles": 6388,
+          "materialBatches": 3,
+          "maximumHorizontalRadius": 6.927353,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 4680,
+      "batches": 16,
+      "bytes": 333408,
+      "modules": {
+        "relic-spire": {
+          "dimensions": [
+            1.2,
+            4,
+            1.2
+          ],
+          "triangles": 844,
+          "materialBatches": 5,
+          "maximumHorizontalRadius": 0.6,
+          "pivot": "center"
+        },
+        "moss-boulder": {
+          "dimensions": [
+            3,
+            3,
+            3
+          ],
+          "triangles": 240,
+          "materialBatches": 2,
+          "maximumHorizontalRadius": 1.647808,
+          "pivot": "center"
+        },
+        "ancient-trunk": {
+          "dimensions": [
+            2,
+            7,
+            2
+          ],
+          "triangles": 312,
+          "materialBatches": 2,
+          "maximumHorizontalRadius": 1,
+          "pivot": "center"
+        },
+        "ruined-wall": {
+          "dimensions": [
+            3,
+            2,
+            0.6
+          ],
+          "triangles": 664,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 1.521521,
+          "pivot": "center"
+        },
+        "jungle-canopy": {
+          "dimensions": [
+            12,
+            24,
+            12
+          ],
+          "triangles": 2620,
+          "materialBatches": 3,
+          "maximumHorizontalRadius": 7.175333,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

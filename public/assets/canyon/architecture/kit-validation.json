@@ -1,0 +1,107 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 37584,
+      "batches": 16,
+      "bytes": 1485888,
+      "modules": {
+        "anchor-spire": {
+          "dimensions": [
+            2,
+            8,
+            2
+          ],
+          "triangles": 8580,
+          "materialBatches": 4,
+          "maxHorizontalRadius": 1,
+          "pivot": "center"
+        },
+        "buffer-cover": {
+          "dimensions": [
+            1.2,
+            2,
+            4
+          ],
+          "triangles": 3132,
+          "materialBatches": 5,
+          "maxHorizontalRadius": 2.076921,
+          "pivot": "center"
+        },
+        "beacon-tower": {
+          "dimensions": [
+            3,
+            40,
+            3
+          ],
+          "triangles": 15228,
+          "materialBatches": 6,
+          "maxHorizontalRadius": 2.084041,
+          "pivot": "center"
+        },
+        "canyon-cliff": {
+          "dimensions": [
+            20,
+            30,
+            12
+          ],
+          "triangles": 10644,
+          "materialBatches": 1,
+          "maxHorizontalRadius": 10.160267,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 7736,
+      "batches": 16,
+      "bytes": 381948,
+      "modules": {
+        "anchor-spire": {
+          "dimensions": [
+            2,
+            8,
+            2
+          ],
+          "triangles": 1412,
+          "materialBatches": 4,
+          "maxHorizontalRadius": 1,
+          "pivot": "center"
+        },
+        "buffer-cover": {
+          "dimensions": [
+            1.2,
+            2,
+            4
+          ],
+          "triangles": 660,
+          "materialBatches": 5,
+          "maxHorizontalRadius": 2.076921,
+          "pivot": "center"
+        },
+        "beacon-tower": {
+          "dimensions": [
+            3,
+            40,
+            3
+          ],
+          "triangles": 3036,
+          "materialBatches": 6,
+          "maxHorizontalRadius": 2.058665,
+          "pivot": "center"
+        },
+        "canyon-cliff": {
+          "dimensions": [
+            20,
+            30,
+            12
+          ],
+          "triangles": 2628,
+          "materialBatches": 1,
+          "maxHorizontalRadius": 10.092857,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

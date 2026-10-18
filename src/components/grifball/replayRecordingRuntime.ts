@@ -6,6 +6,7 @@ import {
   LOCAL_PLAYER_ID,
 } from '../../game/aiPlayerModel';
 import { MAIN_AI_ID } from '../../game/roster';
+import { CHAMPIONSHIP_STADIUM_LAYOUT_REVISION } from '../../game/championshipStadiumLayout';
 import { maybeSendMatchTelemetry } from '../../services/matchTelemetry';
 import { maybeContributeReplay } from '../../services/replayUpload';
 import { type ReplayFile, type ReplayFrame, type UniversalSettings } from '../../types';
@@ -74,6 +75,7 @@ export function initializeReplayRecordingForState({
     playerName: adminSettings.playerName || 'Blue (You)',
     opponentName: initialOpponentName,
     mapType: (selectedMap || 'hangar') as ReplayFile['mapType'],
+    ...(selectedMap === 'championship_stadium' ? { stadiumLayoutRevision: CHAMPIONSHIP_STADIUM_LAYOUT_REVISION } : {}),
     mode: isTournament ? 'tournament' : 'sandbox',
     gameMode: adminSettings.gameMode ?? 'sandbox',
     maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,

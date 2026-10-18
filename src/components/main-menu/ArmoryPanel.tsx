@@ -25,7 +25,7 @@ import { buildV3SuitReadinessReport } from './v3ArmorSuitReadiness';
 import { V3_PAINT_ROLES } from '../v3/v3ModelTypes';
 import type { V3PaintRole } from '../v3/v3ModelTypes';
 import { CharacterPainter } from '../CharacterPainter';
-import { CharacterPreview } from '../CharacterPreview';
+import { GameModelStage } from './GameModelStage';
 import {
   resetV3PaintRole,
   updateV3PaintRoleColor,
@@ -166,6 +166,7 @@ export function ArmoryPanel({
   setAdminSettings,
 }: ArmoryPanelProps) {
   const isIronVanguard = isIronVanguardLoadout(playerLoadout);
+  const [activeTab, setActiveTab] = React.useState<'color' | 'equipment' | 'loadouts'>('color');
   const [characterLoading, setCharacterLoading] = React.useState(false);
   const [characterError, setCharacterError] = React.useState('');
   const contentRef = React.useRef<HTMLDivElement | null>(null);
@@ -277,70 +278,30 @@ export function ArmoryPanel({
   };
 
   return (
-    <div ref={contentRef} className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
+    <div ref={contentRef} className={`menu-armory ${isPainting ? 'menu-armory--painting' : ''}`}>
       {isPainting ? (
-        <CharacterPainter
-          loadout={playerLoadout}
-          hue={playerHue}
-          onSave={savePaintJob}
-          onCancel={() => setIsPainting(false)}
-        />
-      ) : (
-        <div className="flex flex-col gap-4">
-              <div className="flex gap-2 mb-3" aria-label="Character selection">
-                <button type="button" disabled={characterLoading} aria-pressed={!isIronVanguard}
-                  onClick={() => updateLoadout({ characterAsset: undefined, modelSystem: 'v2' })}
-                  className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">Standard</button>
-                <button type="button" disabled={characterLoading} aria-pressed={isIronVanguard}
-                  onClick={equipIronVanguard}
-                  className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">
-                  {characterLoading ? 'Loading character…' : 'Version 3 Iron Vanguard'}
-                </button>
-              </div>
-              {characterError && <p role="alert" className="mb-3 text-red-300">{characterError}</p>}
-          <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
-            <CharacterPreview hue={playerHue} heldWeapon={customizerWeapon} loadout={playerLoadout} />
+        <CharacterPainter loadout={playerLoadout} hue={playerHue} onSave={savePaintJob} onCancel={() => setIsPainting(false)} />
+      ) : <>
+        <GameModelStage hue={playerHue} heldWeapon={customizerWeapon} loadout={playerLoadout} />
+        <section className="menu-armory__inspector" aria-label="Appearance options">
+          <div className="menu-armory__tabs" role="tablist" aria-label="Armory categories" onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const tabs = ['color', 'equipment', 'loadouts'] as const;
+            const current = tabs.indexOf(activeTab);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (current + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+            setActiveTab(tabs[next]);
+            event.currentTarget.querySelectorAll('[role=tab]')[next]?.focus();
+          }}>
+            {([['color', 'Color'], ['equipment', 'Equipment'], ['loadouts', 'More loadouts']] as const).map(([id, label]) => <button key={id} type="button" role="tab" id={`armory-tab-${id}`} aria-controls={`armory-panel-${id}`} aria-selected={activeTab === id} tabIndex={activeTab === id ? 0 : -1} onClick={() => setActiveTab(id)}>{label}</button>)}
           </div>
+          <div className="menu-armory__options">
+            <section role="tabpanel" id="armory-panel-color" aria-labelledby="armory-tab-color" hidden={activeTab !== 'color'}>
+              <header className="menu-armory__section-title"><span>ARMOR FINISH</span><h2>Make it yours.</h2><p>Choose a preset or find your own hue.</p></header>
 
-          {!isIronVanguard && <>
-          <button
-            type="button"
-            onClick={() => setIsPainting(true)}
-            className="w-full py-2.5 bg-gradient-to-r from-cyan-500/15 to-blue-500/15 border border-cyan-500/35 hover:border-cyan-400 text-cyan-400 font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-cyan-400/10 hover:bg-cyan-500/20 transition-all active:scale-[0.98] cursor-pointer text-center text-xs mt-1"
-          >
-            Start Paint Job
-          </button>
-
-          <a
-            href="/armor-model-editor.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => {
-              updateLoadout({
-                modelSystem: editorModelSystem,
-                modelType: editorModelSystem === 'v2' ? activeModelType : undefined,
-              });
-            }}
-            className={`w-full py-2.5 border font-black uppercase tracking-widest rounded-lg shadow-lg transition-all active:scale-[0.98] cursor-pointer text-center text-xs ${
-              (playerLoadout.modelSystem ?? 'v1') === editorModelSystem
-                ? 'bg-gradient-to-r from-purple-500/20 to-fuchsia-500/15 border-purple-400/45 text-purple-200 hover:border-purple-300'
-                : 'bg-purple-500/10 border-purple-500/25 text-purple-300/80 hover:border-purple-400/45'
-            }`}
-          >
-            {editorModelSystem === 'v3' ? 'Create / Edit V3 Armor Model' : 'Create / Edit V2 Armor Model'}
-          </a>
-
-          </>}
-          {activeModelSystem === 'v3' && !isIronVanguard && (
-            <div className="rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-amber-100">
-              {V3_INTERNAL_PROTOTYPE_LABEL}
-            </div>
-          )}
-
-          <div className="flex flex-col gap-3 font-sans text-xs">
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
+                <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Custom hue</span>
                 <span
                   className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded border shadow"
                   style={{
@@ -353,6 +314,7 @@ export function ArmoryPanel({
                 </span>
               </div>
               <input
+                aria-label="Armor color hue"
                 type="range"
                 min="0"
                 max="360"
@@ -364,7 +326,7 @@ export function ArmoryPanel({
             </div>
 
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
+              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets</span>
               <div className="flex flex-wrap gap-2 justify-between">
                 {COLOR_PRESETS.map((preset) => (
                   <button
@@ -372,6 +334,8 @@ export function ArmoryPanel({
                     type="button"
                     onClick={() => updatePlayerHue(preset.hue)}
                     title={preset.name}
+                    aria-label={`${preset.name} armor color`}
+                    aria-pressed={playerHue === preset.hue}
                     className={`w-6 h-6 rounded-full cursor-pointer transition-all active:scale-90 relative ${preset.bg} ${
                       playerHue === preset.hue
                         ? 'ring-1 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg'
@@ -425,6 +389,84 @@ export function ArmoryPanel({
               </div>
             )}
 
+
+              <div className="menu-armory__color-note"><p>Team modes use team colors during play.</p><button type="button" onClick={() => updatePlayerHue(DEFAULT_PLAYER_HUE)}>Reset color</button></div>
+            </section>
+            <section role="tabpanel" id="armory-panel-equipment" aria-labelledby="armory-tab-equipment" hidden={activeTab !== 'equipment'}>
+              <header className="menu-armory__section-title"><span>PREVIEW EQUIPMENT</span><h2>Ready for action.</h2><p>Inspect the weapons in your character preview.</p></header>
+            <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Weapon preview</span>
+              <div className="grid grid-cols-3 gap-2">
+                {WEAPON_OPTIONS.map((weapon) => (
+                  <button
+                    key={weapon.id}
+                    type="button"
+                    onClick={() => setCustomizerWeapon(weapon.id)}
+                    aria-pressed={customizerWeapon === weapon.id}
+                    className={`py-2 text-xs font-bold uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
+                      customizerWeapon === weapon.id
+                        ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-black'
+                        : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
+                    }`}
+                  >
+                    {weapon.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+
+              <p className="menu-armory__note">These controls change the preview pose. Your match mode determines the equipment available during play.</p>
+              {isIronVanguard && <p className="menu-armory__note">Iron Vanguard uses its original hammer and energy sword. Weapon skins are available for compatible Standard characters in More loadouts.</p>}
+            </section>
+            <section role="tabpanel" id="armory-panel-loadouts" aria-labelledby="armory-tab-loadouts" hidden={activeTab !== 'loadouts'}>
+              <header className="menu-armory__section-title"><span>COMPATIBLE CUSTOMIZATION</span><h2>Your loadout.</h2><p>Options follow the character you choose.</p></header>
+              <div className="flex gap-2 mb-3" aria-label="Character selection">
+                <button type="button" disabled={characterLoading} aria-pressed={!isIronVanguard}
+                  onClick={() => updateLoadout({ characterAsset: undefined, modelSystem: 'v2' })}
+                  className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">Standard</button>
+                <button type="button" disabled={characterLoading} aria-pressed={isIronVanguard}
+                  onClick={equipIronVanguard}
+                  className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">
+                  {characterLoading ? 'Loading character…' : 'Version 3 Iron Vanguard'}
+                </button>
+              </div>
+              {characterError && <p role="alert" className="mb-3 text-red-300">{characterError}</p>}
+          {!isIronVanguard && <>
+          <button
+            type="button"
+            onClick={() => setIsPainting(true)}
+            className="w-full py-2.5 bg-gradient-to-r from-cyan-500/15 to-blue-500/15 border border-cyan-500/35 hover:border-cyan-400 text-cyan-400 font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-cyan-400/10 hover:bg-cyan-500/20 transition-all active:scale-[0.98] cursor-pointer text-center text-xs mt-1"
+          >
+            Start Paint Job
+          </button>
+
+          <a
+            href="/armor-model-editor.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              updateLoadout({
+                modelSystem: editorModelSystem,
+                modelType: editorModelSystem === 'v2' ? activeModelType : undefined,
+              });
+            }}
+            className={`w-full py-2.5 border font-black uppercase tracking-widest rounded-lg shadow-lg transition-all active:scale-[0.98] cursor-pointer text-center text-xs ${
+              (playerLoadout.modelSystem ?? 'v1') === editorModelSystem
+                ? 'bg-gradient-to-r from-purple-500/20 to-fuchsia-500/15 border-purple-400/45 text-purple-200 hover:border-purple-300'
+                : 'bg-purple-500/10 border-purple-500/25 text-purple-300/80 hover:border-purple-400/45'
+            }`}
+          >
+            {editorModelSystem === 'v3' ? 'Create / Edit V3 Armor Model' : 'Create / Edit V2 Armor Model'}
+          </a>
+
+          </>}
+          {activeModelSystem === 'v3' && !isIronVanguard && (
+            <div className="rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-amber-100">
+              {V3_INTERNAL_PROTOTYPE_LABEL}
+            </div>
+          )}
+
             {activeModelSystem === 'v3' && !isIronVanguard && (
               <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                 <div className="flex justify-between items-center mb-2">
@@ -462,29 +504,9 @@ export function ArmoryPanel({
             )}
 
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>
-              <div className="grid grid-cols-3 gap-2">
-                {WEAPON_OPTIONS.map((weapon) => (
-                  <button
-                    key={weapon.id}
-                    type="button"
-                    onClick={() => setCustomizerWeapon(weapon.id)}
-                    className={`py-2 text-xs font-bold uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
-                      customizerWeapon === weapon.id
-                        ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-black'
-                        : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
-                    }`}
-                  >
-                    {weapon.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white/5 border border-white/5 rounded-lg p-3">
               <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
 
-              {isIronVanguard ? <p className="text-white/70 leading-relaxed">Choose Version 3 Iron Vanguard in Model Set to use it for you and every bot. Hammer swing is ready; movement has a first animation pass. Secondary weapon animations are provisional. Match settings control attack timing.</p> : <>
+              {isIronVanguard ? <p className="text-white/70 leading-relaxed">Iron Vanguard uses its original body and equipment. Standard armor pieces, weapon skins, and painting apply to compatible Standard loadouts. The Model Set in match setup controls which models are used in a match.</p> : <>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Model Sys</span>
                 <div className="flex gap-1.5 flex-1">
@@ -680,9 +702,12 @@ export function ArmoryPanel({
               </div>
               </>}
             </div>
+
+            </section>
           </div>
-        </div>
-      )}
+          <div className="menu-armory__saved" role="status"><span aria-hidden="true">✓</span> Appearance updates immediately</div>
+        </section>
+      </>}
     </div>
   );
 }

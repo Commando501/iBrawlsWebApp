@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-17",
+  "map": "vanguard_starbase",
+  "kind": "Vanguard Asteroid Mine environment visual upgrade",
+  "environment": {
+    "server": "Local Vite development server, port 3000",
+    "browser": "Playwright Chromium",
+    "gpu": "NVIDIA GeForce RTX 4090 via ANGLE Direct3D11",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "canvas": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "mode": "Combat sandbox",
+    "models": "Actual V3 Iron Vanguard on the local player and all seven AI combatants"
+  },
+  "method": "Two independent final-asset live matches with seven actively fighting AI bots and a stationary first-person player, including deaths, respawns and impact effects. Two seconds warmup then 15 seconds of requestAnimationFrame interval sampling. Runtime edits, asset authoring, tests, typecheck and build completed before samples. Camera overrides used only for separate screenshots, never measurement. Draw/triangle counters include rendered passes and shadows. Random combat means these are workload samples, not controlled tier comparisons. Sandbox leaves the unused Grifball phase field at countdown; live combat and elapsed match clocks were checked visually.",
+  "performance": {
+    "high": {
+      "frames": 1388,
+      "meanFrameMs": 10.811959654178674,
+      "p50Ms": 7,
+      "p95Ms": 20.8,
+      "p99Ms": 20.9,
+      "maxDrawCalls": 1769,
+      "maxRenderedTriangles": 394551,
+      "geometriesAtEnd": 38,
+      "texturesAtEnd": 31,
+      "averageFps": 92.49017125341508
+    },
+    "low": {
+      "frames": 1560,
+      "meanFrameMs": 9.624358974358975,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.8,
+      "maxDrawCalls": 2238,
+      "maxRenderedTriangles": 294486,
+      "geometriesAtEnd": 74,
+      "texturesAtEnd": 24,
+      "averageFps": 103.90302384441188
+    }
+  },
+  "assets": {
+    "highSourceTriangles": 27756,
+    "lowSourceTriangles": 5532,
+    "highGlbBytes": 1250224,
+    "lowGlbBytes": 346664,
+    "architectureMaterialBatches": 21,
+    "terrainMaterialBatches": 3,
+    "highInstantiatedArchitectureTriangles": 69368,
+    "lowInstantiatedArchitectureTriangles": 10470,
+    "terrainTriangles": 3072,
+    "highInstantiatedEnvironmentTriangles": 72440,
+    "lowInstantiatedEnvironmentTriangles": 13542,
+    "highRemoteCrags": 8,
+    "lowRemoteCrags": 5,
+    "highRemoteGantries": 4,
+    "lowRemoteGantries": 2,
+    "originalSurfacePackBytes": 3990861,
+    "provenance": "Original Blender extractor, fractured ore, ribbed freight containers, armored blast partitions, remote crags and mining gantries. Original deterministic regolith and fractured-rock physical maps. Shared approved Stadium ceramic and coating maps. Actual shipped V3 characters unchanged."
+  },
+  "checks": {
+    "architectureReadyHighAndLow": true,
+    "allSevenBotsUseActualVanguard": true,
+    "pointerLock": true,
+    "keyboardMovement": {
+      "key": "W",
+      "durationMs": 450,
+      "before": [
+        10,
+        0,
+        -10
+      ],
+      "after": [
+        8.063404231957513,
+        0,
+        -8.063404231957513
+      ]
+    },
+    "pauseMenu": true,
+    "qualitySavedThroughUIAndAppliedNextMatch": true,
+    "qualityPreferenceRestoredToAuto": true,
+    "unrelatedLightingChangePreservesSky": {
+      "directLightBefore": 1.6,
+      "directLightDuringCheck": 1.5,
+      "sameSkyUniformsAndFog": true
+    },
+    "quitCleanup": {
+      "environment": null,
+      "remainingAsteroidRoots": [],
+      "ownedSkyPresent": false,
+      "legacyPropsRemaining": 0,
+      "shadowTargetsDisposedOnce": "verified by resource lifecycle test"
+    },
+    "blockedAsteroidAndStadiumDownloads": {
+      "architectureStatus": "fallback",
+      "kitPresent": false,
+      "visibleFallbackProps": 7,
+      "activeAI": 7,
+      "arenaRadius": 27.5,
+      "floorFallbackPixels": [
+        1,
+        1
+      ],
+      "blockedRequests": 10,
+      "uncaughtPageErrors": []
+    },
+    "gameplayData": "19m authored circular floor radius, seven original obstacles/collider transforms, eight authored spawns, game-mode rules and movement settings preserved. Existing roster multiplier is unchanged: player+7bots has floor radius26.125m while gameplay state reports27.5m. Decoration follows the actual floor radius; cover stays fixed. No Stadium sprint timing applied. Background geometry stays more than3m outside the largest scaled floor.",
+    "asteroidAndSharedTestsPassed": 54,
+    "jungleAndSharedTestsPassed": 54,
+    "cyberAndSharedTestsPassed": 53,
+    "hangarAndSharedTestsPassed": 51,
+    "canyonAndSharedTestsPassed": 51,
+    "stadiumAndSharedTestsPassed": 64,
+    "testCountsNote": "Shared suites overlap; these are not unique test counts.",
+    "typecheck": "passed",
+    "productionClientBuild": "passed",
+    "glbContractValidation": "passed",
+    "integrationReview": "No actionable integration regressions found. Final geometry, disposal and layout tests pass against corrected exports."
+  },
+  "limits": [
+    "Short local samples support the target on this machine, not locked60FPS or certification of slower GPUs or higher resolutions.",
+    "Approximately21ms frame intervals remain, including High p95.",
+    "Existing undefined-emissive and THREE.Clock warnings remain; both normal measurement matches have zero console errors. Ten network errors in fallback testing were deliberately induced.",
+    "Production build retains existing large-chunk warnings."
+  ],
+  "developmentNotes": [
+    "Visual review corrected an extractor shell that hid its amber chamber and a coplanar cap before final exports and measurements.",
+    "Two early browser harness waits were corrected to handle the remembered Training route; neither was a game defect."
+  ],
+  "captures": {
+    "before": "output/playwright/asteroid-upgrade/before-gameplay.png",
+    "highGameplay": "output/playwright/asteroid-upgrade/high-gameplay.png",
+    "lowGameplay": "output/playwright/asteroid-upgrade/low-gameplay.png",
+    "overview": "output/playwright/asteroid-upgrade/high-overview.png",
+    "fallback": "output/playwright/asteroid-upgrade/missing-assets-fallback.png",
+    "qualitySettings": "output/playwright/asteroid-upgrade/quality-settings.png"
+  },
+  "sourceSha256": {
+    "src/components/grifball/asteroidArchitecture.test.ts": "302ffd07176cbd09ee026162cb544c28ee13305aba306077886fe30fe69c3020",
+    "src/components/grifball/asteroidArchitecture.ts": "2cd0b5668ae2ac0ccca88158be97fcbdf8887fa876353c91f96680fa78369377",
+    "src/components/grifball/asteroidArenaRuntime.ts": "b5f83afdfad2d4b9144f3d404c19f97f242779bad099f88d1296f8291bba79c0",
+    "src/components/grifball/asteroidIntegration.test.ts": "2341d0288f7d9ed5b29c8ec8fb6fd4439861a10292f9bff5191752b0e62597dd",
+    "src/components/grifball/asteroidLighting.test.ts": "36f5570ac974807cb49caaa7a76cddfa7903b8d05949a8dbae094ddfeb60f742",
+    "src/components/grifball/asteroidLighting.ts": "887438e7c0c815ebce770e6bbeb56f6ba0988515ee076c09bbc53f3124b5b4c4",
+    "src/components/grifball/asteroidMaterials.test.ts": "f9db1cc20f72d69a1b20c99c739293b89c2868b2fe1c916f29e55d785747d86f",
+    "src/components/grifball/asteroidMaterials.ts": "8862f55a3ab76598bf1138f5c76783d119b0dd6a7d1c7bd4d185b6985b866634",
+    "src/components/grifball/asteroidResourceDisposal.test.ts": "413f0f78034c7637c2ee173897f37bbad860a2a84a2b2b5ffe8db2d9febd9fda",
+    "src/components/grifball/asteroidResourceDisposal.ts": "6886a60980693b9f23124f0f3a7a3551d3891faa2009748915e633ea58ecae55",
+    "src/components/grifball/customMapArenaRuntime.ts": "5dc19517696681688133538d4acd17fbcf0e33ddfbb9547cd0973b8563837f08",
+    "src/components/grifball/arenaSceneInitializationRuntime.ts": "669ca129a90ce139ce9e85d2ac83d8b0f2150afb7f17f0d4058da906bfcb4b9f",
+    "src/components/grifball/mountSceneRuntime.ts": "ce9396c72d740dda49e01d0e100f89f0a1c425753e48fa7e607660bd37ce1cbe",
+    "src/components/grifball/arenaSpawns.ts": "f752f388ef9335e9509296a2a2b2d73bb34c0ad7fffd7a2863e7816624224fe9",
+    "src/components/grifball/visualState.ts": "6c188a01d6c6d23c86432a05f44afc79dfe06870f7f360def1fd9582d3148154",
+    "src/components/GrifballGame.tsx": "987588e5b3e800ffcdd2a102ecadab4dd3e2120f15da4c9686a42af9df7e5b69",
+    "public/assets/asteroid/architecture/kit-v1.glb": "f5a276b24d02b6844590cd660150e18c49b379a738617cf3aba7072982fc429b",
+    "public/assets/asteroid/architecture/kit-low-v1.glb": "90d074d4f8449ff49e7a5f1a0de71e6252ad6a40434f110d800fdb8a7212f417"
+  }
+}

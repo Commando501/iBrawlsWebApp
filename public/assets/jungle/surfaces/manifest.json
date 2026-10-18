@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "generator": "scripts/jungle-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": {
+    "ground": 6,
+    "stone": 3,
+    "bark": 3
+  },
+  "statistics": {
+    "ground": {
+      "min": 220.4578003757469,
+      "max": 233.37731984095518,
+      "mean": 227.64302785683756,
+      "standardDeviation": 2.45507004667247
+    },
+    "stone": {
+      "min": 216.4859739081379,
+      "max": 238.24191951640108,
+      "mean": 230.14440838502944,
+      "standardDeviation": 3.501756238866213
+    },
+    "bark": {
+      "min": 210.02113552042943,
+      "max": 233.69831957540052,
+      "mean": 219.59996713587788,
+      "standardDeviation": 4.321562668449874
+    }
+  },
+  "files": [
+    {
+      "path": "assets/jungle/surfaces/ground-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 141822,
+      "sha256": "76e66728099ce530b80b6166f89c114246a7a246790203a105ba62d703f6790b",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/jungle/surfaces/ground-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 1222226,
+      "sha256": "0036e79b6476a671bc5dbaeb46dff83d48c5b7305022a8d5090ab602ec57170d",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/jungle/surfaces/ground-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 85297,
+      "sha256": "a2897b57175e39eca77adbab3134b71f82e58e78038dd22319a801b2001d034c",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/jungle/surfaces/ground-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 61194,
+      "sha256": "0a29a197f52a7afa1f3fdfd3ebf098ebcaad8918503908a1edd085e6abac9815",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/jungle/surfaces/stone-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 142124,
+      "sha256": "919f998ffef11084cd8ffe96a78d2c15ddc9b6bddc87c7a58cf7553763d8ce4b",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/jungle/surfaces/stone-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 1860013,
+      "sha256": "54754ece57f8de2c455454fad658bd3af315d0d1135dd5587cfe2cce664e4d54",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/jungle/surfaces/stone-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 365353,
+      "sha256": "f907c1413c902d6708f6e9caf99e0e0384f99c3bc51e3b91dca293de150b87f0",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/jungle/surfaces/stone-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 53501,
+      "sha256": "ed29b66c31eb1fc98cf7d7d99ee7fb4a7ac5e1bce7180ddd69fdcd6a735f9da5",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/jungle/surfaces/bark-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 143815,
+      "sha256": "e47a0da2e2337a5e57958a106367e96b60b0f72e78c18ed8eacaf79d3ce46b42",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/jungle/surfaces/bark-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 1509421,
+      "sha256": "6fe90067eb9f66fc1910778d4154eb3d077e92633fc1c3d5c0d9eb0550181325",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/jungle/surfaces/bark-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 111083,
+      "sha256": "7b18f6f453578f81af4c2fb6b351a405e95c7fe73c79ce2890945d4165cdbc09",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/jungle/surfaces/bark-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 54885,
+      "sha256": "0d494db4c7e486821ad866146a6a49e4504ee6d55c38e79f459ea79c206a6e35",
+      "colorSpace": "sRGB"
+    }
+  ],
+  "design": "Quiet compact earth/stone ground with broad subtle moss color; physical micrograin and roughness carry detail. Weathered stone and vertical bark relief use distinct surface families. No baked shadows, bright markings, sharp ground debris, or displacement. Relic armor separately reuses approved Stadium coating."
+}

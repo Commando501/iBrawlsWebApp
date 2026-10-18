@@ -1,0 +1,177 @@
+/* Production Armory, Career, and the reusable actual-game model viewer. */
+.game-model-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #27394d; background: radial-gradient(ellipse at 50% 58%, #18344c 0, #0a1522 67%); border-radius: 8px; }
+.game-model-stage__heading { padding: 20px 22px 10px; display: flex; flex-direction: column; gap: 5px; position: relative; z-index: 1; }
+.game-model-stage__heading > span { color: #6fbed3; font-size: 10px; letter-spacing: .2em; font-weight: 750; }
+.game-model-stage__heading strong { color: #eef3ff; font-size: 22px; font-weight: 750; }
+.game-model-stage__viewport { position: relative; flex: 1; min-height: 220px; }
+.game-model-stage__viewport > div[role=group] { position: absolute; inset: 0; border: 0; border-radius: 0; background: transparent; touch-action: pan-y; }
+.game-model-stage__viewport canvas { position: relative; z-index: 1; display: block; }
+.game-model-stage__fallback { position: absolute; width: 100%; height: 100%; object-fit: contain; opacity: .4; }
+.game-model-stage__status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; background: #07111c66; color: #f0f6ff; }
+.game-model-stage__status span { font-size: 12px; color: #a6bbd1; max-width: 260px; }
+.game-model-stage__controls { padding: 12px 16px; border-top: 1px solid #293c50; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.game-model-stage__controls > div { display: flex; gap: 6px; }
+.game-model-stage button { border: 1px solid #3b5066; border-radius: 4px; color: #cce0f4; background: #111e2e; padding: 7px 11px; min-height: 36px; font-size: 12px; cursor: pointer; }
+.game-model-stage button:disabled { opacity: .4; cursor: default; }
+.game-model-stage__controls > span { color: #96acc5; font-size: 11px; }
+.menu-armory { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(350px, 1fr); gap: 20px; min-height: 0; height: 100%; color: #eef3ff; }
+.menu-armory--painting { display: flex; overflow: auto; }
+.menu-armory__inspector { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #293b50; background: #101b29; border-radius: 8px; overflow: hidden; }
+.menu-armory__tabs, .menu-career__tabs { display: flex; border-bottom: 1px solid #293b50; gap: 4px; flex-shrink: 0; padding: 0 14px; }
+.menu-armory__tabs button, .menu-career__tabs button { border: 0; border-bottom: 3px solid transparent; background: transparent; color: #9aafca; cursor: pointer; min-height: 50px; padding: 12px 14px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.menu-armory__tabs button[aria-selected=true], .menu-career__tabs button[aria-selected=true] { color: #15d6ed; border-bottom-color: #15d6ed; }
+.menu-armory__options { padding: 22px; flex: 1; min-height: 0; overflow: auto; }
+.menu-armory__options [role=tabpanel] { display: flex; flex-direction: column; gap: 16px; }
+.menu-armory [hidden], .menu-career [hidden] { display: none !important; }
+.menu-armory__section-title { margin: 0 0 8px; }
+.menu-armory__section-title > span, .menu-career__eyebrow { color: #7cb6cf; font-size: 10px; letter-spacing: .15em; font-weight: 750; }
+.menu-armory__section-title h2 { font-size: 27px; font-weight: 750; margin: 7px 0; letter-spacing: -.025em; }
+.menu-armory__section-title p, .menu-armory__note { color: #9aafca; line-height: 1.65; font-size: 12px; }
+.menu-armory__options [aria-label="Character selection"] { flex-wrap: wrap; }
+.menu-armory__options [aria-label="Character selection"] button { font-size: 12px; }
+.menu-armory__options #armory-panel-color > .bg-white\/5 { background: #0b1522; padding: 18px; border-color: #25394e; }
+.menu-armory__options [aria-label="Armor color hue"] { min-height: 10px; accent-color: #15d6ed; }
+.menu-armory__options button[aria-label$="armor color"] { width: 30px; height: 30px; }
+.menu-armory__options button[aria-pressed=true] { outline-offset: 4px; }
+.menu-armory__color-note { display: flex; justify-content: space-between; gap: 15px; align-items: center; font-size: 11px; color: #94abc5; }
+.menu-armory__color-note button { color: #b6e4ef; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.menu-armory__saved { padding: 16px 22px; display: flex; gap: 10px; font-size: 11px; color: #91b6c3; border-top: 1px solid #293b50; background: #0c1724; }
+.menu-armory__saved span { color: #4adbb5; }
+.menu-career { display: grid; grid-template-columns: minmax(0, 1fr) minmax(255px, 29%); gap: 20px; min-height: 0; height: 100%; color: #eef3ff; }
+.menu-career__record { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #293b50; background: #101b29; border-radius: 8px; overflow: hidden; }
+.menu-career__record-heading { padding: 18px 22px 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.menu-career__record-heading h2 { margin: 4px 0 0; font-size: 25px; font-weight: 750; }
+.menu-career__record-heading label { font-size: 10px; color: #9aafca; display: flex; flex-direction: column; gap: 5px; }
+.menu-career select { background: #091421; border: 1px solid #33475f; border-radius: 4px; padding: 8px 28px 8px 10px; color: #dceafb; font: inherit; font-size: 12px; max-width: 190px; }
+.menu-career__headlines { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin: 4px 22px 14px; padding: 15px 0; background: #0a1522; border: 1px solid #293c50; border-radius: 5px; }
+.menu-career__headlines > div { display: flex; flex-direction: column; text-align: center; gap: 4px; border-left: 1px solid #26394e; }
+.menu-career__headlines > div:first-child { border: 0; }
+.menu-career__headlines strong { font-size: 27px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.menu-career__headlines span { color: #8fa7c3; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.menu-career__tabs { padding: 0 12px; gap: 0; }
+.menu-career__tabs button { padding: 11px 12px; min-height: 43px; }
+.menu-career__content { padding: 18px 22px; min-height: 0; flex: 1; overflow: auto; }
+.menu-career__category-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 18px; }
+.menu-career__category-heading h3 { font-size: 17px; font-weight: 700; }
+.menu-career__category-heading p { color: #8fa6bf; font-size: 11px; }
+.menu-career__stats, .menu-career__overview-stats { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 28px; }
+.menu-career__stat { padding: 14px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid #25374c; }
+.menu-career__stat span { color: #a6bad0; font-size: 12px; }
+.menu-career__stat strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.menu-career__highlight-heading { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 21px 0 12px; }
+.menu-career__highlight-heading h4 { font-size: 13px; font-weight: 700; }
+.menu-career__highlight-heading button { font-size: 11px; color: #72d8e9; cursor: pointer; }
+.menu-career__highlights { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+.menu-career__highlights button, .menu-career__medal-grid button { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 6px; gap: 7px; background: #0b1725; border: 1px solid #2c4058; border-radius: 5px; color: #c3d6eb; cursor: pointer; }
+.menu-career__highlights strong, .menu-career__medal-grid strong { font-size: 10px; font-weight: 650; }
+.menu-career__highlights small, .menu-career__medal-grid small { color: #8ba6c4; font-size: 11px; }
+.menu-career__medal-icon { display: block; width: 35px; height: 35px; flex-shrink: 0; }
+.menu-career__medal-icon > svg { width: 100%; height: 100%; }
+.menu-career__medals { display: grid; grid-template-columns: minmax(0,1fr) minmax(160px, .63fr); gap: 16px; }
+.menu-career__medal-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.menu-career__medal-grid button[aria-pressed=true] { border-color: #15d6ed; background: #113044; }
+.menu-career__medal--unearned .menu-career__medal-icon { filter: saturate(.3); opacity: .6; }
+.menu-career__medal-detail { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 12px; padding: 20px; border-radius: 5px; border: 1px solid #2c4058; background: #0c1725; }
+.menu-career__medal-detail .menu-career__medal-icon { width: 52px; height: 52px; }
+.menu-career__medal-detail h4 { font-size: 19px; font-weight: 750; }
+.menu-career__medal-detail p { color: #a6bad0; font-size: 12px; line-height: 1.65; }
+.menu-career__medal-detail > strong { color: #8eddec; font-size: 13px; }
+.menu-career__medal-detail small { color: #8099b5; font-size: 10px; line-height: 1.5; }
+.menu-career__profile { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.menu-career__profile .game-model-stage { flex: 1; }
+.menu-career__profile .game-model-stage__heading { padding: 16px 18px 0; }
+.menu-career__profile .game-model-stage__heading strong { font-size: 19px; }
+.menu-career__profile .game-model-stage__controls { padding: 9px 12px; }
+.menu-career__profile .game-model-stage__controls > span { display: none; }
+.menu-career__armory-link { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; background: #173247; border: 1px solid #2c5067; border-radius: 4px; font-size: 12px; color: #cdebf3; margin-top: 8px; cursor: pointer; }
+.menu-career__storage { padding: 18px; border: 1px solid #2b3d52; background: #101b29; border-radius: 5px; margin-top: 14px; }
+.menu-career__storage > strong { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.menu-career__storage > strong span { width: 6px; height: 6px; border-radius: 50%; background: #f2bd69; }
+.menu-career__storage > strong span.is-connected { background: #42dbb0; }
+.menu-career__storage p { color: #9aafca; font-size: 11px; line-height: 1.65; margin: 9px 0 12px; }
+.menu-career__storage button, .menu-career__empty button { display: flex; justify-content: space-between; gap: 15px; padding: 9px 12px; background: #173247; border: 1px solid #376079; border-radius: 4px; color: #ccebf5; font-size: 11px; cursor: pointer; }
+.menu-career__storage button { width: 100%; }
+.menu-career__footnote { font-size: 10px; color: #8199b4; padding: 10px 5px 0; line-height: 1.5; }
+.menu-career__empty { padding: 16px 18px; margin-bottom: 12px; border: 1px solid #2b4c61; border-radius: 5px; background: #102738; }
+.menu-career__empty strong { font-size: 15px; }
+.menu-career__empty p { font-size: 12px; color: #a9c4d7; margin: 8px 0 12px; }
+.game-model-stage :focus-visible, .menu-armory :focus-visible, .menu-career :focus-visible { outline: 2px solid #55e3ef; outline-offset: 3px; }
+.game-model-stage button:not(:disabled):hover, .menu-career button:hover { filter: brightness(1.18); }
+@media (max-height: 800px) and (min-width: 901px) {
+  .game-model-stage__heading { padding-top: 14px; }
+  .menu-career__headlines { padding: 10px 0; margin-bottom: 8px; }
+  .menu-career__headlines strong { font-size: 24px; }
+  .menu-career__record-heading { padding-top: 12px; padding-bottom: 7px; }
+  .menu-career__record-heading h2 { font-size: 22px; }
+  .menu-career__content { padding-top: 12px; }
+  .menu-career__category-heading { margin-bottom: 8px; }
+  .menu-career__category-heading p { max-width: 220px; text-align: right; }
+  .menu-career__stat { padding: 10px 0; }
+  .menu-career__highlight-heading { padding-top: 14px; }
+  .menu-career__highlights button, .menu-career__medal-grid button { gap: 4px; padding: 8px 4px; }
+  .menu-career__medal-icon { width: 30px; height: 30px; }
+  .menu-career__profile .game-model-stage__viewport { min-height: 160px; }
+  .menu-career__storage { padding: 13px; margin-top: 9px; }
+  .menu-career__storage p { margin: 7px 0; }
+}
+@media (max-width: 1050px) {
+  .menu-armory { grid-template-columns: minmax(0, 1fr) minmax(330px, 1fr); gap: 14px; }
+  .menu-career { grid-template-columns: minmax(0,1fr) 245px; gap: 14px; }
+  .menu-career__tabs { overflow-x: auto; }
+  .menu-career__tabs button { padding-inline: 10px; }
+  .menu-career__medals { grid-template-columns: 1fr; }
+  .menu-career__medal-detail { display: grid; grid-template-columns: 50px 1fr; gap: 6px 14px; }
+  .menu-career__medal-detail .menu-career__medal-icon { grid-row: span 5; }
+}
+@media (max-width: 900px) {
+  .menu-armory, .menu-career { display: grid; grid-template-columns: minmax(0, 1fr); height: auto; overflow: visible; }
+  .menu-armory > .game-model-stage { min-height: 370px; }
+  .menu-armory__options { overflow: visible; }
+  .menu-career__content { overflow: visible; }
+  .menu-career__profile .game-model-stage { min-height: 370px; }
+  .menu-career__medals { grid-template-columns: minmax(0,1fr) minmax(155px,.6fr); }
+  .menu-career__medal-detail { display: flex; }
+}
+@media (max-width: 540px) {
+  .menu-armory__options { padding: 18px; }
+  .menu-armory__tabs { padding: 0 8px; }
+  .menu-armory__tabs button { flex: 1; padding-inline: 7px; font-size: 11px; }
+  .menu-armory__section-title h2 { font-size: 24px; }
+  .menu-career__record-heading { padding: 15px; gap: 8px; align-items: flex-start; }
+  .menu-career__record-heading h2 { font-size: 21px; }
+  .menu-career select { max-width: 155px; }
+  .menu-career__headlines { margin-inline: 14px; }
+  .menu-career__headlines strong { font-size: 22px; }
+  .menu-career__headlines span { font-size: 8px; }
+  .menu-career__content { padding: 16px; }
+  .menu-career__category-heading { flex-direction: column; gap: 5px; }
+  .menu-career__stats, .menu-career__overview-stats { grid-template-columns: 1fr; }
+  .menu-career__highlights { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .menu-career__medals { grid-template-columns: 1fr; }
+  .menu-career__medal-detail { display: grid; grid-template-columns: 52px 1fr; gap: 6px 14px; }
+  .menu-career__medal-detail .menu-career__medal-icon { grid-row: span 5; }
+}
+.game-model-stage__viewport > div[role=group] > div { display: none; }
+@media (max-height: 800px) and (min-width: 901px) {
+  .menu-career__record-heading { padding: 7px 20px; }
+  .menu-career__record-heading h2 { font-size: 21px; line-height: 1.15; }
+  .menu-career__record-heading label { font-size: 9px; line-height: 12px; gap: 3px; }
+  .menu-career__record-heading select { font-size: 11px; line-height: 16px; padding-block: 6px; }
+  .menu-career__headlines { padding-block: 8px; }
+  .menu-career__headlines strong { line-height: 1.1; }
+  .menu-career__headlines span { line-height: 12px; }
+  .menu-career__content { padding-block: 10px; }
+  .menu-career__category-heading { min-height: 20px; margin-bottom: 8px; }
+  .menu-career__category-heading h3 { font-size: 16px; line-height: 20px; }
+  .menu-career__medal-grid button { padding: 5px 4px; gap: 2px; }
+  .menu-career__medal-grid .menu-career__medal-icon { width: 24px; height: 24px; }
+  .menu-career__medal-grid strong, .menu-career__medal-grid small { line-height: 12px; }
+  .menu-career__medal-detail { padding: 14px; gap: 7px; }
+  .menu-career__medal-detail .menu-career__medal-icon { width: 36px; height: 36px; }
+  .menu-career__medal-detail h4 { font-size: 17px; line-height: 21px; }
+  .menu-career__medal-detail p { line-height: 1.45; }
+  .menu-career__stat { padding-block: 8px; }
+  .menu-career__stat strong { font-size: 16px; line-height: 20px; }
+  .menu-career__profile .game-model-stage__viewport { min-height: 0; }
+  .menu-career__profile .game-model-stage__controls { display: none; }
+}

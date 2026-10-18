@@ -35,7 +35,7 @@ type ArchetypeMap = Record<string, AIArchetypeId>;
 type BotColorMap = Record<string, number>;
 type BotModelTypeMap = Record<string, CharacterModelType>;
 
-interface BotSetupModalProps {
+export interface BotSetupModalProps {
   isPlaying: boolean;
   offlineBotCount: number;
   onOfflineBotCountChange: (count: number) => void;

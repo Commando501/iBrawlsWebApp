@@ -20,6 +20,7 @@ import {
 
 interface Props {
   account: AccountInfo | null;
+  presentation?: 'compact' | 'screen';
   playerName: string;
   requestedLoggedOutMode?: Exclude<LoggedOutMode, 'menu'>;
   loggedOutModeRequestToken?: number;
@@ -62,6 +63,7 @@ const ghostBtn =
 
 const SpartanIdentityAccount: React.FC<Props> = ({
   account,
+  presentation = 'compact',
   playerName,
   requestedLoggedOutMode,
   loggedOutModeRequestToken,
@@ -219,7 +221,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
   // and logged-in views because registering immediately signs the user in — without
   // this they'd never see the assigned code.
   const recoveryBanner = newRecoveryCode ? (
-    <div className="bg-amber-950/40 border border-amber-500/40 rounded-lg p-3 flex flex-col gap-1.5">
+    <div role="status" className="menu-account-recovery-banner bg-amber-950/40 border border-amber-500/40 rounded-lg p-3 flex flex-col gap-1.5">
       <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest">
         ⚠ Save Your Recovery Code
       </span>
@@ -228,7 +230,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
       </span>
       <span className="text-[10px] text-amber-200/70 leading-snug">
         You need this 4-digit code (plus your email and username) to recover or change your
-        account. It won't be shown again here — store it somewhere safe.
+        account. You can also reveal it in your account details — store it somewhere safe.
       </span>
       <button
         onClick={() => setNewRecoveryCode(null)}
@@ -242,11 +244,11 @@ const SpartanIdentityAccount: React.FC<Props> = ({
   // ── Render: logged out ──────────────────────────────────────────────────────
   if (!account) {
     return (
-      <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-white/5">
+      <div className="menu-account flex flex-col gap-2 mt-2 pt-2 border-t border-white/5" data-presentation={presentation} aria-busy={busy}>
         {recoveryBanner}
 
-        {error && <span className="text-[11px] text-red-400 leading-snug">{error}</span>}
-        {notice && <span className="text-[11px] text-emerald-400 leading-snug">{notice}</span>}
+        {error && <span role="alert" className="text-[11px] text-red-400 leading-snug">{error}</span>}
+        {notice && <span role="status" className="text-[11px] text-emerald-400 leading-snug">{notice}</span>}
 
         {mode === 'menu' && (
           <>
@@ -272,9 +274,9 @@ const SpartanIdentityAccount: React.FC<Props> = ({
 
         {mode === 'register' && (
           <>
-            <input className={inputCls} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-            <input className={inputCls} type="text" placeholder="Username (3–16 chars)" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-            <input className={inputCls} type="password" placeholder="Password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            <input className={inputCls} type="email" aria-label="Email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+            <input className={inputCls} type="text" aria-label="Username (3–16 chars)" placeholder="Username (3–16 chars)" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+            <input className={inputCls} type="password" aria-label="Password (8+ chars)" placeholder="Password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
             <div className="flex gap-2">
               <button onClick={handleRegister} disabled={busy} className={primaryBtn}>{busy ? '…' : 'Create'}</button>
               <button onClick={() => { resetMessages(); setMode('menu'); }} className={ghostBtn}>Cancel</button>
@@ -284,8 +286,8 @@ const SpartanIdentityAccount: React.FC<Props> = ({
 
         {mode === 'login' && (
           <>
-            <input className={inputCls} type="text" placeholder="Email or username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="username" />
-            <input className={inputCls} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+            <input className={inputCls} type="text" aria-label="Email or username" placeholder="Email or username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="username" />
+            <input className={inputCls} type="password" aria-label="Password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             <div className="flex gap-2">
               <button onClick={handleLogin} disabled={busy} className={primaryBtn}>{busy ? '…' : 'Log In'}</button>
               <button onClick={() => { resetMessages(); setMode('menu'); }} className={ghostBtn}>Cancel</button>
@@ -298,10 +300,10 @@ const SpartanIdentityAccount: React.FC<Props> = ({
             <span className="text-[10px] text-white/40 leading-snug">
               Enter your email, username, and 4-digit recovery code to set a new password.
             </span>
-            <input className={inputCls} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input className={inputCls} type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-            <input className={inputCls} type="text" inputMode="numeric" maxLength={4} placeholder="4-digit code" value={recoverCode} onChange={(e) => setRecoverCode(e.target.value.replace(/\D/g, ''))} />
-            <input className={inputCls} type="password" placeholder="New password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            <input className={inputCls} type="email" aria-label="Email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className={inputCls} type="text" aria-label="Username" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <input className={inputCls} type="text" inputMode="numeric" maxLength={4} aria-label="4-digit code" placeholder="4-digit code" value={recoverCode} onChange={(e) => setRecoverCode(e.target.value.replace(/\D/g, ''))} />
+            <input className={inputCls} type="password" aria-label="New password (8+ chars)" placeholder="New password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
             <div className="flex gap-2">
               <button onClick={handleRecover} disabled={busy} className={primaryBtn}>{busy ? '…' : 'Reset'}</button>
               <button onClick={() => { resetMessages(); setMode('menu'); }} className={ghostBtn}>Cancel</button>
@@ -324,7 +326,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
   };
 
   return (
-    <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-white/5">
+    <div className="menu-account flex flex-col gap-2 mt-2 pt-2 border-t border-white/5" data-presentation={presentation} aria-busy={busy}>
       {recoveryBanner}
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2">
@@ -344,7 +346,14 @@ const SpartanIdentityAccount: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+      {presentation === 'screen' ? (
+        <div className="menu-account-rows">
+          <div className="menu-account-row"><div><span>Username</span><strong>{account.username}</strong><small>7 days between changes</small></div><button type="button" disabled={usernameCd > 0 || busy} onClick={() => openEdit('username')} title={usernameCd > 0 ? `Available in ${formatRemaining(usernameCd)}` : undefined}>{usernameCd > 0 ? `In ${formatRemaining(usernameCd)}` : 'Change username'}</button></div>
+          <div className="menu-account-row"><div><span>Email</span><strong>{account.email}</strong><small>7 days between changes</small></div><button type="button" disabled={emailCd > 0 || busy} onClick={() => openEdit('email')} title={emailCd > 0 ? `Available in ${formatRemaining(emailCd)}` : undefined}>{emailCd > 0 ? `In ${formatRemaining(emailCd)}` : 'Change email'}</button></div>
+          <div className="menu-account-row"><div><span>Password</span><strong aria-label="Password hidden">••••••••••••</strong><small>24 hours between changes</small></div><button type="button" disabled={passwordCd > 0 || busy} onClick={() => openEdit('password')} title={passwordCd > 0 ? `Available in ${formatRemaining(passwordCd)}` : undefined}>{passwordCd > 0 ? `In ${formatRemaining(passwordCd)}` : 'Change password'}</button></div>
+          <div className="menu-account-row"><div><span>Recovery code</span><strong>{revealCode ? account.recoveryCode : '••••'}</strong><small>Needed to recover or change your account</small></div><button type="button" aria-pressed={revealCode} onClick={() => setRevealCode(v => !v)}>{revealCode ? 'Hide code' : 'Show code'}</button></div>
+        </div>
+      ) : <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
         <span className="text-white/40 uppercase tracking-wider">User</span>
         <span className="text-white font-semibold truncate">{account.username}</span>
         <span className="text-white/40 uppercase tracking-wider">Email</span>
@@ -362,12 +371,12 @@ const SpartanIdentityAccount: React.FC<Props> = ({
             {revealCode ? '🙈 Hide' : '👁 Show'}
           </button>
         </span>
-      </div>
+      </div>}
 
-      {error && <span className="text-[11px] text-red-400 leading-snug">{error}</span>}
-      {notice && <span className="text-[11px] text-emerald-400 leading-snug">{notice}</span>}
+      {error && <span role="alert" className="text-[11px] text-red-400 leading-snug">{error}</span>}
+      {notice && <span role="status" className="text-[11px] text-emerald-400 leading-snug">{notice}</span>}
 
-      {!editField && (
+      {!editField && presentation !== 'screen' && (
         <div className="flex gap-2 mt-1">
           <button
             onClick={() => openEdit('username')}
@@ -404,7 +413,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
           <input
             className={inputCls}
             type={editField === 'password' ? 'password' : editField === 'email' ? 'email' : 'text'}
-            placeholder={editLabel[editField]}
+            aria-label={editLabel[editField]} placeholder={editLabel[editField]}
             value={editValue}
             onChange={(e) => setEditValue(e.target.value)}
           />
@@ -413,7 +422,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
             type="text"
             inputMode="numeric"
             maxLength={4}
-            placeholder="4-digit security code"
+            aria-label="4-digit security code" placeholder="4-digit security code"
             value={editCode}
             onChange={(e) => setEditCode(e.target.value.replace(/\D/g, ''))}
           />
@@ -438,7 +447,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
             <input
               className={inputCls}
               type="password"
-              placeholder="Admin access code"
+              aria-label="Admin access code" placeholder="Admin access code"
               value={adminCode}
               onChange={(e) => setAdminCode(e.target.value)}
             />

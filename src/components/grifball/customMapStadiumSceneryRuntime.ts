@@ -1,16 +1,24 @@
 import * as THREE from 'three';
 import { getRectHalfExtents } from '../../game/arenaDimensions';
 import { type CustomMapData } from '../../types';
-import { applyStadiumWorldUVs, createStadiumMaterial, loadStadiumScreenTexture } from './stadiumMaterials';
+import { getEnvironmentQualityProfile, type EnvironmentQualityProfile } from '../../settings/environmentQuality';
+import { attachStadiumArchitecture, type StadiumArchitectureHandle } from './stadiumArchitecture';
+import { applyStadiumWorldUVs, createStadiumCeramicMaterial, createStadiumMaterial, loadStadiumScreenTexture } from './stadiumMaterials';
 import { type GrifballThreeRefs } from './threeRefs';
+import { createStadiumSurfaceDetails } from './stadiumSurfaceDetails';
+import { createStadiumLightShaftMaterial } from './stadiumLighting';
 
 export function buildCustomMapStadiumSceneryForRefs({
   refs,
   activeCustomMap,
+  quality = getEnvironmentQualityProfile(),
+  architectureMaterialFactory,
 }: {
   refs: GrifballThreeRefs;
   activeCustomMap: CustomMapData;
-}): void {
+  quality?: EnvironmentQualityProfile;
+  architectureMaterialFactory?: (source: THREE.Material) => THREE.Material | undefined;
+}): StadiumArchitectureHandle | undefined {
   if (activeCustomMap.theme !== 'grifball_stadium') return;
   const scene = refs.scene;
   if (!scene) return;
@@ -22,9 +30,11 @@ export function buildCustomMapStadiumSceneryForRefs({
   const bz = half.z;
 
   // Scene-owned material sets; architectural textures retain their world scale.
-  const concrete = createStadiumMaterial('concrete', { color: '#e1e4e8', roughness: 0.92, metalness: 0.02 });
-  const steel = createStadiumMaterial('metal', { color: '#8795a6', roughness: 0.46, metalness: 0.78 });
-  const darkSteel = createStadiumMaterial('metal', { color: '#647084', roughness: 0.52, metalness: 0.72 });
+  const concrete = createStadiumMaterial('concrete', { color: '#abb7c1', roughness: 0.92, metalness: 0.02 }, quality);
+  const steel = createStadiumMaterial('metal', { color: '#71899b', roughness: 0.46, metalness: 0.78 }, quality);
+  const darkSteel = createStadiumMaterial('metal', { color: '#303f50', roughness: 0.52, metalness: 0.72 }, quality);
+  const ceramic = createStadiumCeramicMaterial({ color: '#cbd2d5', roughness: 0.46 }, quality);
+  stadiumGroup.add(createStadiumSurfaceDetails(half, quality, { alloy: steel, graphite: darkSteel, ceramic }));
   const makeBox = (x: number, y: number, z: number, material: THREE.Material, tileMeters = 3) => {
     const geometry = new THREE.BoxGeometry(x, y, z);
     applyStadiumWorldUVs(geometry, tileMeters);
@@ -81,7 +91,7 @@ export function buildCustomMapStadiumSceneryForRefs({
       platform.castShadow = true;
       stadiumGroup.add(platform);
       const seats = Math.max(1, Math.floor((length - 1.5) / 0.84));
-      for (let column = 0; column < seats; column++) {
+      for (let column = 0; column < seats; column += quality.seatStride) {
         const along = (column - (seats - 1) / 2) * 0.84;
         // Keep two circulation aisles open through each seating bank.
         if (Math.abs(Math.abs(along) - length * 0.25) < 0.8) continue;
@@ -185,17 +195,15 @@ export function buildCustomMapStadiumSceneryForRefs({
         lampMatrices.push(new THREE.Matrix4().compose(position, headRotation, new THREE.Vector3(1, 1, 0.45)));
       }
     }
-    const coneGeometry = new THREE.ConeGeometry(3.5, beamLength, 24, 1, true);
-    coneGeometry.translate(0, -beamLength / 2, 0);
-    const cone = new THREE.Mesh(coneGeometry, new THREE.MeshBasicMaterial({
-      color: isBlue ? '#a4d6ec' : '#edc6b7',
-      transparent: true, opacity: 0.026, blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide, depthWrite: false,
-    }));
-    cone.position.set(0, 13, 0);
-    // ConeGeometry extends from its apex along -Y, whereas lookAt aims +Z.
-    cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), direction);
-    tower.add(cone);
+    if (quality.lightShafts) {
+      const coneGeometry = new THREE.ConeGeometry(3.5, beamLength, 16, 1, true);
+      coneGeometry.translate(0, -beamLength / 2, 0);
+      const cone = new THREE.Mesh(coneGeometry, createStadiumLightShaftMaterial(isBlue ? '#a4d6ec' : '#edc6b7'));
+      cone.position.set(0, 13, 0);
+      // ConeGeometry extends from its apex along -Y, whereas lookAt aims +Z.
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), direction);
+      tower.add(cone);
+    }
     return tower;
   };
   for (const x of [-1, 1]) {
@@ -235,10 +243,10 @@ export function buildCustomMapStadiumSceneryForRefs({
     scoreboardBox.add(trim);
   }
   for (const x of [-2.7, 2.7]) {
-    for (const z of [-2.7, 2.7]) addRail(new THREE.Vector3(x, 17.2, z), new THREE.Vector3(x * 0.28, 27, z * 0.28), 0.055, '#586b80');
+    for (const z of [-2.7, 2.7]) addRail(new THREE.Vector3(x, 17.2, z), new THREE.Vector3(x, 22.4, z), 0.055, '#586b80');
   }
   const screenMaterial = new THREE.MeshBasicMaterial({
-    map: loadStadiumScreenTexture('championship'), toneMapped: false,
+    map: loadStadiumScreenTexture('championship', quality), toneMapped: false,
   });
   const screenGeometry = new THREE.PlaneGeometry(5.85, 3.3);
   for (let side = 0; side < 4; side++) {
@@ -252,8 +260,8 @@ export function buildCustomMapStadiumSceneryForRefs({
 
   // Campaign artwork is loaded once per scene and shared by matching displays.
   const adMaterials = {
-    sapphire: new THREE.MeshBasicMaterial({ map: loadStadiumScreenTexture('sapphire'), toneMapped: false }),
-    gauss: new THREE.MeshBasicMaterial({ map: loadStadiumScreenTexture('gauss'), toneMapped: false }),
+    sapphire: new THREE.MeshBasicMaterial({ map: loadStadiumScreenTexture('sapphire', quality), toneMapped: false }),
+    gauss: new THREE.MeshBasicMaterial({ map: loadStadiumScreenTexture('gauss', quality), toneMapped: false }),
   };
   const buildBillboard = (x: number, z: number, kind: keyof typeof adMaterials) => {
     const billboard = new THREE.Group();
@@ -280,6 +288,75 @@ export function buildCustomMapStadiumSceneryForRefs({
   stadiumGroup.add(buildBillboard(-bx * 0.4, bz + 8, 'gauss'));
   stadiumGroup.add(buildBillboard(bx * 0.4, bz + 8, 'sapphire'));
 
+  // A continuous upper bowl gives the stadium an architectural silhouette. Its
+  // roof edge is outside the court; no new collision or camera occluders enter play.
+  const canopy = new THREE.Group();
+  canopy.name = 'stadium_upper_concourse';
+  const cyan = new THREE.MeshBasicMaterial({ color: '#68c8dc', toneMapped: false });
+  const champagne = new THREE.MeshStandardMaterial({
+    color: '#b9a579', roughness: 0.38, metalness: 0.72, emissive: '#8a6027', emissiveIntensity: 0.18,
+  });
+  const ribbonMaterial = new THREE.MeshBasicMaterial({ color: '#153c50', toneMapped: false });
+  for (const side of [-1, 1]) {
+    // Broad ribbed roof panels shade the seating banks and frame the open sky.
+    for (const alongX of [true, false]) {
+      const length = alongX ? (bx + 15) * 2 : (bz + 15) * 2;
+      const edge = alongX ? bz + 13 : bx + 12;
+      const position = (object: THREE.Object3D, y: number, outward: number) => {
+        object.position.set(alongX ? 0 : side * outward, y, alongX ? side * outward : 0);
+      };
+      const deck = makeBox(alongX ? length : 7, 0.7, alongX ? 7 : length, darkSteel, 4);
+      position(deck, 15.8, edge);
+      canopy.add(deck);
+      const fascia = makeBox(alongX ? length : 0.6, 2, alongX ? 0.6 : length, ceramic, 3);
+      position(fascia, 14.8, edge - 3.3);
+      canopy.add(fascia);
+      const ribbon = makeBox(alongX ? length : 0.08, 0.38, alongX ? 0.08 : length, ribbonMaterial);
+      position(ribbon, 14.85, edge - 3.62);
+      canopy.add(ribbon);
+      for (const [height, material] of [[15.9, champagne], [13.95, cyan]] as const) {
+        const trim = makeBox(alongX ? length : 0.12, 0.055, alongX ? 0.12 : length, material);
+        position(trim, height, edge - 3.68);
+        canopy.add(trim);
+      }
+      const divisions = Math.max(2, Math.floor(length / 8));
+      for (let index = 0; index <= divisions; index++) {
+        const along = (index / divisions - 0.5) * length;
+        const inner = edge - 3.4, outer = edge + 3.4;
+        const point = (distance: number, y: number) => alongX
+          ? new THREE.Vector3(along, y, side * distance)
+          : new THREE.Vector3(side * distance, y, along);
+        addRail(point(inner, 16.25), point(outer, 16.25), 0.11, '#748ca0');
+        addRail(point(inner, 14.5), point(outer, 16.25), 0.07, '#4a5d70');
+      }
+      // Quiet warm sections punctuate the cool structural palette.
+      for (const fraction of [-0.33, 0, 0.33]) {
+        const marker = makeBox(alongX ? 3.2 : 0.09, 0.1, alongX ? 0.09 : 3.2, champagne);
+        position(marker, 14.85, edge - 3.7);
+        if (alongX) marker.position.x = fraction * length;
+        else marker.position.z = fraction * length;
+        canopy.add(marker);
+      }
+    }
+  }
+  stadiumGroup.add(canopy);
+  // Two open truss arches carry the center display; the court remains open to
+  // the sky and the suspension cables terminate on a real structural chord.
+  const archSpan = bx + 12;
+  const archSteps = 12;
+  for (const z of [-2.7, 2.7]) {
+    const point = (index: number, upper: boolean) => {
+      const unit = index / archSteps * 2 - 1;
+      return new THREE.Vector3(unit * archSpan, 16.2 + (1 - unit * unit) * 6.2 + (upper ? 1.2 : 0), z);
+    };
+    for (let index = 0; index < archSteps; index++) {
+      addRail(point(index, false), point(index + 1, false), 0.16, '#61778b');
+      addRail(point(index, true), point(index + 1, true), 0.12, '#718a9e');
+      addRail(point(index, false), point(index + 1, true), 0.055, '#4b6276');
+      addRail(point(index, false), point(index, true), 0.055, '#4b6276');
+    }
+  }
+
   const rails = new THREE.InstancedMesh(
     new THREE.CylinderGeometry(1, 1, 1, 8),
     new THREE.MeshStandardMaterial({ color: '#ffffff', metalness: 0.78, roughness: 0.36 }),
@@ -297,7 +374,7 @@ export function buildCustomMapStadiumSceneryForRefs({
   stadiumGroup.add(rails);
 
   // Fine airborne dust stays subtle enough to preserve combat silhouettes.
-  const dustCount = 240;
+  const dustCount = quality.dustCount;
   const dustGeometry = new THREE.BufferGeometry();
   const dustPositions = new Float32Array(dustCount * 3);
   for (let i = 0; i < dustCount; i++) {
@@ -316,4 +393,8 @@ export function buildCustomMapStadiumSceneryForRefs({
   scene.add(stadiumGroup);
   if (!refs.customMapObjects) refs.customMapObjects = [];
   refs.customMapObjects.push(stadiumGroup);
+  return attachStadiumArchitecture(stadiumGroup, half, quality, {
+    materialFactory: source => architectureMaterialFactory?.(source)
+      ?? (source.name === 'stadium_ceramic' ? ceramic : undefined),
+  });
 }

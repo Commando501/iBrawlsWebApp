@@ -1,0 +1,224 @@
+{
+  "schema": 1,
+  "generator": "scripts/neon/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; identity root and child transforms; physical UVs",
+  "provenance": "Original Blender-authored geometry; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 876704,
+      "triangles": 17888,
+      "modules": {
+        "beacon-column": {
+          "triangles": 3408,
+          "materialBatches": 4,
+          "dimensions": [
+            1.5,
+            8.0,
+            1.5
+          ],
+          "boundsMin": [
+            -0.75,
+            -4.0,
+            -0.75
+          ],
+          "boundsMax": [
+            0.75,
+            4.0,
+            0.75
+          ],
+          "maximumHorizontalRadius": 0.75,
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "triangles": 2036,
+          "materialBatches": 4,
+          "dimensions": [
+            1.2,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.6,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.6,
+            1.0,
+            2.0
+          ],
+          "maximumHorizontalRadius": 2.078275,
+          "pivot": "center"
+        },
+        "city-tower": {
+          "triangles": 8084,
+          "materialBatches": 5,
+          "dimensions": [
+            12.0,
+            38.0,
+            12.0
+          ],
+          "boundsMin": [
+            -6.0,
+            -19.0,
+            -6.0
+          ],
+          "boundsMax": [
+            6.0,
+            19.0,
+            6.0
+          ],
+          "maximumHorizontalRadius": 8.402439,
+          "pivot": "center"
+        },
+        "neon-palm": {
+          "triangles": 4360,
+          "materialBatches": 4,
+          "dimensions": [
+            8.0,
+            12.0,
+            8.0
+          ],
+          "boundsMin": [
+            -4.0,
+            -6.0,
+            -4.0
+          ],
+          "boundsMax": [
+            4.0,
+            6.0,
+            4.0
+          ],
+          "maximumHorizontalRadius": 4.000028,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 419264,
+      "triangles": 6852,
+      "modules": {
+        "beacon-column": {
+          "triangles": 1264,
+          "materialBatches": 4,
+          "dimensions": [
+            1.5,
+            8.0,
+            1.5
+          ],
+          "boundsMin": [
+            -0.75,
+            -4.0,
+            -0.75
+          ],
+          "boundsMax": [
+            0.75,
+            4.0,
+            0.75
+          ],
+          "maximumHorizontalRadius": 0.75,
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "triangles": 788,
+          "materialBatches": 4,
+          "dimensions": [
+            1.2,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.6,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.6,
+            1.0,
+            2.0
+          ],
+          "maximumHorizontalRadius": 2.078275,
+          "pivot": "center"
+        },
+        "city-tower": {
+          "triangles": 3152,
+          "materialBatches": 5,
+          "dimensions": [
+            12.0,
+            38.0,
+            12.0
+          ],
+          "boundsMin": [
+            -6.0,
+            -19.0,
+            -6.0
+          ],
+          "boundsMax": [
+            6.0,
+            19.0,
+            6.0
+          ],
+          "maximumHorizontalRadius": 8.345059,
+          "pivot": "center"
+        },
+        "neon-palm": {
+          "triangles": 1648,
+          "materialBatches": 4,
+          "dimensions": [
+            8.0,
+            12.0,
+            8.0
+          ],
+          "boundsMin": [
+            -4.0,
+            -6.0,
+            -4.0
+          ],
+          "boundsMax": [
+            4.0,
+            6.0,
+            4.0
+          ],
+          "maximumHorizontalRadius": 4.466342,
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "neon_ceramic": {
+      "baseColor": "#aebac7",
+      "metalness": 0.12,
+      "roughness": 0.62,
+      "emissiveStrength": 0
+    },
+    "neon_alloy": {
+      "baseColor": "#687b91",
+      "metalness": 0.62,
+      "roughness": 0.47,
+      "emissiveStrength": 0
+    },
+    "neon_graphite": {
+      "baseColor": "#263348",
+      "metalness": 0.28,
+      "roughness": 0.76,
+      "emissiveStrength": 0
+    },
+    "neon_accent": {
+      "baseColor": "#56c9de",
+      "metalness": 0.1,
+      "roughness": 0.43,
+      "emissiveStrength": 0.45
+    },
+    "neon_window": {
+      "baseColor": "#233b51",
+      "metalness": 0.3,
+      "roughness": 0.4,
+      "emissiveStrength": 0.08
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

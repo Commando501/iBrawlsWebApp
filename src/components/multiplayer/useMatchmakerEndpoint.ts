@@ -2,6 +2,14 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 import type { AccountInfo } from '../../services/account';
 import { getStoredToken } from '../../services/account';
 import type { GameplayConnectionStatus } from './multiplayerConnectionConstants';
+import {
+  MATCHMAKER_URL_STORAGE_KEY,
+  buildRelaySocketUrl,
+  getRelayWsUrl,
+  normalizeRelayWsUrl,
+  redactRelaySocketUrl,
+  relayHttpBase,
+} from '../../network/relayEndpoint';
 
 type SocketChannel = 'lobby' | 'gameplay';
 
@@ -25,23 +33,6 @@ const createOnlineInstanceId = () => {
 
 const ONLINE_INSTANCE_ID = createOnlineInstanceId();
 
-const getSavedMatchmakerUrl = () => {
-  const saved = localStorage.getItem('ibrawls_matchmaker_url');
-  if (saved) return saved;
-
-  const envWsUrl = import.meta.env.VITE_WS_URL;
-  if (envWsUrl) return envWsUrl;
-
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let host = window.location.host;
-  if (host.includes('localhost') || host.includes('127.0.0.1')) {
-    host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
-  } else if (host.includes('ibrawlswebapp.pages.dev')) {
-    host = 'ibrawlswebapp.commando501.workers.dev';
-  }
-  return `${protocol}//${host}/ws`;
-};
-
 export function useMatchmakerEndpoint({
   account,
   isOnline,
@@ -52,11 +43,12 @@ export function useMatchmakerEndpoint({
   const [lanIp, setLanIp] = useState<string>('127.0.0.1');
   const [hostIdCode, setHostIdCode] = useState<string>('');
   const [joinIpOrId, setJoinIpOrId] = useState<string>('');
-  const [customUrlInput, setCustomUrlInput] = useState<string>(() => getSavedMatchmakerUrl());
+  const [customUrlInput, setCustomUrlInput] = useState<string>(() => getRelayWsUrl());
+  const [endpointRevision, setEndpointRevision] = useState(0);
 
   const getWsUrl = useCallback(() => {
-    return getSavedMatchmakerUrl();
-  }, []);
+    return getRelayWsUrl();
+  }, [endpointRevision]);
 
   const buildWsUrl = useCallback((
     baseUrl: string,
@@ -64,33 +56,21 @@ export function useMatchmakerEndpoint({
     name?: string,
     includeAccountToken = true
   ) => {
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    let url = `${baseUrl}${separator}type=${type}`;
-    url += `&onlineInstanceId=${encodeURIComponent(ONLINE_INSTANCE_ID)}`;
-    if (name) {
-      url += `&name=${encodeURIComponent(name)}`;
-    }
-    const token = account ? getStoredToken() : null;
-    if (account) {
-      url += `&accountId=${encodeURIComponent(account.id)}`;
-    }
-    if (account && token && includeAccountToken) {
-      url += `&accountToken=${encodeURIComponent(token)}`;
-    }
-    return url;
+    return buildRelaySocketUrl(baseUrl, {
+      type,
+      onlineInstanceId: ONLINE_INSTANCE_ID,
+      name,
+      accountId: account?.id,
+      accountToken: account && includeAccountToken ? getStoredToken() : null,
+    });
   }, [account]);
 
   const redactWsUrl = useCallback((url: string) => {
-    return url.replace(/([?&]accountToken=)[^&]*/g, '$1[redacted]');
+    return redactRelaySocketUrl(url);
   }, []);
 
   const getApiUrl = useCallback(() => {
-    const wsUrl = getWsUrl();
-    let apiUrl = wsUrl.replace(/^ws/, 'http');
-    if (apiUrl.endsWith('/ws')) {
-      apiUrl = apiUrl.slice(0, -3);
-    }
-    return apiUrl;
+    return relayHttpBase(getWsUrl());
   }, [getWsUrl]);
 
   useEffect(() => {
@@ -105,8 +85,10 @@ export function useMatchmakerEndpoint({
       return;
     }
 
-    setConnectionStatus('fetching_ip');
-    fetch(`${getApiUrl()}/api/my-ip`)
+    const controller = new AbortController();
+    const finishMetadata = () => setConnectionStatus(previous => previous === 'fetching_ip' ? 'idle' : previous);
+    setConnectionStatus(previous => previous === 'idle' || previous === 'fetching_ip' ? 'fetching_ip' : previous);
+    fetch(`${getApiUrl()}/api/my-ip`, { signal: controller.signal })
       .then(res => {
         if (!res.ok) throw new Error(`API returned status ${res.status}`);
         return res.json();
@@ -117,68 +99,81 @@ export function useMatchmakerEndpoint({
 
         if (detectedIp === '127.0.0.1' || detectedIp === '::1' || detectedIp.startsWith('192.168.') || detectedIp.startsWith('10.')) {
           try {
-            const ipifyRes = await fetch('https://api.ipify.org?format=json');
+            const ipifyRes = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
             const ipifyData = await ipifyRes.json();
             if (ipifyData && ipifyData.ip) {
               detectedIp = ipifyData.ip;
             }
           } catch (e) {
+            if (controller.signal.aborted) return;
             console.warn('Failed to fetch from ipify, trying backup ipapi...', e);
             try {
-              const ipapiRes = await fetch('https://ipapi.co/json/');
+              const ipapiRes = await fetch('https://ipapi.co/json/', { signal: controller.signal });
               const ipapiData = await ipapiRes.json();
               if (ipapiData && ipapiData.ip) {
                 detectedIp = ipapiData.ip;
               }
             } catch (e2) {
+              if (controller.signal.aborted) return;
               console.warn('Backup IP fetch failed:', e2);
             }
           }
         }
 
+        if (controller.signal.aborted) return;
         setUserIp(detectedIp);
         setLanIp(detectedLan);
-        setConnectionStatus('idle');
+        finishMetadata();
       })
       .catch(async (err) => {
+        if (controller.signal.aborted) return;
         console.warn('Network metadata unavailable; using offline-safe localhost fallback:', err);
         let fallbackIp = '127.0.0.1';
         if (navigator.onLine) {
           try {
-            const ipifyRes = await fetch('https://api.ipify.org?format=json');
+            const ipifyRes = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
             const ipifyData = await ipifyRes.json();
             if (ipifyData && ipifyData.ip) {
               fallbackIp = ipifyData.ip;
             }
           } catch (e) {
+            if (controller.signal.aborted) return;
             console.warn('Direct ipify fetch failed:', e);
           }
         }
+        if (controller.signal.aborted) return;
         setUserIp(fallbackIp);
         setLanIp('127.0.0.1');
-        setConnectionStatus('idle');
+        finishMetadata();
       });
+    return () => controller.abort();
   }, [getApiUrl, isOnline, setConnectionError, setConnectionStatus]);
 
   const applyMatchmakerUrl = useCallback(() => {
-    let cleanUrl = customUrlInput.trim();
-    if (!cleanUrl) return false;
-    if (!cleanUrl.startsWith('ws://') && !cleanUrl.startsWith('wss://')) {
-      const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-      cleanUrl = protocol + cleanUrl;
+    try {
+      const cleanUrl = normalizeRelayWsUrl(customUrlInput, window.location.protocol);
+      localStorage.setItem(MATCHMAKER_URL_STORAGE_KEY, cleanUrl);
+      setCustomUrlInput(cleanUrl);
+      setEndpointRevision(previous => previous + 1);
+      setConnectionError('Matchmaker updated. Reconnecting...');
+      return true;
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : 'Could not save the relay URL.');
+      return false;
     }
-    localStorage.setItem('ibrawls_matchmaker_url', cleanUrl);
-    setCustomUrlInput(cleanUrl);
-    setConnectionError('Matchmaker updated. Reconnecting...');
-    return true;
   }, [customUrlInput, setConnectionError]);
 
   const resetMatchmakerUrl = useCallback(() => {
-    localStorage.removeItem('ibrawls_matchmaker_url');
-    const defaultUrl = getSavedMatchmakerUrl();
-    setCustomUrlInput(defaultUrl);
-    setConnectionError('Reset to default. Reconnecting...');
-    return true;
+    try {
+      localStorage.removeItem(MATCHMAKER_URL_STORAGE_KEY);
+      setCustomUrlInput(getRelayWsUrl());
+      setEndpointRevision(previous => previous + 1);
+      setConnectionError('Reset to default. Reconnecting...');
+      return true;
+    } catch {
+      setConnectionError('Could not reset the relay URL because browser storage is unavailable.');
+      return false;
+    }
   }, [setConnectionError]);
 
   return {

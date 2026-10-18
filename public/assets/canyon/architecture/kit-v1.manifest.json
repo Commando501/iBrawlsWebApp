@@ -1,0 +1,235 @@
+{
+  "schema": 1,
+  "generator": "scripts/canyon/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; front +Z; all pivots center",
+  "provenance": "Original Blender-authored architecture and deterministic geological geometry; no third-party game assets",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 1485888,
+      "triangles": 37584,
+      "modules": {
+        "anchor-spire": {
+          "triangles": 8580,
+          "materialBatches": 4,
+          "dimensions": [
+            2.0,
+            8.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.0,
+            -4.0,
+            -1.0
+          ],
+          "boundsMax": [
+            1.0,
+            4.0,
+            1.0
+          ],
+          "maxHorizontalRadius": 1.0,
+          "pivot": "center"
+        },
+        "buffer-cover": {
+          "triangles": 3132,
+          "materialBatches": 5,
+          "dimensions": [
+            1.2,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.6,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.6,
+            1.0,
+            2.0
+          ],
+          "maxHorizontalRadius": 2.076921,
+          "pivot": "center"
+        },
+        "beacon-tower": {
+          "triangles": 15228,
+          "materialBatches": 6,
+          "dimensions": [
+            3.0,
+            40.0,
+            3.0
+          ],
+          "boundsMin": [
+            -1.5,
+            -20.0,
+            -1.5
+          ],
+          "boundsMax": [
+            1.5,
+            20.0,
+            1.5
+          ],
+          "maxHorizontalRadius": 2.084041,
+          "pivot": "center"
+        },
+        "canyon-cliff": {
+          "triangles": 10644,
+          "materialBatches": 1,
+          "dimensions": [
+            20.0,
+            30.0,
+            12.0
+          ],
+          "boundsMin": [
+            -10.0,
+            -15.0,
+            -6.0
+          ],
+          "boundsMax": [
+            10.0,
+            15.0,
+            6.0
+          ],
+          "maxHorizontalRadius": 10.160267,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 381948,
+      "triangles": 7736,
+      "modules": {
+        "anchor-spire": {
+          "triangles": 1412,
+          "materialBatches": 4,
+          "dimensions": [
+            2.0,
+            8.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.0,
+            -4.0,
+            -1.0
+          ],
+          "boundsMax": [
+            1.0,
+            4.0,
+            1.0
+          ],
+          "maxHorizontalRadius": 1.0,
+          "pivot": "center"
+        },
+        "buffer-cover": {
+          "triangles": 660,
+          "materialBatches": 5,
+          "dimensions": [
+            1.2,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.6,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.6,
+            1.0,
+            2.0
+          ],
+          "maxHorizontalRadius": 2.076921,
+          "pivot": "center"
+        },
+        "beacon-tower": {
+          "triangles": 3036,
+          "materialBatches": 6,
+          "dimensions": [
+            3.0,
+            40.0,
+            3.0
+          ],
+          "boundsMin": [
+            -1.5,
+            -20.0,
+            -1.5
+          ],
+          "boundsMax": [
+            1.5,
+            20.0,
+            1.5
+          ],
+          "maxHorizontalRadius": 2.058665,
+          "pivot": "center"
+        },
+        "canyon-cliff": {
+          "triangles": 2628,
+          "materialBatches": 1,
+          "dimensions": [
+            20.0,
+            30.0,
+            12.0
+          ],
+          "boundsMin": [
+            -10.0,
+            -15.0,
+            -6.0
+          ],
+          "boundsMax": [
+            10.0,
+            15.0,
+            6.0
+          ],
+          "maxHorizontalRadius": 10.092857,
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "canyon_alloy": {
+      "baseColor": "#526574",
+      "metalness": 0.72,
+      "roughness": 0.42,
+      "emissiveStrength": 0
+    },
+    "canyon_graphite": {
+      "baseColor": "#202c35",
+      "metalness": 0.35,
+      "roughness": 0.66,
+      "emissiveStrength": 0
+    },
+    "canyon_ceramic": {
+      "baseColor": "#bdc7c8",
+      "metalness": 0.1,
+      "roughness": 0.49,
+      "emissiveStrength": 0
+    },
+    "canyon_trim": {
+      "baseColor": "#a69266",
+      "metalness": 0.78,
+      "roughness": 0.36,
+      "emissiveStrength": 0
+    },
+    "canyon_cyan": {
+      "baseColor": "#4ac8da",
+      "metalness": 0.05,
+      "roughness": 0.33,
+      "emissiveStrength": 1.5
+    },
+    "canyon_warm": {
+      "baseColor": "#ffdeb0",
+      "metalness": 0.04,
+      "roughness": 0.35,
+      "emissiveStrength": 1.5
+    },
+    "canyon_rock": {
+      "baseColor": "#aaa49a",
+      "metalness": 0.0,
+      "roughness": 0.94,
+      "emissiveStrength": 0
+    }
+  }
+}

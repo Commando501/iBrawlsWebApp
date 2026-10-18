@@ -55,13 +55,27 @@ interface UseLobbyConnectionOptions {
   redactWsUrl: (url: string) => string;
   refreshMultiplayerPreset: (serverVersion?: number) => void;
   setConnectionError: Dispatch<SetStateAction<string>>;
-  handleQuickplayHostRef: MutableRefObject<(overrideCode?: string, lobbyConfig?: Partial<MatchLobbyConfig>, password?: string) => void>;
+  handleQuickplayHostRef: MutableRefObject<(overrideCode?: string, lobbyConfig?: Partial<MatchLobbyConfig>, password?: string, connectionModeOverride?: 'relay' | 'local') => void>;
   handleQuickplayJoinRef: MutableRefObject<(target: string, isObserver?: boolean, password?: string, inviteToken?: string, connectionModeOverride?: 'relay' | 'local') => void>;
 }
 
 const isOpenSocket = (socket: WebSocket | null): socket is WebSocket => {
   return Boolean(socket && socket.readyState === WebSocket.OPEN);
 };
+
+/** A local mode change must leave the server queue as well as hide its UI. */
+export function cancelQueuedQuickPlayIfIdle(
+  status: LobbyQuickPlayStatus,
+  socket: Pick<WebSocket, 'readyState' | 'send'> | null,
+  requested: MutableRefObject<boolean>,
+) {
+  if (status !== 'idle' || !requested.current) return;
+  requested.current = false;
+  if (socket?.readyState === 1) {
+    const packet: LobbyClientMessage = { type: 'quickplay_leave' };
+    socket.send(JSON.stringify(packet));
+  }
+}
 
 export function useLobbyConnection({
   isOnline,
@@ -92,38 +106,57 @@ export function useLobbyConnection({
   const [inviteNotifications, setInviteNotifications] = useState<string[]>([]);
   const [ping, setPing] = useState<number | undefined>(undefined);
   const [quickPlayStatus, setQuickPlayStatus] = useState<LobbyQuickPlayStatus>('idle');
+  const quickPlayRequestedRef = useRef(false);
   const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    cancelQueuedQuickPlayIfIdle(quickPlayStatus, menuSocket, quickPlayRequestedRef);
+  }, [quickPlayStatus, menuSocket]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
     let isDestroyed = false;
 
+    const clearConnectionState = () => {
+      setMenuSocket(null);
+      setClientId('');
+      clientIdRef.current = '';
+      setOnlineCount(0);
+      setOnlineClients([]);
+      setPing(undefined);
+      // The queue belongs to the disconnected lobby client; reconnecting does
+      // not restore it. Leaving "Searching" visible would strand Quick Play.
+      setQuickPlayStatus('idle');
+      quickPlayRequestedRef.current = false;
+      setActiveInvite(null);
+    };
+
     const connect = () => {
       if (isDestroyed) return;
 
       if (!navigator.onLine) {
-        setMenuSocket(null);
-        setOnlineCount(0);
-        setOnlineClients([]);
+        clearConnectionState();
         reconnectTimeout = setTimeout(connect, 5000);
         return;
       }
 
       const wsUrl = buildLobbyWsUrl(playerName);
       console.log('Connecting persistent lobby socket to:', redactWsUrl(wsUrl));
-      ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl);
+      ws = socket;
 
-      ws.onopen = () => {
+      socket.onopen = () => {
         console.log('Lobby network established.');
-        if (isDestroyed) {
-          ws?.close();
+        if (isDestroyed || ws !== socket) {
+          socket.close();
           return;
         }
-        setMenuSocket(ws);
+        setMenuSocket(socket);
       };
 
-      ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
+        if (isDestroyed || ws !== socket) return;
         try {
           const data = JSON.parse(event.data) as LobbyMessage;
 
@@ -165,11 +198,16 @@ export function useLobbyConnection({
               }];
             });
           } else if (data.type === 'quickplay_queued') {
+            if (!quickPlayRequestedRef.current) return;
             setQuickPlayStatus('searching');
           } else if (data.type === 'quickplay_host') {
+            if (!quickPlayRequestedRef.current) return;
+            quickPlayRequestedRef.current = false;
             setQuickPlayStatus('matching');
-            handleQuickplayHostRef.current(data.roomCode, { access: 'open' });
+            handleQuickplayHostRef.current(data.roomCode, { access: 'open' }, undefined, 'relay');
           } else if (data.type === 'quickplay_match_found') {
+            if (!quickPlayRequestedRef.current) return;
+            quickPlayRequestedRef.current = false;
             setQuickPlayStatus('idle');
             handleQuickplayJoinRef.current(data.roomCode, false, undefined, undefined, 'relay');
           } else if (data.type === 'signed_in_elsewhere') {
@@ -182,8 +220,9 @@ export function useLobbyConnection({
         }
       };
 
-      ws.onclose = (event) => {
-        setMenuSocket(null);
+      socket.onclose = (event) => {
+        if (isDestroyed || ws !== socket) return;
+        clearConnectionState();
         if (event.code === SIGNED_IN_ELSEWHERE_CLOSE_CODE) {
           setConnectionError(event.reason || SIGNED_IN_ELSEWHERE_MESSAGE);
           setOnlineCount(0);
@@ -195,11 +234,13 @@ export function useLobbyConnection({
         }
       };
 
-      ws.onerror = () => {
-        ws?.close();
+      socket.onerror = () => {
+        if (isDestroyed || ws !== socket) return;
+        socket.close();
       };
     };
 
+    clearConnectionState();
     connect();
 
     return () => {
@@ -318,12 +359,14 @@ export function useLobbyConnection({
       return;
     }
     setConnectionError('');
+    quickPlayRequestedRef.current = true;
     setQuickPlayStatus('searching');
     const packet: LobbyClientMessage = { type: 'quickplay_join' };
     menuSocket.send(JSON.stringify(packet));
   }, [menuSocket, setConnectionError]);
 
   const handleCancelQuickPlay = useCallback(() => {
+    quickPlayRequestedRef.current = false;
     if (isOpenSocket(menuSocket)) {
       const packet: LobbyClientMessage = { type: 'quickplay_leave' };
       menuSocket.send(JSON.stringify(packet));

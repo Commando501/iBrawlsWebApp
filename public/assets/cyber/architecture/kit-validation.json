@@ -1,0 +1,139 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 29168,
+      "batches": 22,
+      "bytes": 1333632,
+      "modules": {
+        "tech-column": {
+          "dimensions": [
+            1.8,
+            6,
+            1.8
+          ],
+          "triangles": 8244,
+          "materialBatches": 5,
+          "maximumSphereRadius": 3.119024,
+          "maximumHorizontalRadius": 0.9,
+          "pivot": "center"
+        },
+        "tactical-cover": {
+          "dimensions": [
+            4,
+            2.5,
+            0.8
+          ],
+          "triangles": 3180,
+          "materialBatches": 4,
+          "maximumSphereRadius": 2.365629,
+          "maximumHorizontalRadius": 2.029538,
+          "pivot": "center"
+        },
+        "recharge-crate": {
+          "dimensions": [
+            1.6,
+            1.6,
+            1.6
+          ],
+          "triangles": 4008,
+          "materialBatches": 4,
+          "maximumSphereRadius": 1.360019,
+          "maximumHorizontalRadius": 1.118116,
+          "pivot": "center"
+        },
+        "reactor-core": {
+          "dimensions": [
+            3.5,
+            3.5,
+            3.5
+          ],
+          "triangles": 5204,
+          "materialBatches": 5,
+          "maximumSphereRadius": 1.75,
+          "maximumHorizontalRadius": 1.75,
+          "pivot": "center"
+        },
+        "relay-fin": {
+          "dimensions": [
+            4,
+            14,
+            3
+          ],
+          "triangles": 8532,
+          "materialBatches": 4,
+          "maximumSphereRadius": 7.396475,
+          "maximumHorizontalRadius": 2.463277,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 5552,
+      "batches": 22,
+      "bytes": 339112,
+      "modules": {
+        "tech-column": {
+          "dimensions": [
+            1.8,
+            6,
+            1.8
+          ],
+          "triangles": 1396,
+          "materialBatches": 5,
+          "maximumSphereRadius": 3.119024,
+          "maximumHorizontalRadius": 0.9,
+          "pivot": "center"
+        },
+        "tactical-cover": {
+          "dimensions": [
+            4,
+            2.5,
+            0.8
+          ],
+          "triangles": 588,
+          "materialBatches": 4,
+          "maximumSphereRadius": 2.360307,
+          "maximumHorizontalRadius": 2.029538,
+          "pivot": "center"
+        },
+        "recharge-crate": {
+          "dimensions": [
+            1.6,
+            1.6,
+            1.6
+          ],
+          "triangles": 784,
+          "materialBatches": 4,
+          "maximumSphereRadius": 1.34553,
+          "maximumHorizontalRadius": 1.108974,
+          "pivot": "center"
+        },
+        "reactor-core": {
+          "dimensions": [
+            3.5,
+            3.5,
+            3.5
+          ],
+          "triangles": 1852,
+          "materialBatches": 5,
+          "maximumSphereRadius": 1.75,
+          "maximumHorizontalRadius": 1.75,
+          "pivot": "center"
+        },
+        "relay-fin": {
+          "dimensions": [
+            4,
+            14,
+            3
+          ],
+          "triangles": 932,
+          "materialBatches": 4,
+          "maximumSphereRadius": 7.396475,
+          "maximumHorizontalRadius": 2.449944,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

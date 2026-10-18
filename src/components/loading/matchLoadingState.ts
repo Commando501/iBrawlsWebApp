@@ -85,6 +85,16 @@ export function upsertLoadingSlots(
   return slots.reduce((next, slot) => upsertLoadingSlot(next, slot, now), roster);
 }
 
+export function restartLoadingParticipantTimeouts(
+  roster: Record<string, MultiplayerLoadingParticipant>,
+  now: number
+): Record<string, MultiplayerLoadingParticipant> {
+  return Object.fromEntries(Object.entries(roster).map(([clientId, participant]) => [
+    clientId,
+    participant.ready ? participant : { ...participant, timedOut: false, lastUpdatedAt: now },
+  ]));
+}
+
 export function upsertLoadingStatus(
   roster: Record<string, MultiplayerLoadingParticipant>,
   status: MultiplayerLoadingStatusPayload,
@@ -107,7 +117,7 @@ export function upsertLoadingStatus(
       visualModelPolicy: normalizeParticipantPolicy(status.visualModelPolicy) ?? existing?.visualModelPolicy,
       progress,
       stage: status.stage || existing?.stage || 'Loading',
-      ready: Boolean(status.ready) || progress >= 100,
+      ready: typeof status.ready === 'boolean' ? status.ready : progress >= 100,
       timedOut: false,
       lastUpdatedAt: now,
     },
@@ -127,12 +137,16 @@ export function removeLoadingParticipant(
 export function deriveMultiplayerLoadingSnapshot(
   roster: Record<string, MultiplayerLoadingParticipant>,
   now: number,
-  timeoutMs = MATCH_LOADING_TIMEOUT_MS
+  timeoutMs = MATCH_LOADING_TIMEOUT_MS,
+  localClientId?: string
 ): MultiplayerLoadingSnapshot {
   const participants = Object.values(roster)
     .map((participant) => ({
       ...participant,
-      timedOut: participant.timedOut || (!participant.ready && now - participant.lastUpdatedAt > timeoutMs),
+      // Remote silence may release the peer wait, but this client's own scene
+      // must finish loading before it can enter gameplay.
+      timedOut: participant.clientId !== localClientId
+        && (participant.timedOut || (!participant.ready && now - participant.lastUpdatedAt > timeoutMs)),
     }))
     .sort((a, b) => {
       const roleOrder = { host: 0, client: 1, observer: 2 };

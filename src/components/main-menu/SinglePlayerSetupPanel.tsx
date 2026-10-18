@@ -11,6 +11,7 @@ import { TournamentSetupPanel } from '../tournament/TournamentSetupPanel';
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
 interface SinglePlayerSetupPanelProps {
+  focused?: boolean;
   singlePlayerMode: SinglePlayerMode;
   setSinglePlayerMode: Dispatch<SetStateAction<SinglePlayerMode>>;
   adminSettings: UniversalSettings;
@@ -46,6 +47,7 @@ interface SinglePlayerSetupPanelProps {
 }
 
 export function SinglePlayerSetupPanel({
+  focused = false,
   singlePlayerMode,
   setSinglePlayerMode,
   adminSettings,
@@ -75,7 +77,7 @@ export function SinglePlayerSetupPanel({
 }: SinglePlayerSetupPanelProps) {
   return (
     <div className="flex flex-col h-full min-h-0 justify-between">
-      <div className="flex bg-black/50 p-1.5 rounded-xl border border-white/10 gap-2 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] mb-4 select-none">
+      {!focused && <div className="flex bg-black/50 p-1.5 rounded-xl border border-white/10 gap-2 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] mb-4 select-none">
         <button
           onClick={() => setSinglePlayerMode('sandbox')}
           className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
@@ -99,7 +101,7 @@ export function SinglePlayerSetupPanel({
         >
           AI Behavior Editor
         </button>
-      </div>
+      </div>}
 
       {singlePlayerMode === 'ai-editor' ? (
         <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
@@ -116,9 +118,9 @@ export function SinglePlayerSetupPanel({
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full min-h-0 overflow-y-auto pr-0.5">
+        <div className={focused ? 'menu-focused-setup' : 'grid grid-cols-1 md:grid-cols-2 gap-6 h-full min-h-0 overflow-y-auto pr-0.5'}>
           {/* Left Column: Sandbox Setup */}
-          <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
+          {(!focused || singlePlayerMode === 'sandbox') && <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
             <SandboxSetupPanel
               visualModelPolicy={normalizeVisualModelPolicy(adminSettings.visualModelPolicy)}
               onVisualModelPolicyChange={(visualModelPolicy) => {
@@ -127,10 +129,10 @@ export function SinglePlayerSetupPanel({
               onOpenBotSetup={onOpenBotSetup}
               isAdmin={isAdmin}
             />
-          </div>
+          </div>}
 
           {/* Right Column: Tournament Setup or Active Bracket */}
-          <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
+          {(!focused || singlePlayerMode === 'tournament') && <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
             {!tournamentState ? (
               <TournamentSetupPanel
                 aiPresets={aiPresets}
@@ -152,7 +154,7 @@ export function SinglePlayerSetupPanel({
                 onResetTournament={onResetTournament}
               />
             )}
-          </div>
+          </div>}
         </div>
       )}
     </div>

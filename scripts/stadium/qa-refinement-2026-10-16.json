@@ -1,0 +1,115 @@
+{
+  "date": "2026-10-16",
+  "map": "championship_stadium",
+  "kind": "Surface, lighting, and sprint-distance refinement",
+  "environment": {
+    "server": "localhost Vite development",
+    "browser": "Playwright Chromium",
+    "gpu": "NVIDIA GeForce RTX 4090 via ANGLE Direct3D11",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "canvas": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "models": "Actual V3 Iron Vanguard: local player plus seven AI",
+    "mode": "Grifball 4v4"
+  },
+  "method": "Independent live High/Low matches with normal AI, stationary first-person camera, 2s warmup plus 15s requestAnimationFrame interval sampling. Build/typecheck stopped before retained samples. Normal combat and round transitions were allowed; Low ended during a round countdown. Runs are not seeded or directly comparable across quality tiers. Counters include rendered passes/shadows.",
+  "performance": {
+    "high": {
+      "frames": 1896,
+      "meanFrameMs": 7.918723628691982,
+      "averageFps": 126.28297777392952,
+      "p50Ms": 7,
+      "p95Ms": 13.9,
+      "p99Ms": 14,
+      "maxDrawCalls": 248,
+      "maxRenderedTriangles": 911577,
+      "geometries": 168,
+      "textures": 39
+    },
+    "low": {
+      "frames": 1859,
+      "meanFrameMs": 8.072565895642818,
+      "averageFps": 123.87635021223572,
+      "p50Ms": 7,
+      "p95Ms": 13.9,
+      "p99Ms": 14,
+      "maxDrawCalls": 277,
+      "maxRenderedTriangles": 478497,
+      "geometries": 156,
+      "textures": 29
+    },
+    "earlierHighBeforeBeamCleanup": {
+      "averageFps": 111.7478510028653,
+      "p95Ms": 13.9,
+      "note": "Separate nondeterministic match; not evidence of a measured optimization delta."
+    }
+  },
+  "traversal": {
+    "layoutRevision": 2,
+    "physicalSizeMeters": {
+      "length": 123,
+      "width": 66.16
+    },
+    "playerBoundaryInsetMeters": 0.6,
+    "playerCenterTravelMeters": {
+      "length": 121.8,
+      "width": 64.96
+    },
+    "settings": {
+      "enableSprint": true,
+      "speedForwardPercent": 100,
+      "speedSprintPercent": 140,
+      "metersPerSecond": 8.12,
+      "globalDefaultsChanged": false
+    },
+    "automated": "Actual production horizontal movement, vertical integration, and boundary clamp: exactly 8s width / 15s length, both directions at 30/60/144Hz.",
+    "liveMethod": "Real W+Shift input in the actual loaded map. Set sandbox rules during timing, parked other actors away from the path, prevented player damage/ball carrying. No movement or collision implementation overridden. performance.now timer begins immediately after keydown and ends at boundary; browser scheduling introduces approximately one frame of uncertainty.",
+    "width": {
+      "wallSeconds": 7.989299999952316,
+      "startZ": -32.48,
+      "endZ": 32.48,
+      "maxSpeed": 8.12,
+      "sprintFrames": 1049,
+      "sampledFrames": 1049,
+      "reached": true
+    },
+    "length": {
+      "wallSeconds": 14.998800000071526,
+      "startX": -60.9,
+      "endX": 60.9,
+      "maxSpeed": 8.12,
+      "sprintFrames": 1938,
+      "sampledFrames": 1938,
+      "reached": true
+    }
+  },
+  "checks": {
+    "stadiumTests": "53/53 passed",
+    "relatedLayoutReplayNavigationTests": "82 passed in resize workstream; overlapping coverage is not added to the stadium total",
+    "typecheck": "passed",
+    "viteClientBuild": "passed; existing chunk-size warning",
+    "finalGameplayConsoleErrors": 0,
+    "shaderCompiledAndRendered": true,
+    "highAndLowActualVanguardBots": 7,
+    "legacyReplayGeometry": "Original 104 x 46 retained for unversioned/revision1 recordings in playback, loading previews, and heatmaps",
+    "visualReview": "Floor albedo remains quiet; shallow joints/roughness add detail through highlights. Wall cassettes, louvers, kickplates and trim supply stronger detail outside the court. Soft High beams fade above floor, removing hard cone silhouettes."
+  },
+  "captures": [
+    "output/playwright/stadium-refinement/high-initial.png",
+    "output/playwright/stadium-refinement/high-gameplay.png",
+    "output/playwright/stadium-refinement/high-overview.png",
+    "output/playwright/stadium-refinement/low-gameplay.png"
+  ],
+  "limitations": [
+    "Short high-end GPU samples do not certify 60 FPS on slower GPUs or at higher resolutions.",
+    "Online premade maps still synchronize by map ID; all peers must use the updated build for the resized layout. Mixed old/new build geometry negotiation is not implemented.",
+    "Failed test-harness runs interrupted by development-page reloads were discarded and rerun after build completion.",
+    "Fallback loading and resource teardown coverage remain in test:stadium; the first-pass blocked-download browser capture is recorded separately in qa-report-2026-10-16.json."
+  ]
+}

@@ -1,5 +1,6 @@
 import { getRectHalfExtents } from '../../game/arenaDimensions';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
+import { resolveChampionshipStadiumReplayLayout } from '../../game/championshipStadiumLayout';
 import type { CustomMapData, ReplayFile } from '../../types';
 
 export interface TopDownMapBounds {
@@ -49,7 +50,7 @@ export function resolveTopDownCustomMap({
   }
 
   const premade = PREMADE_MAPS.find((map) => map.id === mapId);
-  if (premade) return { mapId, map: premade };
+  if (premade) return { mapId, map: replayData ? resolveChampionshipStadiumReplayLayout(premade, replayData.stadiumLayoutRevision) : premade };
 
   if (typeof localStorage !== 'undefined' && mapId !== 'hangar' && mapId !== 'circle') {
     const stored = localStorage.getItem(`map_${mapId}`);

@@ -1,0 +1,282 @@
+{
+  "schema": 1,
+  "generator": "scripts/cyber/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; baked child transforms; tactical cover width on X",
+  "provenance": "Original Blender-authored architecture; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 1333632,
+      "triangles": 29168,
+      "modules": {
+        "tech-column": {
+          "triangles": 8244,
+          "materialBatches": 5,
+          "dimensions": [
+            1.8,
+            6.0,
+            1.8
+          ],
+          "boundsMin": [
+            -0.9,
+            -3.0,
+            -0.9
+          ],
+          "boundsMax": [
+            0.9,
+            3.0,
+            0.9
+          ],
+          "maximumSphereRadius": 3.119024,
+          "maximumHorizontalRadius": 0.9,
+          "pivot": "center"
+        },
+        "tactical-cover": {
+          "triangles": 3180,
+          "materialBatches": 4,
+          "dimensions": [
+            4.0,
+            2.5,
+            0.8
+          ],
+          "boundsMin": [
+            -2.0,
+            -1.25,
+            -0.4
+          ],
+          "boundsMax": [
+            2.0,
+            1.25,
+            0.4
+          ],
+          "maximumSphereRadius": 2.365629,
+          "maximumHorizontalRadius": 2.029538,
+          "pivot": "center"
+        },
+        "recharge-crate": {
+          "triangles": 4008,
+          "materialBatches": 4,
+          "dimensions": [
+            1.6,
+            1.6,
+            1.6
+          ],
+          "boundsMin": [
+            -0.8,
+            -0.8,
+            -0.8
+          ],
+          "boundsMax": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "maximumSphereRadius": 1.360019,
+          "maximumHorizontalRadius": 1.118116,
+          "pivot": "center"
+        },
+        "reactor-core": {
+          "triangles": 5204,
+          "materialBatches": 5,
+          "dimensions": [
+            3.5,
+            3.5,
+            3.5
+          ],
+          "boundsMin": [
+            -1.75,
+            -1.75,
+            -1.75
+          ],
+          "boundsMax": [
+            1.75,
+            1.75,
+            1.75
+          ],
+          "maximumSphereRadius": 1.75,
+          "maximumHorizontalRadius": 1.75,
+          "pivot": "center"
+        },
+        "relay-fin": {
+          "triangles": 8532,
+          "materialBatches": 4,
+          "dimensions": [
+            4.0,
+            14.0,
+            3.0
+          ],
+          "boundsMin": [
+            -2.0,
+            -7.0,
+            -1.5
+          ],
+          "boundsMax": [
+            2.0,
+            7.0,
+            1.5
+          ],
+          "maximumSphereRadius": 7.396475,
+          "maximumHorizontalRadius": 2.463277,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 339112,
+      "triangles": 5552,
+      "modules": {
+        "tech-column": {
+          "triangles": 1396,
+          "materialBatches": 5,
+          "dimensions": [
+            1.8,
+            6.0,
+            1.8
+          ],
+          "boundsMin": [
+            -0.9,
+            -3.0,
+            -0.9
+          ],
+          "boundsMax": [
+            0.9,
+            3.0,
+            0.9
+          ],
+          "maximumSphereRadius": 3.119024,
+          "maximumHorizontalRadius": 0.9,
+          "pivot": "center"
+        },
+        "tactical-cover": {
+          "triangles": 588,
+          "materialBatches": 4,
+          "dimensions": [
+            4.0,
+            2.5,
+            0.8
+          ],
+          "boundsMin": [
+            -2.0,
+            -1.25,
+            -0.4
+          ],
+          "boundsMax": [
+            2.0,
+            1.25,
+            0.4
+          ],
+          "maximumSphereRadius": 2.360307,
+          "maximumHorizontalRadius": 2.029538,
+          "pivot": "center"
+        },
+        "recharge-crate": {
+          "triangles": 784,
+          "materialBatches": 4,
+          "dimensions": [
+            1.6,
+            1.6,
+            1.6
+          ],
+          "boundsMin": [
+            -0.8,
+            -0.8,
+            -0.8
+          ],
+          "boundsMax": [
+            0.8,
+            0.8,
+            0.8
+          ],
+          "maximumSphereRadius": 1.34553,
+          "maximumHorizontalRadius": 1.108974,
+          "pivot": "center"
+        },
+        "reactor-core": {
+          "triangles": 1852,
+          "materialBatches": 5,
+          "dimensions": [
+            3.5,
+            3.5,
+            3.5
+          ],
+          "boundsMin": [
+            -1.75,
+            -1.75,
+            -1.75
+          ],
+          "boundsMax": [
+            1.75,
+            1.75,
+            1.75
+          ],
+          "maximumSphereRadius": 1.75,
+          "maximumHorizontalRadius": 1.75,
+          "pivot": "center"
+        },
+        "relay-fin": {
+          "triangles": 932,
+          "materialBatches": 4,
+          "dimensions": [
+            4.0,
+            14.0,
+            3.0
+          ],
+          "boundsMin": [
+            -2.0,
+            -7.0,
+            -1.5
+          ],
+          "boundsMax": [
+            2.0,
+            7.0,
+            1.5
+          ],
+          "maximumSphereRadius": 7.396475,
+          "maximumHorizontalRadius": 2.449944,
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "cyber_alloy": {
+      "baseColor": "#73858f",
+      "metalness": 0.68,
+      "roughness": 0.46,
+      "emissiveStrength": 0
+    },
+    "cyber_graphite": {
+      "baseColor": "#29343e",
+      "metalness": 0.28,
+      "roughness": 0.68,
+      "emissiveStrength": 0
+    },
+    "cyber_ceramic": {
+      "baseColor": "#b7c4c8",
+      "metalness": 0.08,
+      "roughness": 0.55,
+      "emissiveStrength": 0
+    },
+    "cyber_trim": {
+      "baseColor": "#9dabb0",
+      "metalness": 0.74,
+      "roughness": 0.4,
+      "emissiveStrength": 0
+    },
+    "cyber_cyan": {
+      "baseColor": "#83ced9",
+      "metalness": 0.04,
+      "roughness": 0.42,
+      "emissiveStrength": 0.65
+    },
+    "cyber_core": {
+      "baseColor": "#a18bcd",
+      "metalness": 0.02,
+      "roughness": 0.38,
+      "emissiveStrength": 1.15
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

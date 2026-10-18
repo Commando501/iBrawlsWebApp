@@ -57,6 +57,18 @@ assets/
 public/assets/*
 !public/assets/stadium/
 !public/assets/stadium/**
+!public/assets/canyon/
+!public/assets/canyon/**
+!public/assets/hangar/
+!public/assets/hangar/**
+!public/assets/cyber/
+!public/assets/cyber/**
+!public/assets/jungle/
+!public/assets/jungle/**
+!public/assets/asteroid/
+!public/assets/asteroid/**
+!public/assets/neon/
+!public/assets/neon/**
 
 reference/
 
@@ -64,6 +76,13 @@ reference/
 !public/assets/iron-vanguard/
 !public/assets/iron-vanguard/**
 
+# Menu captures rendered from the actual game assets
+!public/assets/menu/
+!public/assets/menu/**
+
 # Local animation tooling caches and dev-server process state
 /scripts/iron-vanguard/**/__pycache__/
 /.codex/ibrawls-vite.pid
+
+!public/assets/rainy/
+!public/assets/rainy/**

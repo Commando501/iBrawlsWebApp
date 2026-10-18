@@ -75,6 +75,10 @@ interface UseGameplayConnectionOptions {
   removeLoadingParticipantById: (clientId: string | undefined) => void;
 }
 
+export function getPlayerCountAfterParticipantLeft(count: number, role?: string): number {
+  return role === 'observer' ? count : Math.max(1, count - 1);
+}
+
 export function useGameplayConnection({
   connectionMode,
   userIp,
@@ -120,11 +124,22 @@ export function useGameplayConnection({
 }: UseGameplayConnectionOptions) {
   const multiplayerSocketRef = useRef(multiplayerSocket);
   const multiplayerRoleRef = useRef(multiplayerRole);
+  const isMultiplayerRef = useRef(isMultiplayer);
+  // Own the socket before its handshake completes so Cancel can also stop a
+  // pending connection. Only this socket may update the current session.
+  const connectionSocketRef = useRef(multiplayerSocket);
+
+  useEffect(() => () => {
+    const socket = connectionSocketRef.current;
+    connectionSocketRef.current = null;
+    socket?.close();
+  }, []);
 
   useEffect(() => {
     multiplayerSocketRef.current = multiplayerSocket;
     multiplayerRoleRef.current = multiplayerRole;
-  }, [multiplayerRole, multiplayerSocket]);
+    isMultiplayerRef.current = isMultiplayer;
+  }, [isMultiplayer, multiplayerRole, multiplayerSocket]);
 
   const applyLobbyConfig = useCallback((incoming: Partial<MatchLobbyConfig> | null | undefined) => {
     const normalized = normalizeMatchLobbyConfig(incoming);
@@ -163,6 +178,25 @@ export function useGameplayConnection({
     }));
   }, [getLoadingVisualModelPolicy]);
 
+  const seedLocalLoadingParticipant = useCallback((
+    data: { clientId?: string; playerName?: string; role?: GameplayMultiplayerRole; spawnSlot?: number; lobbyConfig?: Partial<MatchLobbyConfig> },
+    fallbackRole: GameplayMultiplayerRole,
+  ) => {
+    if (!data.clientId) return;
+    const role = data.role || fallbackRole || 'client';
+    // The relay's participants list contains peers only. Register our own
+    // acknowledged identity before the staging UI (and loading gate) reads it.
+    upsertLoadingParticipantSlot({
+      clientId: data.clientId,
+      role,
+      spawnSlot: getMultiplayerSpawnSlotFromMessage(data, role),
+      playerName: data.playerName || playerName,
+      hue: playerHue,
+      loadout: playerLoadout,
+      visualModelPolicy: getLoadingVisualModelPolicy(data.lobbyConfig),
+    });
+  }, [getLoadingVisualModelPolicy, playerHue, playerLoadout, playerName, upsertLoadingParticipantSlot]);
+
   const beginMatchFromLobbyConfig = useCallback((incoming: Partial<MatchLobbyConfig> | null | undefined) => {
     applyLobbyConfig(incoming);
     sfx.init();
@@ -184,6 +218,7 @@ export function useGameplayConnection({
     if (!multiplayerSocket) return;
 
     const handleMultiplayerMessage = (event: MessageEvent) => {
+      if (connectionSocketRef.current !== multiplayerSocket) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'sync' && data.action === 'chat') {
@@ -208,6 +243,7 @@ export function useGameplayConnection({
             applyLobbyConfig(data.lobbyConfig);
           }
           mergeLoadingParticipants(applyLoadingVisualModelPolicy(data.participants ?? data.otherPlayers, data.lobbyConfig));
+          seedLocalLoadingParticipant(data, multiplayerRole);
           if (data.matchStarted && data.lobbyConfig) {
             beginMatchFromLobbyConfig(data.lobbyConfig);
           }
@@ -251,7 +287,7 @@ export function useGameplayConnection({
           });
         } else if (data.type === 'player_left') {
           removeLoadingParticipantById(data.leftPlayerId);
-          setMultiplayerPlayerCount(count => Math.max(1, count - 1));
+          setMultiplayerPlayerCount(count => getPlayerCountAfterParticipantLeft(count, data.role));
         } else if (data.type === 'sync' && data.action === 'match_loading_status') {
           upsertLoadingParticipantStatus({
             clientId: data.senderId,
@@ -351,6 +387,7 @@ export function useGameplayConnection({
     getLoadingVisualModelPolicy,
     applyLoadingVisualModelPolicy,
     mergeLoadingParticipants,
+    seedLocalLoadingParticipant,
     upsertLoadingParticipantSlot,
     upsertLoadingParticipantStatus,
     removeLoadingParticipantById,
@@ -406,8 +443,12 @@ export function useGameplayConnection({
   const handleHostGame = useCallback((
     overrideCode?: string,
     lobbyConfigOverride?: Partial<MatchLobbyConfig>,
-    password?: string
+    password?: string,
+    connectionModeOverride?: GameplayConnectionMode
   ) => {
+    const previousSocket = connectionSocketRef.current;
+    connectionSocketRef.current = null;
+    previousSocket?.close();
     setConnectionError('');
     setConnectionStatus('hosting');
     setChatMessages([]);
@@ -433,14 +474,18 @@ export function useGameplayConnection({
     });
     setMatchLobbyConfig(outgoingLobbyConfig);
 
-    const baseWsUrl = connectionMode === 'relay'
+    const activeConnectionMode = connectionModeOverride ?? connectionMode;
+    const baseWsUrl = activeConnectionMode === 'relay'
       ? getWsUrl()
       : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const gameplayWsUrl = buildGameplayWsUrl(baseWsUrl, connectionMode === 'relay');
+    const gameplayWsUrl = buildGameplayWsUrl(baseWsUrl, activeConnectionMode === 'relay');
     console.log('WS Host connection target URL resolved to:', redactWsUrl(gameplayWsUrl));
     const ws = new WebSocket(gameplayWsUrl);
+    connectionSocketRef.current = ws;
+    let connectionFailed = false;
 
     ws.onopen = () => {
+      if (connectionSocketRef.current !== ws) return;
       console.log('WS Connection opened. Registering host...');
       ws.send(JSON.stringify({
         type: 'host',
@@ -456,9 +501,11 @@ export function useGameplayConnection({
     };
 
     const handleHostMessage = (event: MessageEvent) => {
+      if (connectionSocketRef.current !== ws) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'hosted') {
+          isMultiplayerRef.current = true;
           console.log('Successfully hosted lobby inside room of keys:', data.keys);
           setMultiplayerSocket(ws);
           setIsMultiplayer(true);
@@ -478,6 +525,7 @@ export function useGameplayConnection({
             visualModelPolicy: getLoadingVisualModelPolicy(data.lobbyConfig ?? outgoingLobbyConfig),
           }]);
         } else if (data.type === 'connected') {
+          isMultiplayerRef.current = true;
           ws.removeEventListener('message', handleHostMessage);
 
           setMultiplayerSocket(ws);
@@ -487,6 +535,7 @@ export function useGameplayConnection({
             setGameplayClientId(data.clientId);
           }
           mergeLoadingParticipants(applyLoadingVisualModelPolicy(data.participants ?? data.otherPlayers, data.lobbyConfig ?? outgoingLobbyConfig));
+          seedLocalLoadingParticipant(data, 'host');
           setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, 'host'));
           setConnectionStatus('connected');
           setOpponentClientId(data.clientClientId || 'Opponent');
@@ -498,6 +547,7 @@ export function useGameplayConnection({
             beginMatchFromLobbyConfig(data.lobbyConfig);
           }
         } else if (data.type === 'error') {
+          connectionFailed = true;
           setConnectionError(data.message);
           setConnectionStatus('error');
           ws.close();
@@ -510,19 +560,38 @@ export function useGameplayConnection({
     ws.addEventListener('message', handleHostMessage);
 
     ws.onclose = (event) => {
+      if (connectionSocketRef.current !== ws) return;
+      connectionSocketRef.current = null;
       console.log('Host socket disconnected.');
       if (event.code === SIGNED_IN_ELSEWHERE_CLOSE_CODE) {
         setConnectionError(event.reason || SIGNED_IN_ELSEWHERE_MESSAGE);
+        setConnectionStatus('error');
+      } else if (connectionFailed) {
+        setConnectionStatus('error');
+      } else if (event.code !== 1000) {
+        setConnectionError('Connection to the matchmaker was lost. Please try again.');
         setConnectionStatus('error');
       } else {
         setConnectionStatus('idle');
       }
       setMultiplayerSocket(null);
+      if (isMultiplayerRef.current) {
+        setIsPlaying(false);
+        setIsPaused(false);
+      }
+      isMultiplayerRef.current = false;
+      setIsMultiplayer(false);
+      setMultiplayerRole(null);
+      setGameplayClientId('');
+      setOpponentClientId('');
+      setMultiplayerPlayerCount(1);
       setMultiplayerSpawnSlot(0);
       setMatchLobbyConfig(null);
     };
 
     ws.onerror = (err) => {
+      if (connectionSocketRef.current !== ws) return;
+      connectionFailed = true;
       console.error('WebSocket Host Error:', err);
       setConnectionError('Matchmaker registration failed.');
       setConnectionStatus('error');
@@ -560,6 +629,7 @@ export function useGameplayConnection({
     getLoadingVisualModelPolicy,
     applyLoadingVisualModelPolicy,
     mergeLoadingParticipants,
+    seedLocalLoadingParticipant,
     setOpponentClientId,
     setIsPlaying,
     setIsPaused,
@@ -573,10 +643,13 @@ export function useGameplayConnection({
     inviteToken?: string,
     connectionModeOverride?: GameplayConnectionMode
   ) => {
-    if (!target) {
+    if (!target.trim()) {
       setConnectionError('Please provide a Host IP address or Room Code.');
       return;
     }
+    const previousSocket = connectionSocketRef.current;
+    connectionSocketRef.current = null;
+    previousSocket?.close();
     setJoinIpOrId(target);
     setConnectionError('');
     setConnectionStatus('connecting');
@@ -606,8 +679,11 @@ export function useGameplayConnection({
     const gameplayWsUrl = buildGameplayWsUrl(baseWsUrl, activeConnectionMode === 'relay');
     console.log('WS Join connection target URL resolved to:', redactWsUrl(gameplayWsUrl), 'isObserver:', isObserver);
     const ws = new WebSocket(gameplayWsUrl);
+    connectionSocketRef.current = ws;
+    let connectionFailed = false;
 
     ws.onopen = () => {
+      if (connectionSocketRef.current !== ws) return;
       console.log('WS Connection opened. Joining:', target, 'isObserver:', isObserver);
       ws.send(JSON.stringify({
         type: 'join',
@@ -622,9 +698,11 @@ export function useGameplayConnection({
     };
 
     const handleJoinMessage = (event: MessageEvent) => {
+      if (connectionSocketRef.current !== ws) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'connected') {
+          isMultiplayerRef.current = true;
           ws.removeEventListener('message', handleJoinMessage);
 
           setMultiplayerSocket(ws);
@@ -634,6 +712,7 @@ export function useGameplayConnection({
             setGameplayClientId(data.clientId);
           }
           mergeLoadingParticipants(applyLoadingVisualModelPolicy(data.participants ?? data.otherPlayers, data.lobbyConfig));
+          seedLocalLoadingParticipant(data, isObserver ? 'observer' : 'client');
           setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, data.role || 'client'));
           setConnectionStatus('connected');
           setOpponentClientId(data.hostClientId || 'Opponent');
@@ -646,7 +725,7 @@ export function useGameplayConnection({
           }
 
           setTimeout(() => {
-            if (ws.readyState === WebSocket.OPEN) {
+            if (connectionSocketRef.current === ws && ws.readyState === WebSocket.OPEN) {
               console.log('Sending request_map to host...');
               ws.send(JSON.stringify({
                 type: 'sync',
@@ -655,6 +734,7 @@ export function useGameplayConnection({
             }
           }, 100);
         } else if (data.type === 'error') {
+          connectionFailed = true;
           setConnectionError(data.message);
           setConnectionStatus('error');
           ws.close();
@@ -667,19 +747,38 @@ export function useGameplayConnection({
     ws.addEventListener('message', handleJoinMessage);
 
     ws.onclose = (event) => {
+      if (connectionSocketRef.current !== ws) return;
+      connectionSocketRef.current = null;
       console.log('Guest join socket disconnected.');
       if (event.code === SIGNED_IN_ELSEWHERE_CLOSE_CODE) {
         setConnectionError(event.reason || SIGNED_IN_ELSEWHERE_MESSAGE);
+        setConnectionStatus('error');
+      } else if (connectionFailed) {
+        setConnectionStatus('error');
+      } else if (event.code !== 1000) {
+        setConnectionError('Connection to the matchmaker was lost. Please try again.');
         setConnectionStatus('error');
       } else {
         setConnectionStatus('idle');
       }
       setMultiplayerSocket(null);
+      if (isMultiplayerRef.current) {
+        setIsPlaying(false);
+        setIsPaused(false);
+      }
+      isMultiplayerRef.current = false;
+      setIsMultiplayer(false);
+      setMultiplayerRole(null);
+      setGameplayClientId('');
+      setOpponentClientId('');
+      setMultiplayerPlayerCount(1);
       setMultiplayerSpawnSlot(0);
       setMatchLobbyConfig(null);
     };
 
     ws.onerror = (err) => {
+      if (connectionSocketRef.current !== ws) return;
+      connectionFailed = true;
       console.error('WebSocket Join Error:', err);
       setConnectionError('Matching connection failed.');
       setConnectionStatus('error');
@@ -705,6 +804,7 @@ export function useGameplayConnection({
     beginMatchFromLobbyConfig,
     applyLoadingVisualModelPolicy,
     mergeLoadingParticipants,
+    seedLocalLoadingParticipant,
     setMultiplayerSpawnSlot,
     setOpponentClientId,
     setIsPlaying,
@@ -727,9 +827,12 @@ export function useGameplayConnection({
   ]);
 
   const cancelHostOrJoin = useCallback(() => {
-    if (multiplayerSocket) {
-      multiplayerSocket.close();
-    }
+    const socket = connectionSocketRef.current;
+    connectionSocketRef.current = null;
+    multiplayerSocketRef.current = null;
+    multiplayerRoleRef.current = null;
+    isMultiplayerRef.current = false;
+    socket?.close();
     setConnectionStatus('idle');
     setConnectionError('');
     setMultiplayerSocket(null);
@@ -737,9 +840,10 @@ export function useGameplayConnection({
     setMultiplayerSpawnSlot(0);
     setIsMultiplayer(false);
     setMultiplayerRole(null);
+    setGameplayClientId('');
+    setOpponentClientId('');
     setMatchLobbyConfig(null);
   }, [
-    multiplayerSocket,
     setConnectionStatus,
     setConnectionError,
     setMultiplayerSocket,
@@ -747,6 +851,8 @@ export function useGameplayConnection({
     setMultiplayerSpawnSlot,
     setIsMultiplayer,
     setMultiplayerRole,
+    setGameplayClientId,
+    setOpponentClientId,
     setMatchLobbyConfig,
   ]);
 

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { MENU_LOCATION_KEY, parseMenuLocation, navigateMenu, menuBackTarget, type MenuScreen, type MenuSettingsSection } from './menuNavigation';
 
 export type MainMenuParent = 'play' | 'customization' | 'tools' | 'system';
 export type MainMenuContentParent = Exclude<MainMenuParent, 'tools'>;
@@ -95,6 +96,27 @@ export function useMainMenuNav({ onNavChange }: UseMainMenuNavOptions = {}) {
     }
   });
 
+  const [location, setLocation] = useState(() => {
+    try { return parseMenuLocation(localStorage.getItem(MENU_LOCATION_KEY), nav); }
+    catch { return parseMenuLocation(null, nav); }
+  });
+  const selectDestination = useCallback((screen: MenuScreen, section?: MenuSettingsSection) => {
+    setLocation(previous => {
+      const next = navigateMenu(previous, screen, section);
+      try { localStorage.setItem(MENU_LOCATION_KEY, JSON.stringify(next)); } catch { /* In-memory navigation remains available. */ }
+      return next;
+    });
+    onNavChange?.();
+  }, [onNavChange]);
+  const goBack = useCallback(() => {
+    setLocation(previous => {
+      const next = navigateMenu(previous, menuBackTarget(previous));
+      try { localStorage.setItem(MENU_LOCATION_KEY, JSON.stringify(next)); } catch { /* In-memory navigation remains available. */ }
+      return next;
+    });
+    onNavChange?.();
+  }, [onNavChange]);
+
   const updateNav = useCallback((patch: Partial<MainMenuNavState>) => {
     setNav((previous) => {
       const next = { ...previous, ...patch };
@@ -109,6 +131,7 @@ export function useMainMenuNav({ onNavChange }: UseMainMenuNavOptions = {}) {
   }, [onNavChange]);
 
   const selectParent = useCallback((parent: MainMenuParent) => {
+    selectDestination(parent === 'tools' ? 'create' : parent === 'customization' ? 'armory' : parent === 'system' ? 'settings' : 'play');
     setNav((previous) => {
       const next = selectMainMenuParentState(previous, parent);
       try {
@@ -119,22 +142,28 @@ export function useMainMenuNav({ onNavChange }: UseMainMenuNavOptions = {}) {
       return next;
     });
     onNavChange?.();
-  }, [onNavChange]);
+  }, [onNavChange, selectDestination]);
 
   const selectPlayChild = useCallback((playChild: MainMenuTab) => {
+    selectDestination(playChild === 'theater' ? 'theater' : playChild === 'multi' ? 'online' : 'training');
     updateNav({ parent: 'play', contentParent: 'play', playChild });
-  }, [updateNav]);
+  }, [updateNav, selectDestination]);
 
   const selectCustomizationChild = useCallback((customizationChild: CustomizationChild) => {
+    selectDestination(customizationChild === 'armory' ? 'armory' : 'settings', customizationChild === 'gamepad' ? 'gamepad' : 'controls');
     updateNav({ parent: 'customization', contentParent: 'customization', customizationChild });
-  }, [updateNav]);
+  }, [updateNav, selectDestination]);
 
   const selectSystemChild = useCallback((systemChild: SystemChild) => {
+    selectDestination(systemChild === 'service' ? 'career' : 'settings', 'saves');
     updateNav({ parent: 'system', contentParent: 'system', systemChild });
-  }, [updateNav]);
+  }, [updateNav, selectDestination]);
 
   return {
     nav,
+    location,
+    selectDestination,
+    goBack,
     selectParent,
     selectPlayChild,
     selectCustomizationChild,

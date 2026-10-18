@@ -1,0 +1,290 @@
+{
+  "schema": 1,
+  "generator": "scripts/jungle/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; baked child transforms; ruined wall width on X",
+  "provenance": "Original Blender-authored natural forms and relic architecture; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 856700,
+      "triangles": 13752,
+      "modules": {
+        "relic-spire": {
+          "triangles": 2828,
+          "materialBatches": 5,
+          "dimensions": [
+            1.2,
+            4.0,
+            1.2
+          ],
+          "boundsMin": [
+            -0.6,
+            -2.0,
+            -0.6
+          ],
+          "boundsMax": [
+            0.6,
+            2.0,
+            0.6
+          ],
+          "maximumHorizontalRadius": 0.6,
+          "pivot": "center"
+        },
+        "moss-boulder": {
+          "triangles": 688,
+          "materialBatches": 2,
+          "dimensions": [
+            3.0,
+            3.0,
+            3.0
+          ],
+          "boundsMin": [
+            -1.5,
+            -1.5,
+            -1.5
+          ],
+          "boundsMax": [
+            1.5,
+            1.5,
+            1.5
+          ],
+          "maximumHorizontalRadius": 1.620158,
+          "pivot": "center"
+        },
+        "ancient-trunk": {
+          "triangles": 800,
+          "materialBatches": 2,
+          "dimensions": [
+            2.0,
+            7.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.0,
+            -3.5,
+            -1.0
+          ],
+          "boundsMax": [
+            1.0,
+            3.5,
+            1.0
+          ],
+          "maximumHorizontalRadius": 1.0,
+          "pivot": "center"
+        },
+        "ruined-wall": {
+          "triangles": 3048,
+          "materialBatches": 4,
+          "dimensions": [
+            3.0,
+            2.0,
+            0.6
+          ],
+          "boundsMin": [
+            -1.5,
+            -1.0,
+            -0.3
+          ],
+          "boundsMax": [
+            1.5,
+            1.0,
+            0.3
+          ],
+          "maximumHorizontalRadius": 1.521521,
+          "pivot": "center"
+        },
+        "jungle-canopy": {
+          "triangles": 6388,
+          "materialBatches": 3,
+          "dimensions": [
+            12.0,
+            24.0,
+            12.0
+          ],
+          "boundsMin": [
+            -6.0,
+            -12.0,
+            -6.0
+          ],
+          "boundsMax": [
+            6.0,
+            12.0,
+            6.0
+          ],
+          "maximumHorizontalRadius": 6.927353,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 333408,
+      "triangles": 4680,
+      "modules": {
+        "relic-spire": {
+          "triangles": 844,
+          "materialBatches": 5,
+          "dimensions": [
+            1.2,
+            4.0,
+            1.2
+          ],
+          "boundsMin": [
+            -0.6,
+            -2.0,
+            -0.6
+          ],
+          "boundsMax": [
+            0.6,
+            2.0,
+            0.6
+          ],
+          "maximumHorizontalRadius": 0.6,
+          "pivot": "center"
+        },
+        "moss-boulder": {
+          "triangles": 240,
+          "materialBatches": 2,
+          "dimensions": [
+            3.0,
+            3.0,
+            3.0
+          ],
+          "boundsMin": [
+            -1.5,
+            -1.5,
+            -1.5
+          ],
+          "boundsMax": [
+            1.5,
+            1.5,
+            1.5
+          ],
+          "maximumHorizontalRadius": 1.647808,
+          "pivot": "center"
+        },
+        "ancient-trunk": {
+          "triangles": 312,
+          "materialBatches": 2,
+          "dimensions": [
+            2.0,
+            7.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.0,
+            -3.5,
+            -1.0
+          ],
+          "boundsMax": [
+            1.0,
+            3.5,
+            1.0
+          ],
+          "maximumHorizontalRadius": 1.0,
+          "pivot": "center"
+        },
+        "ruined-wall": {
+          "triangles": 664,
+          "materialBatches": 4,
+          "dimensions": [
+            3.0,
+            2.0,
+            0.6
+          ],
+          "boundsMin": [
+            -1.5,
+            -1.0,
+            -0.3
+          ],
+          "boundsMax": [
+            1.5,
+            1.0,
+            0.3
+          ],
+          "maximumHorizontalRadius": 1.521521,
+          "pivot": "center"
+        },
+        "jungle-canopy": {
+          "triangles": 2620,
+          "materialBatches": 3,
+          "dimensions": [
+            12.0,
+            24.0,
+            12.0
+          ],
+          "boundsMin": [
+            -6.0,
+            -12.0,
+            -6.0
+          ],
+          "boundsMax": [
+            6.0,
+            12.0,
+            6.0
+          ],
+          "maximumHorizontalRadius": 7.175333,
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "jungle_stone": {
+      "baseColor": "#8c9487",
+      "metalness": 0.02,
+      "roughness": 0.9,
+      "emissiveStrength": 0
+    },
+    "jungle_bark": {
+      "baseColor": "#5e5547",
+      "metalness": 0.0,
+      "roughness": 0.96,
+      "emissiveStrength": 0
+    },
+    "jungle_moss": {
+      "baseColor": "#52664a",
+      "metalness": 0.0,
+      "roughness": 0.94,
+      "emissiveStrength": 0
+    },
+    "jungle_ceramic": {
+      "baseColor": "#aeb7ab",
+      "metalness": 0.06,
+      "roughness": 0.73,
+      "emissiveStrength": 0
+    },
+    "jungle_alloy": {
+      "baseColor": "#64716c",
+      "metalness": 0.54,
+      "roughness": 0.65,
+      "emissiveStrength": 0
+    },
+    "jungle_graphite": {
+      "baseColor": "#35413d",
+      "metalness": 0.16,
+      "roughness": 0.8,
+      "emissiveStrength": 0
+    },
+    "jungle_jade": {
+      "baseColor": "#76b7a1",
+      "metalness": 0.05,
+      "roughness": 0.4,
+      "emissiveStrength": 0.45
+    },
+    "jungle_leaf": {
+      "baseColor": "#3d674c",
+      "metalness": 0.0,
+      "roughness": 0.88,
+      "emissiveStrength": 0
+    },
+    "jungle_leaf_light": {
+      "baseColor": "#62805a",
+      "metalness": 0.0,
+      "roughness": 0.86,
+      "emissiveStrength": 0
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

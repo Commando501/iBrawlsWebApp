@@ -9,7 +9,9 @@ export function buildCustomMapSynthwaveSceneryForRefs({
   refs: GrifballThreeRefs;
   activeCustomMap: CustomMapData;
 }): void {
-  if (activeCustomMap.theme !== 'synthwave') return;
+  // The shipped Outrun preset owns its optimized kit and shader sunset.
+  // User-authored synthwave maps retain the original scenery.
+  if (activeCustomMap.theme !== 'synthwave' || activeCustomMap.id === 'synthwave_grid_arena') return;
 
   const scene = refs.scene;
   if (!scene) return;

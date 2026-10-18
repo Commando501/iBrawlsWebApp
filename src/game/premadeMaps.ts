@@ -4,12 +4,15 @@
  */
 
 import { CustomMapData } from '../types';
+import { getChampionshipStadiumLayout } from './championshipStadiumLayout';
+
+const stadiumLayout = getChampionshipStadiumLayout();
 
 export const PREMADE_MAPS: CustomMapData[] = [
   {
     id: 'cyber_hex_arena',
     name: 'Cyber Hex Grid',
-    description: 'A sci-fi tactical holodeck featuring glowing neon pillars and a central energy core. Great for fast-paced skirmishes.',
+    description: 'An armored tactical arena with recessed cyan columns, a contained violet reactor, and a quiet hex-panel floor.',
     author: 'System Presets',
     theme: 'cyberpunk',
     arenaRadius: 20,
@@ -203,7 +206,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
   {
     id: 'botanical_outpost',
     name: 'Jungle Ruined Outpost',
-    description: 'A crumbling modular training center overtaken by nature. Features stone boulders, wooden structures, and mossy cover.',
+    description: 'A weathered training outpost beneath a jungle canopy, with mossy stone cover, ancient trunks, and a jade-powered relic.',
     author: 'System Presets',
     theme: 'nature',
     arenaRadius: 21,
@@ -763,7 +766,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
   {
     id: 'synthwave_grid_arena',
     name: 'Neon Outrun Grid',
-    description: 'A suspended rectangular retro holodeck hovering over a glowing cyber city at twilight. Features glowing neon palm trees, background light beams, and a colossal striped sunset sun.',
+    description: 'A suspended arena above a dusk city, with armored light beacons, sculptural neon palms, a striped sunset, and a quiet panel floor.',
     author: 'Outrun Architect',
     theme: 'synthwave',
     mapShape: 'rectangular',
@@ -943,7 +946,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
   {
     id: 'rainy_industrial_streets',
     name: 'Rainy Cyber Streets',
-    description: 'A dark, rain-slicked industrial street court under warm sodium spotlights, framed by towering skyscrapers and a giant neon dog billboard.',
+    description: 'A rain-slicked street court with armored cover, weathered city facades, warm sodium lamps and the signature neon dog billboard.',
     author: 'Urban Architect',
     theme: 'rainy_streets',
     mapShape: 'rectangular',
@@ -1334,41 +1337,19 @@ export const PREMADE_MAPS: CustomMapData[] = [
   {
     id: 'championship_stadium',
     name: 'Championship Stadium',
-    description: 'An elite, high-tech steel arena framed by cheering stands, brilliant stadium spotlights, a massive center scoreboard, and glowing team boundary lines.',
+    description: 'A high-tech championship court framed by grandstands, stadium lighting, and clear team zones. Sized for 8-second width and 15-second length sprints at standard sprint speed.',
     author: 'Spartan Architect',
     theme: 'grifball_stadium',
     mapShape: 'rectangular',
-    arenaRadius: 52,
-    arenaHalfExtents: { x: 52, z: 23 },
+    arenaRadius: stadiumLayout.halfExtents.x,
+    arenaHalfExtents: stadiumLayout.halfExtents,
     skyboxHue: 220,
     skyboxBrightness: 4,
     skyboxTexture: 'grifball_stadium',
     fogColor: '#0b0c10',
-    fogDensity: 0.015,
-    spawnPoints: [
-      { x: -47, y: 0, z: -18 },
-      { x: -47, y: 0, z: -9 },
-      { x: -47, y: 0, z: 9 },
-      { x: -47, y: 0, z: 18 },
-      { x: 47, y: 0, z: -18 },
-      { x: 47, y: 0, z: -9 },
-      { x: 47, y: 0, z: 9 },
-      { x: 47, y: 0, z: 18 }
-    ],
-    teamSpawns: {
-      blue: [
-        { x: -47, y: 0, z: -18 },
-        { x: -47, y: 0, z: -9 },
-        { x: -47, y: 0, z: 9 },
-        { x: -47, y: 0, z: 18 }
-      ],
-      red: [
-        { x: 47, y: 0, z: -18 },
-        { x: 47, y: 0, z: -9 },
-        { x: 47, y: 0, z: 9 },
-        { x: 47, y: 0, z: 18 }
-      ]
-    },
+    fogDensity: stadiumLayout.fogDensity,
+    spawnPoints: [...stadiumLayout.teamSpawns.blue, ...stadiumLayout.teamSpawns.red],
+    teamSpawns: stadiumLayout.teamSpawns,
     lighting: {
       ambientColor: '#1f2833',
       ambientIntensity: 0.85,
@@ -1376,8 +1357,8 @@ export const PREMADE_MAPS: CustomMapData[] = [
       directIntensity: 2.8,
       directPosition: { x: -8, y: 25, z: -8 },
       pointLights: [
-        { id: 'stadium_blue_light_w', color: '#00ffff', intensity: 4.5, distance: 25, decay: 1.2, position: { x: -47, y: 4, z: 0 } },
-        { id: 'stadium_red_light_e', color: '#ff3344', intensity: 4.5, distance: 25, decay: 1.2, position: { x: 47, y: 4, z: 0 } }
+        { id: 'stadium_blue_light_w', color: '#00ffff', intensity: 4.5, distance: 25, decay: 1.2, position: { x: -stadiumLayout.goalX, y: 4, z: 0 } },
+        { id: 'stadium_red_light_e', color: '#ff3344', intensity: 4.5, distance: 25, decay: 1.2, position: { x: stadiumLayout.goalX, y: 4, z: 0 } }
       ]
     },
     objects: [
@@ -1386,7 +1367,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
         id: 'grifball_goal_blue',
         name: 'Blue Goal Plate',
         type: 'cylinder',
-        position: { x: -47, y: 0.06, z: 0 },
+        position: { x: -stadiumLayout.goalX, y: 0.06, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 1.1, y: 0.12, z: 1.1 },
         color: '#10342f',
@@ -1406,7 +1387,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
         id: 'grifball_goal_red',
         name: 'Red Goal Plate',
         type: 'cylinder',
-        position: { x: 47, y: 0.06, z: 0 },
+        position: { x: stadiumLayout.goalX, y: 0.06, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 1.1, y: 0.12, z: 1.1 },
         color: '#10342f',

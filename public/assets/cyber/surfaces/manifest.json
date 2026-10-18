@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "generator": "scripts/cyber-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "floorTileMeters": [
+    6,
+    5.196152422706632
+  ],
+  "floorUVRepeat": [
+    1,
+    1.1547005383792517
+  ],
+  "hexRadiusMeters": 2,
+  "hexFlatToFlatMeters": 3.4641016151377544,
+  "floorAlbedoStatistics": {
+    "min": 222,
+    "max": 239,
+    "mean": 235.76563930511475,
+    "standardDeviation": 1.3304760150763042
+  },
+  "files": [
+    {
+      "path": "assets/cyber/surfaces/hex-floor-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 161400,
+      "sha256": "541955810b09f2763aa23131fb2b074fabac2cf9548fed3ea5e64db9e046ed7c",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/cyber/surfaces/hex-floor-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 53783,
+      "sha256": "d50cfd6a837ccf906ce0e78bdfaf92d9ead3263784168f4a4e02e24ceca1d181",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/cyber/surfaces/hex-floor-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 678649,
+      "sha256": "d560469d2f29957e2485ec4b90f92e25945a53e20688aff488004b056811e39b",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/cyber/surfaces/hex-floor-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 376718,
+      "sha256": "f9780b996d93f39feb56fa8514811a9561414bdf10f285533564adae17dff982",
+      "colorSpace": "linear / no color space"
+    }
+  ],
+  "design": "Quiet slate composite hex tiles with narrow recessed joints, submillimetre coating grain and broad roughness variation. Architecture separately reuses the approved Stadium generated ceramic and coating maps. No baked lighting, lettering, logos, bright grid or high-contrast grunge."
+}

@@ -1,0 +1,107 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 17888,
+      "batches": 17,
+      "bytes": 876704,
+      "modules": {
+        "beacon-column": {
+          "dimensions": [
+            1.5,
+            8,
+            1.5
+          ],
+          "triangles": 3408,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 0.75,
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "dimensions": [
+            1.2,
+            2,
+            4
+          ],
+          "triangles": 2036,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 2.078275,
+          "pivot": "center"
+        },
+        "city-tower": {
+          "dimensions": [
+            12,
+            38,
+            12
+          ],
+          "triangles": 8084,
+          "materialBatches": 5,
+          "maximumHorizontalRadius": 8.402439,
+          "pivot": "center"
+        },
+        "neon-palm": {
+          "dimensions": [
+            8,
+            12,
+            8
+          ],
+          "triangles": 4360,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 4.000028,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 6852,
+      "batches": 17,
+      "bytes": 419264,
+      "modules": {
+        "beacon-column": {
+          "dimensions": [
+            1.5,
+            8,
+            1.5
+          ],
+          "triangles": 1264,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 0.75,
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "dimensions": [
+            1.2,
+            2,
+            4
+          ],
+          "triangles": 788,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 2.078275,
+          "pivot": "center"
+        },
+        "city-tower": {
+          "dimensions": [
+            12,
+            38,
+            12
+          ],
+          "triangles": 3152,
+          "materialBatches": 5,
+          "maximumHorizontalRadius": 8.345059,
+          "pivot": "center"
+        },
+        "neon-palm": {
+          "dimensions": [
+            8,
+            12,
+            8
+          ],
+          "triangles": 1648,
+          "materialBatches": 4,
+          "maximumHorizontalRadius": 4.466342,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}
