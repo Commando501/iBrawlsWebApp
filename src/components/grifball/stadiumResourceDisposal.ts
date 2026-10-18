@@ -6,6 +6,7 @@ const STADIUM_RESOURCE_ROOTS = new Set([
   'stadium_field_markings',
   'stadium_scenery',
   'stadium_fill',
+  'stadium_directional_key',
 ]);
 
 /** Release scene-owned stadium resources without touching shared armor or sky caches. */
@@ -22,6 +23,7 @@ export function disposeStadiumResources(scene: THREE.Scene | null): void {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   const textures = new Set<THREE.Texture>();
+  const shadows = new Set<THREE.LightShadow>();
 
   for (const root of roots) {
     root.traverse((object) => {
@@ -34,6 +36,7 @@ export function disposeStadiumResources(scene: THREE.Scene | null): void {
         for (const material of assigned) materials.add(material);
       }
       if (object instanceof THREE.InstancedMesh) object.dispose();
+      if (object instanceof THREE.DirectionalLight || object instanceof THREE.SpotLight || object instanceof THREE.PointLight) shadows.add(object.shadow);
     });
   }
 
@@ -46,5 +49,6 @@ export function disposeStadiumResources(scene: THREE.Scene | null): void {
   for (const texture of textures) texture.dispose();
   for (const material of materials) material.dispose();
   for (const geometry of geometries) geometry.dispose();
+  for (const shadow of shadows) shadow.dispose();
   for (const root of roots) root.removeFromParent();
 }

@@ -1,6 +1,21 @@
 import * as THREE from 'three';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type GrifballThreeRefs } from './threeRefs';
+import {
+  createInstancedShockwaveBurst,
+  disposeInstancedShockwaveBurst,
+  updateInstancedShockwaveBurst,
+  type InstancedShockwaveBurst,
+} from './instancedShockwaveParticles';
+
+const shockwaveBursts = new WeakMap<GrifballThreeRefs, Set<InstancedShockwaveBurst>>();
+
+const disposeShockwaveBursts = (refs: GrifballThreeRefs): void => {
+  const bursts = shockwaveBursts.get(refs);
+  if (!bursts) return;
+  for (const burst of bursts) disposeInstancedShockwaveBurst(burst);
+  shockwaveBursts.delete(refs);
+};
 
 const disposeMeshMaterial = (material: THREE.Material | THREE.Material[]): void => {
   if (Array.isArray(material)) {
@@ -117,46 +132,12 @@ export function spawnVoxelShockwaveParticlesForThreeRefs(
   const scene = refs.scene;
   if (!scene) return;
 
-  const count = 35;
-  const voxelGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-  const voxelMatCache = new Map<string, THREE.Material>();
-
-  for (let i = 0; i < count; i++) {
-    const isGlow = Math.random() > 0.35;
-    const shadeHex = color;
-
-    let mat = voxelMatCache.get(shadeHex);
-    if (!mat) {
-      mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(shadeHex),
-        emissive: isGlow ? new THREE.Color(shadeHex) : undefined,
-        emissiveIntensity: isGlow ? 1.5 : 0.0,
-        roughness: 0.5,
-        metalness: 0.1,
-      });
-      voxelMatCache.set(shadeHex, mat);
-    }
-
-    const cube = new THREE.Mesh(voxelGeo, mat);
-    cube.position.copy(impactCenter);
-    cube.position.x += (Math.random() - 0.5) * 0.4;
-    cube.position.y += Math.random() * 0.3;
-    cube.position.z += (Math.random() - 0.5) * 0.4;
-
-    const angle = Math.random() * Math.PI * 2;
-    const speedHorizon = Math.random() * 5.5 + 2.5;
-    const vx = Math.cos(angle) * speedHorizon;
-    const vz = Math.sin(angle) * speedHorizon;
-    const vy = Math.random() * 5.0 + 3.2;
-
-    scene.add(cube);
-    refs.damageExplosionParticles.push({
-      mesh: cube,
-      velocity: new THREE.Vector3(vx, vy, vz),
-      life: 0.0,
-      maxLife: Math.random() * 0.5 + 0.45,
-    });
+  let bursts = shockwaveBursts.get(refs);
+  if (!bursts) {
+    bursts = new Set();
+    shockwaveBursts.set(refs, bursts);
   }
+  bursts.add(createInstancedShockwaveBurst(scene, impactCenter, color));
 }
 
 export function spawnNeonBlueHammerFlashForThreeRefs(
@@ -341,6 +322,7 @@ export function renderSwordLungeTrailVfxForThreeRefs({
 }
 
 export function resetTransientVfxRefs(refs: GrifballThreeRefs): void {
+  disposeShockwaveBursts(refs);
   refs.damageExplosionParticles = [];
   refs.hammerSplashFlashes = [];
   refs.swordLungeSpeedLines = [];
@@ -378,6 +360,7 @@ export function disposeTransientVfxRefs(refs: GrifballThreeRefs): void {
   refs.damageExplosionParticles.forEach((particle) => {
     if (scene) scene.remove(particle.mesh);
     particle.mesh.geometry.dispose();
+    disposeMeshMaterial(particle.mesh.material);
   });
 
   resetTransientVfxRefs(refs);
@@ -432,6 +415,17 @@ export function updateExplosionParticlesForThreeRefs(refs: GrifballThreeRefs, dt
   const scene = refs.scene;
   if (!scene) return;
 
+  const bursts = shockwaveBursts.get(refs);
+  if (bursts) {
+    for (const burst of bursts) {
+      if (burst.mesh.parent !== scene || !updateInstancedShockwaveBurst(burst, dt)) {
+        disposeInstancedShockwaveBurst(burst);
+        bursts.delete(burst);
+      }
+    }
+    if (bursts.size === 0) shockwaveBursts.delete(refs);
+  }
+
   for (let i = list.length - 1; i >= 0; i--) {
     const p = list[i];
     p.life += dt;
@@ -439,6 +433,7 @@ export function updateExplosionParticlesForThreeRefs(refs: GrifballThreeRefs, dt
     if (p.life >= p.maxLife) {
       scene.remove(p.mesh);
       p.mesh.geometry.dispose();
+      disposeMeshMaterial(p.mesh.material);
       list.splice(i, 1);
     } else {
       p.velocity.y -= 15 * dt;

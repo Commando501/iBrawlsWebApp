@@ -11,11 +11,10 @@ import { type GrifballThreeRefs } from './threeRefs';
 import { type SpectateTargetData, type SpectateTargetRole } from './spectateTargets';
 import {
   updateDebugStrikeVisualsForState,
-  updateEmissiveGlowPulseForScene,
+  updateEnvironmentVisualFrameForScene,
   updateHammerJumpZoneVisualizerForState,
   updateLiveInvulnerabilityBlinkingForState,
   updateLiveSpectatorModelVisibilityForState,
-  updateWeatherParticlesForScene,
   type WeatherParticleFrameState,
   whiteBlinkMaterial,
 } from './visualState';
@@ -90,15 +89,19 @@ export function renderLiveGrifballFrame({
     jumpZoneMesh: refs.playerJumpZoneMesh,
   });
 
-  updateEmissiveGlowPulseForScene({ scene, blinkMaterial: whiteBlinkMaterial });
   const now = performance.now();
   if (weatherParticleFrameState.lastAtmosphereTime === undefined) {
     weatherParticleFrameState.lastAtmosphereTime = now;
   }
   const atmosphereDt = Math.min(0.1, (now - weatherParticleFrameState.lastAtmosphereTime) / 1000);
   weatherParticleFrameState.lastAtmosphereTime = now;
-  updateSkyAtmosphereForRefs(refs, atmosphereDt, now / 1000);
-  updateWeatherParticlesForScene({ scene, frameState: weatherParticleFrameState, now });
+  updateEnvironmentVisualFrameForScene({
+    scene,
+    frameState: weatherParticleFrameState,
+    now,
+    blinkMaterial: whiteBlinkMaterial,
+    updateAtmosphere: () => updateSkyAtmosphereForRefs(refs, atmosphereDt, now / 1000),
+  });
 
   renderer.render(scene, camera);
 }

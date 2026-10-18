@@ -18,8 +18,12 @@ import { createJungleSkyMaterial, disposeJungleEnvironment, initializeJungleEnvi
 import { disposeAsteroidResources } from './asteroidResourceDisposal';
 import { disposeNeonResources } from './neonResourceDisposal';
 import { disposeRainyResources } from './rainyResourceDisposal';
+import { disposeGlacierResources } from './glacierResourceDisposal';
+import { disposeCircleResources } from './circleResourceDisposal';
 import { createNeonSkyMaterial, disposeNeonEnvironment, initializeNeonEnvironment } from './neonLighting';
 import { createRainySkyMaterial, disposeRainyEnvironment, initializeRainyEnvironment } from './rainyLighting';
+import { createGlacierSkyMaterial, disposeGlacierEnvironment, initializeGlacierEnvironment } from './glacierLighting';
+import { createCircleSkyMaterial, disposeCircleEnvironment, initializeCircleEnvironment } from './circleLighting';
 import { createAsteroidSkyMaterial, disposeAsteroidEnvironment, initializeAsteroidEnvironment } from './asteroidLighting';
 
 export interface InitializedGrifballScene {
@@ -49,8 +53,12 @@ export function disposeFailedArenaSceneInitialization(
   disposeAsteroidEnvironment(scene);
   disposeNeonResources(scene);
   disposeRainyResources(scene);
+  disposeGlacierResources(scene);
+  disposeCircleResources(scene);
   disposeNeonEnvironment(scene);
   disposeRainyEnvironment(scene);
+  disposeGlacierEnvironment(scene);
+  disposeCircleEnvironment(scene);
   disposeSkyAtmosphereForRefs({ ...refs, skyAtmosphere: atmosphere });
   // Canyon cleanup already owns its shader sky. Other sky materials own only
   // their geometry/material; their cached sky textures remain shared.
@@ -105,15 +113,17 @@ export function initializeGrifballSceneForRefs({
 
   const effectiveMapId = replayMapType ?? selectedMap;
   const isHangar = !activeCustomMap && effectiveMapId === 'hangar';
+  const isCircle = !activeCustomMap && effectiveMapId === 'circle';
   const isCanyon = activeCustomMap?.id === 'forerunner_canyon';
   const isCyber = activeCustomMap?.id === 'cyber_hex_arena';
   const isJungle = activeCustomMap?.id === 'botanical_outpost';
   const isAsteroid = activeCustomMap?.id === 'vanguard_starbase';
   const isNeon = activeCustomMap?.id === 'synthwave_grid_arena';
   const isRainy = activeCustomMap?.id === 'rainy_industrial_streets';
+  const isGlacier = activeCustomMap?.id === 'winter_glacier_rink';
 
-  let bgHex = isHangar ? '#101923' : '#030712';
-  let fogDensity = isHangar ? 0.012 : 0.015;
+  let bgHex = isCircle ? '#17232f' : isHangar ? '#101923' : '#030712';
+  let fogDensity = isCircle ? 0.008 : isHangar ? 0.012 : 0.015;
 
   if (activeCustomMap) {
     bgHex = activeCustomMap.fogColor || '#030712';
@@ -143,6 +153,8 @@ export function initializeGrifballSceneForRefs({
 
   if (isRainy) { bgHex = '#101c28'; fogDensity = 0.012; }
 
+  if (isGlacier) { bgHex = '#9bafbc'; fogDensity = 0.008; }
+
   const skyColor = new THREE.Color(bgHex);
   scene.background = skyColor;
   scene.fog = new THREE.FogExp2(bgHex, fogDensity);
@@ -158,6 +170,9 @@ export function initializeGrifballSceneForRefs({
     }
     skyHue = activeCustomMap.skyboxHue ?? skyHue;
     skyBrightness = activeCustomMap.skyboxBrightness ?? skyBrightness;
+  } else if (isCircle) {
+    skyHue = adminSettings.skyboxHue ?? 224;
+    skyBrightness = adminSettings.skyboxBrightness ?? 4;
   } else if (isHangar) {
     skyType = 'hangar';
     skyHue = 220;
@@ -166,7 +181,7 @@ export function initializeGrifballSceneForRefs({
 
   try {
     const skyGeo = new THREE.SphereGeometry(250, 32, 15);
-    const skyMat = isRainy ? createRainySkyMaterial(skyHue, skyBrightness) : isNeon ? createNeonSkyMaterial(skyHue, skyBrightness) : isAsteroid ? createAsteroidSkyMaterial(skyHue, skyBrightness) : isJungle ? createJungleSkyMaterial(skyHue, skyBrightness) : isCyber ? createCyberSkyMaterial(skyHue, skyBrightness) : isCanyon ? createCanyonSkyMaterial(skyHue, skyBrightness) : new THREE.MeshBasicMaterial({
+    const skyMat = isCircle ? createCircleSkyMaterial(skyHue, skyBrightness) : isGlacier ? createGlacierSkyMaterial(skyHue, skyBrightness) : isRainy ? createRainySkyMaterial(skyHue, skyBrightness) : isNeon ? createNeonSkyMaterial(skyHue, skyBrightness) : isAsteroid ? createAsteroidSkyMaterial(skyHue, skyBrightness) : isJungle ? createJungleSkyMaterial(skyHue, skyBrightness) : isCyber ? createCyberSkyMaterial(skyHue, skyBrightness) : isCanyon ? createCanyonSkyMaterial(skyHue, skyBrightness) : new THREE.MeshBasicMaterial({
       map: getSkyboxTexture(skyType, skyHue, skyBrightness, bgHex),
       side: THREE.BackSide,
       fog: false,
@@ -180,6 +195,8 @@ export function initializeGrifballSceneForRefs({
     if (isAsteroid) skyMesh.userData.asteroidOwnedSky = true;
     if (isNeon) skyMesh.userData.neonOwnedSky = true;
     if (isRainy) skyMesh.userData.rainyOwnedSky = true;
+    if (isGlacier) skyMesh.userData.glacierOwnedSky = true;
+    if (isCircle) skyMesh.userData.circleOwnedSky = true;
     skyMesh.visible = adminSettings.showSkybox !== false;
     scene.add(skyMesh);
     refs.skyboxMesh = skyMesh;
@@ -187,7 +204,7 @@ export function initializeGrifballSceneForRefs({
     console.error('Failed to create skybox mesh:', err);
   }
 
-  if (!isCanyon && !isHangar && !isCyber && !isJungle && !isAsteroid && !isNeon && !isRainy) buildSkyAtmosphereForRefs({
+  if (!isCanyon && !isHangar && !isCyber && !isJungle && !isAsteroid && !isNeon && !isRainy && !isGlacier && !isCircle) buildSkyAtmosphereForRefs({
     refs,
     skyboxTexture: skyType,
     atmosphere: activeCustomMap?.atmosphere,
@@ -207,14 +224,16 @@ export function initializeGrifballSceneForRefs({
   });
   renderer.setSize(width, height);
   refs.renderer = renderer;
-  if (activeCustomMap?.theme === 'grifball_stadium' || isCanyon || isHangar || isCyber || isJungle || isAsteroid || isNeon || isRainy) {
+  if (activeCustomMap?.theme === 'grifball_stadium' || isCanyon || isHangar || isCyber || isJungle || isAsteroid || isNeon || isRainy || isGlacier || isCircle) {
     const quality = getEnvironmentQualityProfile();
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.pixelRatioCap));
     scene.userData.environmentQuality = quality;
     try {
-      if (isHangar) initializeHangarEnvironment(scene, renderer, quality);
+      if (isCircle) initializeCircleEnvironment(scene, renderer, quality);
+      else if (isHangar) initializeHangarEnvironment(scene, renderer, quality);
       else if (isNeon) initializeNeonEnvironment(scene, renderer, quality);
       else if (isRainy) initializeRainyEnvironment(scene, renderer, quality);
+      else if (isGlacier) initializeGlacierEnvironment(scene, renderer, quality);
       else if (isAsteroid) initializeAsteroidEnvironment(scene, renderer, quality);
       else if (isJungle) initializeJungleEnvironment(scene, renderer, quality);
       else if (isCyber) initializeCyberEnvironment(scene, renderer, quality);

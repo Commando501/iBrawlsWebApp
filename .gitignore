@@ -86,3 +86,9 @@ reference/
 
 !public/assets/rainy/
 !public/assets/rainy/**
+
+!public/assets/glacier/
+!public/assets/glacier/**
+
+!public/assets/circle/
+!public/assets/circle/**

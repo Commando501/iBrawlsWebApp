@@ -7,7 +7,7 @@ import { createCanyonSkyMaterial } from './canyonLighting';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 
 test('failed environment initialization clears its owned resources and references while retaining cached sky textures', () => {
-  for (const kind of ['canyon', 'stadium', 'hangar', 'cyber', 'jungle', 'asteroid', 'neon', 'rainy'] as const) {
+  for (const kind of ['canyon', 'stadium', 'hangar', 'cyber', 'jungle', 'asteroid', 'neon', 'rainy', 'glacier', 'circle'] as const) {
     const refs = createInitialGrifballThreeRefs(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera();
     let rendererDisposals = 0;
     const renderer = { dispose: () => { rendererDisposals++; } } as THREE.WebGLRenderer;

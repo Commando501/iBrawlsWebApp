@@ -1,0 +1,268 @@
+{
+  "schema": 1,
+  "generator": "scripts/circle/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; identity transforms; physical metre UVs",
+  "provenance": "Original Blender-authored geometry; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 455620,
+      "triangles": 8816,
+      "modules": {
+        "perimeter-pylon": {
+          "triangles": 1692,
+          "materialBatches": 4,
+          "dimensions": [
+            1.2,
+            9.0,
+            1.2
+          ],
+          "boundsMin": [
+            -0.6,
+            -4.5,
+            -0.6
+          ],
+          "boundsMax": [
+            0.6,
+            4.5,
+            0.6
+          ],
+          "pivot": "center"
+        },
+        "ring-beam": {
+          "triangles": 1140,
+          "materialBatches": 4,
+          "dimensions": [
+            7.0,
+            0.5,
+            0.9
+          ],
+          "boundsMin": [
+            -3.5,
+            -0.25,
+            -0.45
+          ],
+          "boundsMax": [
+            3.5,
+            0.25,
+            0.45
+          ],
+          "pivot": "center"
+        },
+        "projector-node": {
+          "triangles": 880,
+          "materialBatches": 4,
+          "dimensions": [
+            1.8,
+            1.2,
+            1.2
+          ],
+          "boundsMin": [
+            -0.9,
+            -0.6,
+            -0.6
+          ],
+          "boundsMax": [
+            0.9,
+            0.6,
+            0.6
+          ],
+          "pivot": "center"
+        },
+        "service-pod": {
+          "triangles": 2244,
+          "materialBatches": 5,
+          "dimensions": [
+            4.0,
+            3.0,
+            2.4
+          ],
+          "boundsMin": [
+            -2.0,
+            -1.5,
+            -1.2
+          ],
+          "boundsMax": [
+            2.0,
+            1.5,
+            1.2
+          ],
+          "pivot": "center"
+        },
+        "backdrop-spire": {
+          "triangles": 2860,
+          "materialBatches": 4,
+          "dimensions": [
+            3.5,
+            24.0,
+            3.5
+          ],
+          "boundsMin": [
+            -1.75,
+            -12.0,
+            -1.75
+          ],
+          "boundsMax": [
+            1.75,
+            12.0,
+            1.75
+          ],
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 166812,
+      "triangles": 2504,
+      "modules": {
+        "perimeter-pylon": {
+          "triangles": 476,
+          "materialBatches": 4,
+          "dimensions": [
+            1.2,
+            9.0,
+            1.2
+          ],
+          "boundsMin": [
+            -0.6,
+            -4.5,
+            -0.6
+          ],
+          "boundsMax": [
+            0.6,
+            4.5,
+            0.6
+          ],
+          "pivot": "center"
+        },
+        "ring-beam": {
+          "triangles": 308,
+          "materialBatches": 4,
+          "dimensions": [
+            7.0,
+            0.5,
+            0.9
+          ],
+          "boundsMin": [
+            -3.5,
+            -0.25,
+            -0.45
+          ],
+          "boundsMax": [
+            3.5,
+            0.25,
+            0.45
+          ],
+          "pivot": "center"
+        },
+        "projector-node": {
+          "triangles": 328,
+          "materialBatches": 4,
+          "dimensions": [
+            1.8,
+            1.2,
+            1.2
+          ],
+          "boundsMin": [
+            -0.9,
+            -0.6,
+            -0.6
+          ],
+          "boundsMax": [
+            0.9,
+            0.6,
+            0.6
+          ],
+          "pivot": "center"
+        },
+        "service-pod": {
+          "triangles": 676,
+          "materialBatches": 5,
+          "dimensions": [
+            4.0,
+            3.0,
+            2.4
+          ],
+          "boundsMin": [
+            -2.0,
+            -1.5,
+            -1.2
+          ],
+          "boundsMax": [
+            2.0,
+            1.5,
+            1.2
+          ],
+          "pivot": "center"
+        },
+        "backdrop-spire": {
+          "triangles": 716,
+          "materialBatches": 4,
+          "dimensions": [
+            3.5,
+            24.0,
+            3.5
+          ],
+          "boundsMin": [
+            -1.75,
+            -12.0,
+            -1.75
+          ],
+          "boundsMax": [
+            1.75,
+            12.0,
+            1.75
+          ],
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "circle_ceramic": {
+      "baseColor": "#a8bac7",
+      "metalness": 0.12,
+      "roughness": 0.6,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "circle_alloy": {
+      "baseColor": "#617786",
+      "metalness": 0.65,
+      "roughness": 0.39,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "circle_graphite": {
+      "baseColor": "#253744",
+      "metalness": 0.2,
+      "roughness": 0.72,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "circle_cyan": {
+      "baseColor": "#46bdce",
+      "metalness": 0.14,
+      "roughness": 0.44,
+      "emissiveStrength": 0.35,
+      "opacity": 1
+    },
+    "circle_light": {
+      "baseColor": "#c0e8ed",
+      "metalness": 0.05,
+      "roughness": 0.4,
+      "emissiveStrength": 0.55,
+      "opacity": 1
+    },
+    "circle_dark": {
+      "baseColor": "#101e28",
+      "metalness": 0.1,
+      "roughness": 0.8,
+      "emissiveStrength": 0,
+      "opacity": 1
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

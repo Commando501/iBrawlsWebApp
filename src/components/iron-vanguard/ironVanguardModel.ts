@@ -291,11 +291,26 @@ function attachAsset(root: THREE.Group, value: GLTF) {
   runtime.restLeftHand
     .copy(localBoneQuaternion(root, runtime.bones.LeftHand))
     .invert();
-  syncProxies(root);
+  syncIronVanguardProxies(root);
   root.userData.assetStatus = "ready";
 }
 const worldPosition = new THREE.Vector3();
 const rootQuaternion = new THREE.Quaternion();
+const proxyRootInverse = new THREE.Matrix4();
+const proxyBoneQuaternion = new THREE.Quaternion();
+const proxyScale = new THREE.Vector3();
+const PROXY_BONE_NAMES = [
+  ["lowerTorso", "Hips"],
+  ["upperTorso", "Spine"],
+  ["head", "neck"],
+  ["leftArm", "LeftArm"],
+  ["rightArm", "RightArm"],
+  ["leftLeg", "LeftUpLeg"],
+  ["rightLeg", "RightUpLeg"],
+  ["swordGrip", "RightHand"],
+  ["rightGrip", "RightHand"],
+  ["leftGrip", "LeftHand"],
+] as const;
 function localBoneQuaternion(
   root: THREE.Group,
   bone: THREE.Object3D,
@@ -305,29 +320,23 @@ function localBoneQuaternion(
     .invert()
     .multiply(bone.getWorldQuaternion(new THREE.Quaternion()));
 }
-function syncProxies(root: THREE.Group) {
+export function syncIronVanguardProxies(root: THREE.Group) {
   const runtime = root.userData.ironVanguard as Runtime;
+  // The imported skeleton and these root-level proxy sockets are separate
+  // subtrees. Refresh both once; writing a proxy cannot change a source bone.
   root.updateWorldMatrix(true, true);
-  const names: Record<string, string> = {
-    lowerTorso: "Hips",
-    upperTorso: "Spine",
-    head: "neck",
-    leftArm: "LeftArm",
-    rightArm: "RightArm",
-    leftLeg: "LeftUpLeg",
-    rightLeg: "RightUpLeg",
-    swordGrip: "RightHand",
-    rightGrip: "RightHand",
-    leftGrip: "LeftHand",
-  };
-  for (const [proxyName, boneName] of Object.entries(names)) {
+  proxyRootInverse.copy(root.matrixWorld).invert();
+  root.matrixWorld.decompose(worldPosition, rootQuaternion, proxyScale);
+  rootQuaternion.invert();
+  for (const [proxyName, boneName] of PROXY_BONE_NAMES) {
     const bone = runtime.bones[boneName];
     if (!bone) continue;
     const proxy = runtime.proxies[proxyName];
-    proxy.position.copy(
-      root.worldToLocal(bone.getWorldPosition(worldPosition)),
-    );
-    proxy.quaternion.copy(localBoneQuaternion(root, bone));
+    proxy.position.copy(worldPosition.setFromMatrixPosition(bone.matrixWorld).applyMatrix4(proxyRootInverse));
+    // Match getWorldQuaternion's decomposition rather than decomposing the local
+    // matrix: the former also preserves existing nonuniform/reflected-scale math.
+    bone.matrixWorld.decompose(worldPosition, proxyBoneQuaternion, proxyScale);
+    proxy.quaternion.copy(rootQuaternion).multiply(proxyBoneQuaternion);
     if (proxyName === "rightGrip") proxy.quaternion.multiply(runtime.restHand);
     if (proxyName === "leftGrip")
       proxy.quaternion.multiply(runtime.restLeftHand);
@@ -534,7 +543,7 @@ export function animateIronVanguard(
     if (ballActive)
       syncVanguardBallProp(root, runtime.bones.RightHand, runtime.ball);
   }
-  syncProxies(root);
+  syncIronVanguardProxies(root);
   return true;
 }
 export function disposeIronVanguard(root: THREE.Object3D) {

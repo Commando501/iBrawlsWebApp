@@ -20,10 +20,13 @@ import { buildAsteroidFillLighting, configureAsteroidShadow } from './asteroidLi
 import { createAsteroidFallbackObject } from './asteroidArenaRuntime';
 import { createNeonFloorMaterial } from './neonMaterials';
 import { createRainyFloorMaterial } from './rainyMaterials';
+import { createGlacierFloorMaterial } from './glacierMaterials';
 import { buildNeonFillLighting, configureNeonShadow } from './neonLighting';
 import { buildRainyFillLighting, configureRainyShadow } from './rainyLighting';
+import { buildGlacierFillLighting, configureGlacierShadow } from './glacierLighting';
 import { createNeonFallbackObject } from './neonArenaRuntime';
 import { createRainyFallbackObject } from './rainyArenaRuntime';
+import { createGlacierFallbackObject } from './glacierArenaRuntime';
 
 type CustomMapFloorTexture =
   | 'futuristic_hex'
@@ -67,10 +70,11 @@ export function buildCustomMapBaseArenaForRefs({
   const isAsteroid = activeCustomMap.id === 'vanguard_starbase';
   const isNeon = activeCustomMap.id === 'synthwave_grid_arena';
   const isRainy = activeCustomMap.id === 'rainy_industrial_streets';
+  const isGlacier = activeCustomMap.id === 'winter_glacier_rink';
   const quality = scene.userData.environmentQuality ?? getEnvironmentQualityProfile();
 
   const ambientLight = new THREE.AmbientLight(
-    isRainy ? '#a9bbc9' : isNeon ? '#bac4d0' : isAsteroid ? '#b5c2d1' : isJungle ? '#b5c6bc' : isCyber ? '#b4c5d4' : activeCustomMap.lighting.ambientColor || '#0a0f1d',
+    isGlacier ? '#d2dee5' : isRainy ? '#a9bbc9' : isNeon ? '#bac4d0' : isAsteroid ? '#b5c2d1' : isJungle ? '#b5c6bc' : isCyber ? '#b4c5d4' : activeCustomMap.lighting.ambientColor || '#0a0f1d',
     activeCustomMap.lighting.ambientIntensity ?? 0.85
   );
   scene.add(ambientLight);
@@ -93,9 +97,11 @@ export function buildCustomMapBaseArenaForRefs({
   dirLight.shadow.camera.bottom = -22;
   dirLight.shadow.bias = -0.0005;
   if (activeCustomMap.theme === 'grifball_stadium') {
+    dirLight.name = 'stadium_directional_key';
     configureStadiumShadow(dirLight, getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents),
       scene.userData.environmentQuality ?? getEnvironmentQualityProfile());
   } else if (isCanyon) {
+    dirLight.name = 'canyon_directional_key';
     configureCanyonShadow(dirLight, getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents),
       scene.userData.environmentQuality ?? getEnvironmentQualityProfile());
   } else if (isCyber) {
@@ -104,6 +110,9 @@ export function buildCustomMapBaseArenaForRefs({
   } else if (isJungle) {
     dirLight.name = 'jungle_directional_key';
     configureJungleShadow(dirLight, activeCustomMap.arenaRadius, quality);
+  } else if (isGlacier) {
+    dirLight.name = 'glacier_directional_key';
+    configureGlacierShadow(dirLight, getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents), quality);
   } else if (isRainy) {
     dirLight.name = 'rainy_directional_key';
     configureRainyShadow(dirLight, getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents), quality);
@@ -117,7 +126,7 @@ export function buildCustomMapBaseArenaForRefs({
   scene.add(dirLight);
   refs.dirLight = dirLight;
 
-  if (!isCyber && !isJungle && !isAsteroid && !isNeon && !isRainy && activeCustomMap.lighting.pointLights) {
+  if (!isCyber && !isJungle && !isAsteroid && !isNeon && !isRainy && !isGlacier && activeCustomMap.lighting.pointLights) {
     activeCustomMap.lighting.pointLights.forEach(pl => {
       const pointLight = new THREE.PointLight(pl.color, pl.intensity, pl.distance, pl.decay);
       pointLight.position.set(pl.position.x, pl.position.y, pl.position.z);
@@ -136,10 +145,10 @@ export function buildCustomMapBaseArenaForRefs({
 
   const isStadium = activeCustomMap.theme === 'grifball_stadium';
   let floorMat: THREE.MeshStandardMaterial;
-  if (isStadium || isCanyon || isCyber || isJungle || isAsteroid || isNeon || isRainy) {
+  if (isStadium || isCanyon || isCyber || isJungle || isAsteroid || isNeon || isRainy || isGlacier) {
     applyStadiumWorldUVs(floorGeo, 6);
     const quality = scene.userData.environmentQuality ?? getEnvironmentQualityProfile();
-    floorMat = isRainy ? createRainyFloorMaterial(quality) : isNeon ? createNeonFloorMaterial(quality) : isAsteroid ? createAsteroidFloorMaterial(quality) : isJungle ? createJungleFloorMaterial(quality) : isCyber ? createCyberFloorMaterial(quality) : isCanyon ? createCanyonFloorMaterial(quality) : createStadiumFloorMaterial(quality);
+    floorMat = isGlacier ? createGlacierFloorMaterial(quality) : isRainy ? createRainyFloorMaterial(quality) : isNeon ? createNeonFloorMaterial(quality) : isAsteroid ? createAsteroidFloorMaterial(quality) : isJungle ? createJungleFloorMaterial(quality) : isCyber ? createCyberFloorMaterial(quality) : isCanyon ? createCanyonFloorMaterial(quality) : createStadiumFloorMaterial(quality);
   } else {
     const floorTexture = generateCustomTexture(getCustomMapFloorTexture(activeCustomMap.theme), '#0f172a');
     floorMat = new THREE.MeshStandardMaterial({
@@ -170,6 +179,9 @@ export function buildCustomMapBaseArenaForRefs({
   } else if (isJungle) {
     floor.name = 'jungle_floor';
     scene.add(buildJungleFillLighting());
+  } else if (isGlacier) {
+    floor.name = 'glacier_floor';
+    scene.add(buildGlacierFillLighting());
   } else if (isRainy) {
     floor.name = 'rainy_floor';
     scene.add(buildRainyFillLighting());
@@ -185,7 +197,7 @@ export function buildCustomMapBaseArenaForRefs({
   activeCustomMap.objects.forEach(obj => {
     if (obj.gameModeKind === 'spawn_point') return;
 
-    const mesh = (isRainy ? createRainyFallbackObject(obj, quality) : isNeon ? createNeonFallbackObject(obj, quality) : isAsteroid ? createAsteroidFallbackObject(obj, quality) : isJungle ? createJungleFallbackObject(obj, quality) : isCyber ? createCyberFallbackObject(obj, quality) : undefined)
+    const mesh = (isGlacier ? createGlacierFallbackObject(obj, quality) : isRainy ? createRainyFallbackObject(obj, quality) : isNeon ? createNeonFallbackObject(obj, quality) : isAsteroid ? createAsteroidFallbackObject(obj, quality) : isJungle ? createJungleFallbackObject(obj, quality) : isCyber ? createCyberFallbackObject(obj, quality) : undefined)
       ?? createHighFidelityObjectMesh(obj, THREE, generateCustomTexture);
     if (isCanyon) mesh.userData.canyonLegacyId = obj.id;
     if (isCyber) mesh.userData.cyberLegacyId = obj.id;
@@ -193,6 +205,7 @@ export function buildCustomMapBaseArenaForRefs({
     if (isAsteroid) mesh.userData.asteroidLegacyId = obj.id;
     if (isNeon) mesh.userData.neonLegacyId = obj.id;
     if (isRainy) mesh.userData.rainyLegacyId = obj.id;
+    if (isGlacier) mesh.userData.glacierLegacyId = obj.id;
     mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
     mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
 

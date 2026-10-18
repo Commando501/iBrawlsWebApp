@@ -1,0 +1,129 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 8816,
+      "batches": 21,
+      "bytes": 455620,
+      "modules": {
+        "perimeter-pylon": {
+          "dimensions": [
+            1.2,
+            9,
+            1.2
+          ],
+          "triangles": 1692,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00129,
+          "pivot": "center"
+        },
+        "ring-beam": {
+          "dimensions": [
+            7,
+            0.5,
+            0.9
+          ],
+          "triangles": 1140,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00897,
+          "pivot": "center"
+        },
+        "projector-node": {
+          "dimensions": [
+            1.8,
+            1.2,
+            1.2
+          ],
+          "triangles": 880,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00671,
+          "pivot": "center"
+        },
+        "service-pod": {
+          "dimensions": [
+            4,
+            3,
+            2.4
+          ],
+          "triangles": 2244,
+          "materialBatches": 5,
+          "emissiveAreaFraction": 0.00041,
+          "pivot": "center"
+        },
+        "backdrop-spire": {
+          "dimensions": [
+            3.5,
+            24,
+            3.5
+          ],
+          "triangles": 2860,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00222,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 2504,
+      "batches": 21,
+      "bytes": 166812,
+      "modules": {
+        "perimeter-pylon": {
+          "dimensions": [
+            1.2,
+            9,
+            1.2
+          ],
+          "triangles": 476,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00145,
+          "pivot": "center"
+        },
+        "ring-beam": {
+          "dimensions": [
+            7,
+            0.5,
+            0.9
+          ],
+          "triangles": 308,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00864,
+          "pivot": "center"
+        },
+        "projector-node": {
+          "dimensions": [
+            1.8,
+            1.2,
+            1.2
+          ],
+          "triangles": 328,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00684,
+          "pivot": "center"
+        },
+        "service-pod": {
+          "dimensions": [
+            4,
+            3,
+            2.4
+          ],
+          "triangles": 676,
+          "materialBatches": 5,
+          "emissiveAreaFraction": 0.00041,
+          "pivot": "center"
+        },
+        "backdrop-spire": {
+          "dimensions": [
+            3.5,
+            24,
+            3.5
+          ],
+          "triangles": 716,
+          "materialBatches": 4,
+          "emissiveAreaFraction": 0.00227,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

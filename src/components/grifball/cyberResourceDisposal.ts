@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const CYBER_RESOURCE_ROOTS = new Set(['cyber_floor', 'cyber_fill', 'cyber_scenery']);
+const CYBER_RESOURCE_ROOTS = new Set(['cyber_floor', 'cyber_fill', 'cyber_scenery', 'cyber_directional_key']);
 const cleanupByRoot = new WeakMap<THREE.Object3D, () => void>();
 
 /** Cleanup must also settle an in-flight mount before its resources disappear. */
@@ -14,6 +14,7 @@ export function disposeCyberObjectResources(roots: readonly THREE.Object3D[]): v
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   const textures = new Set<THREE.Texture>();
+  const shadows = new Set<THREE.LightShadow>();
   for (const root of roots) {
     root.traverse(object => {
       if (visited.has(object)) return;
@@ -26,6 +27,7 @@ export function disposeCyberObjectResources(roots: readonly THREE.Object3D[]): v
         for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material);
       }
       if (object instanceof THREE.InstancedMesh) object.dispose();
+      if (object instanceof THREE.DirectionalLight || object instanceof THREE.SpotLight || object instanceof THREE.PointLight) shadows.add(object.shadow);
     });
   }
   for (const material of materials) {
@@ -34,6 +36,7 @@ export function disposeCyberObjectResources(roots: readonly THREE.Object3D[]): v
   textures.forEach(texture => texture.dispose());
   materials.forEach(material => material.dispose());
   geometries.forEach(geometry => geometry.dispose());
+  shadows.forEach(shadow => shadow.dispose());
   roots.forEach(root => root.removeFromParent());
 }
 

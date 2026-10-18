@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { type CustomMapData } from '../../types';
 import { syncHangarSceneryRadius } from './hangarArchitecture';
 import { configureHangarShadow } from './hangarLighting';
+import { syncCircleSceneryRadius } from './circleArchitecture';
+import { configureCircleShadow } from './circleLighting';
 import { syncCyberSceneryRadius } from './cyberArchitecture';
 import { configureCyberShadow } from './cyberLighting';
 import { syncJungleSceneryRadius } from './jungleArchitecture';
@@ -141,6 +143,11 @@ export const resizeArenaSceneForPlayerCount = (
   const arenaRadius = 20 * scale;
 
   // Keep the upgraded shell aligned with the same existing roster-size rule.
+  if (scene.getObjectByName('circle_scenery')) {
+    syncCircleSceneryRadius(scene, arenaRadius);
+    const key = scene.getObjectByName('circle_directional_key');
+    if (key instanceof THREE.DirectionalLight) configureCircleShadow(key, arenaRadius, scene.userData.environmentQuality);
+  }
   if (scene.getObjectByName('hangar_scenery')) {
     syncHangarSceneryRadius(scene, arenaRadius);
     const key = scene.getObjectByName('hangar_directional_key');

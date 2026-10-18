@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-const HANGAR_RESOURCE_ROOTS = new Set(['hangar_floor', 'hangar_fill', 'hangar_scenery']);
+const HANGAR_RESOURCE_ROOTS = new Set(['hangar_floor', 'hangar_fill', 'hangar_scenery', 'hangar_directional_key']);
 
 /** These are scene-owned clones; the immutable kit cache and armor are not traversed. */
 export function disposeHangarObjectResources(roots: readonly THREE.Object3D[]): void {
@@ -8,6 +8,7 @@ export function disposeHangarObjectResources(roots: readonly THREE.Object3D[]): 
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   const textures = new Set<THREE.Texture>();
+  const shadows = new Set<THREE.LightShadow>();
   for (const root of roots) {
     root.traverse(object => {
       if (visited.has(object)) return;
@@ -18,6 +19,7 @@ export function disposeHangarObjectResources(roots: readonly THREE.Object3D[]): 
         for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) materials.add(material);
       }
       if (object instanceof THREE.InstancedMesh) object.dispose();
+      if (object instanceof THREE.DirectionalLight || object instanceof THREE.SpotLight || object instanceof THREE.PointLight) shadows.add(object.shadow);
     });
   }
   for (const material of materials) {
@@ -26,6 +28,7 @@ export function disposeHangarObjectResources(roots: readonly THREE.Object3D[]): 
   textures.forEach(texture => texture.dispose());
   materials.forEach(material => material.dispose());
   geometries.forEach(geometry => geometry.dispose());
+  shadows.forEach(shadow => shadow.dispose());
   roots.forEach(root => root.removeFromParent());
 }
 

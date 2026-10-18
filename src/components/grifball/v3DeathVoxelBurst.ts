@@ -385,7 +385,6 @@ export function updateV3DeathVoxelBurst(instance: V3DeathVoxelBurstInstance, dt:
   for (const material of materials) {
     if (material.transparent && 'opacity' in material && typeof material.opacity === 'number') {
       material.opacity = Math.max(0, 1 - progress);
-      material.needsUpdate = true;
     }
   }
 
@@ -397,6 +396,7 @@ export function disposeV3DeathVoxelBurst(instance: V3DeathVoxelBurstInstance): v
   instance.disposed = true;
 
   instance.mesh.removeFromParent();
+  instance.mesh.dispose();
   instance.mesh.geometry.dispose();
   const materials = Array.isArray(instance.mesh.material) ? instance.mesh.material : [instance.mesh.material];
   for (const material of materials) {

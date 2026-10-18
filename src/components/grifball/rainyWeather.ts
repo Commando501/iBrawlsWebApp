@@ -65,7 +65,12 @@ export function createRainyWeather(map: CustomMapData, quality: EnvironmentQuali
 /** The normal weather tick passes its existing clock; no per-drop work or allocation. */
 export function updateRainyWeatherForScene(scene: THREE.Scene, nowMs: number): void {
   if (!Number.isFinite(nowMs)) return;
-  const weather = scene.getObjectByName(WEATHER_NAME);
+  updateRainyWeather(scene.getObjectByName(WEATHER_NAME), nowMs);
+}
+
+/** Accept a target collected by the shared visual frame without another scene search. */
+export function updateRainyWeather(weather: THREE.Object3D | undefined, nowMs: number): void {
+  if (!Number.isFinite(nowMs)) return;
   if (!(weather instanceof THREE.LineSegments) || !weather.userData.rainyWeather) return;
   const material = weather.material;
   if (material instanceof THREE.ShaderMaterial && material.uniforms.uTime) material.uniforms.uTime.value = Math.max(0, nowMs) * .001;

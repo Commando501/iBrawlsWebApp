@@ -1,0 +1,139 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 16628,
+      "batches": 19,
+      "bytes": 1135476,
+      "modules": {
+        "anchor-post": {
+          "dimensions": [
+            0.6,
+            5,
+            0.6
+          ],
+          "triangles": 1740,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "dimensions": [
+            1.5,
+            2,
+            4
+          ],
+          "triangles": 1784,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "rink-board": {
+          "dimensions": [
+            4,
+            0.8,
+            0.1
+          ],
+          "triangles": 260,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "rink-glass": {
+          "dimensions": [
+            4,
+            1.4,
+            0.1
+          ],
+          "triangles": 364,
+          "materialBatches": 2,
+          "pivot": "center"
+        },
+        "glacier-ridge": {
+          "dimensions": [
+            22,
+            24,
+            16
+          ],
+          "triangles": 1992,
+          "materialBatches": 2,
+          "pivot": "center"
+        },
+        "snowy-pine": {
+          "dimensions": [
+            6,
+            12,
+            6
+          ],
+          "triangles": 10488,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 6152,
+      "batches": 19,
+      "bytes": 444708,
+      "modules": {
+        "anchor-post": {
+          "dimensions": [
+            0.6,
+            5,
+            0.6
+          ],
+          "triangles": 316,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "dimensions": [
+            1.5,
+            2,
+            4
+          ],
+          "triangles": 816,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "rink-board": {
+          "dimensions": [
+            4,
+            0.8,
+            0.1
+          ],
+          "triangles": 132,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "rink-glass": {
+          "dimensions": [
+            4,
+            1.4,
+            0.1
+          ],
+          "triangles": 60,
+          "materialBatches": 2,
+          "pivot": "center"
+        },
+        "glacier-ridge": {
+          "dimensions": [
+            22,
+            24,
+            16
+          ],
+          "triangles": 624,
+          "materialBatches": 2,
+          "pivot": "center"
+        },
+        "snowy-pine": {
+          "dimensions": [
+            6,
+            12,
+            6
+          ],
+          "triangles": 4204,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

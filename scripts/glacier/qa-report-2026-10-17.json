@@ -1,0 +1,633 @@
+{
+  "date": "2026-10-17",
+  "map": "winter_glacier_rink",
+  "kind": "Glacier Hockey Rink environment upgrade",
+  "environment": {
+    "server": "Vite production preview on port 3002; normal development server remains on port 3000",
+    "browser": "Playwright Chromium",
+    "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "models": "Actual V3 Iron Vanguard player assets and seven AI bots"
+  },
+  "method": "Four independent final-asset matches: High/Low combat sandbox and High/Low active 4v4 Grifball. Each sample has a two-second warmup followed by 15 seconds of requestAnimationFrame intervals. Combat includes deaths, respawns and impact effects. Grifball waits for playing phase. Overview camera changes are used only for separate screenshots. Tests, typecheck and production build complete before measurement. Production preview avoids development HMR interruptions from QA artifacts. These uncontrolled combat samples are not direct tier comparisons. The unused sandbox Grifball phase remains countdown.",
+  "performance": {
+    "combatHigh": {
+      "tier": "high",
+      "frames": 1659,
+      "meanMs": 9.045810729355033,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.900000000001455,
+      "maxCalls": 2159,
+      "maxTriangles": 510985,
+      "memory": {
+        "geometries": 37,
+        "textures": 27
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 110.5484107416539
+    },
+    "combatLow": {
+      "tier": "low",
+      "frames": 1305,
+      "meanMs": 11.49961685823755,
+      "p50Ms": 13.799999999999272,
+      "p95Ms": 20.80000000000109,
+      "p99Ms": 20.900000000001455,
+      "maxCalls": 1502,
+      "maxTriangles": 360079,
+      "memory": {
+        "geometries": 57,
+        "textures": 25
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 86.959418937829
+    },
+    "grifballHigh": {
+      "tier": "high",
+      "frames": 920,
+      "meanMs": 16.33478260869565,
+      "p50Ms": 13.899999999997817,
+      "p95Ms": 41.70000000000073,
+      "p99Ms": 62.5,
+      "maxCalls": 162,
+      "maxTriangles": 484096,
+      "memory": {
+        "geometries": 57,
+        "textures": 29
+      },
+      "actors": 7,
+      "phase": "playing",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 61.21905775885015
+    },
+    "grifballLow": {
+      "tier": "low",
+      "frames": 1131,
+      "meanMs": 13.281167108753316,
+      "p50Ms": 13.80000000000291,
+      "p95Ms": 27.799999999999272,
+      "p99Ms": 48.599999999998545,
+      "maxCalls": 184,
+      "maxTriangles": 344824,
+      "memory": {
+        "geometries": 66,
+        "textures": 25
+      },
+      "actors": 7,
+      "phase": "playing",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 75.29458757739165
+    }
+  },
+  "limits": "All four average rates exceed 60 FPS on this RTX 4090 at 1080p. High Grifball is close to the target, and p95/p99 frame intervals exceed 16.7 ms in several samples. These results do not establish locked 60 FPS or certify slower hardware. Independent combat workloads differ; Low is not necessarily faster in every individual sample. Movement, combat and animation behavior were not changed to improve the numbers.",
+  "diagnostics": {
+    "timings": {
+      "frames": {
+        "samples": 592,
+        "mean": 25.37347972972974,
+        "p95": 62.39999999999418,
+        "p99": 104.10000000000582
+      },
+      "renderCpu": {
+        "samples": 650,
+        "mean": 4.8638461584311266,
+        "p95": 17.90000009536743,
+        "p99": 28.799999952316284
+      },
+      "phase": "playing"
+    },
+    "selfCpu": [
+      {
+        "function": "(program)",
+        "url": "",
+        "line": 0,
+        "milliseconds": 7112.445
+      },
+      {
+        "function": "(idle)",
+        "url": "",
+        "line": 0,
+        "milliseconds": 934.798
+      },
+      {
+        "function": "f6",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 4112,
+        "milliseconds": 434.801
+      },
+      {
+        "function": "Ta",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 4112,
+        "milliseconds": 414.223
+      },
+      {
+        "function": "_update",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 9,
+        "milliseconds": 225.213
+      },
+      {
+        "function": "x",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 4061,
+        "milliseconds": 179.245
+      },
+      {
+        "function": "Vl",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 4112,
+        "milliseconds": 169.456
+      },
+      {
+        "function": "(garbage collector)",
+        "url": "",
+        "line": 0,
+        "milliseconds": 167.137
+      },
+      {
+        "function": "updateWorldMatrix",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 5,
+        "milliseconds": 140.376
+      },
+      {
+        "function": "r",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 4112,
+        "milliseconds": 125.588
+      },
+      {
+        "function": "ZF",
+        "url": "main-DGkCyWdR.js",
+        "line": 910,
+        "milliseconds": 86.222
+      },
+      {
+        "function": "x",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 4061,
+        "milliseconds": 84.747
+      },
+      {
+        "function": "setFromRotationMatrix",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 5,
+        "milliseconds": 81.372
+      },
+      {
+        "function": "multiplyMatrices",
+        "url": "VoxelModelsV3-BQM5orXw.js",
+        "line": 5,
+        "milliseconds": 80.626
+      }
+    ],
+    "note": "Separate instrumented High Grifball sample, excluded from benchmark averages because CPU profiling adds overhead. Profile functions f6 and Ta map to existing V3 pose-track sampling and authored animation/mixer updates, totaling about 849 ms sampled self CPU. This does not prove the sole cause of frame spikes. No concrete Glacier-specific bottleneck was found: Grifball has fewer architecture batches than sandbox, a slightly lower triangle count, one GPU snow draw, one static probe and one existing shadow key."
+  },
+  "assets": {
+    "variants": {
+      "high": {
+        "triangles": 16628,
+        "batches": 19,
+        "bytes": 1135476,
+        "modules": {
+          "anchor-post": {
+            "dimensions": [
+              0.6,
+              5,
+              0.6
+            ],
+            "triangles": 1740,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "goal-buffer": {
+            "dimensions": [
+              1.5,
+              2,
+              4
+            ],
+            "triangles": 1784,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "rink-board": {
+            "dimensions": [
+              4,
+              0.8,
+              0.1
+            ],
+            "triangles": 260,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "rink-glass": {
+            "dimensions": [
+              4,
+              1.4,
+              0.1
+            ],
+            "triangles": 364,
+            "materialBatches": 2,
+            "pivot": "center"
+          },
+          "glacier-ridge": {
+            "dimensions": [
+              22,
+              24,
+              16
+            ],
+            "triangles": 1992,
+            "materialBatches": 2,
+            "pivot": "center"
+          },
+          "snowy-pine": {
+            "dimensions": [
+              6,
+              12,
+              6
+            ],
+            "triangles": 10488,
+            "materialBatches": 3,
+            "pivot": "center"
+          }
+        }
+      },
+      "low": {
+        "triangles": 6152,
+        "batches": 19,
+        "bytes": 444708,
+        "modules": {
+          "anchor-post": {
+            "dimensions": [
+              0.6,
+              5,
+              0.6
+            ],
+            "triangles": 316,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "goal-buffer": {
+            "dimensions": [
+              1.5,
+              2,
+              4
+            ],
+            "triangles": 816,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "rink-board": {
+            "dimensions": [
+              4,
+              0.8,
+              0.1
+            ],
+            "triangles": 132,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "rink-glass": {
+            "dimensions": [
+              4,
+              1.4,
+              0.1
+            ],
+            "triangles": 60,
+            "materialBatches": 2,
+            "pivot": "center"
+          },
+          "glacier-ridge": {
+            "dimensions": [
+              22,
+              24,
+              16
+            ],
+            "triangles": 624,
+            "materialBatches": 2,
+            "pivot": "center"
+          },
+          "snowy-pine": {
+            "dimensions": [
+              6,
+              12,
+              6
+            ],
+            "triangles": 4204,
+            "materialBatches": 3,
+            "pivot": "center"
+          }
+        }
+      }
+    },
+    "sourceMaterialBatches": 19,
+    "sandboxEnvironmentDrawsIncludingWeather": 24,
+    "grifballEnvironmentDrawsIncludingWeather": 16,
+    "highSandboxTriangles": 179326,
+    "lowSandboxTriangles": 39334,
+    "originalTextureBytes": 1433228,
+    "highRidges": 10,
+    "lowRidges": 6,
+    "highPines": 12,
+    "lowPines": 6,
+    "baseSnowflakes": {
+      "high": 600,
+      "balanced": 300,
+      "low": 100
+    },
+    "grifballSnowflakes": {
+      "high": 990,
+      "low": 165
+    },
+    "provenance": "Original Blender rink modules, ice cliffs and snowy pines; original procedural physical ice maps; established Stadium/V3 ceramic coatings and actual shipped V3 characters."
+  },
+  "checks": {
+    "mapDimensions": {
+      "sandbox": [
+        48,
+        24
+      ],
+      "grifball": [
+        104,
+        46
+      ]
+    },
+    "fourteenOriginalCollidersAndEightSpawnsUnchanged": true,
+    "existingGrifballEndObstacleFilteringUnchanged": true,
+    "goals": [
+      {
+        "id": "grifball_goal_blue",
+        "position": [
+          -47,
+          0.06,
+          0
+        ]
+      },
+      {
+        "id": "grifball_goal_red",
+        "position": [
+          47,
+          0.06,
+          0
+        ]
+      }
+    ],
+    "sevenV3BotsEachMode": true,
+    "weatherAnimatedOnGPU": true,
+    "movement": {
+      "before": [
+        16,
+        0,
+        -6
+      ],
+      "after": [
+        13.36067531426837,
+        0,
+        -5.010253242850645
+      ],
+      "text": "DoomBot Yellow\n\nSIMULATION PAUSED\n\nGRIFVX PROTO\nRESUME GAME\nMATCH OPERATIONS\nJOIN OBSERVER\nRESET MATCH\nBOT CONFIGURATION\nADJUSTMENTS & OPTIONS\nHOTKEY ADJUSTMENTS\nUI ADJUSTMENT\nLIGHTING & SHADOWS\nGAMEPLAY / MECHANICS OPTIONS\nSYSTEM & DEV\nGrifball AI Lab\nDAMAGE TRACES\nDISABLED\nQUIT TO TITLE SCREEN\n\nPress ESC inside game window to pause/unpause"
+    },
+    "quality": {
+      "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "dpr": 1,
+      "skyUnchanged": true,
+      "saved": {
+        "preference": "low",
+        "current": "high"
+      },
+      "cleanup": {
+        "environment": null,
+        "remainingGlacierRoots": [],
+        "sky": false,
+        "props": 0
+      }
+    },
+    "lowSandboxBudget": {
+      "quality": {
+        "tier": "low",
+        "pixelRatioCap": 1,
+        "shadowMapSize": 512,
+        "architectureDetail": "low",
+        "seatStride": 4,
+        "dustCount": 0,
+        "lightShafts": false,
+        "textureTier": "low"
+      },
+      "status": {
+        "architectureStatus": "ready",
+        "halfExtents": {
+          "x": 24,
+          "z": 12
+        },
+        "detail": "low"
+      },
+      "draws": 23,
+      "tris": 39334,
+      "actors": 7,
+      "stats": {
+        "frame": 177,
+        "calls": 885,
+        "triangles": 232320,
+        "points": 100,
+        "lines": 0
+      },
+      "floor": {
+        "color": "9eafba",
+        "roughness": 0.57,
+        "maps": [
+          {
+            "slot": "map",
+            "size": [
+              512,
+              512
+            ]
+          },
+          {
+            "slot": "normalMap",
+            "size": null
+          },
+          {
+            "slot": "roughnessMap",
+            "size": null
+          }
+        ]
+      },
+      "rain": {
+        "count": 100,
+        "time": 9.4205
+      },
+      "lighting": {
+        "ambient": 1,
+        "key": 2.5
+      }
+    },
+    "lowGrifballBudget": {
+      "quality": {
+        "tier": "low",
+        "pixelRatioCap": 1,
+        "shadowMapSize": 512,
+        "architectureDetail": "low",
+        "seatStride": 4,
+        "dustCount": 0,
+        "lightShafts": false,
+        "textureTier": "low"
+      },
+      "status": {
+        "architectureStatus": "ready",
+        "halfExtents": {
+          "x": 52,
+          "z": 23
+        },
+        "detail": "low"
+      },
+      "draws": 15,
+      "tris": 39510,
+      "actors": 7,
+      "stats": {
+        "frame": 8395,
+        "calls": 48,
+        "triangles": 347002,
+        "points": 165,
+        "lines": 0
+      },
+      "floor": {
+        "color": "9eafba",
+        "roughness": 0.57,
+        "maps": [
+          {
+            "slot": "map",
+            "size": [
+              512,
+              512
+            ]
+          },
+          {
+            "slot": "normalMap",
+            "size": null
+          },
+          {
+            "slot": "roughnessMap",
+            "size": null
+          }
+        ]
+      },
+      "rain": {
+        "count": 165,
+        "time": 148.30039999997615
+      },
+      "lighting": {
+        "ambient": 1,
+        "key": 2.5
+      }
+    },
+    "restoredQualityPreference": "auto",
+    "fallback": {
+      "status": "fallback",
+      "kit": false,
+      "actors": 7,
+      "visibleFallbackProps": 14,
+      "radius": 27.5,
+      "floorMap": [
+        1,
+        1
+      ],
+      "requested": [
+        "http://127.0.0.1:3002/assets/glacier/surfaces/ice-floor-albedo.png",
+        "http://127.0.0.1:3002/assets/glacier/surfaces/ice-floor-normal-gl.png",
+        "http://127.0.0.1:3002/assets/glacier/surfaces/ice-floor-roughness.png",
+        "http://127.0.0.1:3002/assets/stadium/ceramic/albedo.jpg",
+        "http://127.0.0.1:3002/assets/stadium/surfaces/ceramic-coating-normal-gl.png",
+        "http://127.0.0.1:3002/assets/stadium/surfaces/ceramic-coating-roughness.png",
+        "http://127.0.0.1:3002/assets/glacier/architecture/kit-v1.glb"
+      ],
+      "errors": []
+    },
+    "normalBrowserConsoleErrors": 0,
+    "tests": {
+      "glacierAndShared": 67,
+      "earlierMapsDeduplicated": 260,
+      "earlierMaps": [
+        "stadium",
+        "canyon",
+        "hangar",
+        "cyber",
+        "jungle",
+        "asteroid",
+        "neon",
+        "rainy"
+      ],
+      "sharedTestsOverlapAcrossTheTwoRuns": true
+    },
+    "typescript": "pass",
+    "productionBuild": "pass; existing large-chunk warning",
+    "glbValidation": "pass"
+  },
+  "screenshots": [
+    "output/playwright/glacier-upgrade/high-overview.png",
+    "output/playwright/glacier-upgrade/high-gameplay.png",
+    "output/playwright/glacier-upgrade/low-gameplay.png",
+    "output/playwright/glacier-upgrade/grifball-high-gameplay.png",
+    "output/playwright/glacier-upgrade/grifball-low-gameplay.png",
+    "output/playwright/glacier-upgrade/missing-assets-fallback.png"
+  ],
+  "sourceHashes": {
+    "src/components/grifball/glacierArchitecture.test.ts": "4acd6fd0a1a7603d1f3f96673758ecba94e0fd278b8f36470d5451fa7161af3d",
+    "src/components/grifball/glacierArchitecture.ts": "872740e953bd866c32c84bb7c6b227debed11d0dde05cbbb0cdba24d05fddae8",
+    "src/components/grifball/glacierArenaRuntime.ts": "138e42f0b0c02d3bce6b3a5a5ad00554e3610214106302b62a758d27ce2e4211",
+    "src/components/grifball/glacierIntegration.test.ts": "ea1eb59b89bc7667f1fc8a70d4b33c6bddff97796e248925fe77dd47bccb845f",
+    "src/components/grifball/glacierLighting.test.ts": "ebab70144f2fa419ba7d83654ba7eac802dd8728ef57d0aa6527496553b54e0a",
+    "src/components/grifball/glacierLighting.ts": "8364cd4b29a3ed7c0b04d665c29da9ef0b37ee451147df1ebe5bbd5186dbe172",
+    "src/components/grifball/glacierMaterials.test.ts": "191968562ddef7259299918138a786be63c9f94463fd845f95f1eac97f5a4abd",
+    "src/components/grifball/glacierMaterials.ts": "389b081a76659dba36a7f9d3d06e3780fde403fe533fd8e97343d7827692b2a3",
+    "src/components/grifball/glacierResourceDisposal.test.ts": "0e6e7c08f6a60c73f236111e1daf78ec16cf1db4899c5934366711ffb9dfd462",
+    "src/components/grifball/glacierResourceDisposal.ts": "c999d2c286ccc04bbd43ebefc74f55e4c5e3942b6343a418b683fe3f7371eaff",
+    "src/components/grifball/glacierWeather.test.ts": "a53047e98834599e99c2089ccfdc50189b1da037a25a3b29544b0cf5712efe4c",
+    "src/components/grifball/glacierWeather.ts": "ac993e3da3d4272ebc481af85043d1481f9c8e66c2196aa65aeb207d548f6ef7",
+    "scripts/glacier/author-kit.py": "a511389e36d9417ea49547a4f1b5e844b2784a34f77bde9a97a2192d8f511b31",
+    "scripts/glacier/optimize-kit.ps1": "809ef2ed67cf2a8c79622778a1521a393a872b689bcbe2ca81d39ba85bd503a1",
+    "scripts/glacier/README.md": "3db8134f9cf42f50218e236fb42e7ecefea2d60f377df5a51f0d37e730482a89",
+    "scripts/glacier/validate-kit.mjs": "347032164c2d004b391e6d7462a51506789a7411c7f11db132e9f3c3bd158eac",
+    "scripts/glacier-textures/author-surfaces.mjs": "e542169383526c7ab6ec967116d2f4c5b7a780bad110044fdfbfcb36adba6cbe",
+    "scripts/glacier-textures/README.md": "23bef42f6093dd7cf6601b7f31b06dcf6dcfdabc54c20cf08050a869c6e40686",
+    "public/assets/glacier/architecture/kit-low-v1.glb": "28a7f1776e4bfe2f2665b4df67fe8f6138927525c232db272f98541075ffdc77",
+    "public/assets/glacier/architecture/kit-v1.glb": "34307a612456192b7ca2ebf5e3f179ef76ad45cabe6efc6122d0cab378cf718c",
+    "public/assets/glacier/architecture/kit-v1.manifest.json": "a6668feaf2f9ae1e226dc5254237214fe6ce76fd40df8839af46b026042536d4",
+    "public/assets/glacier/architecture/kit-validation.json": "986ec06abe01cd87021df106421a46af182dfeabedd03110b508895954fefae3",
+    "public/assets/glacier/surfaces/ice-floor-albedo-low.png": "23275f79ef4d7f1d81ca4b0133696404dae7f23259f1fd37269699cb46257791",
+    "public/assets/glacier/surfaces/ice-floor-albedo.png": "2c7b36747b36d12d5de5851aec7232a399960c36bff8f5e2a7f6446784ad4dc0",
+    "public/assets/glacier/surfaces/ice-floor-normal-gl.png": "cfa816b4f5ee3cb05330e1f57111a65e0ca84797089d8a2c59b6c4cd9f38aafe",
+    "public/assets/glacier/surfaces/ice-floor-roughness.png": "f25ae931e48611d4afde6c1f1884835f76ecec7eae057983a1af01920a1895b6",
+    "public/assets/glacier/surfaces/manifest.json": "ff152973496ef38cf5d9925e92bedd4aa715f0010551783f808e3d3766493160",
+    "src/components/GrifballGame.tsx": "99151c4097f5a032e4d3548e0c97cd7257e6d2464e6664e6e3ae04bb5332b36e",
+    "src/components/grifball/arenaSceneInitializationRuntime.ts": "6ef36c203e07575b24e5be9071c2171b9cb30e155088edf8260c4d86e3b9e010",
+    "src/components/grifball/arenaSceneInitializationRuntime.test.ts": "ca6e2d0490443c4d38e8134b2e25693dc77b1823768d7424bb694a5264360241",
+    "src/components/grifball/customMapArenaRuntime.ts": "321da66196e84447fedbeddfb26d954a68369c8b6b63c22f2eb273e388049d31",
+    "src/components/grifball/customMapWinterSceneryRuntime.ts": "3ff187ae31153545251f0c44b587cc31e20b9ef046a5a3517ed2eeced1dfdf21",
+    "src/components/grifball/mountSceneRuntime.ts": "90a2b679430562b0af4fd683ad9394d55199873920dffb94d4fdcc2d16be0275",
+    "src/components/grifball/mountSceneRuntime.test.ts": "90545ed88472b0a3c3771d8d29787bff1f2ddbb8cbc58006895f34b40395b0d9",
+    "src/components/grifball/visualState.ts": "13628b96333ea495fe31c76c4d3ed146c3124ed336573f79967d5d1456fbc17b",
+    "src/game/premadeMaps.ts": "ed457794d81d128cc757d092a57b8da4c1718e9ef98bd9290761fce04c3674f2"
+  }
+}
