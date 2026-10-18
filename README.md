@@ -2,6 +2,10 @@
 
 iBrawls is a React, Vite, Three.js browser game with a local Node/WebSocket relay for development and a Cloudflare Worker Durable Object relay for deployment.
 
+## Sound settings
+
+Open **Settings → Sound**, or expand **Sound settings** in the pause menu, to adjust **Master volume**, **Sound effects**, and **Music** from 0–100%. **Mute all sounds** silences audio without losing your levels. Changes apply immediately, including currently playing audio, and are saved on this device separately from match rules and cloud saves. Defaults preserve the original mix. **Test sound** previews the effects volume; **Reset sound settings** restores the original levels and unmutes. If browser storage is blocked, changes still work for the current session.
+
 ## Championship Stadium environment pilot
 
 Championship Stadium combines a reproducible Blender architectural kit, approved generated ceramic albedo, licensed PBR surfaces, and Three.js instancing/lighting. Beveled perimeter panels, structural pylons, caged light fixtures, vents, an upper concourse, roof fascia, and scoreboard supports frame the court. The refinement adds instanced wall kickplates, recessed service details, trim, and restrained team accents. The floor uses quiet slate composite panels with narrow expansion joints, shallow normal detail, and broad roughness variation; most texture detail appears in reflected light, keeping the playing surface readable behind the actual V3 Iron Vanguard models.

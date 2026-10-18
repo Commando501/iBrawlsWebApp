@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { bindEffectsVolume } from './audioVolume';
+
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -14,7 +16,7 @@ class AudioEngine {
       if (AudioCtxClass) {
         this.ctx = new AudioCtxClass();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.setValueAtTime(0.4, this.ctx.currentTime); // moderate master volume
+        bindEffectsVolume(this.masterGain, 0.4);
         this.masterGain.connect(this.ctx.destination);
       }
     } catch (e) {

@@ -1,3 +1,5 @@
+import { bindEffectsVolume } from '../audioVolume';
+
 export const playPistolFireSound = (): void => {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
@@ -6,6 +8,12 @@ export const playPistolFireSound = (): void => {
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
+    const output = ctx.createGain();
+    const unbindVolume = bindEffectsVolume(output);
+    osc.onended = () => {
+      unbindVolume();
+      void ctx.close();
+    };
 
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(800, ctx.currentTime);
@@ -15,7 +23,8 @@ export const playPistolFireSound = (): void => {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
 
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(output);
+    output.connect(ctx.destination);
 
     osc.start();
     osc.stop(ctx.currentTime + 0.2);

@@ -11,13 +11,14 @@ import { createInitialGrifballRuntimeState } from './runtimeState';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import type { GrifballThreeRefs } from './threeRefs';
 
-class FakeAudio {
+class FakeAudio extends EventTarget {
   static created: FakeAudio[] = [];
   src: string;
   volume = 1;
   paused = false;
 
   constructor(src: string) {
+    super();
     this.src = src;
     FakeAudio.created.push(this);
   }
@@ -28,6 +29,7 @@ class FakeAudio {
 
   pause(): void {
     this.paused = true;
+    this.dispatchEvent(new Event('pause'));
   }
 }
 

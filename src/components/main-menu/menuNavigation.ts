@@ -1,10 +1,10 @@
 export type MenuScreen = 'play' | 'training' | 'tournament' | 'online' | 'armory' | 'theater' | 'career' | 'create' | 'ai-editor' | 'settings' | 'profile' | 'social';
-export type MenuSettingsSection = 'controls' | 'gamepad' | 'mechanics' | 'hud' | 'lighting' | 'saves' | 'connection' | 'about';
+export type MenuSettingsSection = 'controls' | 'gamepad' | 'mechanics' | 'hud' | 'sound' | 'lighting' | 'saves' | 'connection' | 'about';
 export interface MenuLocation { screen: MenuScreen; returnScreen: MenuScreen; settingsSection: MenuSettingsSection }
 export const MENU_LOCATION_KEY = 'ibrawls_menu_location_v2';
 export const DEFAULT_MENU_LOCATION: MenuLocation = { screen: 'play', returnScreen: 'play', settingsSection: 'controls' };
 const screens: readonly MenuScreen[] = ['play','training','tournament','online','armory','theater','career','create','ai-editor','settings','profile','social'];
-const sections: readonly MenuSettingsSection[] = ['controls','gamepad','mechanics','hud','lighting','saves','connection','about'];
+const sections: readonly MenuSettingsSection[] = ['controls','gamepad','mechanics','hud','sound','lighting','saves','connection','about'];
 export const isUtilityScreen = (screen: MenuScreen) => ['settings','profile','social'].includes(screen);
 
 export function parseMenuLocation(raw: string | null, legacy?: { parent: string; playChild: string; customizationChild: string; systemChild: string }): MenuLocation {

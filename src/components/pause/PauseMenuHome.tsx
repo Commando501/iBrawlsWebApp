@@ -1,5 +1,6 @@
 import { grifballLab } from '../../game/grifballLabStore';
 import React from 'react';
+import { SoundSettingsPanel } from '../settings/SoundSettingsPanel';
 import {
   Activity,
   Bot,
@@ -216,6 +217,10 @@ export function PauseMenuHome({
         </div>
 
         <div className="w-full mt-2 flex flex-col gap-2">
+          <details className="w-full rounded-xl border border-cyan-500/30 bg-slate-950/40 p-3">
+            <summary className="cursor-pointer text-sm font-bold text-cyan-300">Sound settings</summary>
+            <div className="pt-4"><SoundSettingsPanel /></div>
+          </details>
           <SectionHeading label="System & Dev" />
           {!isMultiplayer && !isReplay && <button className="w-full h-10 border border-cyan-500/30 rounded-lg text-cyan-300 text-xs font-bold" onClick={() => grifballLab.open()}>Grifball AI Lab</button>}
           <button
