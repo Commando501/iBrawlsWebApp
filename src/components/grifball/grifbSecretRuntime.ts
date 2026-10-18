@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bindMusicVolume } from '../audioVolume';
 import { type DeathEvent } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -29,8 +30,11 @@ export function playGrifbSecretAudio(secretAudioRef: MutableRef<HTMLAudioElement
     secretAudioRef.current.pause();
   }
   const audio = new Audio(GRIFB_SECRET_AUDIO_SRC);
-  audio.volume = 0.55;
-  audio.play().catch((e) => console.error('Error playing secret song:', e));
+  const unbindVolume = bindMusicVolume(audio, 0.55);
+  audio.play().catch((e) => {
+    unbindVolume();
+    console.error('Error playing secret song:', e);
+  });
   secretAudioRef.current = audio;
 }
 

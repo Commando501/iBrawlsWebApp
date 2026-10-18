@@ -168,6 +168,7 @@ export function useTournamentFlow({
 
     setAdminSettings(prev => ({
       ...prev,
+      gameMode: 'sandbox',
       aiDifficulty: useNeuralBrain ? NEURAL_NET_DIFFICULTY : 'custom',
       aiNeuralBrainId: useNeuralBrain ? resolvedNeuralBrainId : prev.aiNeuralBrainId,
       aiReactionLatency: opponent.reactionLatency,

@@ -67,7 +67,12 @@
     "test:neon": "node --import tsx --test src/components/grifball/neonArchitecture.test.ts src/components/grifball/neonMaterials.test.ts src/components/grifball/neonLighting.test.ts src/components/grifball/neonResourceDisposal.test.ts src/components/grifball/neonIntegration.test.ts src/components/grifball/mountSceneRuntime.test.ts src/components/grifball/arenaSceneInitializationRuntime.test.ts src/settings/environmentQuality.test.ts src/components/settings/LightingSettingsModal.test.tsx",
     "neon:validate": "node scripts/neon/validate-kit.mjs",
     "test:rainy": "node --import tsx --test src/components/grifball/rainyArchitecture.test.ts src/components/grifball/rainyMaterials.test.ts src/components/grifball/rainyLighting.test.ts src/components/grifball/rainyResourceDisposal.test.ts src/components/grifball/rainyIntegration.test.ts src/components/grifball/mountSceneRuntime.test.ts src/components/grifball/arenaSceneInitializationRuntime.test.ts src/settings/environmentQuality.test.ts src/components/settings/LightingSettingsModal.test.tsx src/components/grifball/rainyWeather.test.ts",
-    "rainy:validate": "node scripts/rainy/validate-kit.mjs"
+    "rainy:validate": "node scripts/rainy/validate-kit.mjs",
+    "test:glacier": "node --import tsx --test --test-concurrency=1 src/components/grifball/glacierArchitecture.test.ts src/components/grifball/glacierMaterials.test.ts src/components/grifball/glacierLighting.test.ts src/components/grifball/glacierResourceDisposal.test.ts src/components/grifball/glacierIntegration.test.ts src/components/grifball/mountSceneRuntime.test.ts src/components/grifball/arenaSceneInitializationRuntime.test.ts src/settings/environmentQuality.test.ts src/components/settings/LightingSettingsModal.test.tsx src/components/grifball/glacierWeather.test.ts",
+    "glacier:validate": "node scripts/glacier/validate-kit.mjs",
+    "test:circle": "node --import tsx --test --test-concurrency=1 src/components/grifball/circleArchitecture.test.ts src/components/grifball/circleMaterials.test.ts src/components/grifball/circleLighting.test.ts src/components/grifball/circleResourceDisposal.test.ts src/components/grifball/circleIntegration.test.ts src/components/grifball/mountSceneRuntime.test.ts src/components/grifball/arenaSceneInitializationRuntime.test.ts src/settings/environmentQuality.test.ts src/components/settings/LightingSettingsModal.test.tsx src/components/grifball/arenaSpawns.test.ts",
+    "circle:validate": "node scripts/circle/validate-kit.mjs",
+    "test:environment-polish": "node scripts/environment-polish/verify.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

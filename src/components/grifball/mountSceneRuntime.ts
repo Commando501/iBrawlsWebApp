@@ -53,12 +53,21 @@ import { disposeAsteroidResources } from './asteroidResourceDisposal';
 import { disposeAsteroidEnvironment } from './asteroidLighting';
 import { buildNeonSceneryForRefs, type NeonArchitectureHandle } from './neonArchitecture';
 import { buildRainySceneryForRefs, type RainyArchitectureHandle } from './rainyArchitecture';
+import { buildGlacierSceneryForRefs, type GlacierArchitectureHandle } from './glacierArchitecture';
+import { buildCircleSceneryForRefs, type CircleArchitectureHandle } from './circleArchitecture';
+import { buildCircleBaseArenaForRefs } from './circleArenaRuntime';
 import { waitForNeonTextures } from './neonMaterials';
 import { waitForRainyTextures } from './rainyMaterials';
+import { waitForGlacierTextures } from './glacierMaterials';
+import { waitForCircleTextures } from './circleMaterials';
 import { disposeNeonResources } from './neonResourceDisposal';
 import { disposeRainyResources } from './rainyResourceDisposal';
+import { disposeGlacierResources } from './glacierResourceDisposal';
+import { disposeCircleResources } from './circleResourceDisposal';
 import { disposeNeonEnvironment } from './neonLighting';
 import { disposeRainyEnvironment } from './rainyLighting';
+import { disposeGlacierEnvironment } from './glacierLighting';
+import { disposeCircleEnvironment } from './circleLighting';
 
 const throwIfMountAborted = (signal?: AbortSignal): void => {
   if (signal?.aborted) throw new DOMException('Match loading canceled', 'AbortError');
@@ -105,8 +114,12 @@ export function disposeUnfinishedGrifballMount(
   disposeAsteroidEnvironment(scene);
   disposeNeonResources(scene);
   disposeRainyResources(scene);
+  disposeGlacierResources(scene);
+  disposeCircleResources(scene);
   disposeNeonEnvironment(scene);
   disposeRainyEnvironment(scene);
+  disposeGlacierEnvironment(scene);
+  disposeCircleEnvironment(scene);
   disposeSkyAtmosphereForRefs({ ...refs, skyAtmosphere: atmosphere });
   if (refs.skyAtmosphere === atmosphere) refs.skyAtmosphere = null;
   if (refs.scene === scene) {
@@ -129,6 +142,9 @@ const mountDependencies = {
   buildAsteroid: buildAsteroidSceneryForRefs,
   buildNeon: buildNeonSceneryForRefs,
   buildRainy: buildRainySceneryForRefs,
+  buildGlacier: buildGlacierSceneryForRefs,
+  buildCircleBase: buildCircleBaseArenaForRefs,
+  buildCircle: buildCircleSceneryForRefs,
   buildHangarBase: buildHangarBaseArenaForRefs,
   buildHangar: buildHangarSceneryForRefs,
   buildLocalPlayer: buildLocalPlayerViewForRefs,
@@ -140,6 +156,8 @@ const mountDependencies = {
   waitForAsteroidTextures,
   waitForNeonTextures,
   waitForRainyTextures,
+  waitForGlacierTextures,
+  waitForCircleTextures,
 };
 
 export interface GrifballMountLoadingStage {
@@ -207,6 +225,8 @@ export async function initializeGrifballMountSceneForState({
   let asteroid: AsteroidArchitectureHandle | undefined;
   let neon: NeonArchitectureHandle | undefined;
   let rainy: RainyArchitectureHandle | undefined;
+  let glacier: GlacierArchitectureHandle | undefined;
+  let circle: CircleArchitectureHandle | undefined;
   let atmosphere: GrifballThreeRefs['skyAtmosphere'];
   const report = async (progress: number, stage: string, detail?: string) => {
     throwIfMountAborted(signal);
@@ -266,7 +286,8 @@ export async function initializeGrifballMountSceneForState({
       const isAsteroid = activeCustomMap.id === 'vanguard_starbase';
       const isNeon = activeCustomMap.id === 'synthwave_grid_arena';
       const isRainy = activeCustomMap.id === 'rainy_industrial_streets';
-      await report(67, isRainy ? 'Loading Rainy Cyber Streets scenery' : isNeon ? 'Loading Neon Outrun skyline' : isAsteroid ? 'Loading asteroid mine scenery' : isJungle ? 'Loading jungle scenery' : isCyber ? 'Loading Cyber Hex Grid scenery' : isCanyon ? 'Loading canyon scenery' : 'Loading stadium set pieces');
+      const isGlacier = activeCustomMap.id === 'winter_glacier_rink';
+      await report(67, isGlacier ? 'Loading Glacier Hockey Rink scenery' : isRainy ? 'Loading Rainy Cyber Streets scenery' : isNeon ? 'Loading Neon Outrun skyline' : isAsteroid ? 'Loading asteroid mine scenery' : isJungle ? 'Loading jungle scenery' : isCyber ? 'Loading Cyber Hex Grid scenery' : isCanyon ? 'Loading canyon scenery' : 'Loading stadium set pieces');
       stadium = runtime.buildStadium({
         refs,
         activeCustomMap,
@@ -278,9 +299,10 @@ export async function initializeGrifballMountSceneForState({
       asteroid = runtime.buildAsteroid({ refs, activeCustomMap, quality: scene.userData.environmentQuality });
       neon = runtime.buildNeon({ refs, activeCustomMap, quality: scene.userData.environmentQuality });
       rainy = runtime.buildRainy({ refs, activeCustomMap, quality: scene.userData.environmentQuality });
-      const architecture = rainy ?? neon ?? asteroid ?? jungle ?? cyber ?? canyon ?? stadium;
+      glacier = runtime.buildGlacier({ refs, activeCustomMap, quality: scene.userData.environmentQuality });
+      const architecture = glacier ?? rainy ?? neon ?? asteroid ?? jungle ?? cyber ?? canyon ?? stadium;
       if (architecture) {
-        await report(70, isRainy ? 'Loading Rainy Cyber Streets architecture' : isNeon ? 'Loading Neon Outrun architecture' : isAsteroid ? 'Loading asteroid mine architecture' : isJungle ? 'Loading jungle architecture' : isCyber ? 'Loading Cyber Hex Grid architecture' : isCanyon ? 'Loading canyon architecture' : 'Loading stadium architecture', 'Preparing materials and arena detail');
+        await report(70, isGlacier ? 'Loading Glacier Hockey Rink architecture' : isRainy ? 'Loading Rainy Cyber Streets architecture' : isNeon ? 'Loading Neon Outrun architecture' : isAsteroid ? 'Loading asteroid mine architecture' : isJungle ? 'Loading jungle architecture' : isCyber ? 'Loading Cyber Hex Grid architecture' : isCanyon ? 'Loading canyon architecture' : 'Loading stadium architecture', 'Preparing materials and arena detail');
         let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
           await waitForGrifballMountTask(Promise.race([
@@ -291,7 +313,7 @@ export async function initializeGrifballMountSceneForState({
           clearTimeout(timeout);
         }
         throwIfMountAborted(signal);
-        await waitForGrifballMountTask(rainy ? runtime.waitForRainyTextures() : neon ? runtime.waitForNeonTextures() : asteroid ? runtime.waitForAsteroidTextures() : jungle ? runtime.waitForJungleTextures() : cyber ? runtime.waitForCyberTextures() : canyon ? runtime.waitForCanyonTextures() : runtime.waitForTextures(), signal);
+        await waitForGrifballMountTask(glacier ? runtime.waitForGlacierTextures() : rainy ? runtime.waitForRainyTextures() : neon ? runtime.waitForNeonTextures() : asteroid ? runtime.waitForAsteroidTextures() : jungle ? runtime.waitForJungleTextures() : cyber ? runtime.waitForCyberTextures() : canyon ? runtime.waitForCanyonTextures() : runtime.waitForTextures(), signal);
         throwIfMountAborted(signal);
       }
 
@@ -311,6 +333,20 @@ export async function initializeGrifballMountSceneForState({
         } finally { clearTimeout(timeout); }
         throwIfMountAborted(signal);
         await waitForGrifballMountTask(runtime.waitForHangarTextures(), signal);
+        throwIfMountAborted(signal);
+      } else if ((replayData?.mapType ?? selectedMap) === 'circle') {
+        runtime.buildCircleBase({ refs, adminSettings, quality: scene.userData.environmentQuality });
+        circle = runtime.buildCircle({ refs, quality: scene.userData.environmentQuality });
+        await report(60, 'Loading Circle Arena architecture', 'Preparing perimeter supports and quiet combat surfaces');
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await waitForGrifballMountTask(Promise.race([
+            circle?.ready ?? Promise.resolve(),
+            new Promise<void>(resolve => { timeout = setTimeout(() => { circle?.cancel(); resolve(); }, 8000); }),
+          ]), signal);
+        } finally { clearTimeout(timeout); }
+        throwIfMountAborted(signal);
+        await waitForGrifballMountTask(runtime.waitForCircleTextures(), signal);
         throwIfMountAborted(signal);
       } else {
         runtime.buildDefaultArena({ refs, isHangar, adminSettings });
@@ -362,6 +398,8 @@ export async function initializeGrifballMountSceneForState({
     asteroid?.cancel();
     neon?.cancel();
     rainy?.cancel();
+    glacier?.cancel();
+    circle?.cancel();
     if (initialized) disposeUnfinishedGrifballMount(initialized, refs, atmosphere);
     throw error;
   }

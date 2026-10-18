@@ -49,6 +49,7 @@ const getSavedAdminSettings = (): UniversalSettings => {
     return {
       ...DEFAULT_ADMIN_SETTINGS,
       ...admin,
+      gameMode: 'sandbox',
       playerHue: getSavedPlayerHue(),
       playerName: savedName || createDefaultPlayerName(),
     };

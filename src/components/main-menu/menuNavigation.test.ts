@@ -18,6 +18,11 @@ test('invalid saved navigation cannot trap the user or select missing settings',
   assert.deepEqual(parseMenuLocation('{"screen":"settings","returnScreen":"profile","settingsSection":"missing"}'), { screen:'settings', returnScreen:'play', settingsSection:'controls' });
 });
 
+test('sound settings survive navigation persistence', () => {
+  const location = navigateMenu(DEFAULT_MENU_LOCATION, 'settings', 'sound');
+  assert.deepEqual(parseMenuLocation(JSON.stringify(location)), location);
+});
+
 test('legacy menu destinations migrate to their production replacement', () => {
   const legacy = { parent:'customization',playChild:'single',customizationChild:'gamepad',systemChild:'service' };
   assert.equal(parseMenuLocation(null,legacy).settingsSection,'gamepad');

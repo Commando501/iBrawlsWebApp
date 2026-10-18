@@ -13,7 +13,7 @@ function props() {
     header:{appVersion:'test',onlineCount:0},
     childNav:{isAdmin:false},
     primaryPanel:{selectedMap:'championship_stadium',adminSettings:{gameMode:'sandbox'},tournamentRoundCount:3,tournamentKillsToWin:25},
-    broadcastRail:{menuSocket:null},
+    broadcastRail:{menuSocket:null, account:null, playerName:'GuestPilot', onlineClients:[], lobbyChatMessages:[]},
     trainingSetup:{}, settingsOptions:{forceMobileControls:false,onForceMobileControlsChange:()=>{}},
   } as React.ComponentProps<typeof MainMenuOverlay>;
 }
@@ -24,7 +24,10 @@ test('menu gives all approved destinations a real navigation control and exposes
   assert.match(html,/Set up training/);
   assert.match(html,/assets\/menu\/training-iron-vanguard\.png/);
   assert.match(html,/Local play available/);
-  assert.doesNotMatch(html,/Global Broadcast|Online Players: 1/);
+  assert.match(html,/Social and account/);
+  assert.match(html,/Guest · Not signed in/);
+  assert.match(html,/Global chat/);
+  assert.match(html,/Open settings/);
 });
 
 test('gameplay hides the menu and its live model surfaces', () => {

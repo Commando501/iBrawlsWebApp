@@ -53,7 +53,8 @@ export function TheaterLibraryPanel({
   active = true, libraryStatus = 'ready', libraryError,
 }: TheaterLibraryPanelProps) {
   const id = useId();
-  const [collection, setCollection] = useState<TheaterCollection>('saved');
+  const [collection, setCollection] = useState<TheaterCollection>('recent');
+  useEffect(() => { if (active) setCollection('recent'); }, [active]);
   const [selection, setSelection] = useState<Record<TheaterCollection, string | null>>({ saved: null, recent: null });
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);

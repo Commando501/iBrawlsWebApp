@@ -19,6 +19,7 @@ export function PlayHub({ game, onNavigate }: Props) {
   const mapName = game.selectedMap === 'hangar' ? 'Industrial Hangar' : game.selectedMap === 'circle' ? 'Circle Arena' : game.selectedMap === 'custom_file' ? game.lobbyCustomMapData?.name || 'Custom map' : PREMADE_MAPS.find(map => map.id === game.selectedMap)?.name || 'Arena';
   const continuing = mode.id === 'tournament' ? Boolean(game.tournamentState) : mode.id === 'online' && Boolean(game.matchLobbyConfig && game.multiplayerRole);
   return <div className="menu-play-grid">
+    <div className="menu-play-options">
     <div className="menu-mode-list" role="radiogroup" aria-label="Game mode">
       {modes.map((item,index) => <button key={item.id} role="radio" aria-checked={index === selected} tabIndex={index === selected ? 0 : -1} className="menu-mode-card" onClick={() => setSelected(index)} onKeyDown={event => {
         if (['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)) {
@@ -27,10 +28,12 @@ export function PlayHub({ game, onNavigate }: Props) {
         } else if(event.key === 'Enter') { event.preventDefault(); onNavigate(item.id); }
       }}><img src={`/assets/menu/${item.image}-iron-vanguard.png`} alt=""/><span className="menu-mode-copy"><strong>{item.title}</strong><span>{item.description}</span></span><span className="menu-selected-label">Selected</span></button>)}
     </div>
+    <button type="button" className="menu-settings-tile" onClick={() => onNavigate('settings')}><span><strong>Settings</strong><small>Check your controls, graphics, and preferences before you play.</small></span><span className="menu-secondary">Open settings →</span></button>
+    </div>
     <aside className="menu-play-detail">
       <div className="menu-arena-preview">{mode.id === 'training' && game.selectedMap !== 'championship_stadium' ? <TopDownMapPreview selectedMap={game.selectedMap} customMap={game.lobbyCustomMapData} /> : <img src="/assets/menu/stadium-gameplay.png" alt="Actual V3 Iron Vanguard gameplay on Championship Stadium"/>}<span>{mode.id === 'training' && game.selectedMap !== 'championship_stadium' ? `${mapName} · Arena preview` : 'Championship Stadium · Gameplay capture'}</span></div>
       <div className="menu-play-copy"><h2>{mode.title}</h2><p>{mode.summary}</p>
-        <dl className="menu-facts">{mode.id === 'training' ? <><div><dt>Map</dt><dd>{mapName}</dd></div><div><dt>Mode</dt><dd>{game.adminSettings.gameMode === 'grifball' ? 'Grifball · 4v4' : 'Combat sandbox'}</dd></div></> : mode.id === 'tournament' ? <><div><dt>Format</dt><dd>Elimination bracket</dd></div><div><dt>Setup</dt><dd>{tournamentRounds} rounds · First to {tournamentKills}</dd></div></> : <><div><dt>Play</dt><dd>Quick Play or browse lobbies</dd></div><div><dt>Custom</dt><dd>Host a match or join by code</dd></div></>}</dl>
+        <dl className="menu-facts">{mode.id === 'training' ? <><div><dt>Map</dt><dd>{mapName}</dd></div><div><dt>Mode</dt><dd>iBrawls</dd></div></> : mode.id === 'tournament' ? <><div><dt>Format</dt><dd>iBrawls · Elimination bracket</dd></div><div><dt>Setup</dt><dd>{tournamentRounds} rounds · First to {tournamentKills}</dd></div></> : <><div><dt>Play</dt><dd>Quick Play or browse lobbies</dd></div><div><dt>Custom</dt><dd>Host a match or join by code</dd></div></>}</dl>
         <button className="menu-primary" onClick={() => onNavigate(mode.id)}>{continuing ? mode.id === 'tournament' ? 'Continue tournament' : 'Return to lobby' : mode.action}<span aria-hidden>→</span></button>
         <small>{mode.id === 'training' ? 'Choose your map, roster, and rules.' : mode.id === 'tournament' ? 'Configure the bracket before your next match.' : 'Matchmaking and lobbies live on the next screen.'}</small>
       </div>

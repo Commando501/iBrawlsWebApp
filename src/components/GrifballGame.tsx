@@ -65,8 +65,12 @@ import { disposeAsteroidResources } from './grifball/asteroidResourceDisposal';
 import { disposeAsteroidEnvironment } from './grifball/asteroidLighting';
 import { disposeNeonResources } from './grifball/neonResourceDisposal';
 import { disposeRainyResources } from './grifball/rainyResourceDisposal';
+import { disposeGlacierResources } from './grifball/glacierResourceDisposal';
+import { disposeCircleResources } from './grifball/circleResourceDisposal';
 import { disposeNeonEnvironment } from './grifball/neonLighting';
 import { disposeRainyEnvironment } from './grifball/rainyLighting';
+import { disposeGlacierEnvironment } from './grifball/glacierLighting';
+import { disposeCircleEnvironment } from './grifball/circleLighting';
 import {
   type LiveCameraFrameState,
 } from './grifball/liveCamera';
@@ -726,8 +730,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         disposeAsteroidEnvironment(scene);
         disposeNeonResources(scene);
         disposeRainyResources(scene);
+        disposeGlacierResources(scene);
+        disposeCircleResources(scene);
         disposeNeonEnvironment(scene);
         disposeRainyEnvironment(scene);
+        disposeGlacierEnvironment(scene);
+        disposeCircleEnvironment(scene);
         renderer.dispose();
         return;
       }
@@ -863,8 +871,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (mountedScene) disposeAsteroidEnvironment(mountedScene);
       disposeNeonResources(mountedScene);
       disposeRainyResources(mountedScene);
+      disposeGlacierResources(mountedScene);
+      disposeCircleResources(mountedScene);
       if (mountedScene) disposeNeonEnvironment(mountedScene);
       if (mountedScene) disposeRainyEnvironment(mountedScene);
+      if (mountedScene) disposeGlacierEnvironment(mountedScene);
+      if (mountedScene) disposeCircleEnvironment(mountedScene);
       if (mountedRenderer) {
         mountedRenderer.dispose();
       }

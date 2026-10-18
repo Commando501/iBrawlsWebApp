@@ -167,14 +167,37 @@ test('Hangar waits for its material gate before creating the player', async () =
   assert.equal(h.refs.scene!.children.filter(o => o.name === 'hangar_floor').length, 1);
 });
 
-test('Circle retains its default builder and does not load Hangar assets', async () => {
-  const h = harness(); h.options.activeCustomMap = null; h.options.selectedMap = 'circle';
+test('Circle and recorded Circle sessions use their own builder without loading Hangar assets', async () => {
+  for (const replay of [false, true]) {
+  const h = circleHarness();
+  h.options.selectedMap = replay ? 'hangar' : 'circle';
+  h.options.replayData = (replay ? { mapType: 'circle' } : {}) as ReplayFile;
   let circles = 0;
-  h.dependencies.buildDefaultArena = ({ isHangar }) => { assert.equal(isHangar, false); circles++; };
+  h.dependencies.buildCircle = () => { circles++; return { ready: Promise.resolve(), cancel: () => {} }; };
+  h.dependencies.buildDefaultArena = () => assert.fail('Circle must use its upgraded floor');
   h.dependencies.buildHangar = () => { assert.fail('Circle must not load Hangar'); };
   h.dependencies.buildHangarBase = () => { assert.fail('Circle must not use Hangar floor'); };
   await initializeGrifballMountSceneForState(h.options, h.dependencies);
   assert.equal(circles, 1); assert.equal(h.players(), 1);
+  }
+});
+
+test('an active custom map takes precedence over a Circle selection or replay', async () => {
+  const h = harness(); h.options.selectedMap = 'circle'; h.options.replayData = { mapType: 'circle' } as ReplayFile;
+  h.dependencies.buildCircleBase = () => assert.fail('custom maps must retain their own floor');
+  h.dependencies.buildCircle = () => assert.fail('custom maps must not load Circle assets');
+  await initializeGrifballMountSceneForState(h.options, h.dependencies);
+  assert.equal(h.floors(), 1); assert.equal(h.players(), 1);
+});
+
+test('unknown built-in maps retain the default arena fallback', async () => {
+  const h = harness(); h.options.activeCustomMap = null; h.options.selectedMap = 'unrecognized';
+  let defaults = 0;
+  h.dependencies.buildDefaultArena = ({ isHangar }) => { assert.equal(isHangar, false); defaults++; };
+  h.dependencies.buildCircleBase = () => assert.fail('unknown maps must not become Circle');
+  h.dependencies.buildCircle = () => assert.fail('unknown maps must not load Circle assets');
+  await initializeGrifballMountSceneForState(h.options, h.dependencies);
+  assert.equal(defaults, 1); assert.equal(h.players(), 1);
 });
 
 test('canceling a Canyon load releases its floor and prevents late combatant creation', async () => {
@@ -398,6 +421,80 @@ test('Rainy waits for its material readiness independently of the other maps', a
   const h = rainyHarness(); let entered!: () => void, release!: () => void;
   const waiting = new Promise<void>(r => { entered = r; });
   h.dependencies.waitForRainyTextures = () => { entered(); return new Promise<void>(r => { release = r; }); };
+  h.dependencies.waitForTextures = h.dependencies.waitForCanyonTextures = h.dependencies.waitForHangarTextures = h.dependencies.waitForCyberTextures = h.dependencies.waitForJungleTextures = h.dependencies.waitForAsteroidTextures = () => assert.fail('wrong material gate');
+  const pending = initializeGrifballMountSceneForState(h.options, h.dependencies);
+  await waiting; assert.equal(h.players(), 0); release(); await pending;
+  assert.equal(h.players(), 1);
+});
+
+function glacierHarness() {
+  const h = harness();
+  h.options.activeCustomMap = { id: 'winter_glacier_rink', theme: 'winter_rink' } as CustomMapData;
+  h.dependencies.buildStadium = () => undefined;
+  h.dependencies.buildCustomArena = () => {
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(48, .2, 24), new THREE.MeshStandardMaterial());
+    floor.name = 'glacier_floor'; h.refs.scene!.add(floor);
+  };
+  h.dependencies.buildGlacier = () => ({ ready: Promise.resolve(), cancel: () => {} });
+  h.dependencies.waitForGlacierTextures = async () => {};
+  return h;
+}
+
+test('Glacier cancellation disposes its floor and blocks a late player mount', async () => {
+  const h = glacierHarness(), controller = new AbortController();
+  let entered!: () => void, release!: () => void, cancellations = 0;
+  const waiting = new Promise<void>(r => { entered = r; });
+  h.dependencies.buildGlacier = () => ({ ready: new Promise<void>(r => { release = r; }), cancel: () => { cancellations++; } });
+  const pending = initializeGrifballMountSceneForState({ ...h.options, signal: controller.signal,
+    onLoadingStage: ({ progress }) => { if (progress === 70) setTimeout(entered, 5); },
+  }, h.dependencies);
+  await waiting; const floor = h.refs.scene!.getObjectByName('glacier_floor')!;
+  controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(cancellations, 1); assert.equal(floor.parent, null); assert.equal(h.scenes[0].disposals, 1);
+  release(); await Promise.resolve(); assert.equal(h.players(), 0);
+});
+
+test('Glacier waits for its material readiness independently of the other maps', async () => {
+  const h = glacierHarness(); let entered!: () => void, release!: () => void;
+  const waiting = new Promise<void>(r => { entered = r; });
+  h.dependencies.waitForGlacierTextures = () => { entered(); return new Promise<void>(r => { release = r; }); };
+  h.dependencies.waitForTextures = h.dependencies.waitForCanyonTextures = h.dependencies.waitForHangarTextures = h.dependencies.waitForCyberTextures = h.dependencies.waitForJungleTextures = h.dependencies.waitForAsteroidTextures = () => assert.fail('wrong material gate');
+  const pending = initializeGrifballMountSceneForState(h.options, h.dependencies);
+  await waiting; assert.equal(h.players(), 0); release(); await pending;
+  assert.equal(h.players(), 1);
+});
+
+function circleHarness() {
+  const h = harness();
+  h.options.activeCustomMap = null; h.options.selectedMap = 'circle';
+  h.dependencies.buildStadium = () => undefined;
+  h.dependencies.buildCircleBase = () => {
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, .2, 64), new THREE.MeshStandardMaterial());
+    floor.name = 'circle_floor'; h.refs.scene!.add(floor);
+  };
+  h.dependencies.buildCircle = () => ({ ready: Promise.resolve(), cancel: () => {} });
+  h.dependencies.waitForCircleTextures = async () => {};
+  return h;
+}
+
+test('Circle cancellation disposes its floor and blocks a late player mount', async () => {
+  const h = circleHarness(), controller = new AbortController();
+  let entered!: () => void, release!: () => void, cancellations = 0;
+  const waiting = new Promise<void>(r => { entered = r; });
+  h.dependencies.buildCircle = () => ({ ready: new Promise<void>(r => { release = r; }), cancel: () => { cancellations++; } });
+  const pending = initializeGrifballMountSceneForState({ ...h.options, signal: controller.signal,
+    onLoadingStage: ({ progress }) => { if (progress === 60) setTimeout(entered, 5); },
+  }, h.dependencies);
+  await waiting; const floor = h.refs.scene!.getObjectByName('circle_floor')!;
+  controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
+  assert.equal(cancellations, 1); assert.equal(floor.parent, null); assert.equal(h.scenes[0].disposals, 1);
+  release(); await Promise.resolve(); assert.equal(h.players(), 0);
+});
+
+test('Circle waits for its material readiness independently of the other maps', async () => {
+  const h = circleHarness(); let entered!: () => void, release!: () => void;
+  const waiting = new Promise<void>(r => { entered = r; });
+  h.dependencies.waitForCircleTextures = () => { entered(); return new Promise<void>(r => { release = r; }); };
   h.dependencies.waitForTextures = h.dependencies.waitForCanyonTextures = h.dependencies.waitForHangarTextures = h.dependencies.waitForCyberTextures = h.dependencies.waitForJungleTextures = h.dependencies.waitForAsteroidTextures = () => assert.fail('wrong material gate');
   const pending = initializeGrifballMountSceneForState(h.options, h.dependencies);
   await waiting; assert.equal(h.players(), 0); release(); await pending;

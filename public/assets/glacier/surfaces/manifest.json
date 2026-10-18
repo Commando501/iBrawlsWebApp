@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "generator": "scripts/glacier-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": {
+    "floor": 6
+  },
+  "statistics": {
+    "floor": {
+      "min": 231.13991538719054,
+      "max": 237.0762973111773,
+      "mean": 234.4071739230559,
+      "standardDeviation": 0.9898125458756301
+    }
+  },
+  "files": [
+    {
+      "path": "assets/glacier/surfaces/ice-floor-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 143661,
+      "sha256": "2c7b36747b36d12d5de5851aec7232a399960c36bff8f5e2a7f6446784ad4dc0",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/glacier/surfaces/ice-floor-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 873757,
+      "sha256": "cfa816b4f5ee3cb05330e1f57111a65e0ca84797089d8a2c59b6c4cd9f38aafe",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/glacier/surfaces/ice-floor-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 357433,
+      "sha256": "f25ae931e48611d4afde6c1f1884835f76ecec7eae057983a1af01920a1895b6",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/glacier/surfaces/ice-floor-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 58377,
+      "sha256": "23275f79ef4d7f1d81ca4b0133696404dae7f23259f1fd37269699cb46257791",
+      "colorSpace": "sRGB"
+    }
+  ],
+  "design": "Opaque quiet ice with broad frost roughness, shallow grain and sub-millimetre skate wear. No painted grid, bright cracks, baked shadows, mirror pass, transmission, loose debris or displacement. Ice cliffs share the source maps; architecture separately reuses the approved Stadium V3 coating."
+}

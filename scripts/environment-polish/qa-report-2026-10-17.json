@@ -1,0 +1,2530 @@
+{
+  "date": "2026-10-17",
+  "status": "implementation_verified",
+  "kind": "Cross-map environment consistency and shared rendering performance polish",
+  "scope": {
+    "maps": [
+      "championship_stadium",
+      "forerunner_canyon",
+      "hangar",
+      "cyber_hex_arena",
+      "botanical_outpost",
+      "vanguard_starbase",
+      "synthwave_grid_arena",
+      "rainy_industrial_streets",
+      "winter_glacier_rink",
+      "circle"
+    ],
+    "preserved": [
+      "Actual V3 Iron Vanguard models and existing game assets",
+      "Map footprints, collision layouts, spawn rules and movement settings",
+      "Readable authored surfaces, palettes and map lighting direction"
+    ],
+    "target": "Desktop gaming GPU at 60 FPS, with lighter quality settings; no locked-60 claim."
+  },
+  "implementation": [
+    "Shockwave bursts retain all 35 fragments and their existing random sequence, trajectories, appearance, shrink and lifetime while using one InstancedMesh draw per burst.",
+    "Shockwave and legacy trail cleanup releases scene-owned geometry, materials and instance buffers; undefined-emissive material warnings are removed.",
+    "V3 death-burst cleanup releases instance buffers, and opacity fades no longer request redundant material shader recompilation.",
+    "Environment frame updates use one depth-first scene traversal per frame to discover dynamic effect roots and update weather; no persistent scene-object cache is introduced.",
+    "Stadium settings preserve authored sky and fog during unrelated gameplay or lighting adjustments; explicit sky colors, visibility, replay routing and custom Stadium themes remain supported.",
+    "Stadium, Canyon, Hangar and Cyber cleanup releases owned key and fill shadow render targets, matching the later map implementations.",
+    "Stadium reflection probes avoid duplicate initialization, clean replaced owned targets and release temporary bake resources on failure.",
+    "Native V3 compatibility proxies reuse current root and bone world matrices instead of recursively refreshing the skeleton for every proxy. Authored bones, animation timing, weapon grips and gameplay movement are unchanged. The final test suite and targeted browser checks verify this change."
+  ],
+  "controlledShockwaveBenchmark": {
+    "status": "completed",
+    "sourceLog": "output/playwright/map-polish/shockwave-benchmark.log",
+    "fixtureSource": "output/playwright/map-polish/shockwave-benchmark-entry.ts",
+    "baselineSources": "output/playwright/map-polish/baseline-source/",
+    "environment": {
+      "browser": "Playwright Chromium",
+      "viewport": [
+        1280,
+        720
+      ],
+      "devicePixelRatio": 1,
+      "toneMapping": "ACESFilmic",
+      "outputColorSpace": "sRGB",
+      "gpu": "Not recorded by this isolated fixture."
+    },
+    "method": "Sequential baseline/current runs with the same camera, fixed random seed 8000, 60 bursts containing 2,100 fragments, and the same frozen pose after ten 0.02-second updates. Shaders compile before twelve warmup renders and 180 measured renders per implementation. Renderer-submission timing includes driver work and is not an isolated GPU timer.",
+    "baseline": {
+      "mode": "baseline",
+      "samples": 180,
+      "bursts": 60,
+      "fragments": 2100,
+      "warnings": 20,
+      "spawnMs": 17.199999928474426,
+      "drawCalls": 2101,
+      "triangles": 25202,
+      "rendererSubmissionMs": {
+        "mean": 7.37222222354677,
+        "p50": 7.200000047683716,
+        "p95": 9.600000023841858
+      },
+      "frameIntervalMs": {
+        "p50": 7,
+        "p95": 13.899999999999977
+      },
+      "note": "Deterministic frozen VFX-only fixture. Submission time includes driver work; this is not full-game FPS or an isolated GPU timer."
+    },
+    "current": {
+      "mode": "current",
+      "samples": 180,
+      "bursts": 60,
+      "fragments": 2100,
+      "warnings": 0,
+      "spawnMs": 9.5,
+      "drawCalls": 61,
+      "triangles": 25202,
+      "rendererSubmissionMs": {
+        "mean": 0.9299999998675452,
+        "p50": 0.8000000715255737,
+        "p95": 1.600000023841858
+      },
+      "frameIntervalMs": {
+        "p50": 7,
+        "p95": 14
+      },
+      "note": "Deterministic frozen VFX-only fixture. Submission time includes driver work; this is not full-game FPS or an isolated GPU timer."
+    },
+    "comparison": {
+      "bursts": 60,
+      "fragments": 2100,
+      "drawCalls": {
+        "before": 2101,
+        "after": 61,
+        "reductionPercent": 97.09662065683008
+      },
+      "renderedTriangles": {
+        "before": 25202,
+        "after": 25202
+      },
+      "rendererSubmissionMeanMs": {
+        "before": 7.37222222354677,
+        "after": 0.9299999998675452
+      },
+      "rendererSubmissionP95Ms": {
+        "before": 9.600000023841858,
+        "after": 1.600000023841858
+      },
+      "note": "This isolates VFX submission cost; it does not measure or imply a corresponding full-game FPS improvement. The frame-interval p95 remains approximately 14 ms in both runs."
+    },
+    "rasterComparison": {
+      "method": "Python pixel comparison of the two 1280 x 720 fixture screenshots.",
+      "channelOrder": [
+        "R",
+        "G",
+        "B"
+      ],
+      "maxAbsoluteChannelDifference": [
+        10,
+        7,
+        5
+      ],
+      "meanAbsoluteChannelDifference": [
+        0.0000119358,
+        0.0000075955,
+        0.00000542535
+      ],
+      "channelUnits": "8-bit values from 0 to 255",
+      "assessment": "Near-identical rasterization with small numerical differences; images are not exactly pixel-identical.",
+      "images": {
+        "baseline": "output/playwright/map-polish/shockwave-baseline.png",
+        "current": "output/playwright/map-polish/shockwave-current.png"
+      }
+    }
+  },
+  "gameplayPreservation": {
+    "baselineRecord": "output/playwright/map-polish/gameplay-before.json",
+    "algorithm": "SHA-256",
+    "allThreeUnchanged": true,
+    "sources": [
+      {
+        "path": "src/game/premadeMaps.ts",
+        "before": "ed457794d81d128cc757d092a57b8da4c1718e9ef98bd9290761fce04c3674f2",
+        "after": "ed457794d81d128cc757d092a57b8da4c1718e9ef98bd9290761fce04c3674f2",
+        "unchanged": true
+      },
+      {
+        "path": "src/settings/gameplaySettings.ts",
+        "before": "89a2cfb4507095e63c085d4d18f8975cef45d3b781419cfc241aea4bc119e0f1",
+        "after": "89a2cfb4507095e63c085d4d18f8975cef45d3b781419cfc241aea4bc119e0f1",
+        "unchanged": true
+      },
+      {
+        "path": "src/components/grifball/arenaSpawns.ts",
+        "before": "a15ace273f21782c4da7375203933b6bc35c2adfbe47a235b435d35ac6ef1944",
+        "after": "a15ace273f21782c4da7375203933b6bc35c2adfbe47a235b435d35ac6ef1944",
+        "unchanged": true
+      }
+    ],
+    "note": "Stock map definitions, gameplay settings and spawn/resizing sources match the baseline SHA-256 values. The final 418-test regression suite covers the runtime visual changes."
+  },
+  "validation": {
+    "focusedConsistencyChecks": {
+      "passed": 18,
+      "failed": 0,
+      "note": "Stadium sky settings, probe lifecycle and four-map resource cleanup; preceding the final consolidated run."
+    },
+    "consolidatedTests": {
+      "status": "passed",
+      "command": "node scripts/environment-polish/verify.mjs",
+      "uniqueTestFiles": 72,
+      "tests": 418,
+      "passed": 418,
+      "failed": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "durationMs": 84581.8848,
+      "sourceLog": "output/playwright/map-polish/tests-final.log",
+      "nodeArguments": [
+        "--import",
+        "tsx",
+        "--test",
+        "--test-concurrency=1"
+      ]
+    },
+    "typescript": {
+      "status": "passed",
+      "exitCode": 0,
+      "sourceLog": "output/playwright/map-polish/typecheck-final.log",
+      "outputBytes": 0,
+      "note": "The first check found a new test collection type mismatch. It was corrected to THREE.RenderTarget before this successful final check."
+    },
+    "productionBuild": {
+      "status": "passed",
+      "target": "Vite production client",
+      "exitCode": 0,
+      "durationSeconds": 22.24,
+      "sourceLog": "output/playwright/map-polish/build-final.log",
+      "outputDirectory": "output/playwright/map-polish/final-native-dist",
+      "warnings": "Existing large-chunk warnings remain; build completed successfully."
+    },
+    "allMapBrowserReview": {
+      "status": "completed_first_production_build",
+      "matches": 20,
+      "mapsReviewed": 10,
+      "details": "browserSweep"
+    },
+    "liveGameplayPerformance": {
+      "status": "completed",
+      "details": [
+        "browserSweep",
+        "finalBuildBrowserVerification"
+      ],
+      "note": "Twenty first-build map/tier matches precede the final native proxy change; three targeted final-build matches include it. All are independent stochastic workloads, not paired causal FPS comparisons."
+    },
+    "finalBuildBrowserChecks": {
+      "status": "passed",
+      "expectedChecks": 3,
+      "completedChecks": 3,
+      "details": "finalBuildBrowserVerification"
+    }
+  },
+  "sourceSha256": {
+    "src/components/grifball/stadiumVisualState.ts": "714d251d7cc90126914522cf71498d74393837c7658bc1c12071de716bd75b6f",
+    "src/components/grifball/stadiumVisualState.test.ts": "03d1589ff357a7920d334997b2b078d2e540c4c28fe36a25bf986127968d2593",
+    "src/components/grifball/environmentShadowDisposal.test.ts": "dc132d526ba7979a2643149413e6a1781b0ae286602fcaef7f942058d0f1509d",
+    "src/components/grifball/stadiumLighting.ts": "97f39c6f4f6b35d8c15418a0b2fce0720528240e2f715da8925d11e37a00589a",
+    "src/components/grifball/stadiumLighting.test.ts": "a37f16185ae4ee6d125614e8b9eae2ee2e1d4cc7e379597870cf7149e68889e0",
+    "src/components/grifball/stadiumResourceDisposal.ts": "2a252481190948da9690784da9fc259cf6c26e1eaaf401cf0587259868e4503a",
+    "src/components/grifball/canyonResourceDisposal.ts": "83852bd84c56dc240571877ce810bda0f32a825edc276fe325cb8a5158c3bb95",
+    "src/components/grifball/hangarResourceDisposal.ts": "a819a74e5d1c0e150ffb525fa20522ac3336411e7ee941d16fdbc5b78afd0cd9",
+    "src/components/grifball/cyberResourceDisposal.ts": "4ed50b34faa5322dc6dff9fa6320ffbd6f6cfeb5b28d98a69c6cde34419930fc",
+    "src/components/grifball/customMapArenaRuntime.ts": "bec1360b7df6f09419994192e298d1b1a15b5e4a47a934ae21e04bc7504bea09",
+    "src/components/grifball/visualState.ts": "b3ab3f8bd82770de7a27984fbffd039bd1432527cc15a3ecd788fafd59f50b47",
+    "src/components/grifball/renderFrame.ts": "553913f5d514c6cf70cf5fec2af99a4233d6780a98a681efae08844444384885",
+    "src/components/grifball/rainyWeather.ts": "981b0e3cef9cc3f178d4b3ffc3a65f35996dd0180c6834030c19ed2fc177bf3b",
+    "src/components/grifball/glacierWeather.ts": "e585b1e580ba48f663d868a27083e49b9fa9e32798b096d47f43ac59eee50929",
+    "src/components/grifball/environmentVisualFrame.test.ts": "22b29c57cb5ce85441299eb0cb02d6145083508ce581018cfc33ddfadf54fd87",
+    "src/components/grifball/vfxSystems.ts": "60208b352257a80fa2e09ea2b991d0d9aa6c164e70eff98c18715936bff4cd61",
+    "src/components/grifball/v3DeathVoxelBurst.ts": "edf73d4b6928806261eee1b26336df214c70e6bfe81613d6617c250760192352",
+    "src/components/grifball/v3DeathVoxelBurst.test.ts": "745012943e65fbafc2def79accdcea27573788b02d0405481ce0cbe670c2560d",
+    "src/components/grifball/instancedShockwaveParticles.ts": "20c92645b01d13bbc33198a0d991a26db0b46b9eafd0cd9dd509487fc9a93b1f",
+    "src/components/grifball/instancedShockwaveParticles.test.ts": "1c6d69496d474ba654c074eefc227a41258dfa1129e91723770dc7fdd6917417",
+    "scripts/environment-polish/verify.mjs": "fe9441e8c7aa224c3ece2f62108bec23db2db4a3c4c7c5b61ea725754d62cc61",
+    "src/components/iron-vanguard/ironVanguardModel.ts": "d1d5248fb4afc5d792087ac8b0c6e8482888d10c32f6b7cb9bb1c4355c8a9a63",
+    "src/components/iron-vanguard/ironVanguardProxies.test.ts": "e2fec4239ca5a45ebd17e2285a01e596bf09a20f613e8d8ed508cae33ebcf8b4"
+  },
+  "sourceHashNote": "Final SHA-256 snapshot of 23 files changed by consistency, frame, VFX and native proxy work. Earlier map asset files and unrelated working-tree changes are excluded. The twenty-match first-build sweep predates the proxy change; the three final-build matches and final test/typecheck/build validation include it.",
+  "limits": [
+    "The isolated shockwave fixture demonstrates reduced draw submissions with the same fragment and triangle count. Renderer submission timing includes driver work and is not full-game FPS or an isolated GPU timer.",
+    "All twenty standardized first-build matches averaged at least 60 FPS on RTX 4090 at 1080p, but several p95/p99 values exceed 16.67 ms. These matches preceded the native proxy optimization.",
+    "Three targeted final-build matches averaged approximately 134 to 141 FPS. Independent random workloads prevent causal before/after percentage FPS claims; the final browser checks do not repeat all twenty map/tier combinations.",
+    "This verification does not certify locked 60 FPS, slower GPUs, higher resolutions or worst-case combat. Existing THREE.Clock, shader precision and large-bundle warnings remain documented."
+  ],
+  "browserSweep": {
+    "status": "completed_first_production_build",
+    "build": {
+      "main": "main-B-x38KWZ",
+      "v3Models": "VoxelModelsV3-CeG4hNlo",
+      "scope": "These twenty matches were captured before the final native-proxy optimization. Do not attribute their results to that later change."
+    },
+    "environment": {
+      "browser": "Playwright Chromium",
+      "renderer": "ANGLE / Direct3D11",
+      "gpu": "NVIDIA GeForce RTX 4090",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "canvas": [
+        1920,
+        1080
+      ],
+      "mode": "Combat sandbox",
+      "models": "Player and seven actual V3 Iron Vanguard AI combatants"
+    },
+    "method": "Each map and High/Low tier was launched as an independent stochastic combat match. Five seconds of warmup preceded fifteen seconds of requestAnimationFrame interval sampling. Tier, architecture readiness and actual model identifiers were checked before sampling. Screenshot camera overrides occurred afterward. These matches are not paired FPS proof or a deterministic before/after comparison.",
+    "expectedMatches": 20,
+    "completedMatches": 20,
+    "checks": {
+      "allRequestedQualityTiersCorrect": true,
+      "allSevenBotRostersUseActualIronVanguard": true,
+      "allArchitectureReady": true,
+      "allOwnedShadowTargetsDisposedExactlyOnce": true,
+      "allRenderersDisposedExactlyOnce": true,
+      "allEnvironmentsCleared": true,
+      "pageErrors": 0,
+      "consoleErrors": 0,
+      "rainyAndGlacierWeatherAdvancesOnBothTiers": true
+    },
+    "performanceRanges": {
+      "high": {
+        "samples": 10,
+        "averageFps": {
+          "min": 62.52120067310058,
+          "max": 104.76888237644866
+        },
+        "p95FrameMs": {
+          "min": 14,
+          "max": 27.799999999999272
+        },
+        "p99FrameMs": {
+          "min": 14,
+          "max": 48.69999999999709
+        }
+      },
+      "low": {
+        "samples": 10,
+        "averageFps": {
+          "min": 67.97195907036198,
+          "max": 110.37953784393746
+        },
+        "p95FrameMs": {
+          "min": 14,
+          "max": 27.69999999999709
+        },
+        "p99FrameMs": {
+          "min": 14,
+          "max": 34.70000000000073
+        }
+      },
+      "all": {
+        "samples": 20,
+        "averageFps": {
+          "min": 62.52120067310058,
+          "max": 110.37953784393746
+        },
+        "p95FrameMs": {
+          "min": 14,
+          "max": 27.799999999999272
+        },
+        "p99FrameMs": {
+          "min": 14,
+          "max": 48.69999999999709
+        }
+      }
+    },
+    "averageRateTargetMetInEverySample": true,
+    "frameTimeLimit": "Several p95/p99 frame intervals exceed 16.67 ms; the twenty samples do not establish locked 60 FPS.",
+    "counterNotes": "namedEnvironmentInventory reports visible environment scene inventory, not renderer submission count. maxCalls/maxTriangles come from renderer.info and include rendering passes. customMapObjectCount includes decorative objects and is not a collider count.",
+    "visualReview": {
+      "status": "completed_by_root",
+      "mapsReviewed": 10,
+      "source": "Actual game captures from this sweep",
+      "note": "Root visually reviewed all ten maps. Hangar uses its gameplay screenshot because the overview camera is blocked by the roof."
+    },
+    "warnings": {
+      "summary": "Existing THREE.Clock deprecation warnings remain. Stadium Low also reports ANGLE shader precision warning X4122; no page or console errors occurred.",
+      "uniqueMessages": [
+        "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.",
+        "THREE.WebGLProgram: Program Info Log: (210,81-129): warning X4122: sum of 0.996094 and -2.98545e-017 cannot be represented accurately in double precision\n(209,37-61): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision\n(210,82-106): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision\n(209,37-61): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision\n(210,82-106): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision"
+      ]
+    },
+    "results": [
+      {
+        "sourceLog": "output/playwright/map-polish/championship_stadium-high.log",
+        "map": "championship_stadium",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 3,
+          "statuses": {
+            "stadium_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 596250,
+            "draws": 144,
+            "meshes": 144
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "0b0c10",
+            "density": 0.009
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 940,
+          "meanMs": 15.994574468085109,
+          "averageFps": 62.52120067310058,
+          "p50Ms": 13.900000000001455,
+          "p95Ms": 21,
+          "p99Ms": 34.900000000001455,
+          "maxCalls": 249,
+          "maxTriangles": 935257,
+          "maxShockwaveDraws": 72,
+          "memory": {
+            "geometries": 167,
+            "textures": 40
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/championship_stadium-low.log",
+        "map": "championship_stadium",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 3,
+          "statuses": {
+            "stadium_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 163170,
+            "draws": 138,
+            "meshes": 138
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "0b0c10",
+            "density": 0.009
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1021,
+          "meanMs": 14.711949069539665,
+          "averageFps": 67.97195907036198,
+          "p50Ms": 13.900000000001455,
+          "p95Ms": 20.900000000001455,
+          "p99Ms": 27.799999999999272,
+          "maxCalls": 244,
+          "maxTriangles": 494412,
+          "maxShockwaveDraws": 77,
+          "memory": {
+            "geometries": 207,
+            "textures": 30
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.",
+          "THREE.WebGLProgram: Program Info Log: (210,81-129): warning X4122: sum of 0.996094 and -2.98545e-017 cannot be represented accurately in double precision\n(209,37-61): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision\n(210,82-106): warning X4122: sum of 1 and -1.49272e-017 cannot be represented accurately in double precision\n(209,37-61): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision\n(210,82-106): warning X4122: sum of 1 and -1.66644e-018 cannot be represented accurately in double precision"
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/forerunner_canyon-high.log",
+        "map": "forerunner_canyon",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 12,
+          "statuses": {
+            "canyon_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 175680,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "9a7c66",
+            "density": 0.007
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1052,
+          "meanMs": 14.27842205323194,
+          "averageFps": 70.03575018807128,
+          "p50Ms": 13.900000000001455,
+          "p95Ms": 20.899999999997817,
+          "p99Ms": 27.799999999999272,
+          "maxCalls": 145,
+          "maxTriangles": 506431,
+          "maxShockwaveDraws": 86,
+          "memory": {
+            "geometries": 48,
+            "textures": 36
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/forerunner_canyon-low.log",
+        "map": "forerunner_canyon",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 12,
+          "statuses": {
+            "canyon_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 29188,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "9a7c66",
+            "density": 0.007
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1046,
+          "meanMs": 14.367017208413001,
+          "averageFps": 69.60387013488246,
+          "p50Ms": 13.900000000001455,
+          "p95Ms": 27.69999999999709,
+          "p99Ms": 34.70000000000073,
+          "maxCalls": 116,
+          "maxTriangles": 342256,
+          "maxShockwaveDraws": 65,
+          "memory": {
+            "geometries": 31,
+            "textures": 26
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/hangar-high.log",
+        "map": "hangar",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 0,
+          "statuses": {
+            "hangar_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 144424,
+            "draws": 20,
+            "meshes": 20
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "101923",
+            "density": 0.012
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 998,
+          "meanMs": 15.085871743486974,
+          "averageFps": 66.28718691259789,
+          "p50Ms": 13.900000000001455,
+          "p95Ms": 27.799999999999272,
+          "p99Ms": 48.69999999999709,
+          "maxCalls": 113,
+          "maxTriangles": 460728,
+          "maxShockwaveDraws": 69,
+          "memory": {
+            "geometries": 58,
+            "textures": 28
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/hangar-low.log",
+        "map": "hangar",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 0,
+          "statuses": {
+            "hangar_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 35344,
+            "draws": 20,
+            "meshes": 20
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "101923",
+            "density": 0.012
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1330,
+          "meanMs": 11.27827067669173,
+          "averageFps": 88.66607555949626,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.700000000000728,
+          "maxCalls": 154,
+          "maxTriangles": 343808,
+          "maxShockwaveDraws": 98,
+          "memory": {
+            "geometries": 58,
+            "textures": 27
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/cyber_hex_arena-high.log",
+        "map": "cyber_hex_arena",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 10,
+          "statuses": {
+            "cyber_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 122796,
+            "draws": 26,
+            "meshes": 26
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "182333",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1292,
+          "meanMs": 11.620665634674923,
+          "averageFps": 86.05359033961862,
+          "p50Ms": 13.800000000001091,
+          "p95Ms": 14,
+          "p99Ms": 20.899999999997817,
+          "maxCalls": 161,
+          "maxTriangles": 442666,
+          "maxShockwaveDraws": 104,
+          "memory": {
+            "geometries": 42,
+            "textures": 28
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/cyber_hex_arena-low.log",
+        "map": "cyber_hex_arena",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 10,
+          "statuses": {
+            "cyber_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 17756,
+            "draws": 26,
+            "meshes": 26
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "182333",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1233,
+          "meanMs": 12.176723438767233,
+          "averageFps": 82.12389852070416,
+          "p50Ms": 13.899999999997817,
+          "p95Ms": 14,
+          "p99Ms": 20.899999999997817,
+          "maxCalls": 135,
+          "maxTriangles": 340126,
+          "maxShockwaveDraws": 65,
+          "memory": {
+            "geometries": 40,
+            "textures": 22
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/botanical_outpost-high.log",
+        "map": "botanical_outpost",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 8,
+          "statuses": {
+            "jungle_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 219308,
+            "draws": 20,
+            "meshes": 20
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "7e9187",
+            "density": 0.009
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1334,
+          "meanMs": 11.249625187406298,
+          "averageFps": 88.89185046978075,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 14.100000000000364,
+          "maxCalls": 117,
+          "maxTriangles": 529318,
+          "maxShockwaveDraws": 64,
+          "memory": {
+            "geometries": 52,
+            "textures": 32
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/botanical_outpost-low.log",
+        "map": "botanical_outpost",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 8,
+          "statuses": {
+            "jungle_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 48188,
+            "draws": 20,
+            "meshes": 20
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "7e9187",
+            "density": 0.009
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1376,
+          "meanMs": 10.906249999999998,
+          "averageFps": 91.69054441260747,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.799999999999272,
+          "maxCalls": 108,
+          "maxTriangles": 330010,
+          "maxShockwaveDraws": 57,
+          "memory": {
+            "geometries": 74,
+            "textures": 24
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/vanguard_starbase-high.log",
+        "map": "vanguard_starbase",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 8,
+          "statuses": {
+            "asteroid_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 72696,
+            "draws": 25,
+            "meshes": 25
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "101824",
+            "density": 0.006
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1331,
+          "meanMs": 11.285499624342599,
+          "averageFps": 88.60928034085615,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.799999999999272,
+          "maxCalls": 186,
+          "maxTriangles": 403779,
+          "maxShockwaveDraws": 116,
+          "memory": {
+            "geometries": 77,
+            "textures": 30
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/vanguard_starbase-low.log",
+        "map": "vanguard_starbase",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 8,
+          "statuses": {
+            "asteroid_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 13798,
+            "draws": 25,
+            "meshes": 25
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "101824",
+            "density": 0.006
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1349,
+          "meanMs": 11.1297257227576,
+          "averageFps": 89.84947382443052,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.900000000001455,
+          "maxCalls": 139,
+          "maxTriangles": 328742,
+          "maxShockwaveDraws": 83,
+          "memory": {
+            "geometries": 101,
+            "textures": 25
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/synthwave_grid_arena-high.log",
+        "map": "synthwave_grid_arena",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 9,
+          "statuses": {
+            "neon_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 157428,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "323747",
+            "density": 0.005
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1343,
+          "meanMs": 11.1795234549516,
+          "averageFps": 89.44925103735822,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.899999999999636,
+          "maxCalls": 142,
+          "maxTriangles": 463678,
+          "maxShockwaveDraws": 90,
+          "memory": {
+            "geometries": 67,
+            "textures": 27
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/synthwave_grid_arena-low.log",
+        "map": "synthwave_grid_arena",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 9,
+          "statuses": {
+            "neon_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 35540,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "323747",
+            "density": 0.005
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1508,
+          "meanMs": 9.960809018567641,
+          "averageFps": 100.39345179050521,
+          "p50Ms": 7,
+          "p95Ms": 14,
+          "p99Ms": 14.099999999998545,
+          "maxCalls": 149,
+          "maxTriangles": 361445,
+          "maxShockwaveDraws": 58,
+          "memory": {
+            "geometries": 44,
+            "textures": 24
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/rainy_industrial_streets-high.log",
+        "map": "rainy_industrial_streets",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 5,
+          "statuses": {
+            "rainy_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 121806,
+            "draws": 27,
+            "meshes": 27
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "101c28",
+            "density": 0.012
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1356,
+          "meanMs": 11.067109144542771,
+          "averageFps": 90.35783301126143,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.80000000000291,
+          "maxCalls": 151,
+          "maxTriangles": 457162,
+          "maxShockwaveDraws": 83,
+          "memory": {
+            "geometries": 40,
+            "textures": 31
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": {
+            "name": "rainy_weather",
+            "start": 6.920599999904633,
+            "end": 26.937599999904634
+          }
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true,
+          "weatherAdvances": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/rainy_industrial_streets-low.log",
+        "map": "rainy_industrial_streets",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 5,
+          "statuses": {
+            "rainy_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 28138,
+            "draws": 27,
+            "meshes": 27
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "101c28",
+            "density": 0.012
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1453,
+          "meanMs": 10.32821748107364,
+          "averageFps": 96.8221284875624,
+          "p50Ms": 7,
+          "p95Ms": 14,
+          "p99Ms": 14.100000000002183,
+          "maxCalls": 164,
+          "maxTriangles": 366460,
+          "maxShockwaveDraws": 96,
+          "memory": {
+            "geometries": 57,
+            "textures": 25
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": {
+            "name": "rainy_weather",
+            "start": 6.701300000071526,
+            "end": 26.720200000047683
+          }
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true,
+          "weatherAdvances": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/winter_glacier_rink-high.log",
+        "map": "winter_glacier_rink",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 15,
+          "statuses": {
+            "glacier_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 179338,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "9bafbc",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1393,
+          "meanMs": 10.773223259152907,
+          "averageFps": 92.82273057419488,
+          "p50Ms": 13.799999999999272,
+          "p95Ms": 14,
+          "p99Ms": 20.799999999999272,
+          "maxCalls": 164,
+          "maxTriangles": 504753,
+          "maxShockwaveDraws": 110,
+          "memory": {
+            "geometries": 40,
+            "textures": 30
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": {
+            "name": "glacier_weather",
+            "start": 6.987899999976158,
+            "end": 27.008700000047686
+          }
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true,
+          "weatherAdvances": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/winter_glacier_rink-low.log",
+        "map": "winter_glacier_rink",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 15,
+          "statuses": {
+            "glacier_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 39346,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "9bafbc",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1581,
+          "meanMs": 9.496457938013915,
+          "averageFps": 105.30241975769121,
+          "p50Ms": 7,
+          "p95Ms": 14,
+          "p99Ms": 14,
+          "maxCalls": 210,
+          "maxTriangles": 343674,
+          "maxShockwaveDraws": 145,
+          "memory": {
+            "geometries": 40,
+            "textures": 23
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": {
+            "name": "glacier_weather",
+            "start": 6.719800000071526,
+            "end": 26.74139999997616
+          }
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true,
+          "weatherAdvances": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/circle-high.log",
+        "map": "circle",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 0,
+          "statuses": {
+            "circle_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 71824,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "17232f",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1573,
+          "meanMs": 9.544818817546089,
+          "averageFps": 104.76888237644866,
+          "p50Ms": 7,
+          "p95Ms": 14,
+          "p99Ms": 14,
+          "maxCalls": 171,
+          "maxTriangles": 401759,
+          "maxShockwaveDraws": 100,
+          "memory": {
+            "geometries": 66,
+            "textures": 28
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/circle-low.log",
+        "map": "circle",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 0,
+          "statuses": {
+            "circle_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 18080,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "17232f",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 1658,
+          "meanMs": 9.059650180940892,
+          "averageFps": 110.37953784393746,
+          "p50Ms": 7,
+          "p95Ms": 14,
+          "p99Ms": 14,
+          "maxCalls": 151,
+          "maxTriangles": 341990,
+          "maxShockwaveDraws": 97,
+          "memory": {
+            "geometries": 68,
+            "textures": 23
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      }
+    ],
+    "exploratoryRunsExcludedFromStandardizedSweep": [
+      {
+        "sourceLog": "output/playwright/map-polish/circle-high-initial.log",
+        "map": "circle",
+        "tier": "high",
+        "measure": {
+          "frames": 856,
+          "meanMs": 17.531542056074766,
+          "averageFps": 57.04004797761045,
+          "p50Ms": 13.900000000001455,
+          "p95Ms": 27.80000000000291,
+          "p99Ms": 62.5,
+          "maxCalls": 145,
+          "maxTriangles": 388842,
+          "maxShockwaveDraws": 87,
+          "memory": {
+            "geometries": 53,
+            "textures": 28
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "warmupSeconds": 2,
+        "reasonExcluded": "Exploratory early run used two seconds of warmup. Retained for transparency; excluded from all standardized twenty-match ranges and target assertions."
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/championship_stadium-high-initial.log",
+        "map": "championship_stadium",
+        "tier": "high",
+        "measure": {
+          "frames": 795,
+          "meanMs": 18.920251572327047,
+          "averageFps": 52.853419848952235,
+          "p50Ms": 14,
+          "p95Ms": 34.70000000000073,
+          "p99Ms": 55.60000000000218,
+          "maxCalls": 262,
+          "maxTriangles": 937804,
+          "maxShockwaveDraws": 78,
+          "memory": {
+            "geometries": 173,
+            "textures": 41
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "warmupSeconds": 2,
+        "reasonExcluded": "Exploratory early run used two seconds of warmup. Retained for transparency; excluded from all standardized twenty-match ranges and target assertions."
+      }
+    ]
+  },
+  "finalBuildBrowserVerification": {
+    "status": "passed",
+    "build": {
+      "index": "output/playwright/map-polish/final-native-dist/index.html",
+      "main": "main-nhMBNqab.js",
+      "v3Models": "VoxelModelsV3-DN5XKeCx.js",
+      "includesNativeProxyOptimization": true
+    },
+    "method": "Five seconds of warmup and fifteen seconds of requestAnimationFrame interval sampling in three independent combat sandbox matches at 1920 x 1080 on RTX 4090. Quality, architecture, model and cleanup assertions match the first-build sweep. These are stochastic workload samples and do not establish causal percentage FPS gains.",
+    "matches": 3,
+    "visualReview": {
+      "status": "completed_by_root",
+      "screenshotsReviewed": 3,
+      "note": "Root reviewed all three final-build captures: actual V3 characters and correctly attached weapons remain visible; Glacier weather remains active."
+    },
+    "results": [
+      {
+        "sourceLog": "output/playwright/map-polish/final-championship_stadium-high.log",
+        "map": "championship_stadium",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 3,
+          "statuses": {
+            "stadium_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 596250,
+            "draws": 144,
+            "meshes": 144
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "0b0c10",
+            "density": 0.009
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 2008,
+          "meanMs": 7.477041832669322,
+          "averageFps": 133.74273173525867,
+          "p50Ms": 6.900000000001455,
+          "p95Ms": 13.899999999997817,
+          "p99Ms": 13.900000000001455,
+          "maxCalls": 367,
+          "maxTriangles": 945005,
+          "maxShockwaveDraws": 163,
+          "memory": {
+            "geometries": 184,
+            "textures": 41
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/final-circle-high.log",
+        "map": "circle",
+        "tier": "high",
+        "metadata": {
+          "quality": {
+            "tier": "high",
+            "pixelRatioCap": 1.5,
+            "shadowMapSize": 2048,
+            "architectureDetail": "high",
+            "seatStride": 1,
+            "dustCount": 180,
+            "lightShafts": true,
+            "textureTier": "high"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 0,
+          "statuses": {
+            "circle_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 71824,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "17232f",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 2117,
+          "meanMs": 7.088804912612187,
+          "averageFps": 141.06750183247817,
+          "p50Ms": 6.900000000001455,
+          "p95Ms": 7,
+          "p99Ms": 13.899999999999636,
+          "maxCalls": 267,
+          "maxTriangles": 399436,
+          "maxShockwaveDraws": 153,
+          "memory": {
+            "geometries": 113,
+            "textures": 28
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": null
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true
+        }
+      },
+      {
+        "sourceLog": "output/playwright/map-polish/final-winter_glacier_rink-low.log",
+        "map": "winter_glacier_rink",
+        "tier": "low",
+        "metadata": {
+          "quality": {
+            "tier": "low",
+            "pixelRatioCap": 1,
+            "shadowMapSize": 512,
+            "architectureDetail": "low",
+            "seatStride": 4,
+            "dustCount": 0,
+            "lightShafts": false,
+            "textureTier": "low"
+          },
+          "models": [
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard",
+            "iron-vanguard"
+          ],
+          "actors": 7,
+          "radius": 27.5,
+          "customMapObjectCount": 15,
+          "statuses": {
+            "glacier_scenery": "ready"
+          },
+          "namedEnvironmentInventory": {
+            "triangles": 39346,
+            "draws": 24,
+            "meshes": 24
+          },
+          "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "fog": {
+            "color": "9bafbc",
+            "density": 0.008
+          },
+          "environment": true
+        },
+        "measure": {
+          "frames": 2119,
+          "meanMs": 7.082161396885323,
+          "averageFps": 141.19983207948238,
+          "p50Ms": 6.900000000001455,
+          "p95Ms": 7,
+          "p99Ms": 13.899999999999636,
+          "maxCalls": 175,
+          "maxTriangles": 372815,
+          "maxShockwaveDraws": 92,
+          "memory": {
+            "geometries": 117,
+            "textures": 23
+          },
+          "actors": 7,
+          "canvas": [
+            1920,
+            1080
+          ],
+          "weather": {
+            "name": "glacier_weather",
+            "start": 4.226899999976158,
+            "end": 24.237000000000002
+          }
+        },
+        "cleanup": {
+          "rendererDisposals": 1,
+          "shadowTargets": 1,
+          "shadowTargetDisposals": 1,
+          "environmentCleared": true
+        },
+        "errors": [],
+        "consoleErrors": [],
+        "warnings": [
+          "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+        ],
+        "checks": {
+          "qualityMatchesRequestedTier": true,
+          "architectureDetailMatchesTier": true,
+          "sevenActualIronVanguardModels": true,
+          "architectureReady": true,
+          "environmentLoaded": true,
+          "rendererDisposedOnce": true,
+          "ownedShadowTargetDisposedOnce": true,
+          "environmentCleared": true,
+          "noPageErrors": true,
+          "noConsoleErrors": true,
+          "resolution1920x1080": true,
+          "expectedGpu": true,
+          "weatherAdvances": true
+        }
+      }
+    ],
+    "averageFpsRange": {
+      "min": 133.74273173525867,
+      "max": 141.19983207948238
+    },
+    "p95FrameMsRange": {
+      "min": 7,
+      "max": 13.899999999997817
+    },
+    "pageErrors": 0,
+    "consoleErrors": 0,
+    "warnings": [
+      "THREE.Clock: This module has been deprecated. Please use THREE.Timer instead."
+    ],
+    "captures": [
+      "output/playwright/map-polish/final-championship_stadium-high-gameplay.png",
+      "output/playwright/map-polish/final-circle-high-gameplay.png",
+      "output/playwright/map-polish/final-circle-high-overview.png",
+      "output/playwright/map-polish/final-winter_glacier_rink-low-gameplay.png"
+    ],
+    "limits": "The three short final-build samples are not a locked-60 certification, a repeat of all twenty map/tier combinations after the proxy change, or a guarantee for slower GPUs and higher resolutions."
+  }
+}

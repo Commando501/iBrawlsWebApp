@@ -1,4 +1,5 @@
-import { updateRainyWeatherForScene } from './rainyWeather';
+import { updateRainyWeather } from './rainyWeather';
+import { updateGlacierWeather } from './glacierWeather';
 import * as THREE from 'three';
 import { getSkyboxTexture } from '../../game/skyboxTextures';
 import { getPrimaryRemoteOpponent } from '../../game/roster';
@@ -14,6 +15,9 @@ import { updateJungleSkyMaterial } from './jungleLighting';
 import { updateAsteroidSkyMaterial } from './asteroidLighting';
 import { updateNeonSkyMaterial } from './neonLighting';
 import { updateRainySkyMaterial } from './rainyLighting';
+import { updateGlacierSkyMaterial } from './glacierLighting';
+import { updateCircleSkyMaterial } from './circleLighting';
+import { syncStadiumVisualStateForRefs } from './stadiumVisualState';
 
 export const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -231,26 +235,72 @@ export const updateEmissiveGlowPulseForScene = ({
   blinkMaterial?: THREE.Material;
   elapsed?: number;
 }): void => {
-  scene.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.material) {
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((mat) => {
-        if (mat.userData.preserveEmissiveIntensity === true) return;
-        if (
-          'emissive' in mat &&
-          mat.emissive &&
-          ((mat.emissive as THREE.Color).r > 0 ||
-            (mat.emissive as THREE.Color).g > 0 ||
-            (mat.emissive as THREE.Color).b > 0)
-        ) {
-          const standardMat = mat as THREE.MeshStandardMaterial;
-          if (mat !== blinkMaterial) {
-            standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
-          }
-        }
-      });
+  const updateGlow = createEmissivePulseVisitor(blinkMaterial, elapsed);
+  scene.traverse(updateGlow);
+};
+
+/** Materials remain live: loadouts, blink swaps and effects can change between ticks. */
+const createEmissivePulseVisitor = (blinkMaterial: THREE.Material, elapsed: number) => {
+  const intensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
+  const visited = new Set<THREE.Material>();
+  const updateMaterial = (material: THREE.Material): void => {
+    if (visited.has(material)) return;
+    visited.add(material);
+    if (material === blinkMaterial || material.userData.preserveEmissiveIntensity === true) return;
+    if ('emissive' in material && material.emissive) {
+      const emissive = material.emissive as THREE.Color;
+      if (emissive.r > 0 || emissive.g > 0 || emissive.b > 0) {
+        (material as THREE.MeshStandardMaterial).emissiveIntensity = intensity;
+      }
     }
+  };
+  return (child: THREE.Object3D): void => {
+    if (!(child instanceof THREE.Mesh) || !child.material) return;
+    if (Array.isArray(child.material)) {
+      for (const material of child.material) updateMaterial(material);
+    } else updateMaterial(child.material);
+  };
+};
+
+interface WeatherTargets {
+  rainy?: THREE.Object3D;
+  glacier?: THREE.Object3D;
+  rain?: THREE.Object3D;
+  snow?: THREE.Object3D;
+}
+
+const collectWeatherTarget = (targets: WeatherTargets, object: THREE.Object3D): void => {
+  // Keep getObjectByName's depth-first/first-match semantics, including foreign
+  // objects with these names. Do not cache: editors and late loads may replace them.
+  if (object.name === 'rainy_weather') targets.rainy ??= object;
+  else if (object.name === 'glacier_weather') targets.glacier ??= object;
+  else if (object.name === 'rain_particles') targets.rain ??= object;
+  else if (object.name === 'snow_particles') targets.snow ??= object;
+};
+
+/** One walk replaces the glow walk plus four recursive weather searches. */
+export const updateEnvironmentVisualFrameForScene = ({
+  scene,
+  frameState,
+  now = performance.now(),
+  blinkMaterial = whiteBlinkMaterial,
+  updateAtmosphere,
+}: {
+  scene: THREE.Scene;
+  frameState: WeatherParticleFrameState;
+  now?: number;
+  blinkMaterial?: THREE.Material;
+  updateAtmosphere?: () => void;
+}): void => {
+  const targets: WeatherTargets = {};
+  const updateGlow = createEmissivePulseVisitor(blinkMaterial, now / 1000);
+  scene.traverse((child) => {
+    updateGlow(child);
+    collectWeatherTarget(targets, child);
   });
+  // Retain the original glow -> atmosphere -> weather ordering in the render loop.
+  updateAtmosphere?.();
+  updateWeatherTargets(targets, frameState, now);
 };
 
 export const syncAdminSettingsVisualStateForState = ({
@@ -316,6 +366,18 @@ export const syncAdminSettingsVisualStateForState = ({
   const effectiveMapId = replayData ? replayData.mapType : selectedMap;
   const isHangar = effectiveMapId === 'hangar';
 
+  if (effectiveMapId === 'circle' && !activeCustomMap) {
+    refs.scene.background = new THREE.Color('#17232f');
+    refs.scene.fog?.color.set('#17232f');
+    if (refs.skyboxMesh) {
+      refs.skyboxMesh.visible = adminSettings.showSkybox !== false;
+      if (skyControlsChanged && refs.skyboxMesh.material instanceof THREE.ShaderMaterial) {
+        updateCircleSkyMaterial(refs.skyboxMesh.material, hue, brightness);
+      }
+    }
+    return;
+  }
+
   if (isHangar && !activeCustomMap) {
     // The enclosed hangar owns its lighting. Explicit sky controls still work,
     // but unrelated settings must not recreate the old laser/shaft atmosphere.
@@ -333,10 +395,12 @@ export const syncAdminSettingsVisualStateForState = ({
     return;
   }
 
+  if (syncStadiumVisualStateForRefs({ refs, activeCustomMap, adminSettings, skyControlsChanged })) return;
+
   refs.scene.background = finalColor;
   if (refs.scene.fog) refs.scene.fog.color.copy(finalColor);
 
-  if (activeCustomMap?.id === 'forerunner_canyon' || activeCustomMap?.id === 'cyber_hex_arena' || activeCustomMap?.id === 'botanical_outpost' || activeCustomMap?.id === 'vanguard_starbase' || activeCustomMap?.id === 'synthwave_grid_arena' || activeCustomMap?.id === 'rainy_industrial_streets') {
+  if (activeCustomMap?.id === 'forerunner_canyon' || activeCustomMap?.id === 'cyber_hex_arena' || activeCustomMap?.id === 'botanical_outpost' || activeCustomMap?.id === 'vanguard_starbase' || activeCustomMap?.id === 'synthwave_grid_arena' || activeCustomMap?.id === 'rainy_industrial_streets' || activeCustomMap?.id === 'winter_glacier_rink') {
     // This scene owns its outdoor sky; updating settings must not resurrect the
     // legacy yellow backdrop/laser atmosphere or replace the shader with a map.
     const isCyber = activeCustomMap.id === 'cyber_hex_arena';
@@ -344,14 +408,16 @@ export const syncAdminSettingsVisualStateForState = ({
     const isAsteroid = activeCustomMap.id === 'vanguard_starbase';
     const isNeon = activeCustomMap.id === 'synthwave_grid_arena';
     const isRainy = activeCustomMap.id === 'rainy_industrial_streets';
-    const fogColor = isRainy ? '#101c28' : isNeon ? '#323747' : isAsteroid ? '#101824' : isJungle ? '#7e9187' : isCyber ? '#182333' : '#9a7c66';
+    const isGlacier = activeCustomMap.id === 'winter_glacier_rink';
+    const fogColor = isGlacier ? '#9bafbc' : isRainy ? '#101c28' : isNeon ? '#323747' : isAsteroid ? '#101824' : isJungle ? '#7e9187' : isCyber ? '#182333' : '#9a7c66';
     refs.scene.background = new THREE.Color(fogColor);
     if (refs.scene.fog) refs.scene.fog.color.set(fogColor);
     if (refs.skyboxMesh) {
       refs.skyboxMesh.visible = adminSettings.showSkybox !== false;
       const material = refs.skyboxMesh.material;
       if (skyControlsChanged && material instanceof THREE.ShaderMaterial) {
-        if (isRainy) updateRainySkyMaterial(material, hue, brightness);
+        if (isGlacier) updateGlacierSkyMaterial(material, hue, brightness);
+        else if (isRainy) updateRainySkyMaterial(material, hue, brightness);
         else if (isNeon) updateNeonSkyMaterial(material, hue, brightness);
         else if (isAsteroid) updateAsteroidSkyMaterial(material, hue, brightness);
         else if (isJungle) updateJungleSkyMaterial(material, hue, brightness);
@@ -432,8 +498,15 @@ export const updateWeatherParticlesForScene = ({
   frameState: WeatherParticleFrameState;
   now?: number;
 }): void => {
-  updateRainyWeatherForScene(scene, now);
-  const rainObj = scene.getObjectByName('rain_particles');
+  const targets: WeatherTargets = {};
+  scene.traverse(object => collectWeatherTarget(targets, object));
+  updateWeatherTargets(targets, frameState, now);
+};
+
+const updateWeatherTargets = (targets: WeatherTargets, frameState: WeatherParticleFrameState, now: number): void => {
+  updateRainyWeather(targets.rainy, now);
+  updateGlacierWeather(targets.glacier, now);
+  const rainObj = targets.rain;
   if (rainObj && rainObj instanceof THREE.Points) {
     if (frameState.lastRainTime === undefined) {
       frameState.lastRainTime = now;
@@ -449,7 +522,7 @@ export const updateWeatherParticlesForScene = ({
     });
   }
 
-  const snowObj = scene.getObjectByName('snow_particles');
+  const snowObj = targets.snow;
   if (snowObj && snowObj instanceof THREE.Points) {
     if (frameState.lastSnowTime === undefined) {
       frameState.lastSnowTime = now;

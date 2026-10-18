@@ -20,7 +20,7 @@ import {
 
 interface Props {
   account: AccountInfo | null;
-  presentation?: 'compact' | 'screen';
+  presentation?: 'compact' | 'screen' | 'social';
   playerName: string;
   requestedLoggedOutMode?: Exclude<LoggedOutMode, 'menu'>;
   loggedOutModeRequestToken?: number;
@@ -174,6 +174,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
     setBusy(false);
     setEditField(null);
     setRevealCode(false);
+    setNewRecoveryCode(null);
     setAdminMode(false);
     setAdminCode('');
     onLoggedOut();
@@ -252,15 +253,15 @@ const SpartanIdentityAccount: React.FC<Props> = ({
 
         {mode === 'menu' && (
           <>
-            <span className="text-[10px] text-white/40 leading-snug">
+            {presentation !== 'social' && <span className="text-[10px] text-white/40 leading-snug">
               Optional: create an account to sync your settings across devices.
-            </span>
+            </span>}
             <div className="flex gap-2">
               <button onClick={() => { resetMessages(); setMode('login'); }} className={primaryBtn}>
                 Log In
               </button>
               <button onClick={() => { resetMessages(); setMode('register'); }} className={ghostBtn}>
-                Create Account
+                {presentation === 'social' ? 'Register' : 'Create Account'}
               </button>
             </div>
             <button
@@ -315,6 +316,13 @@ const SpartanIdentityAccount: React.FC<Props> = ({
   }
 
   // ── Render: logged in ───────────────────────────────────────────────────────
+  if (presentation === 'social') {
+    return <div className="menu-social-account-actions" aria-busy={busy}>
+      {recoveryBanner}
+      <button type="button" className="menu-secondary" onClick={handleLogout} disabled={busy}>{busy ? 'Logging out…' : 'Log Out'}</button>
+      {error && <p role="alert" className="menu-error">{error}</p>}
+    </div>;
+  }
   const usernameCd = cooldownRemaining(account.usernameChangedAt, USERNAME_COOLDOWN_MS);
   const emailCd = cooldownRemaining(account.emailChangedAt, EMAIL_COOLDOWN_MS);
   const passwordCd = cooldownRemaining(account.passwordChangedAt, PASSWORD_COOLDOWN_MS);

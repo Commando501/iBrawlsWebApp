@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "generator": "scripts/circle-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": {
+    "floor": 6
+  },
+  "statistics": {
+    "floor": {
+      "min": 231.9506379131375,
+      "max": 238.4715433966277,
+      "mean": 235.89592574139672,
+      "standardDeviation": 0.8147829936973895
+    }
+  },
+  "files": [
+    {
+      "path": "assets/circle/surfaces/ceramic-floor-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 128408,
+      "sha256": "9e487c9601e122304574aa6339f9ca97ad00cfd664455e3fbec2ae79b5c0a09d",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/circle/surfaces/ceramic-floor-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 900559,
+      "sha256": "a5e04c0adb31ef36b93e29117dc83518d160bd422352e55d29c83cb172ed2640",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/circle/surfaces/ceramic-floor-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 315761,
+      "sha256": "447aa57f5d80059816b3e90d2f61c463a60a777980f3d7e055e2f15c339d556e",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/circle/surfaces/ceramic-floor-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 51598,
+      "sha256": "ddedb48dc0f846a274724d5ad82cfdf89b5fc03c70177a45152acbb1e1fe78d9",
+      "colorSpace": "sRGB"
+    }
+  ],
+  "design": "Quiet medium-slate ceramic with broad structural panels, fine coating grain and shallow sub-millimetre joints. Detail is concentrated in normals and roughness, with no bright grid, painted wear, baked shadows, mirror pass, loose debris or displacement. Architecture reuses the established Stadium V3 coating."
+}

@@ -1,0 +1,329 @@
+{
+  "schema": 1,
+  "generator": "scripts/glacier/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; identity transforms; physical metre UVs",
+  "provenance": "Original Blender-authored geometry; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 1135476,
+      "triangles": 16628,
+      "modules": {
+        "anchor-post": {
+          "triangles": 1740,
+          "materialBatches": 4,
+          "dimensions": [
+            0.6,
+            5.0,
+            0.6
+          ],
+          "boundsMin": [
+            -0.3,
+            -2.5,
+            -0.3
+          ],
+          "boundsMax": [
+            0.3,
+            2.5,
+            0.3
+          ],
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "triangles": 1784,
+          "materialBatches": 4,
+          "dimensions": [
+            1.5,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.75,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.75,
+            1.0,
+            2.0
+          ],
+          "pivot": "center"
+        },
+        "rink-board": {
+          "triangles": 260,
+          "materialBatches": 4,
+          "dimensions": [
+            4.0,
+            0.8,
+            0.1
+          ],
+          "boundsMin": [
+            -2.0,
+            -0.4,
+            -0.05
+          ],
+          "boundsMax": [
+            2.0,
+            0.4,
+            0.05
+          ],
+          "pivot": "center"
+        },
+        "rink-glass": {
+          "triangles": 364,
+          "materialBatches": 2,
+          "dimensions": [
+            4.0,
+            1.4,
+            0.1
+          ],
+          "boundsMin": [
+            -2.0,
+            -0.7,
+            -0.05
+          ],
+          "boundsMax": [
+            2.0,
+            0.7,
+            0.05
+          ],
+          "pivot": "center"
+        },
+        "glacier-ridge": {
+          "triangles": 1992,
+          "materialBatches": 2,
+          "dimensions": [
+            22.0,
+            24.0,
+            16.0
+          ],
+          "boundsMin": [
+            -11.0,
+            -12.0,
+            -8.0
+          ],
+          "boundsMax": [
+            11.0,
+            12.0,
+            8.0
+          ],
+          "pivot": "center"
+        },
+        "snowy-pine": {
+          "triangles": 10488,
+          "materialBatches": 3,
+          "dimensions": [
+            6.0,
+            12.0,
+            6.0
+          ],
+          "boundsMin": [
+            -3.0,
+            -6.0,
+            -3.0
+          ],
+          "boundsMax": [
+            3.0,
+            6.0,
+            3.0
+          ],
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 444708,
+      "triangles": 6152,
+      "modules": {
+        "anchor-post": {
+          "triangles": 316,
+          "materialBatches": 4,
+          "dimensions": [
+            0.6,
+            5.0,
+            0.6
+          ],
+          "boundsMin": [
+            -0.3,
+            -2.5,
+            -0.3
+          ],
+          "boundsMax": [
+            0.3,
+            2.5,
+            0.3
+          ],
+          "pivot": "center"
+        },
+        "goal-buffer": {
+          "triangles": 816,
+          "materialBatches": 4,
+          "dimensions": [
+            1.5,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.75,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.75,
+            1.0,
+            2.0
+          ],
+          "pivot": "center"
+        },
+        "rink-board": {
+          "triangles": 132,
+          "materialBatches": 4,
+          "dimensions": [
+            4.0,
+            0.8,
+            0.1
+          ],
+          "boundsMin": [
+            -2.0,
+            -0.4,
+            -0.05
+          ],
+          "boundsMax": [
+            2.0,
+            0.4,
+            0.05
+          ],
+          "pivot": "center"
+        },
+        "rink-glass": {
+          "triangles": 60,
+          "materialBatches": 2,
+          "dimensions": [
+            4.0,
+            1.4,
+            0.1
+          ],
+          "boundsMin": [
+            -2.0,
+            -0.7,
+            -0.05
+          ],
+          "boundsMax": [
+            2.0,
+            0.7,
+            0.05
+          ],
+          "pivot": "center"
+        },
+        "glacier-ridge": {
+          "triangles": 624,
+          "materialBatches": 2,
+          "dimensions": [
+            22.0,
+            24.0,
+            16.0
+          ],
+          "boundsMin": [
+            -11.0,
+            -12.0,
+            -8.0
+          ],
+          "boundsMax": [
+            11.0,
+            12.0,
+            8.0
+          ],
+          "pivot": "center"
+        },
+        "snowy-pine": {
+          "triangles": 4204,
+          "materialBatches": 3,
+          "dimensions": [
+            6.0,
+            12.0,
+            6.0
+          ],
+          "boundsMin": [
+            -3.0,
+            -6.0,
+            -3.0
+          ],
+          "boundsMax": [
+            3.0,
+            6.0,
+            3.0
+          ],
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "glacier_ceramic": {
+      "baseColor": "#a9bac2",
+      "metalness": 0.1,
+      "roughness": 0.62,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_alloy": {
+      "baseColor": "#637d8b",
+      "metalness": 0.58,
+      "roughness": 0.41,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_graphite": {
+      "baseColor": "#253b48",
+      "metalness": 0.18,
+      "roughness": 0.72,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_red": {
+      "baseColor": "#b94146",
+      "metalness": 0.16,
+      "roughness": 0.57,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_glass": {
+      "baseColor": "#b6d7e3",
+      "metalness": 0.0,
+      "roughness": 0.19,
+      "emissiveStrength": 0,
+      "opacity": 0.2
+    },
+    "glacier_ice": {
+      "baseColor": "#799eb1",
+      "metalness": 0.02,
+      "roughness": 0.68,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_snow": {
+      "baseColor": "#dce6e9",
+      "metalness": 0.0,
+      "roughness": 0.92,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_foliage": {
+      "baseColor": "#29494a",
+      "metalness": 0.0,
+      "roughness": 0.95,
+      "emissiveStrength": 0,
+      "opacity": 1
+    },
+    "glacier_bark": {
+      "baseColor": "#655e58",
+      "metalness": 0.0,
+      "roughness": 0.92,
+      "emissiveStrength": 0,
+      "opacity": 1
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

@@ -16,7 +16,7 @@ export function buildCustomMapWinterSceneryForRefs({
   refs: GrifballThreeRefs;
   activeCustomMap: CustomMapData;
 }): void {
-  if (activeCustomMap.theme !== 'winter_rink') return;
+  if (activeCustomMap.theme !== 'winter_rink' || activeCustomMap.id === 'winter_glacier_rink') return;
 
   const scene = refs.scene;
   if (!scene) return;

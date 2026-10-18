@@ -68,13 +68,17 @@ export function createStadiumLightProbeScene(): THREE.Scene {
 export function initializeStadiumEnvironment(
   scene: THREE.Scene, renderer: THREE.WebGLRenderer, quality: EnvironmentQualityProfile,
 ): void {
+  const previous = environments.get(scene);
+  if (previous && scene.environment === previous.texture) return;
   const room = createStadiumLightProbeScene();
-  const generator = new THREE.PMREMGenerator(renderer);
+  let generator: THREE.PMREMGenerator | undefined;
   try {
+    generator = new THREE.PMREMGenerator(renderer);
     const target = generator.fromScene(room, 0.025, 0.1, 100, { size: quality.tier === 'high' ? 256 : 128 });
     scene.environment = target.texture;
     scene.environmentIntensity = quality.tier === 'low' ? 0.55 : 0.7;
     environments.set(scene, target);
+    previous?.dispose();
   } finally {
     room.traverse(object => {
       if (!(object instanceof THREE.Mesh)) return;
@@ -82,7 +86,7 @@ export function initializeStadiumEnvironment(
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       materials.forEach(material => material.dispose());
     });
-    generator.dispose();
+    generator?.dispose();
   }
 }
 

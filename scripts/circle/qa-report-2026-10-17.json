@@ -1,0 +1,565 @@
+{
+  "date": "2026-10-17",
+  "map": "circle",
+  "kind": "Circle Arena environment upgrade",
+  "environment": {
+    "server": "Vite production preview on port 3002; existing development server remains on port 3000",
+    "browser": "Playwright Chromium",
+    "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "models": "Actual shipped V3 Iron Vanguard player assets and seven AI bots"
+  },
+  "method": "Two independent final-asset combat-sandbox matches, High and Low. Each requestAnimationFrame sample follows a two-second warmup and records 15 seconds of live combat, including deaths, respawns and impact effects. All code tests, typecheck and build finished before measurement. Overview camera overrides are used only in separate captures, never during measurements. Independent uncontrolled workloads differ, so the samples are not direct tier comparisons. The unused sandbox Grifball phase remains countdown. A separate one-bot match verifies the original duel radius; Circle is not a stock Grifball goal map.",
+  "performance": {
+    "combatHigh": {
+      "tier": "high",
+      "frames": 1382,
+      "meanMs": 10.868885672937774,
+      "p50Ms": 7,
+      "p95Ms": 20.80000000000291,
+      "p99Ms": 27.69999999999709,
+      "maxCalls": 2084,
+      "maxTriangles": 391273,
+      "memory": {
+        "geometries": 41,
+        "textures": 30
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 92.00575202386023
+    },
+    "combatLow": {
+      "tier": "low",
+      "frames": 1274,
+      "meanMs": 11.7850863422292,
+      "p50Ms": 13.799999999999272,
+      "p95Ms": 20.899999999997817,
+      "p99Ms": 27.80000000000291,
+      "maxCalls": 1923,
+      "maxTriangles": 321488,
+      "memory": {
+        "geometries": 66,
+        "textures": 25
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 84.85300582115597
+    }
+  },
+  "limits": "Both average frame rates exceed 60 FPS on this RTX 4090 at 1080p. Both p95 frame intervals are about 21 ms and p99 about 28 ms. These measurements do not establish locked 60 FPS or certify slower hardware. Low has substantially less environment geometry but can be slower in an independent sample with different combat workload. No movement, AI or animation behavior was changed to improve these numbers.",
+  "assets": {
+    "variants": {
+      "high": {
+        "triangles": 8816,
+        "batches": 21,
+        "bytes": 455620,
+        "modules": {
+          "perimeter-pylon": {
+            "dimensions": [
+              1.2,
+              9,
+              1.2
+            ],
+            "triangles": 1692,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00129,
+            "pivot": "center"
+          },
+          "ring-beam": {
+            "dimensions": [
+              7,
+              0.5,
+              0.9
+            ],
+            "triangles": 1140,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00897,
+            "pivot": "center"
+          },
+          "projector-node": {
+            "dimensions": [
+              1.8,
+              1.2,
+              1.2
+            ],
+            "triangles": 880,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00671,
+            "pivot": "center"
+          },
+          "service-pod": {
+            "dimensions": [
+              4,
+              3,
+              2.4
+            ],
+            "triangles": 2244,
+            "materialBatches": 5,
+            "emissiveAreaFraction": 0.00041,
+            "pivot": "center"
+          },
+          "backdrop-spire": {
+            "dimensions": [
+              3.5,
+              24,
+              3.5
+            ],
+            "triangles": 2860,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00222,
+            "pivot": "center"
+          }
+        }
+      },
+      "low": {
+        "triangles": 2504,
+        "batches": 21,
+        "bytes": 166812,
+        "modules": {
+          "perimeter-pylon": {
+            "dimensions": [
+              1.2,
+              9,
+              1.2
+            ],
+            "triangles": 476,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00145,
+            "pivot": "center"
+          },
+          "ring-beam": {
+            "dimensions": [
+              7,
+              0.5,
+              0.9
+            ],
+            "triangles": 308,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00864,
+            "pivot": "center"
+          },
+          "projector-node": {
+            "dimensions": [
+              1.8,
+              1.2,
+              1.2
+            ],
+            "triangles": 328,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00684,
+            "pivot": "center"
+          },
+          "service-pod": {
+            "dimensions": [
+              4,
+              3,
+              2.4
+            ],
+            "triangles": 676,
+            "materialBatches": 5,
+            "emissiveAreaFraction": 0.00041,
+            "pivot": "center"
+          },
+          "backdrop-spire": {
+            "dimensions": [
+              3.5,
+              24,
+              3.5
+            ],
+            "triangles": 716,
+            "materialBatches": 4,
+            "emissiveAreaFraction": 0.00227,
+            "pivot": "center"
+          }
+        }
+      }
+    },
+    "environmentDraws": 23,
+    "highInstancedEnvironmentTriangles": 71568,
+    "lowInstancedEnvironmentTriangles": 17824,
+    "originalTextureBytes": 1396326,
+    "highSpires": 8,
+    "lowSpires": 4,
+    "provenance": "Original Blender architecture and original deterministic floor maps; established Stadium V3 coating library and actual shipped V3 characters. All environment geometry is opaque; no new animation, particles, transmission or reflection render pass."
+  },
+  "checks": {
+    "originalFloor": {
+      "radius": 20,
+      "height": 0.2,
+      "radialSegments": 64,
+      "centerY": -0.1
+    },
+    "originalRosterRadiusFormula": "20 * (1 + min(0.50, floor((playerCount - 1) / 2) * 0.125))",
+    "eightDefaultSpawnSlotsAndExistingRadiusFormulaUnchanged": true,
+    "noInteriorColliders": true,
+    "highSevenBots": {
+      "quality": {
+        "tier": "high",
+        "pixelRatioCap": 1.5,
+        "shadowMapSize": 2048,
+        "architectureDetail": "high",
+        "seatStride": 1,
+        "dustCount": 180,
+        "lightShafts": true,
+        "textureTier": "high"
+      },
+      "status": {
+        "detail": "high",
+        "architectureStatus": "ready",
+        "arenaRadius": 27.5
+      },
+      "draws": 23,
+      "tris": 71568,
+      "actors": 7,
+      "stats": {
+        "frame": 1629,
+        "calls": 42,
+        "triangles": 294034,
+        "points": 0,
+        "lines": 0
+      },
+      "floor": {
+        "color": "667888",
+        "roughness": 1,
+        "maps": [
+          {
+            "slot": "map",
+            "size": [
+              1024,
+              1024
+            ]
+          },
+          {
+            "slot": "normalMap",
+            "size": [
+              1024,
+              1024
+            ]
+          },
+          {
+            "slot": "roughnessMap",
+            "size": [
+              1024,
+              1024
+            ]
+          }
+        ]
+      },
+      "layout": {
+        "floor": {
+          "radiusTop": 20,
+          "radiusBottom": 20,
+          "height": 0.2,
+          "radialSegments": 64,
+          "heightSegments": 1,
+          "openEnded": false,
+          "thetaStart": 0,
+          "thetaLength": 6.283185307179586
+        },
+        "scale": [
+          1.375,
+          1,
+          1.375
+        ],
+        "radius": 27.5,
+        "colliders": 0,
+        "parts": [
+          "perimeter-pylon",
+          "ring-beam",
+          "projector-node",
+          "service-pod",
+          "backdrop-spire"
+        ]
+      },
+      "lighting": {
+        "ambient": 0.82,
+        "key": 1.6
+      }
+    },
+    "lowSevenBots": {
+      "quality": {
+        "tier": "low",
+        "pixelRatioCap": 1,
+        "shadowMapSize": 512,
+        "architectureDetail": "low",
+        "seatStride": 4,
+        "dustCount": 0,
+        "lightShafts": false,
+        "textureTier": "low"
+      },
+      "status": {
+        "detail": "low",
+        "architectureStatus": "ready",
+        "arenaRadius": 27.5
+      },
+      "draws": 23,
+      "tris": 17824,
+      "actors": 7,
+      "stats": {
+        "frame": 127,
+        "calls": 180,
+        "triangles": 324882,
+        "points": 0,
+        "lines": 0
+      },
+      "floor": {
+        "color": "667888",
+        "roughness": 0.78,
+        "maps": [
+          {
+            "slot": "map",
+            "size": [
+              512,
+              512
+            ]
+          },
+          {
+            "slot": "normalMap",
+            "size": null
+          },
+          {
+            "slot": "roughnessMap",
+            "size": null
+          }
+        ]
+      },
+      "layout": {
+        "floor": {
+          "radiusTop": 20,
+          "radiusBottom": 20,
+          "height": 0.2,
+          "radialSegments": 64,
+          "heightSegments": 1,
+          "openEnded": false,
+          "thetaStart": 0,
+          "thetaLength": 6.283185307179586
+        },
+        "scale": [
+          1.375,
+          1,
+          1.375
+        ],
+        "radius": 27.5,
+        "colliders": 0,
+        "parts": [
+          "perimeter-pylon",
+          "ring-beam",
+          "projector-node",
+          "service-pod",
+          "backdrop-spire"
+        ]
+      },
+      "lighting": {
+        "ambient": 0.82,
+        "key": 1.6
+      }
+    },
+    "oneBot": {
+      "quality": {
+        "tier": "high",
+        "pixelRatioCap": 1.5,
+        "shadowMapSize": 2048,
+        "architectureDetail": "high",
+        "seatStride": 1,
+        "dustCount": 180,
+        "lightShafts": true,
+        "textureTier": "high"
+      },
+      "status": {
+        "detail": "high",
+        "architectureStatus": "ready",
+        "arenaRadius": 20
+      },
+      "draws": 23,
+      "tris": 71568,
+      "actors": 1,
+      "stats": {
+        "frame": 303,
+        "calls": 32,
+        "triangles": 130120,
+        "points": 0,
+        "lines": 0
+      },
+      "floor": {
+        "color": "667888",
+        "roughness": 1,
+        "maps": [
+          {
+            "slot": "map",
+            "size": [
+              1024,
+              1024
+            ]
+          },
+          {
+            "slot": "normalMap",
+            "size": [
+              1024,
+              1024
+            ]
+          },
+          {
+            "slot": "roughnessMap",
+            "size": [
+              1024,
+              1024
+            ]
+          }
+        ]
+      },
+      "layout": {
+        "floor": {
+          "radiusTop": 20,
+          "radiusBottom": 20,
+          "height": 0.2,
+          "radialSegments": 64,
+          "heightSegments": 1,
+          "openEnded": false,
+          "thetaStart": 0,
+          "thetaLength": 6.283185307179586
+        },
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "radius": 20,
+        "colliders": 0,
+        "parts": [
+          "perimeter-pylon",
+          "ring-beam",
+          "projector-node",
+          "service-pod",
+          "backdrop-spire"
+        ]
+      },
+      "lighting": {
+        "ambient": 0.82,
+        "key": 1.6
+      }
+    },
+    "allActualV3": true,
+    "movement": {
+      "before": [
+        -15.433920060288523,
+        0,
+        11.815489764940718
+      ],
+      "after": [
+        -13.383310394847536,
+        0,
+        9.764880099499731
+      ],
+      "text": "SIMULATION PAUSED\n\nGRIFVX PROTO\nRESUME GAME\nMATCH OPERATIONS\nJOIN OBSERVER\nRESET MATCH\nBOT CONFIGURATION\nADJUSTMENTS & OPTIONS\nHOTKEY ADJUSTMENTS\nUI ADJUSTMENT\nLIGHTING & SHADOWS\nGAMEPLAY / MECHANICS OPTIONS\nSYSTEM & DEV\nGrifball AI Lab\nDAMAGE TRACES\nDISABLED\nQUIT TO TITLE SCREEN\n\nPress ESC inside game window to pause/unpause"
+    },
+    "lightingQualityAndCleanup": {
+      "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "dpr": 1,
+      "skyUnchanged": true,
+      "saved": {
+        "preference": "low",
+        "current": "high"
+      },
+      "cleanup": {
+        "environment": null,
+        "remainingCircleRoots": [],
+        "sky": false,
+        "props": 0
+      }
+    },
+    "autoQualityRestored": true,
+    "blockedDownloadsFallback": {
+      "status": "fallback",
+      "kit": false,
+      "actors": 7,
+      "fallbackBatches": 11,
+      "colliders": 0,
+      "radius": 27.5,
+      "floorMap": [
+        1,
+        1
+      ],
+      "requested": [
+        "http://127.0.0.1:3002/assets/circle/surfaces/ceramic-floor-albedo.png",
+        "http://127.0.0.1:3002/assets/circle/surfaces/ceramic-floor-normal-gl.png",
+        "http://127.0.0.1:3002/assets/circle/surfaces/ceramic-floor-roughness.png",
+        "http://127.0.0.1:3002/assets/stadium/ceramic/albedo.jpg",
+        "http://127.0.0.1:3002/assets/stadium/surfaces/ceramic-coating-normal-gl.png",
+        "http://127.0.0.1:3002/assets/stadium/surfaces/ceramic-coating-roughness.png",
+        "http://127.0.0.1:3002/assets/circle/architecture/kit-v1.glb"
+      ],
+      "errors": []
+    },
+    "normalBrowserConsoleErrors": 0,
+    "normalBrowserWarnings": "Existing THREE.Clock deprecation, V3 effect materials receiving undefined emissive, and ANGLE shader precision warnings remain; no normal Circle asset load failures."
+  },
+  "validation": {
+    "circleAndSharedChecks": 70,
+    "circleAndSharedPassed": 70,
+    "earlierMapSuites": [
+      "stadium",
+      "canyon",
+      "hangar",
+      "cyber",
+      "jungle",
+      "asteroid",
+      "neon",
+      "rainy",
+      "glacier"
+    ],
+    "deduplicatedEarlierSuiteChecks": 298,
+    "deduplicatedEarlierSuitePassed": 298,
+    "note": "The two groups overlap on shared mount/settings checks; do not sum their counts as unique tests.",
+    "typescript": "pass",
+    "productionBuild": "pass; existing large-chunk warnings",
+    "gltfLoaderValidation": "pass",
+    "independentCodeReview": "No actionable findings in exact Circle/replay/custom routing, gameplay preservation, texture ownership, pending loads or scoped cleanup."
+  },
+  "captures": {
+    "before": "output/playwright/circle-upgrade/before-gameplay.png",
+    "highGameplay": "output/playwright/circle-upgrade/high-gameplay.png",
+    "highOverview": "output/playwright/circle-upgrade/high-overview.png",
+    "lowGameplay": "output/playwright/circle-upgrade/low-gameplay.png",
+    "duel": "output/playwright/circle-upgrade/duel-gameplay.png",
+    "fallback": "output/playwright/circle-upgrade/missing-assets-fallback.png"
+  },
+  "sourceSha256": {
+    "src/components/grifball/circleArchitecture.test.ts": "18ad1ca41a15bab6a303ccab460bfa7fff00feb1826dba826e65f64aaddf67f6",
+    "src/components/grifball/circleArchitecture.ts": "46337b98dc9f3173b7668b87d2cb231be39518717ba330761fa64ef063851b9a",
+    "src/components/grifball/circleArenaRuntime.ts": "5f5171c0fd1063218f7c55a2b9418394d4850272bd3baf84efd130b81b6c185e",
+    "src/components/grifball/circleIntegration.test.ts": "44305e132b98a63df34792e6f8d2863bf994fc8e8d020bf3118403b897d31e38",
+    "src/components/grifball/circleLighting.test.ts": "85483f163c09d3735996006188998eccc13584fb1b121cacaf13124d19e9110b",
+    "src/components/grifball/circleLighting.ts": "61c290f96ffeafa30014845a8aefdf197c39802b2fd532f93f16f8ecfba4d166",
+    "src/components/grifball/circleMaterials.test.ts": "513dd96de3f8e289ad1c203c1da406e79e8460f6e16092c61893ff6b7d569783",
+    "src/components/grifball/circleMaterials.ts": "c2f9db7eb3fc303522368e4533d5a7819fa0d51a17677f0642af60f381c7f019",
+    "src/components/grifball/circleResourceDisposal.test.ts": "e033c97968314060d730560eff7364ef5155f43ad11558b34ed9f6fde6fcbfe5",
+    "src/components/grifball/circleResourceDisposal.ts": "fd1c015388fc95d3b08697eac8af2aaa182b995c292041284ed8ee0b0ce15051",
+    "src/components/grifball/arenaSceneInitializationRuntime.ts": "0bef386a9fc030563b284e55b2896776d776ea93e81b0c30e8f7c29bc7fb624f",
+    "src/components/grifball/arenaSpawns.ts": "a15ace273f21782c4da7375203933b6bc35c2adfbe47a235b435d35ac6ef1944",
+    "src/components/grifball/mountSceneRuntime.ts": "676b2fb89be9b6a3efff60bea4a1f0c1925ed739f43700ec21b51468fe6e3a2c",
+    "src/components/grifball/visualState.ts": "b022274c8fd256cabf4e99ffb385e72cb8b9ccf932913202f2a0fba252fe73b9",
+    "src/components/GrifballGame.tsx": "81158461ef3619b901dcb34ec0ee0b648a4e8fcbc4fd27737a6b600b6b8461e0",
+    "scripts/circle/author-kit.py": "822b952d743163e95525214416cb85f190a50b21b98a664b038cd6a35b28b209",
+    "scripts/circle/optimize-kit.ps1": "02a2cb560e76d66721a44ec750437993cf9b493a1ee33c3410b84b7dcaa1fcf5",
+    "scripts/circle/validate-kit.mjs": "b6fd94904102f35d7bb16f146c7d837b52739219a7809f847a2ce867ec3f914b",
+    "scripts/circle-textures/author-surfaces.mjs": "3d84c933a93f170015e5c2c2240ed3a656565829f626fbb34e19c9ad0ab2fa0a",
+    "public/assets/circle/architecture/kit-v1.glb": "d6070e4238b5d7bafead9bbcf2376b3011f12f6ba4299106e66beebe216b72ee",
+    "public/assets/circle/architecture/kit-low-v1.glb": "ce08c19fd1accdc185d7ee071ec223e8efc73a5ce28ad5e74b706b1e435bf5cf",
+    "public/assets/circle/surfaces/ceramic-floor-albedo.png": "9e487c9601e122304574aa6339f9ca97ad00cfd664455e3fbec2ae79b5c0a09d",
+    "public/assets/circle/surfaces/ceramic-floor-normal-gl.png": "a5e04c0adb31ef36b93e29117dc83518d160bd422352e55d29c83cb172ed2640",
+    "public/assets/circle/surfaces/ceramic-floor-roughness.png": "447aa57f5d80059816b3e90d2f61c463a60a777980f3d7e055e2f15c339d556e",
+    "public/assets/circle/surfaces/ceramic-floor-albedo-low.png": "ddedb48dc0f846a274724d5ad82cfdf89b5fc03c70177a45152acbb1e1fe78d9"
+  }
+}

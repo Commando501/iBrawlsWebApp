@@ -1055,7 +1055,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
   {
     id: 'winter_glacier_rink',
     name: 'Glacier Hockey Rink',
-    description: 'A pristine ice hockey arena surrounded by frozen glaciers, tall snowy pines, and gentle falling snow. Watch your step on the slick glacier ice!',
+    description: 'A reinforced ice rink with frosted glass, quiet skate-worn ice, stratified glaciers, snowy pines and gentle falling snow.',
     author: 'Olympic Architect',
     theme: 'winter_rink',
     mapShape: 'rectangular',

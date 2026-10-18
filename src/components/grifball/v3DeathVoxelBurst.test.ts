@@ -77,15 +77,22 @@ describe('v3DeathVoxelBurst', () => {
     const material = instance.mesh.material as THREE.MeshBasicMaterial;
     assert.equal(material.transparent, true);
     const startOpacity = material.opacity;
+    const materialVersion = material.version;
+    const disposed = { mesh: 0, geometry: 0, material: 0 };
+    instance.mesh.addEventListener('dispose', () => { disposed.mesh++; });
+    instance.mesh.geometry.addEventListener('dispose', () => { disposed.geometry++; });
+    material.addEventListener('dispose', () => { disposed.material++; });
 
     assert.equal(updateV3DeathVoxelBurst(instance, 0.15), true);
     assert.ok(material.opacity < startOpacity);
+    assert.equal(material.version, materialVersion, 'opacity-only fading must not invalidate the shader');
 
     assert.equal(updateV3DeathVoxelBurst(instance, 0.3), false);
     disposeV3DeathVoxelBurst(instance);
     assert.equal(scene.children.includes(instance.mesh), false);
     disposeV3DeathVoxelBurst(instance);
     assert.equal(scene.children.includes(instance.mesh), false);
+    assert.deepEqual(disposed, { mesh: 1, geometry: 1, material: 1 });
   });
 
   it('returns empty plans and no burst for non-V3 models', () => {
