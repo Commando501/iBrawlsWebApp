@@ -1,5 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { UniversalSettings } from '../../types';
+import {
+  getEnvironmentQualityPreference,
+  getEnvironmentQualityProfile,
+  normalizeEnvironmentQualityPreference,
+  setEnvironmentQualityPreference,
+} from '../../settings/environmentQuality';
 
 interface LightingSettingsModalProps {
   adminSettings: UniversalSettings;
@@ -12,6 +18,9 @@ export function LightingSettingsModal({
   setAdminSettings,
   onClose,
 }: LightingSettingsModalProps) {
+  const [environmentQuality, setEnvironmentQuality] = useState(getEnvironmentQualityPreference);
+  const [qualitySaveFailed, setQualitySaveFailed] = useState(false);
+  const resolvedQuality = getEnvironmentQualityProfile(environmentQuality).tier;
 
   return (
     <div className="mobile-modal bg-slate-950/90 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[400px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] shadow-2xl flex flex-col select-none overflow-y-auto overflow-x-hidden">
@@ -23,6 +32,34 @@ export function LightingSettingsModal({
       </div>
 
       <div className="flex flex-col gap-6 pointer-events-auto mb-6">
+        <div className="flex flex-col gap-2 border-b border-white/10 pb-5">
+          <label htmlFor="environment-quality" className="text-[11px] font-bold uppercase tracking-wider text-white/80">Environment quality</label>
+          <select
+            id="environment-quality"
+            value={environmentQuality}
+            onChange={(event) => {
+              const next = normalizeEnvironmentQualityPreference(event.target.value);
+              const saved = setEnvironmentQualityPreference(next);
+              setQualitySaveFailed(!saved);
+              if (saved) setEnvironmentQuality(next);
+            }}
+            aria-describedby="environment-quality-description"
+            className="w-full rounded border border-white/15 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+          >
+            <option value="auto">Auto</option>
+            <option value="high">High</option>
+            <option value="balanced">Balanced</option>
+            <option value="low">Low</option>
+          </select>
+          <p id="environment-quality-description" className="text-[11px] leading-relaxed text-white/60">
+            {environmentQuality === 'auto' && <>Auto selects {resolvedQuality} for this device. </>}
+            {resolvedQuality === 'high' && 'Full architecture, detailed surfaces and lighting in upgraded arenas.'}
+            {resolvedQuality === 'balanced' && 'Reduced scenery and shadows with detailed surfaces in upgraded arenas.'}
+            {resolvedQuality === 'low' && 'Lighter textures, simpler scenery and fewer effects in upgraded arenas.'}
+          </p>
+          <p className="text-[10px] text-amber-300/80">Applies when you start the next match. Saved on this device.</p>
+          {qualitySaveFailed && <p role="alert" className="text-[11px] text-red-300">Your browser could not save this setting. The previous quality setting is still active.</p>}
+        </div>
         <div className="flex flex-col gap-2">
           <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
             <span>Direct Sunlight Intensity</span>

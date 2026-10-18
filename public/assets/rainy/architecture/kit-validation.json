@@ -1,0 +1,139 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 15702,
+      "batches": 23,
+      "bytes": 776652,
+      "modules": {
+        "street-buffer": {
+          "dimensions": [
+            1.2,
+            2,
+            4
+          ],
+          "triangles": 2084,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "cargo-crate": {
+          "dimensions": [
+            2,
+            2,
+            2
+          ],
+          "triangles": 2124,
+          "materialBatches": 3,
+          "pivot": "center"
+        },
+        "building-block": {
+          "dimensions": [
+            14,
+            36,
+            12
+          ],
+          "triangles": 7928,
+          "materialBatches": 5,
+          "pivot": "center"
+        },
+        "streetlight": {
+          "dimensions": [
+            3,
+            10,
+            2
+          ],
+          "triangles": 908,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "billboard-frame": {
+          "dimensions": [
+            12,
+            8,
+            1.6
+          ],
+          "triangles": 866,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "street-palm": {
+          "dimensions": [
+            8,
+            12,
+            8
+          ],
+          "triangles": 1792,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 6314,
+      "batches": 23,
+      "bytes": 385996,
+      "modules": {
+        "street-buffer": {
+          "dimensions": [
+            1.2,
+            2,
+            4
+          ],
+          "triangles": 836,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "cargo-crate": {
+          "dimensions": [
+            2,
+            2,
+            2
+          ],
+          "triangles": 900,
+          "materialBatches": 3,
+          "pivot": "center"
+        },
+        "building-block": {
+          "dimensions": [
+            14,
+            36,
+            12
+          ],
+          "triangles": 3096,
+          "materialBatches": 5,
+          "pivot": "center"
+        },
+        "streetlight": {
+          "dimensions": [
+            3,
+            10,
+            2
+          ],
+          "triangles": 336,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "billboard-frame": {
+          "dimensions": [
+            12,
+            8,
+            1.6
+          ],
+          "triangles": 294,
+          "materialBatches": 4,
+          "pivot": "center"
+        },
+        "street-palm": {
+          "dimensions": [
+            8,
+            12,
+            8
+          ],
+          "triangles": 852,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

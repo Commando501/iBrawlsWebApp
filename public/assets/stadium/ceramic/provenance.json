@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "created": "2026-10-16",
+  "mode": "builtin image_gen",
+  "asset": "ceramic/source.png",
+  "purpose": "Ceramic architectural base-color surface; no character or gameplay synthesis.",
+  "prompt": "Create one production-ready seamless square tileable base-color/albedo texture for a high fidelity science fiction arena game's ceramic coated architectural panels. Pale neutral warm gray, almost white, matte powder-coated ceramic composite with fine physical micrograin, sparse tiny dark mineral specks, extremely subtle believable scuffs and minute wear. Clean premium arena finish matching a polished armored futuristic sports game. Flat orthographic top-down surface ONLY, uniform diffuse illumination across the entire image, no shadows, no specular highlights, no gradient, no vignette, no objects, no models, no visible panel joints, no text, no symbols, no perspective, no borders. All four edges must tile seamlessly. Restrained low contrast so the surface supports strong 3D bevel geometry and remains readable behind real game characters. One texture sheet fills the entire square image.",
+  "referenceModels": "Actual shipped Iron Vanguard hammer-v018.glb and sword-v001.glb remain unchanged.",
+  "packaging": "scripts/stadium-textures/pack.py; resize and JPEG conversion only; generated color is sRGB, physical normal detail comes from existing CC0 Concrete034.",
+  "limitations": "Albedo only. No generated normal/roughness claims. Inspect tiling in rendered scene."
+}

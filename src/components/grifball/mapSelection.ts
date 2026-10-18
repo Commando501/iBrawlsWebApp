@@ -1,5 +1,6 @@
 import { PREMADE_MAPS } from '../../game/premadeMaps';
 import { toGrifballArena } from '../../game/grifballMaps';
+import { resolveChampionshipStadiumReplayLayout } from '../../game/championshipStadiumLayout';
 import { type CustomMapData, type ReplayFile } from '../../types';
 
 interface ResolveActiveCustomMapOptions {
@@ -19,7 +20,7 @@ function resolveBaseCustomMap({
   const mapId = replayData ? replayData.mapType : selectedMap;
   if (mapId !== 'hangar' && mapId !== 'circle') {
     const premade = PREMADE_MAPS.find((m) => m.id === mapId);
-    if (premade) return premade;
+    if (premade) return replayData ? resolveChampionshipStadiumReplayLayout(premade, replayData.stadiumLayoutRevision) : premade;
     if (typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem(`map_${mapId}`);
       if (stored) {

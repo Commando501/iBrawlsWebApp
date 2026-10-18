@@ -1,14 +1,17 @@
 import * as THREE from 'three';
+import { disposeStadiumEnvironment } from './stadiumLighting';
 
 const STADIUM_RESOURCE_ROOTS = new Set([
   'stadium_floor',
   'stadium_field_markings',
   'stadium_scenery',
+  'stadium_fill',
 ]);
 
 /** Release scene-owned stadium resources without touching shared armor or sky caches. */
 export function disposeStadiumResources(scene: THREE.Scene | null): void {
   if (!scene) return;
+  disposeStadiumEnvironment(scene);
 
   const roots: THREE.Object3D[] = [];
   scene.traverse((object) => {

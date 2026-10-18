@@ -773,6 +773,10 @@ export default function App() {
 	        effectiveAdminSettings={activeMatchSettings}
 	        onStatsUpdate={handleStatsUpdate}
 	        onLoadingStateChange={handleGameLoadingStateChange}
+	        onCancelLoading={() => {
+	          setSelectedReplay(null);
+	          handleReturnToMain();
+	        }}
 	        onPauseToggle={handlePauseToggle}
 	        isMultiplayer={isMultiplayer}
 	        multiplayerRole={multiplayerRole}

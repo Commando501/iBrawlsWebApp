@@ -764,6 +764,8 @@ export interface ReplayFile {
   playerName: string;
   opponentName: string;
   mapType: 'rectangular' | 'circle';
+  /** Championship Stadium geometry revision. Missing means the original 104m by 46m layout. */
+  stadiumLayoutRevision?: 1 | 2;
   mode: 'sandbox' | 'tournament';
   /**
    * Which game mode produced this replay. Distinct from `mode` (tournament vs free

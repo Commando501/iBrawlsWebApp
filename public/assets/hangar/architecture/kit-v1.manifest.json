@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "generator": "scripts/hangar/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; wall front +Z; centered pivots; baked child transforms",
+  "provenance": "Original Blender-authored industrial architecture; no third-party game geometry",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 706152,
+      "triangles": 16068,
+      "modules": {
+        "wall-bay": {
+          "triangles": 5844,
+          "materialBatches": 5,
+          "dimensions": [
+            10.68,
+            12.0,
+            0.55
+          ],
+          "boundsMin": [
+            -5.34,
+            -6.0,
+            -0.275
+          ],
+          "boundsMax": [
+            5.34,
+            6.0,
+            0.275
+          ],
+          "pivot": "center"
+        },
+        "support-column": {
+          "triangles": 2100,
+          "materialBatches": 5,
+          "dimensions": [
+            1.5,
+            12.0,
+            1.5
+          ],
+          "boundsMin": [
+            -0.75,
+            -6.0,
+            -0.75
+          ],
+          "boundsMax": [
+            0.75,
+            6.0,
+            0.75
+          ],
+          "pivot": "center"
+        },
+        "ceiling-truss": {
+          "triangles": 5724,
+          "materialBatches": 3,
+          "dimensions": [
+            50.0,
+            1.5,
+            0.5
+          ],
+          "boundsMin": [
+            -25.0,
+            -0.75,
+            -0.25
+          ],
+          "boundsMax": [
+            25.0,
+            0.75,
+            0.25
+          ],
+          "pivot": "center"
+        },
+        "high-bay-light": {
+          "triangles": 2400,
+          "materialBatches": 3,
+          "dimensions": [
+            4.0,
+            0.5,
+            1.2
+          ],
+          "boundsMin": [
+            -2.0,
+            -0.25,
+            -0.6
+          ],
+          "boundsMax": [
+            2.0,
+            0.25,
+            0.6
+          ],
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 203896,
+      "triangles": 3500,
+      "modules": {
+        "wall-bay": {
+          "triangles": 1552,
+          "materialBatches": 5,
+          "dimensions": [
+            10.68,
+            12.0,
+            0.55
+          ],
+          "boundsMin": [
+            -5.34,
+            -6.0,
+            -0.275
+          ],
+          "boundsMax": [
+            5.34,
+            6.0,
+            0.275
+          ],
+          "pivot": "center"
+        },
+        "support-column": {
+          "triangles": 780,
+          "materialBatches": 5,
+          "dimensions": [
+            1.5,
+            12.0,
+            1.5
+          ],
+          "boundsMin": [
+            -0.75,
+            -6.0,
+            -0.75
+          ],
+          "boundsMax": [
+            0.75,
+            6.0,
+            0.75
+          ],
+          "pivot": "center"
+        },
+        "ceiling-truss": {
+          "triangles": 728,
+          "materialBatches": 3,
+          "dimensions": [
+            50.0,
+            1.5,
+            0.5
+          ],
+          "boundsMin": [
+            -25.0,
+            -0.75,
+            -0.25
+          ],
+          "boundsMax": [
+            25.0,
+            0.75,
+            0.25
+          ],
+          "pivot": "center"
+        },
+        "high-bay-light": {
+          "triangles": 440,
+          "materialBatches": 3,
+          "dimensions": [
+            4.0,
+            0.5,
+            1.2
+          ],
+          "boundsMin": [
+            -2.0,
+            -0.25,
+            -0.6
+          ],
+          "boundsMax": [
+            2.0,
+            0.25,
+            0.6
+          ],
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "hangar_alloy": {
+      "baseColor": "#687984",
+      "metalness": 0.72,
+      "roughness": 0.43,
+      "emissiveStrength": 0
+    },
+    "hangar_graphite": {
+      "baseColor": "#252e36",
+      "metalness": 0.35,
+      "roughness": 0.67,
+      "emissiveStrength": 0
+    },
+    "hangar_ceramic": {
+      "baseColor": "#aebbc0",
+      "metalness": 0.08,
+      "roughness": 0.57,
+      "emissiveStrength": 0
+    },
+    "hangar_trim": {
+      "baseColor": "#a3977e",
+      "metalness": 0.7,
+      "roughness": 0.41,
+      "emissiveStrength": 0
+    },
+    "hangar_amber": {
+      "baseColor": "#be8e49",
+      "metalness": 0.08,
+      "roughness": 0.61,
+      "emissiveStrength": 0
+    },
+    "hangar_light": {
+      "baseColor": "#c8e4ee",
+      "metalness": 0.0,
+      "roughness": 0.32,
+      "emissiveStrength": 2
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

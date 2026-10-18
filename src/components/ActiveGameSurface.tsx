@@ -56,6 +56,7 @@ interface ActiveGameSurfaceProps {
   effectiveAdminSettings: UniversalSettings;
   onStatsUpdate: (stats: GameStats) => void;
   onLoadingStateChange: (state: GameLoadingState) => void;
+  onCancelLoading: () => void;
   onPauseToggle: () => void;
   isMultiplayer: boolean;
   multiplayerRole: GameplayMultiplayerRole;
@@ -136,6 +137,7 @@ export function ActiveGameSurface({
   effectiveAdminSettings,
   onStatsUpdate,
   onLoadingStateChange,
+  onCancelLoading,
   onPauseToggle,
   isMultiplayer,
   multiplayerRole,
@@ -254,7 +256,7 @@ export function ActiveGameSurface({
       {isMatchLoadingActive && (
         <MatchLoadingOverlay
           mode={isMultiplayer ? 'multiplayer' : selectedReplay ? 'replay' : 'solo'}
-          loadingState={gameLoadingState.ready && isMultiplayer
+          loadingState={gameLoadingState.ready && !gameLoadingState.error && isMultiplayer
             ? { ...gameLoadingState, visible: true, stage: 'Waiting for fireteam' }
             : gameLoadingState}
           selectedMap={selectedMap}
@@ -266,6 +268,7 @@ export function ActiveGameSurface({
           visualModelPolicy={visualModelPolicy}
           participants={multiplayerLoadingSnapshot.participants}
           waitingCount={multiplayerLoadingSnapshot.waitingCount}
+          onCancel={onCancelLoading}
         />
       )}
 

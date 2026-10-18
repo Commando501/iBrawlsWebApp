@@ -1,0 +1,435 @@
+{
+  "date": "2026-10-17",
+  "map": "rainy_industrial_streets",
+  "kind": "Rainy Cyber Streets environment upgrade",
+  "environment": {
+    "server": "Vite production preview on port3002; normal development server stays on3000",
+    "browser": "Playwright Chromium",
+    "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "models": "Actual V3 Iron Vanguard player and seven AI bots"
+  },
+  "method": "Three independent final-asset matches: High/Low combat sandbox and High 4v4 Grifball. Two-second warmup then15seconds requestAnimationFrame sampling. Combat includes deaths, respawns and impact effects. Grifball waits for playing phase. Overview camera changes are used only for separate screenshots. Runtime tests/typecheck/build completed before measurements. The production build avoids dev HMR interruptions from QA artifacts. Variable combat samples are not controlled tier comparisons. Sandbox unused Grifball phase remains countdown.",
+  "performance": {
+    "combatHigh": {
+      "tier": "high",
+      "frames": 1096,
+      "meanMs": 13.698813868613147,
+      "p50Ms": 13.80000000000291,
+      "p95Ms": 27.69999999999709,
+      "p99Ms": 41.70000000001164,
+      "maxCalls": 1546,
+      "maxTriangles": 443736,
+      "memory": {
+        "geometries": 41,
+        "textures": 31
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 72.99902090729253
+    },
+    "combatLow": {
+      "tier": "low",
+      "frames": 1397,
+      "meanMs": 10.742376521116677,
+      "p50Ms": 7,
+      "p95Ms": 20.80000000000109,
+      "p99Ms": 27.700000000000728,
+      "maxCalls": 2122,
+      "maxTriangles": 338736,
+      "memory": {
+        "geometries": 48,
+        "textures": 27
+      },
+      "actors": 7,
+      "phase": "countdown",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 93.08927107835626
+    },
+    "grifballHigh": {
+      "tier": "high",
+      "frames": 1080,
+      "meanMs": 13.908148148148147,
+      "p50Ms": 13.899999999999636,
+      "p95Ms": 21,
+      "p99Ms": 41.599999999998545,
+      "maxCalls": 202,
+      "maxTriangles": 427780,
+      "memory": {
+        "geometries": 60,
+        "textures": 31
+      },
+      "actors": 7,
+      "phase": "playing",
+      "canvas": [
+        1920,
+        1080
+      ],
+      "averageFps": 71.90029825308906
+    }
+  },
+  "limits": "Average frame rates exceed60FPS on this RTX4090 at1080p, but p95/p99 intervals exceed16.7ms during busy frames. This is not a locked60FPS guarantee and does not certify slower hardware. No movement or combat changes were made to improve the numbers.",
+  "assets": {
+    "variants": {
+      "high": {
+        "triangles": 15702,
+        "batches": 23,
+        "bytes": 776652,
+        "modules": {
+          "street-buffer": {
+            "dimensions": [
+              1.2,
+              2,
+              4
+            ],
+            "triangles": 2084,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "cargo-crate": {
+            "dimensions": [
+              2,
+              2,
+              2
+            ],
+            "triangles": 2124,
+            "materialBatches": 3,
+            "pivot": "center"
+          },
+          "building-block": {
+            "dimensions": [
+              14,
+              36,
+              12
+            ],
+            "triangles": 7928,
+            "materialBatches": 5,
+            "pivot": "center"
+          },
+          "streetlight": {
+            "dimensions": [
+              3,
+              10,
+              2
+            ],
+            "triangles": 908,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "billboard-frame": {
+            "dimensions": [
+              12,
+              8,
+              1.6
+            ],
+            "triangles": 866,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "street-palm": {
+            "dimensions": [
+              8,
+              12,
+              8
+            ],
+            "triangles": 1792,
+            "materialBatches": 3,
+            "pivot": "center"
+          }
+        }
+      },
+      "low": {
+        "triangles": 6314,
+        "batches": 23,
+        "bytes": 385996,
+        "modules": {
+          "street-buffer": {
+            "dimensions": [
+              1.2,
+              2,
+              4
+            ],
+            "triangles": 836,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "cargo-crate": {
+            "dimensions": [
+              2,
+              2,
+              2
+            ],
+            "triangles": 900,
+            "materialBatches": 3,
+            "pivot": "center"
+          },
+          "building-block": {
+            "dimensions": [
+              14,
+              36,
+              12
+            ],
+            "triangles": 3096,
+            "materialBatches": 5,
+            "pivot": "center"
+          },
+          "streetlight": {
+            "dimensions": [
+              3,
+              10,
+              2
+            ],
+            "triangles": 336,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "billboard-frame": {
+            "dimensions": [
+              12,
+              8,
+              1.6
+            ],
+            "triangles": 294,
+            "materialBatches": 4,
+            "pivot": "center"
+          },
+          "street-palm": {
+            "dimensions": [
+              8,
+              12,
+              8
+            ],
+            "triangles": 852,
+            "materialBatches": 3,
+            "pivot": "center"
+          }
+        }
+      }
+    },
+    "sourceMaterialBatches": 23,
+    "environmentDrawsIncludingWeather": 27,
+    "highSandboxTriangles": 121794,
+    "lowSandboxTriangles": 28126,
+    "originalTextureBytes": 1486550,
+    "highBuildings": 12,
+    "lowBuildings": 6,
+    "highPalms": 6,
+    "lowPalms": 4,
+    "highStreetlights": 6,
+    "lowStreetlights": 4,
+    "baseRainDrops": {
+      "high": 1000,
+      "balanced": 480,
+      "low": 180
+    },
+    "provenance": "Original Blender city architecture and procedural physical asphalt maps; approved Stadium concrete/V3 coatings; existing game dog billboard art and actual shipped V3 characters."
+  },
+  "checks": {
+    "mapDimensions": {
+      "sandbox": [
+        48,
+        24
+      ],
+      "grifball": [
+        104,
+        46
+      ]
+    },
+    "fourCollidersAndEightSpawnsUnchanged": true,
+    "goals": [
+      {
+        "id": "grifball_goal_blue",
+        "position": [
+          -47,
+          0.06,
+          0
+        ]
+      },
+      {
+        "id": "grifball_goal_red",
+        "position": [
+          47,
+          0.06,
+          0
+        ]
+      }
+    ],
+    "sevenV3BotsEachMode": true,
+    "weatherAnimatedOnGPU": true,
+    "screenOrientationCorrect": true,
+    "movement": {
+      "before": [
+        -17.27921432342989,
+        0,
+        10.084119869400187
+      ],
+      "after": [
+        -14.903279035348438,
+        0,
+        9.193144136369645
+      ],
+      "text": "SIMULATION PAUSED\n\nGRIFVX PROTO\nRESUME GAME\nMATCH OPERATIONS\nJOIN OBSERVER\nRESET MATCH\nBOT CONFIGURATION\nADJUSTMENTS & OPTIONS\nHOTKEY ADJUSTMENTS\nUI ADJUSTMENT\nLIGHTING & SHADOWS\nGAMEPLAY / MECHANICS OPTIONS\nSYSTEM & DEV\nGrifball AI Lab\nDAMAGE TRACES\nDISABLED\nQUIT TO TITLE SCREEN\n\nPress ESC inside game window to pause/unpause"
+    },
+    "quality": {
+      "gpu": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "dpr": 1,
+      "skyUnchanged": true,
+      "saved": {
+        "preference": "low",
+        "current": "high"
+      },
+      "cleanup": {
+        "environment": null,
+        "remainingRainyRoots": [],
+        "sky": false,
+        "props": 0
+      }
+    },
+    "lowBudget": {
+      "quality": {
+        "tier": "low",
+        "pixelRatioCap": 1,
+        "shadowMapSize": 512,
+        "architectureDetail": "low",
+        "seatStride": 4,
+        "dustCount": 0,
+        "lightShafts": false,
+        "textureTier": "low"
+      },
+      "status": {
+        "architectureStatus": "ready",
+        "halfExtents": {
+          "x": 24,
+          "z": 12
+        },
+        "detail": "low"
+      },
+      "draws": 26,
+      "tris": 28126,
+      "actors": 7,
+      "stats": {
+        "frame": 130,
+        "calls": 1130,
+        "triangles": 287907,
+        "points": 0,
+        "lines": 180
+      },
+      "floor": {
+        "color": "46525e",
+        "roughness": 0.68,
+        "maps": [
+          {
+            "slot": "map",
+            "size": [
+              512,
+              512
+            ]
+          },
+          {
+            "slot": "normalMap",
+            "size": null
+          },
+          {
+            "slot": "roughnessMap",
+            "size": null
+          }
+        ]
+      },
+      "rain": {
+        "count": 180,
+        "time": 8.972200000047684
+      },
+      "lighting": {
+        "ambient": 0.7,
+        "key": 1.8
+      }
+    },
+    "fallback": {
+      "status": "fallback",
+      "kit": false,
+      "actors": 7,
+      "visibleFallbackProps": 4,
+      "radius": 27.5,
+      "floorMap": [
+        1,
+        1
+      ],
+      "requested": [
+        "http://127.0.0.1:3002/assets/rainy/surfaces/asphalt-floor-albedo.png",
+        "http://127.0.0.1:3002/assets/rainy/surfaces/asphalt-floor-normal-gl.png",
+        "http://127.0.0.1:3002/assets/rainy/surfaces/asphalt-floor-roughness.png",
+        "http://127.0.0.1:3002/assets/stadium/ceramic/albedo.jpg",
+        "http://127.0.0.1:3002/assets/stadium/surfaces/ceramic-coating-normal-gl.png",
+        "http://127.0.0.1:3002/assets/stadium/surfaces/ceramic-coating-roughness.png",
+        "http://127.0.0.1:3002/assets/stadium/concrete/albedo.jpg",
+        "http://127.0.0.1:3002/assets/stadium/concrete/normal-gl.jpg",
+        "http://127.0.0.1:3002/assets/stadium/concrete/roughness.jpg",
+        "http://127.0.0.1:3002/assets/rainy/architecture/kit-v1.glb"
+      ],
+      "errors": []
+    },
+    "normalBrowserConsoleErrors": 0,
+    "tests": {
+      "rainy": 63,
+      "neon": 59,
+      "asteroid": 58,
+      "jungle": 58,
+      "cyber": 57,
+      "hangar": 55,
+      "canyon": 55,
+      "stadium": 68,
+      "sharedTestsOverlap": true
+    },
+    "typescript": "pass",
+    "productionBuild": "pass; existing large chunk warning",
+    "glbValidation": "pass",
+    "validationNote": "Concurrent earlier-map test execution exhausted V8 memory during Cyber; reran Cyber/Hangar/Canyon/Stadium at test-concurrency1 successfully. No assertion failure remained."
+  },
+  "screenshots": [
+    "output/playwright/rainy-upgrade/high-overview.png",
+    "output/playwright/rainy-upgrade/high-gameplay.png",
+    "output/playwright/rainy-upgrade/low-gameplay.png",
+    "output/playwright/rainy-upgrade/grifball-high-gameplay.png",
+    "output/playwright/rainy-upgrade/missing-assets-fallback.png"
+  ],
+  "sourceHashes": {
+    "src/components/grifball/rainyArchitecture.test.ts": "63ffd4c19604d91d0a3927109fea575a46a3fb205cf91ff8b80e5c88ee3e2c32",
+    "src/components/grifball/rainyArchitecture.ts": "ecbb6dd012641abd7c8fe59dff1a01b40fca87b813e671133302c8e1305dd573",
+    "src/components/grifball/rainyArenaRuntime.ts": "963ab004f0e48a6cc0fa70d1cb7d2ee8a7b30665997c9d3b4b839ed02737aeb5",
+    "src/components/grifball/rainyIntegration.test.ts": "1958def0c568f08fb1d06d0cf4022b0118581d65fbc7730730ad30922221560a",
+    "src/components/grifball/rainyLighting.test.ts": "197add4a91f1df2fb941b59d9ff65806c4d1f9313c5378234af3ce4f38c43840",
+    "src/components/grifball/rainyLighting.ts": "ba529f10ca309a381b3fcfdce8b981a93d02a95af181f0376edc39cbd5d54b59",
+    "src/components/grifball/rainyMaterials.test.ts": "c459a2238385643d688ec0b62d862ac229ab5124e506f652724ac33c7bb3ba5a",
+    "src/components/grifball/rainyMaterials.ts": "f88cab935852eea49feb7e161aea11bb49cdb709aab1b2218e652a4de226c58d",
+    "src/components/grifball/rainyResourceDisposal.test.ts": "1726a6ca46660968445bcacccd99f6fa494ee0c9cae04185dbd3307d6d23b053",
+    "src/components/grifball/rainyResourceDisposal.ts": "066b1451b15d5d355dbc4652ab7a699630fb9e3bd630a333a706d5da658f0cdf",
+    "src/components/grifball/rainyWeather.test.ts": "340879ae178605eabd6e92d8468bb1e6b563eb36bebe4313c1b8b625e92db393",
+    "src/components/grifball/rainyWeather.ts": "b1a8a6460de4caa79bc4b86945665ae6b6dd34b41dbca26a3684372f8b989d7c",
+    "scripts/rainy/author-kit.py": "091bb18c88e30e4417694ea18707e4e21031ac637b62760a6fcc3a91286c7b73",
+    "scripts/rainy/optimize-kit.ps1": "0b8e5703b3e947d84fed92909d3699071737d8888dc598f68967bf6e9de35992",
+    "scripts/rainy/README.md": "4df02afc40a9cf95032d4c71e64a1ecade81feb1bab0e0ab6f21a3440f2d6e2e",
+    "scripts/rainy/validate-kit.mjs": "7e33258c002d07c0f30885938be7d3bf43a391f16d60c75084d87d2453f2adff",
+    "scripts/rainy-textures/author-surfaces.mjs": "67877ff9262a02d1b7f433cf88a33776c16e3d1d524f46e3ddeb5ee34fef2a43",
+    "scripts/rainy-textures/README.md": "70bc17c55ccf2f914f6b5c481175a27b8a5c55f8ac7dbcb68a36437d03e5d6bf",
+    "public/assets/rainy/architecture/kit-low-v1.glb": "30f6fa08bf3d2aa7a1e62a7a58f454e3499234657976a541b3ce413636f43b75",
+    "public/assets/rainy/architecture/kit-v1.glb": "b148475f97e3b5528a5bab46c18dcbf1da7d8ed91cddf6eab2acac91f75db89a",
+    "public/assets/rainy/architecture/kit-v1.manifest.json": "ece04f3c5d644bcd51281e7b2d7f363fa7943822c09f3772591ec5f32e4f12ec",
+    "public/assets/rainy/architecture/kit-validation.json": "f048de81a44fee047b6a827440e40768c6179395c158e2f041078ec21c8d611e",
+    "public/assets/rainy/surfaces/asphalt-floor-albedo-low.png": "a7913b4d7cf957f4ee0bb5a6e57c082af7eaa4e36a5b2c93059423605d1cb344",
+    "public/assets/rainy/surfaces/asphalt-floor-albedo.png": "bf022d747b98e018c8703a9eb7ecc267ccd327cb7367c3d3d38b668acbad6b23",
+    "public/assets/rainy/surfaces/asphalt-floor-normal-gl.png": "d3610240681d19141f8968feef813fc9e8483f2260ff337afcacafc267211db8",
+    "public/assets/rainy/surfaces/asphalt-floor-roughness.png": "9ea4c65a85a65dd6c9f5630ae657b579549123e023014902cc59e906090362b2",
+    "public/assets/rainy/surfaces/manifest.json": "e2c297d0fbf40c9d0b14655f22f7597017b410ac9f9e4b28f67b7e91cf9ed10a"
+  }
+}

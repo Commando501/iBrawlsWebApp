@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "generator": "scripts/canyon/author-surfaces.mjs",
+  "provenance": "Original deterministic authored sedimentary rock maps; no third-party source images or generated depictions of game models.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": 8,
+  "albedoStatistics": {
+    "minimumRed": 147,
+    "maximumRed": 202,
+    "meanRed": 176.33850288391113,
+    "redStandardDeviation": 9.180685604573352
+  },
+  "design": "Warm geological strata, broken shallow ledges and weathered grain for background rock. No baked illumination. Traversable surfaces reuse the quiet Stadium floor; architecture reuses its approved generated ceramic albedo and physical coating maps.",
+  "sharedAssets": [
+    "assets/stadium/surfaces/floor-*",
+    "assets/stadium/ceramic/albedo*",
+    "assets/stadium/surfaces/ceramic-coating-*",
+    "assets/stadium/metal-panels/*"
+  ],
+  "files": [
+    {
+      "path": "assets/canyon/surfaces/rock-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 583517,
+      "sha256": "83c27818787b5f1909e08c621b9ddcdf7b812a4f7f05149f30e2c6702cbebb11",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/canyon/surfaces/rock-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 195440,
+      "sha256": "6c07af3a771ce84b49439cb511ee6a98655e5850fd6a83a4c39143bf3328ae39",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/canyon/surfaces/rock-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 1616234,
+      "sha256": "aadddfe32bdca1194906665fdde8293a17bda7c8ce288c30b8bf16e5ec2abb22",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/canyon/surfaces/rock-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 227552,
+      "sha256": "8f2b155e21e44bcd0a37ccc811f36d1e5071820cbcae7e9c52dc40e43c3b17bc",
+      "colorSpace": "linear / no color space"
+    }
+  ]
+}

@@ -16,7 +16,7 @@ export function buildCustomMapRainyStreetsSceneryForRefs({
   refs: GrifballThreeRefs;
   activeCustomMap: CustomMapData;
 }): void {
-  if (activeCustomMap.theme !== 'rainy_streets') return;
+  if (activeCustomMap.theme !== 'rainy_streets' || activeCustomMap.id === 'rainy_industrial_streets') return;
 
   const scene = refs.scene;
   if (!scene) return;

@@ -37,11 +37,11 @@ class WorkerSocket {
 }
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-async function waitForMessage(messages: Message[], type: string | string[]) {
+async function waitForMessage(messages: Message[], type: string | string[], matches = (_message: Message) => true) {
   const types = Array.isArray(type) ? type : [type];
   const deadline = Date.now() + 3000;
   while (Date.now() < deadline) {
-    const message = messages.find((entry) => types.includes(entry.type));
+    const message = messages.find((entry) => types.includes(entry.type) && matches(entry));
     if (message) return message;
     await delay(10);
   }
@@ -112,7 +112,7 @@ for (const relayType of ['Worker', 'Node'] as const) {
     };
     const host = await connect();
     await host.send({ type: 'host', customId: 'QP_123456', ip: '203.0.113.17', lanIp: '192.168.1.17',
-      lobbyConfig: { access: 'open', maxPlayers: 8, allowObservers: true, visualModelPolicy: 'v3' } });
+      lobbyConfig: { access: 'open', gameMode: 'grifball', maxPlayers: 8, allowObservers: true, visualModelPolicy: 'v3' } });
     const hosted = await host.wait('hosted');
 
     await t.test('unknown code, address and empty target are rejected with another room active', async () => {
@@ -154,6 +154,49 @@ for (const relayType of ['Worker', 'Node'] as const) {
       const response = await guest.wait(['error', 'connected']);
       assert.equal(response.type, 'error');
       assert.match(response.message, /match not found/i);
+      await guest.close();
+    });
+    await t.test('all match roles exchange readiness while observers cannot send gameplay', async () => {
+      const guest = await connect();
+      await guest.send({ type: 'join', targetIpOrId: 'QP_123456' });
+      const joined = await guest.wait('connected');
+      const observer = await connect();
+      await observer.send({ type: 'join', targetIpOrId: 'QP_123456', isObserver: true });
+      const observing = await observer.wait('connected');
+      const participants = [
+        { client: host, role: 'host', id: hosted.clientId },
+        { client: guest, role: 'client', id: joined.clientId },
+        { client: observer, role: 'observer', id: observing.clientId },
+      ];
+
+      await host.send({ type: 'start_match' });
+      for (const participant of participants) await participant.client.wait('match_start');
+      for (const sender of participants) {
+        await sender.client.send({ type: 'sync', action: 'match_loading_status', ready: true, progress: 100,
+          senderId: 'forged-id', senderRole: 'host' });
+        for (const recipient of participants.filter((participant) => participant !== sender)) {
+          const status = await waitForMessage(recipient.client.messages, 'sync',
+            (message) => message.action === 'match_loading_status' && message.senderId === sender.id);
+          assert.equal(status.senderRole, sender.role);
+          assert.equal(status.ready, true);
+          assert.equal(status.progress, 100);
+        }
+      }
+
+      const mutationId = 'observer-gameplay-mutation';
+      await observer.send({ type: 'sync', id: mutationId, pos: { x: 1, y: 0, z: 1 } });
+      await observer.send({ type: 'sync', id: mutationId, action: 'hammer_impact', damage: 100 });
+      await observer.send({ type: 'sync', id: mutationId, action: 'grifball_input', objectiveInput: {
+        sequence: 1, round: 1, possession: 0, pickup: true, charging: false,
+      } });
+      // This later readiness packet confirms earlier packets were processed before checking rejection.
+      await observer.send({ type: 'sync', action: 'match_loading_status', ready: true, progress: 100, stage: 'Verified' });
+      for (const recipient of [host, guest]) {
+        await waitForMessage(recipient.messages, 'sync',
+          (message) => message.senderId === observing.clientId && message.stage === 'Verified');
+        assert.equal(recipient.messages.some((message) => message.id === mutationId), false);
+      }
+      await observer.close();
       await guest.close();
     });
     await host.close();

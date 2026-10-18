@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "generator": "scripts/asteroid-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": {
+    "ground": 6,
+    "rock": 3
+  },
+  "statistics": {
+    "ground": {
+      "min": 218.11128196051837,
+      "max": 230.62052668843722,
+      "mean": 223.79672725459795,
+      "standardDeviation": 2.8143267799117777
+    },
+    "rock": {
+      "min": 208.18049447813823,
+      "max": 234.95368864689007,
+      "mean": 224.26293777360308,
+      "standardDeviation": 4.290343384413445
+    }
+  },
+  "files": [
+    {
+      "path": "assets/asteroid/surfaces/ground-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 123555,
+      "sha256": "2efb4ca66eba479a9108f87b8c166c2ae06e039db13a994c4ff89c3036164045",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/asteroid/surfaces/ground-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 1218345,
+      "sha256": "aab72e440b939bb8faaadcd133b46f631ba713e4ede3fcaffd637cdddb7dcd39",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/asteroid/surfaces/ground-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 96126,
+      "sha256": "2522204f96c864807b0cc1feecba8436ea736094ac5461bc2c4f1ecca0c8b9d2",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/asteroid/surfaces/ground-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 52456,
+      "sha256": "e4145aecf59fbd7f9b856fd80abfab37d6ff939533af6894298c2e4571f6d156",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/asteroid/surfaces/rock-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 194167,
+      "sha256": "53baf2c90c9607cc3e1932dc3b7b06de7612a970bb99eeff2c0650291b096cfd",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/asteroid/surfaces/rock-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 1867142,
+      "sha256": "afd6c1cf7e8fb32d8aaf2fc5ea74ddae54f6d76a09a439ed75856c283e6c1105",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/asteroid/surfaces/rock-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 366997,
+      "sha256": "b4c370ad6ca1f04c915d343d0e7e34cb1915937b5f642e4135cb9805e8adfaec",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/asteroid/surfaces/rock-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 72073,
+      "sha256": "f1ae0f45b9ea27f607e5fe597ebd77358359ec83c6d71dd7be091f6b7fced34d",
+      "colorSpace": "sRGB"
+    }
+  ],
+  "design": "Quiet charcoal compacted regolith floor with broad restrained color variation; physical micrograin and roughness carry detail. Fractured asteroid rock and ore use richer rock relief. No baked shadows, glowing floor lines, loose ground debris, or displacement. Industrial armor separately reuses approved Stadium coating."
+}

@@ -1,0 +1,214 @@
+{
+  "schema": 1,
+  "generator": "scripts/stadium/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; front +Z",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 865148,
+      "triangles": 12040,
+      "modules": {
+        "barrier-panel": {
+          "triangles": 2264,
+          "materialBatches": 4,
+          "dimensions": [
+            8.0,
+            3.2,
+            0.7
+          ],
+          "boundsMin": [
+            -4.0,
+            0.0,
+            -0.35
+          ],
+          "boundsMax": [
+            4.0,
+            3.2,
+            0.35
+          ],
+          "pivot": "bottom-center"
+        },
+        "support-pylon": {
+          "triangles": 5892,
+          "materialBatches": 4,
+          "dimensions": [
+            2.0,
+            16.0,
+            2.5
+          ],
+          "boundsMin": [
+            -1.0,
+            0.0,
+            -1.25
+          ],
+          "boundsMax": [
+            1.0,
+            16.0,
+            1.25
+          ],
+          "pivot": "bottom-center"
+        },
+        "light-fixture": {
+          "triangles": 2880,
+          "materialBatches": 3,
+          "dimensions": [
+            6.0,
+            1.2,
+            1.0
+          ],
+          "boundsMin": [
+            -3.0,
+            -0.6,
+            -0.5
+          ],
+          "boundsMax": [
+            3.0,
+            0.6,
+            0.5
+          ],
+          "pivot": "center"
+        },
+        "vent-module": {
+          "triangles": 1004,
+          "materialBatches": 3,
+          "dimensions": [
+            3.0,
+            2.0,
+            0.5
+          ],
+          "boundsMin": [
+            -1.5,
+            -1.0,
+            -0.25
+          ],
+          "boundsMax": [
+            1.5,
+            1.0,
+            0.25
+          ],
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 250128,
+      "triangles": 3324,
+      "modules": {
+        "barrier-panel": {
+          "triangles": 624,
+          "materialBatches": 4,
+          "dimensions": [
+            8.0,
+            3.2,
+            0.7
+          ],
+          "boundsMin": [
+            -4.0,
+            0.0,
+            -0.35
+          ],
+          "boundsMax": [
+            4.0,
+            3.2,
+            0.35
+          ],
+          "pivot": "bottom-center"
+        },
+        "support-pylon": {
+          "triangles": 1548,
+          "materialBatches": 4,
+          "dimensions": [
+            2.0,
+            16.0,
+            2.5
+          ],
+          "boundsMin": [
+            -1.0,
+            0.0,
+            -1.25
+          ],
+          "boundsMax": [
+            1.0,
+            16.0,
+            1.25
+          ],
+          "pivot": "bottom-center"
+        },
+        "light-fixture": {
+          "triangles": 708,
+          "materialBatches": 3,
+          "dimensions": [
+            6.0,
+            1.2,
+            1.0
+          ],
+          "boundsMin": [
+            -3.0,
+            -0.6,
+            -0.5
+          ],
+          "boundsMax": [
+            3.0,
+            0.6,
+            0.5
+          ],
+          "pivot": "center"
+        },
+        "vent-module": {
+          "triangles": 444,
+          "materialBatches": 3,
+          "dimensions": [
+            3.0,
+            2.0,
+            0.4999
+          ],
+          "boundsMin": [
+            -1.5,
+            -1.0,
+            -0.25
+          ],
+          "boundsMax": [
+            1.5,
+            1.0,
+            0.2499
+          ],
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "stadium_alloy": {
+      "baseColor": "#516675",
+      "metalness": 0.78,
+      "roughness": 0.38
+    },
+    "stadium_graphite": {
+      "baseColor": "#17232f",
+      "metalness": 0.45,
+      "roughness": 0.55
+    },
+    "stadium_ceramic": {
+      "baseColor": "#bac5c7",
+      "metalness": 0.1,
+      "roughness": 0.43
+    },
+    "stadium_trim": {
+      "baseColor": "#a69266",
+      "metalness": 0.82,
+      "roughness": 0.32
+    },
+    "stadium_cyan": {
+      "baseColor": "#4ac8da",
+      "metalness": 0.08,
+      "roughness": 0.24
+    },
+    "stadium_warm": {
+      "baseColor": "#ffdeb0",
+      "metalness": 0.04,
+      "roughness": 0.3
+    }
+  }
+}

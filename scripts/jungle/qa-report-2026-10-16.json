@@ -1,0 +1,157 @@
+{
+  "date": "2026-10-16",
+  "map": "botanical_outpost",
+  "kind": "Jungle Ruined Outpost environment visual upgrade",
+  "environment": {
+    "server": "localhost Vite development server, port 3000",
+    "browser": "Playwright Chromium",
+    "gpu": "NVIDIA GeForce RTX 4090 via ANGLE Direct3D11",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "canvas": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "mode": "Combat sandbox",
+    "models": "Actual V3 Iron Vanguard on the local player and all seven AI combatants"
+  },
+  "method": "Two independent final-asset live matches with seven actively fighting AI bots and a stationary first-person player, including deaths, respawns and impact effects. Two seconds warmup then 15 seconds of requestAnimationFrame interval sampling. Runtime edits, asset authoring, tests, typecheck and build completed before these final samples. Camera overrides used only for separate screenshots, never measurement. Draw/triangle counters include rendered passes and shadows. Random combat means these are workload samples, not controlled tier comparisons. Sandbox does not advance the unused Grifball phase field; live combat and elapsed match clocks were checked visually.",
+  "performance": {
+    "high": {
+      "frames": 1507,
+      "meanFrameMs": 9.958261446582613,
+      "averageFps": 100.41913494279376,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.9,
+      "maxDrawCalls": 1911,
+      "maxRenderedTriangles": 544221,
+      "geometriesAtEnd": 87,
+      "texturesAtEnd": 34
+    },
+    "low": {
+      "frames": 1605,
+      "meanFrameMs": 9.354517133956387,
+      "averageFps": 106.90022645530837,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.8,
+      "maxDrawCalls": 1982,
+      "maxRenderedTriangles": 374544,
+      "geometriesAtEnd": 33,
+      "texturesAtEnd": 24
+    }
+  },
+  "assets": {
+    "highSourceTriangles": 13752,
+    "lowSourceTriangles": 4680,
+    "highGlbBytes": 856700,
+    "lowGlbBytes": 333408,
+    "architectureMaterialBatches": 16,
+    "terrainMaterialBatches": 3,
+    "highInstantiatedEnvironmentTriangles": 219052,
+    "lowInstantiatedEnvironmentTriangles": 47932,
+    "highCanopyInstances": 32,
+    "lowCanopyInstances": 16,
+    "organicTexturePackBytes": 5750734,
+    "provenance": "Original Blender relic, stone boulders, ridged trunks, ruined walls and opaque jungle canopy. Original deterministic physical ground/stone/bark textures. Shared approved Stadium generated ceramic albedo and authored coating maps. Actual shipped V3 characters unchanged."
+  },
+  "checks": {
+    "architectureReadyHighAndLow": true,
+    "allSevenBotsUseActualVanguard": true,
+    "pointerLock": true,
+    "keyboardMovement": {
+      "key": "W",
+      "durationMs": 450,
+      "before": [
+        0,
+        0,
+        -15
+      ],
+      "after": [
+        -3.4527446925800544e-16,
+        0,
+        -12.180620000000008
+      ]
+    },
+    "pauseMenu": true,
+    "qualitySavedThroughUIAndAppliedNextMatch": true,
+    "qualityPreferenceRestoredToAuto": true,
+    "unrelatedLightingChangePreservesSky": {
+      "directLightBefore": 1.6,
+      "directLightDuringCheck": 1.5,
+      "sameSkyUniforms": true,
+      "fogBeforeAndAfter": "7e9187"
+    },
+    "quitCleanup": {
+      "environment": null,
+      "remainingJungleRoots": [],
+      "ownedSkyPresent": false,
+      "legacyPropsRemaining": 0,
+      "shadowTargetsDisposedOnce": "verified by resource lifecycle test"
+    },
+    "blockedJungleAndStadiumDownloads": {
+      "architectureStatus": "fallback",
+      "kitPresent": false,
+      "visibleFallbackProps": 7,
+      "activeAI": 7,
+      "arenaRadius": 27.5,
+      "floorFallbackPixels": [
+        1,
+        1
+      ],
+      "blockedRequests": 13,
+      "uncaughtPageErrors": []
+    },
+    "gameplayData": "21m authored circular floor radius, seven original obstacles/collider transforms, eight authored spawns, game-mode rules and movement settings preserved. Existing roster multiplier remains unchanged: player+7bots has floor radius28.875m while gameplay state reports27.5m. Decoration follows actual floor radius; cover stays fixed. No Stadium sprint timing applied. All real canopy vertices remain >3m outside the largest scaled floor.",
+    "jungleAndSharedTestsPassed": 52,
+    "cyberAndSharedTestsPassed": 51,
+    "hangarAndSharedTestsPassed": 49,
+    "canyonAndSharedTestsPassed": 49,
+    "stadiumAndSharedTestsPassed": 62,
+    "testCountsNote": "Shared suites overlap; counts are not unique.",
+    "typecheck": "passed",
+    "productionClientBuild": "passed",
+    "glbContractValidation": "passed",
+    "integrationReview": "No actionable integration regressions found. Visual review prompted layered foliage; browser cleanup review prompted explicit Jungle key/shadow disposal."
+  },
+  "limits": [
+    "Short local samples support the target on this machine, not locked60FPS or certification of slower GPUs/higher resolutions.",
+    "Occasional ~21ms frame intervals remain.",
+    "Existing undefined-emissive and THREE.Clock warnings remain in the game; normal final matches have zero console errors. The13 network errors in the fallback check were deliberately induced.",
+    "Production build retains existing large-chunk warnings."
+  ],
+  "developmentNotes": [
+    "Initial high sample before foliage layering averaged108.3FPS; superseded by final measurements.",
+    "One control check was interrupted by a build-triggered dev reload. It was discarded and repeated successfully after all build work finished."
+  ],
+  "captures": {
+    "before": "output/playwright/jungle-upgrade/before-gameplay.png",
+    "highGameplay": "output/playwright/jungle-upgrade/high-gameplay.png",
+    "lowGameplay": "output/playwright/jungle-upgrade/low-gameplay.png",
+    "highOverview": "output/playwright/jungle-upgrade/high-overview.png",
+    "finalOverview": "output/playwright/jungle-upgrade/forest-overview.png",
+    "fallback": "output/playwright/jungle-upgrade/missing-assets-fallback.png",
+    "qualitySettings": "output/playwright/jungle-upgrade/quality-settings.png"
+  },
+  "sourceSha256": {
+    "src/components/grifball/jungleArchitecture.test.ts": "1e275228d0a68081fcb5bb84707b10ab4f8ec9e78f004acb1ff33316b2487654",
+    "src/components/grifball/jungleArchitecture.ts": "cfb224c4501717332f3849cd01adf9342d47f9efd3d5dca49ff4397ff6025d85",
+    "src/components/grifball/jungleArenaRuntime.ts": "0f6a40ba2a096c7c5ccb8a4aba325a396c7433b57453e99fcea196e4334d5fdb",
+    "src/components/grifball/jungleIntegration.test.ts": "24f41a1248087b759ee18b0d9531eb2c4ad289b60ba55f67663a11ce11517399",
+    "src/components/grifball/jungleLighting.test.ts": "cf69eaa6c39bc4b15cdfbeb0e0c0fbfc812bcd31055c61f643b8f368719c8032",
+    "src/components/grifball/jungleLighting.ts": "2658e043499fb04ccff90508c849306f77dcae439765eb352a8f4d8746b1ea01",
+    "src/components/grifball/jungleMaterials.test.ts": "cf386762b26995628c128fd00651d281e92c0cb6c11115ea9873ed714da80e9e",
+    "src/components/grifball/jungleMaterials.ts": "61d7ade3ee3be47cbf0f9102d309c1d6061c828458676c5be99405f77e558b11",
+    "src/components/grifball/jungleResourceDisposal.test.ts": "edeaca01ba71e3eeba8e63b3d58e017f4942f313f95760f766e771797c68f5f2",
+    "src/components/grifball/jungleResourceDisposal.ts": "ff017b53bd461eea2dfe4336047f5a5af35aca159391140aedeccff92235a2ef",
+    "src/components/grifball/customMapArenaRuntime.ts": "4b3c8acb24557c04d7d528c1ad5a0e5c2811007355361bd73d2ef8b933e25f32",
+    "src/components/grifball/arenaSceneInitializationRuntime.ts": "2b4e19e1d0756ee5514fd18a90ad6edea6db66cc9159199d5c8787d98eadd4e5",
+    "src/components/grifball/mountSceneRuntime.ts": "02924b5d77dd49b5f65fba257a09ac6be05c5e4ee96b91929c74def7c7c0975a",
+    "src/components/grifball/arenaSpawns.ts": "3955ad305bc008293bd0c657ee18d92a4ad2e0a4dc2e052a5a53d3a7ab199a74",
+    "src/components/grifball/visualState.ts": "7ba1a4320d6dc73142c03f312bfbcd15228fa7cb567d8c0df65fa0da85182d25"
+  }
+}

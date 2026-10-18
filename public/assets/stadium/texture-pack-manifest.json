@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "tool": "Blender Image.scale / Image.save",
+  "artisticChanges": false,
+  "files": [
+    {
+      "path": "assets/stadium/ceramic/albedo.jpg",
+      "source": "assets/stadium/ceramic/source.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 291893,
+      "colorSpace": "sRGB",
+      "sha256": "28aea6f4a0ef4fcdb75e0224606cb0ea5a00c61fe82d7129ecba0fd4e9c0ca4d"
+    },
+    {
+      "path": "assets/stadium/ceramic/albedo-low.jpg",
+      "source": "assets/stadium/ceramic/source.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 67890,
+      "colorSpace": "sRGB",
+      "sha256": "2d589e8eb6cf820f67fbd7ee53fbba46eeae27dad56989d03de75b3fdc014055"
+    },
+    {
+      "path": "assets/stadium/metal-panels/albedo-low.jpg",
+      "source": "assets/stadium/metal-panels/albedo.jpg",
+      "width": 512,
+      "height": 512,
+      "bytes": 49246,
+      "colorSpace": "sRGB",
+      "sha256": "fc8d136cf06c2d70be21faae0c03105e497ef2956c92342e9f3a3f4ffcd4db1d"
+    },
+    {
+      "path": "assets/stadium/metal-panels/ao-low.jpg",
+      "source": "assets/stadium/metal-panels/ao.jpg",
+      "width": 512,
+      "height": 512,
+      "bytes": 150628,
+      "colorSpace": "linear / no color space",
+      "sha256": "7c85f844de8ad04f79178169257ebef4e6d8d56097d5db6829058c3d9a5ef156"
+    },
+    {
+      "path": "assets/stadium/metal-panels/metalness-low.jpg",
+      "source": "assets/stadium/metal-panels/metalness.jpg",
+      "width": 512,
+      "height": 512,
+      "bytes": 15257,
+      "colorSpace": "linear / no color space",
+      "sha256": "30d1c10561ea0b42ba4db23917229cdaed076bfb54fe7fae19db87636734c7db"
+    },
+    {
+      "path": "assets/stadium/metal-panels/normal-gl-low.jpg",
+      "source": "assets/stadium/metal-panels/normal-gl.jpg",
+      "width": 512,
+      "height": 512,
+      "bytes": 128274,
+      "colorSpace": "linear / no color space",
+      "sha256": "2e52b41d870892a9ade47490c5cb6c8c86ee2412e095c600d07e6b4509dd3f87"
+    },
+    {
+      "path": "assets/stadium/metal-panels/roughness-low.jpg",
+      "source": "assets/stadium/metal-panels/roughness.jpg",
+      "width": 512,
+      "height": 512,
+      "bytes": 37889,
+      "colorSpace": "linear / no color space",
+      "sha256": "a4e5b270a39322110f99dc42a45bc5d0e8eadbb960f471ff6994de369ed0f144"
+    },
+    {
+      "path": "assets/stadium/concrete/albedo-low.jpg",
+      "source": "assets/stadium/concrete/albedo.jpg",
+      "width": 512,
+      "height": 256,
+      "bytes": 20851,
+      "colorSpace": "sRGB",
+      "sha256": "38b59e9b48c3b72346a2b419717edc4dc59d0a957be4919b9675c017d694120c"
+    },
+    {
+      "path": "assets/stadium/concrete/normal-gl-low.jpg",
+      "source": "assets/stadium/concrete/normal-gl.jpg",
+      "width": 512,
+      "height": 256,
+      "bytes": 43839,
+      "colorSpace": "linear / no color space",
+      "sha256": "c0d6eeab926d15c62ebdc34e36d286aa0310f1c556b1dc47a615ffb37755680b"
+    },
+    {
+      "path": "assets/stadium/concrete/roughness-low.jpg",
+      "source": "assets/stadium/concrete/roughness.jpg",
+      "width": 512,
+      "height": 256,
+      "bytes": 32583,
+      "colorSpace": "linear / no color space",
+      "sha256": "5f88410aa48030c43cc7157449230a459308bfd811ad4d32126fb9facb0948e3"
+    },
+    {
+      "path": "assets/stadium/screens/championship-low.jpg",
+      "source": "assets/stadium/screens/championship.png",
+      "width": 512,
+      "height": 293,
+      "bytes": 58375,
+      "colorSpace": "sRGB",
+      "sha256": "92599eb41e222c969a051b5dcbed280691c0f973328e70fa676de637d48a9d94"
+    },
+    {
+      "path": "assets/stadium/screens/sapphire-low.jpg",
+      "source": "assets/stadium/screens/sapphire.png",
+      "width": 512,
+      "height": 256,
+      "bytes": 55231,
+      "colorSpace": "sRGB",
+      "sha256": "8577f99cc59845d16d6f1d9740d0e9c28fa12e08c432a460b125df857f64dd5e"
+    },
+    {
+      "path": "assets/stadium/screens/gauss-low.jpg",
+      "source": "assets/stadium/screens/gauss.png",
+      "width": 512,
+      "height": 256,
+      "bytes": 58148,
+      "colorSpace": "sRGB",
+      "sha256": "8920379476016d793228fd84e429e5c3d33266e0c75e6d918234526c7feb109d"
+    }
+  ]
+}

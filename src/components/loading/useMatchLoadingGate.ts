@@ -8,6 +8,7 @@ import {
   deriveMultiplayerLoadingSnapshot,
   normalizeLoadingRole,
   removeLoadingParticipant,
+  restartLoadingParticipantTimeouts,
   upsertLoadingSlot,
   upsertLoadingSlots,
   upsertLoadingStatus,
@@ -59,10 +60,14 @@ export function useMatchLoadingGate({
   const [loadingGateNow, setLoadingGateNow] = useState(() => Date.now());
 
   const localLoadingRole = normalizeLoadingRole(multiplayerRole);
+  const activeCustomMap = selectedMap === 'custom_file' ? lobbyCustomMapData : null;
 
   const resetMatchLoading = useCallback((stage = 'Preparing match') => {
     setGameLoadingState(createInitialGameLoadingState(stage));
-    setMultiplayerLoadingRoster({});
+    // A peer can finish before this client handles match_start. Keep both the
+    // staged roster and any readiness already received, and start the timeout
+    // for waiting peers now rather than counting time spent in the lobby.
+    setMultiplayerLoadingRoster(roster => restartLoadingParticipantTimeouts(roster, Date.now()));
   }, []);
 
   const mergeLoadingParticipants = useCallback((slots: MultiplayerLoadingSlotPayload[] | undefined) => {
@@ -91,14 +96,14 @@ export function useMatchLoadingGate({
   }, []);
 
   const multiplayerLoadingSnapshot = useMemo(
-    () => deriveMultiplayerLoadingSnapshot(multiplayerLoadingRoster, loadingGateNow, MATCH_LOADING_TIMEOUT_MS),
-    [multiplayerLoadingRoster, loadingGateNow]
+    () => deriveMultiplayerLoadingSnapshot(multiplayerLoadingRoster, loadingGateNow, MATCH_LOADING_TIMEOUT_MS, gameplayClientId),
+    [multiplayerLoadingRoster, loadingGateNow, gameplayClientId]
   );
 
+  const isLocalSceneReady = gameLoadingState.ready && !gameLoadingState.error;
   const isMatchLoadingActive = isPlaying && (
-    isMultiplayer
-      ? !multiplayerLoadingSnapshot.gateReleased
-      : !gameLoadingState.ready
+    !isLocalSceneReady
+    || (isMultiplayer && !multiplayerLoadingSnapshot.gateReleased)
   );
 
   useEffect(() => {
@@ -107,7 +112,7 @@ export function useMatchLoadingGate({
       return;
     }
     resetMatchLoading(selectedReplayId ? 'Preparing replay' : 'Preparing match');
-  }, [isPlaying, selectedReplayId, selectedMap, lobbyCustomMapData, resetMatchLoading]);
+  }, [isPlaying, selectedReplayId, selectedMap, activeCustomMap, resetMatchLoading]);
 
   // The socket identity is also needed by objective ownership after leaving the lobby.
   useEffect(() => {
@@ -135,7 +140,7 @@ export function useMatchLoadingGate({
       visualModelPolicy: visualModelPolicy ?? undefined,
       progress: gameLoadingState.progress,
       stage: gameLoadingState.stage,
-      ready: gameLoadingState.ready,
+      ready: isLocalSceneReady,
     }, gameplayClientId);
   }, [
     isPlaying,
@@ -149,7 +154,7 @@ export function useMatchLoadingGate({
     visualModelPolicy,
     gameLoadingState.progress,
     gameLoadingState.stage,
-    gameLoadingState.ready,
+    isLocalSceneReady,
     upsertLoadingParticipantStatus,
   ]);
 
@@ -157,7 +162,7 @@ export function useMatchLoadingGate({
     if (!isPlaying || !isMultiplayer || !multiplayerSocket || multiplayerSocket.readyState !== WebSocket.OPEN || !gameplayClientId) {
       return;
     }
-    multiplayerSocket.send(JSON.stringify({
+    const packet = JSON.stringify({
       type: 'sync',
       action: 'match_loading_status',
       role: localLoadingRole,
@@ -168,8 +173,33 @@ export function useMatchLoadingGate({
       visualModelPolicy: visualModelPolicy ?? undefined,
       progress: gameLoadingState.progress,
       stage: gameLoadingState.stage,
-      ready: gameLoadingState.ready,
-    }));
+      ready: isLocalSceneReady,
+    });
+    multiplayerSocket.send(packet);
+
+    if (!isLocalSceneReady) return;
+    // Players who join an active match missed our final status. Their first
+    // loading update requests a single ready reply, without a heartbeat or a
+    // ready-to-ready reply loop that could keep refreshing peer deadlines.
+    const repliedTo = new Set<string>();
+    const handleLoadingStatus = (event: MessageEvent) => {
+      let data: { type?: string; action?: string; senderId?: string; ready?: boolean };
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!data || data.type !== 'sync' || data.action !== 'match_loading_status'
+        || typeof data.senderId !== 'string' || !data.senderId || data.senderId === gameplayClientId) return;
+      if (data.ready === true) {
+        repliedTo.delete(data.senderId);
+      } else if (data.ready === false && !repliedTo.has(data.senderId) && multiplayerSocket.readyState === WebSocket.OPEN) {
+        repliedTo.add(data.senderId);
+        multiplayerSocket.send(packet);
+      }
+    };
+    multiplayerSocket.addEventListener('message', handleLoadingStatus);
+    return () => multiplayerSocket.removeEventListener('message', handleLoadingStatus);
   }, [
     isPlaying,
     isMultiplayer,
@@ -183,7 +213,7 @@ export function useMatchLoadingGate({
     visualModelPolicy,
     gameLoadingState.progress,
     gameLoadingState.stage,
-    gameLoadingState.ready,
+    isLocalSceneReady,
   ]);
 
   return {

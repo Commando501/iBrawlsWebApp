@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "generator": "scripts/asteroid/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; identity root and child transforms; physical UVs",
+  "provenance": "Original Blender-authored geometry; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 1250224,
+      "triangles": 27756,
+      "modules": {
+        "ore-extractor": {
+          "triangles": 9084,
+          "materialBatches": 4,
+          "dimensions": [
+            2.6,
+            5.0,
+            2.6
+          ],
+          "boundsMin": [
+            -1.3,
+            -2.5,
+            -1.3
+          ],
+          "boundsMax": [
+            1.3,
+            2.5,
+            1.3
+          ],
+          "maximumHorizontalRadius": 1.3,
+          "pivot": "center"
+        },
+        "ore-cluster": {
+          "triangles": 654,
+          "materialBatches": 2,
+          "dimensions": [
+            2.2,
+            3.0,
+            2.2
+          ],
+          "boundsMin": [
+            -1.1,
+            -1.5,
+            -1.1
+          ],
+          "boundsMax": [
+            1.1,
+            1.5,
+            1.1
+          ],
+          "maximumHorizontalRadius": 1.261612,
+          "pivot": "center"
+        },
+        "freight-container": {
+          "triangles": 5532,
+          "materialBatches": 4,
+          "dimensions": [
+            1.8,
+            2.0,
+            3.5
+          ],
+          "boundsMin": [
+            -0.9,
+            -1.0,
+            -1.75
+          ],
+          "boundsMax": [
+            0.9,
+            1.0,
+            1.75
+          ],
+          "maximumHorizontalRadius": 1.958379,
+          "pivot": "center"
+        },
+        "blast-partition": {
+          "triangles": 2748,
+          "materialBatches": 4,
+          "dimensions": [
+            5.0,
+            3.0,
+            0.4
+          ],
+          "boundsMin": [
+            -2.5,
+            -1.5,
+            -0.2
+          ],
+          "boundsMax": [
+            2.5,
+            1.5,
+            0.2
+          ],
+          "maximumHorizontalRadius": 2.5048,
+          "pivot": "center"
+        },
+        "asteroid-crag": {
+          "triangles": 866,
+          "materialBatches": 2,
+          "dimensions": [
+            14.0,
+            14.0,
+            14.0
+          ],
+          "boundsMin": [
+            -7.0,
+            -7.0,
+            -7.0
+          ],
+          "boundsMax": [
+            7.0,
+            7.0,
+            7.0
+          ],
+          "maximumHorizontalRadius": 8.18165,
+          "pivot": "center"
+        },
+        "mining-gantry": {
+          "triangles": 8872,
+          "materialBatches": 5,
+          "dimensions": [
+            12.0,
+            16.0,
+            7.0
+          ],
+          "boundsMin": [
+            -6.0,
+            -8.0,
+            -3.5
+          ],
+          "boundsMax": [
+            6.0,
+            8.0,
+            3.5
+          ],
+          "maximumHorizontalRadius": 6.62186,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 346664,
+      "triangles": 5532,
+      "modules": {
+        "ore-extractor": {
+          "triangles": 1692,
+          "materialBatches": 4,
+          "dimensions": [
+            2.6,
+            5.0,
+            2.6
+          ],
+          "boundsMin": [
+            -1.3,
+            -2.5,
+            -1.3
+          ],
+          "boundsMax": [
+            1.3,
+            2.5,
+            1.3
+          ],
+          "maximumHorizontalRadius": 1.3,
+          "pivot": "center"
+        },
+        "ore-cluster": {
+          "triangles": 366,
+          "materialBatches": 2,
+          "dimensions": [
+            2.2,
+            3.0,
+            2.2
+          ],
+          "boundsMin": [
+            -1.1,
+            -1.5,
+            -1.1
+          ],
+          "boundsMax": [
+            1.1,
+            1.5,
+            1.1
+          ],
+          "maximumHorizontalRadius": 1.243337,
+          "pivot": "center"
+        },
+        "freight-container": {
+          "triangles": 944,
+          "materialBatches": 4,
+          "dimensions": [
+            1.8,
+            2.0,
+            3.5
+          ],
+          "boundsMin": [
+            -0.9,
+            -1.0,
+            -1.75
+          ],
+          "boundsMax": [
+            0.9,
+            1.0,
+            1.75
+          ],
+          "maximumHorizontalRadius": 1.963882,
+          "pivot": "center"
+        },
+        "blast-partition": {
+          "triangles": 540,
+          "materialBatches": 4,
+          "dimensions": [
+            5.0,
+            3.0,
+            0.4
+          ],
+          "boundsMin": [
+            -2.5,
+            -1.5,
+            -0.2
+          ],
+          "boundsMax": [
+            2.5,
+            1.5,
+            0.2
+          ],
+          "maximumHorizontalRadius": 2.5048,
+          "pivot": "center"
+        },
+        "asteroid-crag": {
+          "triangles": 366,
+          "materialBatches": 2,
+          "dimensions": [
+            14.0,
+            14.0,
+            14.0
+          ],
+          "boundsMin": [
+            -7.0,
+            -7.0,
+            -7.0
+          ],
+          "boundsMax": [
+            7.0,
+            7.0,
+            7.0
+          ],
+          "maximumHorizontalRadius": 8.579083,
+          "pivot": "center"
+        },
+        "mining-gantry": {
+          "triangles": 1624,
+          "materialBatches": 5,
+          "dimensions": [
+            12.0,
+            16.0,
+            7.0
+          ],
+          "boundsMin": [
+            -6.0,
+            -8.0,
+            -3.5
+          ],
+          "boundsMax": [
+            6.0,
+            8.0,
+            3.5
+          ],
+          "maximumHorizontalRadius": 6.619577,
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "asteroid_rock": {
+      "baseColor": "#707681",
+      "metalness": 0.02,
+      "roughness": 0.91,
+      "emissiveStrength": 0
+    },
+    "asteroid_ore": {
+      "baseColor": "#a78553",
+      "metalness": 0.32,
+      "roughness": 0.72,
+      "emissiveStrength": 0
+    },
+    "asteroid_ceramic": {
+      "baseColor": "#b4bec4",
+      "metalness": 0.09,
+      "roughness": 0.62,
+      "emissiveStrength": 0
+    },
+    "asteroid_alloy": {
+      "baseColor": "#72818c",
+      "metalness": 0.65,
+      "roughness": 0.49,
+      "emissiveStrength": 0
+    },
+    "asteroid_graphite": {
+      "baseColor": "#2d3744",
+      "metalness": 0.28,
+      "roughness": 0.74,
+      "emissiveStrength": 0
+    },
+    "asteroid_amber": {
+      "baseColor": "#e3ac62",
+      "metalness": 0.04,
+      "roughness": 0.4,
+      "emissiveStrength": 0.65
+    },
+    "asteroid_hazard": {
+      "baseColor": "#a88a4d",
+      "metalness": 0.1,
+      "roughness": 0.72,
+      "emissiveStrength": 0
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

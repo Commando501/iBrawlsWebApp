@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-16",
+  "map": "forerunner_canyon",
+  "kind": "Canyon environment visual upgrade",
+  "environment": {
+    "server": "localhost Vite development server, port 3000",
+    "browser": "Playwright Chromium",
+    "gpu": "NVIDIA GeForce RTX 4090 via ANGLE Direct3D11",
+    "viewport": [
+      1920,
+      1080
+    ],
+    "canvas": [
+      1920,
+      1080
+    ],
+    "devicePixelRatio": 1,
+    "mode": "Combat sandbox",
+    "models": "Actual V3 Iron Vanguard on local player and all seven AI combatants"
+  },
+  "method": "Two independent final-asset live matches with seven actively fighting AI bots and a stationary first-person player, including normal deaths, respawns, weapon and impact effects. Two seconds warmup followed by 15 seconds of requestAnimationFrame interval sampling. All authoring, builds, typechecks and source edits finished before sampling. Overview camera overrides were used only for separate screenshots, never for these samples. Draw and triangle counters include rendered passes/shadows. Random combat makes these workload samples, not a controlled tier comparison.",
+  "performance": {
+    "high": {
+      "frames": 1647,
+      "meanFrameMs": 9.115907710989676,
+      "averageFps": 109.69834619918878,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.9,
+      "maxDrawCalls": 2397,
+      "maxRenderedTriangles": 493634,
+      "geometriesAtEnd": 72,
+      "texturesAtEnd": 37
+    },
+    "low": {
+      "frames": 1689,
+      "meanFrameMs": 8.889224393132029,
+      "averageFps": 112.49575393468722,
+      "p50Ms": 7,
+      "p95Ms": 13.9,
+      "p99Ms": 20.7,
+      "maxDrawCalls": 1673,
+      "maxRenderedTriangles": 310811,
+      "geometriesAtEnd": 32,
+      "texturesAtEnd": 25
+    },
+    "earlierHighSampleBeforeCliffRefinement": {
+      "frames": 1436,
+      "meanFrameMs": 10.450557103064067,
+      "p95Ms": 20.8,
+      "p99Ms": 20.9,
+      "maxDrawCalls": 1992,
+      "maxRenderedTriangles": 480127,
+      "note": "Retained to show live-combat variability; no causal FPS improvement is attributed to the cliff refinement. Earlier overview camera inspection preceded this sample."
+    }
+  },
+  "assets": {
+    "highSourceTriangles": 37584,
+    "lowSourceTriangles": 7736,
+    "highGlbBytes": 1485888,
+    "lowGlbBytes": 381948,
+    "architectureMaterialBatches": 20,
+    "perimeterMaterialBatches": 3,
+    "provenance": "Original Blender architecture and geological meshes; original deterministic rock textures; shared approved Stadium generated ceramic and existing licensed metal maps. Actual shipped V3 character assets remain unchanged."
+  },
+  "checks": {
+    "architectureReadyHighAndLow": true,
+    "allSevenBotsUseActualVanguard": true,
+    "pointerLock": true,
+    "keyboardMovement": {
+      "before": [
+        12,
+        0,
+        8
+      ],
+      "after": [
+        9.653651451979016,
+        0,
+        6.435767634652668
+      ]
+    },
+    "pauseMenu": true,
+    "lowPreferenceSavedThroughUIAndAppliedNextMatch": true,
+    "unrelatedLightingChangePreservesSky": {
+      "exposureBefore": 1,
+      "exposureAfter": 1
+    },
+    "quitReleasesMapRootsAndEnvironment": true,
+    "blockedCanyonAndSharedStadiumDownloads": {
+      "architectureStatus": "fallback",
+      "importedKitPresent": false,
+      "allElevenOriginalPropsVisible": true,
+      "activeAI": 7,
+      "floorFallbackPixels": [
+        1,
+        1
+      ],
+      "uncaughtPageErrors": []
+    },
+    "gameplayData": "48 x 24 m sandbox footprint, existing Grifball conversion, prop transforms, colliders, spawns and movement settings preserved. No sprint timing calibration introduced.",
+    "canyonAndSharedTestsPassed": 42,
+    "stadiumRegressionTestsPassed": 55,
+    "typecheck": "passed",
+    "productionClientBuild": "passed",
+    "glbContractAndBudgetValidation": "passed"
+  },
+  "captures": [
+    "output/playwright/canyon-upgrade/before-gameplay.png",
+    "output/playwright/canyon-upgrade/high-gameplay.png",
+    "output/playwright/canyon-upgrade/high-overview.png",
+    "output/playwright/canyon-upgrade/low-gameplay.png",
+    "output/playwright/canyon-upgrade/quality-settings.png",
+    "output/playwright/canyon-upgrade/missing-assets-fallback.png"
+  ],
+  "limits": "Final samples exceed the 60 FPS target on average and at p95 on this high-end GPU at 1080p, but p99 intervals still exceed 16.67 ms. This is not a locked-60 certification or a guarantee for lower GPUs or higher resolutions. Existing runtime warnings about undefined emissive parameters and deprecated THREE.Clock remain; no new shader failures or uncaught page errors appeared in successful-load runs. Expected network errors appeared only during the deliberately blocked-download check. Production build retains existing large-chunk warnings."
+}

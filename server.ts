@@ -1017,6 +1017,13 @@ async function startServer() {
                   obs.send(syncPayload);
                 }
               });
+            } else if (message.action === 'match_loading_status') {
+              // Observers participate in loading, but cannot send gameplay updates.
+              [room.host, ...room.clients, ...room.observers].forEach(recipient => {
+                if (recipient !== ws && recipient.readyState === WebSocket.OPEN) {
+                  recipient.send(syncPayload);
+                }
+              });
             }
             break;
           }

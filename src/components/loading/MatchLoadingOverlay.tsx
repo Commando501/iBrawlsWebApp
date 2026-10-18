@@ -22,6 +22,7 @@ interface MatchLoadingOverlayProps {
   visualModelPolicy?: VisualModelPolicy | null;
   participants?: MultiplayerLoadingParticipant[];
   waitingCount?: number;
+  onCancel?: () => void;
 }
 
 const roleLabel: Record<string, string> = {
@@ -119,6 +120,7 @@ export const MatchLoadingOverlay: React.FC<MatchLoadingOverlayProps> = ({
   visualModelPolicy,
   participants = [],
   waitingCount,
+  onCancel,
 }) => {
   const progress = Math.max(0, Math.min(100, Math.round(loadingState.progress)));
   const isMultiplayer = mode === 'multiplayer';
@@ -142,7 +144,7 @@ export const MatchLoadingOverlay: React.FC<MatchLoadingOverlayProps> = ({
           </div>
           <div className="text-right font-mono">
             <p className="text-4xl font-black tabular-nums text-cyan-200">{progress}%</p>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">{loadingState.ready ? 'Local ready' : 'Local load'}</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">{loadingState.error ? 'Load failed' : loadingState.ready ? 'Local ready' : 'Local load'}</p>
           </div>
         </header>
 
@@ -160,8 +162,8 @@ export const MatchLoadingOverlay: React.FC<MatchLoadingOverlayProps> = ({
                 <p className="font-mono text-xs font-black text-cyan-200 tabular-nums">{progress}%</p>
               </div>
               <DashedProgressBar progress={progress} />
-              {loadingState.detail && (
-                <p className="mt-2 truncate text-[10px] font-mono text-white/45">{loadingState.detail}</p>
+              {(loadingState.error || loadingState.detail) && (
+                <p role={loadingState.error ? 'alert' : undefined} className={`mt-2 break-words text-xs font-mono ${loadingState.error ? 'text-red-300' : 'text-white/45'}`}>{loadingState.error || loadingState.detail}</p>
               )}
             </div>
           </section>
@@ -189,7 +191,12 @@ export const MatchLoadingOverlay: React.FC<MatchLoadingOverlayProps> = ({
         </main>
 
         <footer className="flex items-center justify-between gap-3 border-t border-white/10 pt-3 text-[10px] font-mono uppercase tracking-[0.2em] text-white/40">
-          <span>{isMultiplayer ? 'Waiting for synchronized readiness' : 'Preparing render pipeline'}</span>
+          <span>{loadingState.error ? 'Unable to load match' : isMultiplayer ? 'Waiting for synchronized readiness' : 'Preparing render pipeline'}</span>
+          {onCancel && (
+            <button type="button" onClick={onCancel} className="rounded border border-white/20 px-3 py-2 text-white/80 hover:border-cyan-300 hover:text-white focus-visible:outline focus-visible:outline-cyan-300">
+              Return to menu
+            </button>
+          )}
           <span>{selectedMap}</span>
         </footer>
       </div>

@@ -1,0 +1,314 @@
+{
+  "schema": 1,
+  "generator": "scripts/rainy/author-kit.py",
+  "units": "metres",
+  "coordinates": "glTF Y-up; centered pivots; identity transforms; metre UVs except 0–1 +Z screen",
+  "provenance": "Original Blender-authored geometry; no third-party game geometry or character imagery",
+  "variants": {
+    "high": {
+      "file": "kit-v1.glb",
+      "bytes": 776652,
+      "triangles": 15702,
+      "modules": {
+        "street-buffer": {
+          "triangles": 2084,
+          "materialBatches": 4,
+          "dimensions": [
+            1.2,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.6,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.6,
+            1.0,
+            2.0
+          ],
+          "pivot": "center"
+        },
+        "cargo-crate": {
+          "triangles": 2124,
+          "materialBatches": 3,
+          "dimensions": [
+            2.0,
+            2.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.0,
+            -1.0,
+            -1.0
+          ],
+          "boundsMax": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "pivot": "center"
+        },
+        "building-block": {
+          "triangles": 7928,
+          "materialBatches": 5,
+          "dimensions": [
+            14.0,
+            36.0,
+            12.0
+          ],
+          "boundsMin": [
+            -7.0,
+            -18.0,
+            -6.0
+          ],
+          "boundsMax": [
+            7.0,
+            18.0,
+            6.0
+          ],
+          "pivot": "center"
+        },
+        "streetlight": {
+          "triangles": 908,
+          "materialBatches": 4,
+          "dimensions": [
+            3.0,
+            10.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.5,
+            -5.0,
+            -1.0
+          ],
+          "boundsMax": [
+            1.5,
+            5.0,
+            1.0
+          ],
+          "pivot": "center"
+        },
+        "billboard-frame": {
+          "triangles": 866,
+          "materialBatches": 4,
+          "dimensions": [
+            12.0,
+            8.0,
+            1.6
+          ],
+          "boundsMin": [
+            -6.0,
+            -4.0,
+            -0.8
+          ],
+          "boundsMax": [
+            6.0,
+            4.0,
+            0.8
+          ],
+          "pivot": "center"
+        },
+        "street-palm": {
+          "triangles": 1792,
+          "materialBatches": 3,
+          "dimensions": [
+            8.0,
+            12.0,
+            8.0
+          ],
+          "boundsMin": [
+            -4.0,
+            -6.0,
+            -4.0
+          ],
+          "boundsMax": [
+            4.0,
+            6.0,
+            4.0
+          ],
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "file": "kit-low-v1.glb",
+      "bytes": 385996,
+      "triangles": 6314,
+      "modules": {
+        "street-buffer": {
+          "triangles": 836,
+          "materialBatches": 4,
+          "dimensions": [
+            1.2,
+            2.0,
+            4.0
+          ],
+          "boundsMin": [
+            -0.6,
+            -1.0,
+            -2.0
+          ],
+          "boundsMax": [
+            0.6,
+            1.0,
+            2.0
+          ],
+          "pivot": "center"
+        },
+        "cargo-crate": {
+          "triangles": 900,
+          "materialBatches": 3,
+          "dimensions": [
+            2.0,
+            2.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.0,
+            -1.0,
+            -1.0
+          ],
+          "boundsMax": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "pivot": "center"
+        },
+        "building-block": {
+          "triangles": 3096,
+          "materialBatches": 5,
+          "dimensions": [
+            14.0,
+            36.0,
+            12.0
+          ],
+          "boundsMin": [
+            -7.0,
+            -18.0,
+            -6.0
+          ],
+          "boundsMax": [
+            7.0,
+            18.0,
+            6.0
+          ],
+          "pivot": "center"
+        },
+        "streetlight": {
+          "triangles": 336,
+          "materialBatches": 4,
+          "dimensions": [
+            3.0,
+            10.0,
+            2.0
+          ],
+          "boundsMin": [
+            -1.5,
+            -5.0,
+            -1.0
+          ],
+          "boundsMax": [
+            1.5,
+            5.0,
+            1.0
+          ],
+          "pivot": "center"
+        },
+        "billboard-frame": {
+          "triangles": 294,
+          "materialBatches": 4,
+          "dimensions": [
+            12.0,
+            8.0,
+            1.6
+          ],
+          "boundsMin": [
+            -6.0,
+            -4.0,
+            -0.8
+          ],
+          "boundsMax": [
+            6.0,
+            4.0,
+            0.8
+          ],
+          "pivot": "center"
+        },
+        "street-palm": {
+          "triangles": 852,
+          "materialBatches": 3,
+          "dimensions": [
+            8.0,
+            12.0,
+            8.0
+          ],
+          "boundsMin": [
+            -4.0,
+            -6.0,
+            -4.0
+          ],
+          "boundsMax": [
+            4.0,
+            6.0,
+            4.0
+          ],
+          "pivot": "center"
+        }
+      }
+    }
+  },
+  "materials": {
+    "rainy_concrete": {
+      "baseColor": "#64717a",
+      "metalness": 0.04,
+      "roughness": 0.85,
+      "emissiveStrength": 0
+    },
+    "rainy_ceramic": {
+      "baseColor": "#a5b5bd",
+      "metalness": 0.14,
+      "roughness": 0.58,
+      "emissiveStrength": 0
+    },
+    "rainy_alloy": {
+      "baseColor": "#627986",
+      "metalness": 0.6,
+      "roughness": 0.4,
+      "emissiveStrength": 0
+    },
+    "rainy_graphite": {
+      "baseColor": "#26313a",
+      "metalness": 0.22,
+      "roughness": 0.7,
+      "emissiveStrength": 0
+    },
+    "rainy_amber": {
+      "baseColor": "#ffc583",
+      "metalness": 0.1,
+      "roughness": 0.38,
+      "emissiveStrength": 1.2
+    },
+    "rainy_window": {
+      "baseColor": "#856e51",
+      "metalness": 0.18,
+      "roughness": 0.38,
+      "emissiveStrength": 0.1
+    },
+    "rainy_screen": {
+      "baseColor": "#e4f9f5",
+      "metalness": 0.0,
+      "roughness": 0.8,
+      "emissiveStrength": 0.15
+    },
+    "rainy_foliage": {
+      "baseColor": "#3b6158",
+      "metalness": 0.0,
+      "roughness": 0.9,
+      "emissiveStrength": 0
+    }
+  },
+  "optimizer": "glTF Transform 4.5.1 dedup + prune --keep-attributes true; no geometry compression decoder"
+}

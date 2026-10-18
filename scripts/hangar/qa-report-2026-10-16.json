@@ -1,0 +1,108 @@
+{
+  "date": "2026-10-16",
+  "map": "hangar",
+  "kind": "Industrial Hangar environment visual upgrade",
+  "environment": {
+    "server": "localhost Vite development server, port 3000",
+    "browser": "Playwright Chromium",
+    "gpu": "NVIDIA GeForce RTX 4090 via ANGLE Direct3D11",
+    "viewport": [1920, 1080],
+    "canvas": [1920, 1080],
+    "devicePixelRatio": 1,
+    "mode": "Combat sandbox",
+    "models": "Actual V3 Iron Vanguard on the local player and all seven AI combatants"
+  },
+  "method": "Two independent final-asset live matches with seven actively fighting AI bots and a stationary first-person player, including normal deaths, respawns, weapon and impact effects. Two seconds warmup followed by 15 seconds of requestAnimationFrame interval sampling. All asset authoring, builds, typechecks and runtime source edits finished before sampling. The overview camera override was used only for a separate screenshot, never for these samples. Draw and triangle counters include rendered passes and shadows. Random combat makes these workload samples, not a controlled tier comparison.",
+  "performance": {
+    "high": {
+      "frames": 1618,
+      "meanFrameMs": 9.275030902348579,
+      "averageFps": 107.81635236889451,
+      "p50Ms": 7,
+      "p95Ms": 14,
+      "p99Ms": 20.9,
+      "maxDrawCalls": 2156,
+      "maxRenderedTriangles": 463075,
+      "geometriesAtEnd": 106,
+      "texturesAtEnd": 28
+    },
+    "low": {
+      "frames": 1662,
+      "meanFrameMs": 9.029482551143198,
+      "averageFps": 110.74831745185583,
+      "p50Ms": 7,
+      "p95Ms": 13.9,
+      "p99Ms": 20.8,
+      "maxDrawCalls": 2325,
+      "maxRenderedTriangles": 344470,
+      "geometriesAtEnd": 119,
+      "texturesAtEnd": 24
+    }
+  },
+  "assets": {
+    "highSourceTriangles": 16068,
+    "lowSourceTriangles": 3500,
+    "highGlbBytes": 706152,
+    "lowGlbBytes": 203896,
+    "architectureMaterialBatches": 16,
+    "roofMaterialBatches": 3,
+    "highInstantiatedKitTriangles": 144072,
+    "lowInstantiatedKitTriangles": 34992,
+    "roofTriangles": 96,
+    "provenance": "Original Blender wall bays, support columns, trusses and light fixtures. Shared approved Stadium generated ceramic albedo and authored physical coating/floor maps. Actual shipped V3 character assets remain unchanged."
+  },
+  "checks": {
+    "architectureReadyHighAndLow": true,
+    "allSevenBotsUseActualVanguard": true,
+    "pointerLock": true,
+    "keyboardMovement": {
+      "key": "W",
+      "durationMs": 450,
+      "before": [-17.875, 0, 2.189056153475894e-15],
+      "after": [-15.176259999999946, 0, 1.5898154963805138e-15]
+    },
+    "pauseMenu": true,
+    "lowPreferenceSavedThroughUIAndAppliedNextMatch": true,
+    "qualityPreferenceRestoredToAutoAfterTest": true,
+    "unrelatedLightingChangePreservesSky": {
+      "directLightBefore": 1.6,
+      "directLightDuringCheck": 1.5,
+      "sameSkyTexture": true,
+      "fogBeforeAndAfter": "101923"
+    },
+    "quitCleanup": {
+      "environment": null,
+      "floorFillAndSceneryRemoved": true,
+      "ownedSkyRemoved": true,
+      "note": "The existing directional key light remains in the detached scene; Hangar geometry, material handles and the environment are released."
+    },
+    "blockedHangarAndSharedStadiumDownloads": {
+      "architectureStatus": "fallback",
+      "importedKitPresent": false,
+      "proceduralFallbackPresent": true,
+      "activeAI": 7,
+      "arenaRadius": 27.5,
+      "floorFallbackPixels": [1, 1],
+      "blockedRequests": 7,
+      "uncaughtPageErrors": []
+    },
+    "gameplayData": "Original 20 m base radius, 0.2 m floor thickness with surface at y=0, existing player-count scaling capped at 30 m radius, eight spawn locations and unchanged movement/collision rules. Seven bots plus the player retain the existing 27.5 m arena radius. No sprint timing calibration or new resizing rule introduced.",
+    "hangarAndSharedTestsPassed": 45,
+    "canyonAndSharedTestsPassed": 45,
+    "stadiumAndSharedTestsPassed": 58,
+    "testCountsNote": "Suites contain overlapping shared tests; counts are not unique tests.",
+    "typecheck": "passed",
+    "productionClientBuild": "passed",
+    "glbContractAndBudgetValidation": "passed",
+    "finalReadOnlyIntegrationReview": "No actionable gameplay, sizing or cleanup findings."
+  },
+  "captures": [
+    "output/playwright/hangar-upgrade/before-gameplay.png",
+    "output/playwright/hangar-upgrade/high-gameplay.png",
+    "output/playwright/hangar-upgrade/high-overview.png",
+    "output/playwright/hangar-upgrade/low-gameplay.png",
+    "output/playwright/hangar-upgrade/quality-settings.png",
+    "output/playwright/hangar-upgrade/missing-assets-fallback.png"
+  ],
+  "limits": "Final samples exceed the 60 FPS target on average and at p95 on this high-end GPU at 1080p, but p99 intervals still exceed 16.67 ms. This is not a locked-60 certification or a guarantee for lower GPUs or higher resolutions. Existing runtime warnings about undefined emissive parameters and deprecated THREE.Clock remain; no new shader failures or uncaught page errors appeared in successful-load runs. Expected network errors appeared during the deliberately blocked-download check. The production client build retains existing large-chunk warnings."
+}

@@ -4,6 +4,7 @@ import {
   clampLoadingProgress,
   deriveMultiplayerLoadingSnapshot,
   removeLoadingParticipant,
+  restartLoadingParticipantTimeouts,
   upsertLoadingSlot,
   upsertLoadingStatus,
 } from './matchLoadingState';
@@ -14,6 +15,14 @@ test('clampLoadingProgress keeps progress inside percentage bounds', () => {
   assert.equal(clampLoadingProgress(48.6), 49);
   assert.equal(clampLoadingProgress(144), 100);
   assert.equal(clampLoadingProgress('bad'), 0);
+});
+
+test('an explicit loading failure at 100 percent remains unready', () => {
+  const roster = upsertLoadingStatus({}, {
+    clientId: 'host', role: 'host', progress: 100, ready: false, stage: 'Load failed',
+  }, undefined, 1_000);
+  assert.equal(roster.host.ready, false);
+  assert.equal(deriveMultiplayerLoadingSnapshot(roster, 2_000).gateReleased, false);
 });
 
 test('multiplayer loading snapshot waits for every participant or timeout', () => {
@@ -40,6 +49,30 @@ test('removing a participant releases the gate when remaining players are ready'
   const snapshot = deriveMultiplayerLoadingSnapshot(roster, 2_000);
   assert.equal(snapshot.gateReleased, true);
   assert.equal(snapshot.participants.length, 1);
+});
+
+test('starting a match retains readiness and restarts only waiting participant timeouts', () => {
+  let roster = upsertLoadingStatus({}, { clientId: 'ready', role: 'host', progress: 100, ready: true }, undefined, 1_000);
+  roster = upsertLoadingStatus(roster, { clientId: 'waiting', role: 'client', progress: 35, ready: false }, undefined, 2_000);
+  const next = restartLoadingParticipantTimeouts(roster, 90_000);
+
+  assert.equal(next.ready, roster.ready, 'the already received final status is retained');
+  assert.equal(next.waiting.progress, 35);
+  assert.equal(next.waiting.lastUpdatedAt, 90_000);
+  assert.equal(roster.waiting.lastUpdatedAt, 2_000, 'the previous roster remains unchanged');
+  assert.equal(deriveMultiplayerLoadingSnapshot(next, 91_000).gateReleased, false);
+  assert.equal(deriveMultiplayerLoadingSnapshot(next, 136_000).gateReleased, true);
+});
+
+test('only remote participants may time out before their scene is ready', () => {
+  let roster = upsertLoadingSlot({}, { clientId: 'local', role: 'host' }, 1_000);
+  roster = upsertLoadingSlot(roster, { clientId: 'peer', role: 'client' }, 1_000);
+  const snapshot = deriveMultiplayerLoadingSnapshot(roster, 60_000, 45_000, 'local');
+
+  assert.equal(snapshot.participants.find(participant => participant.clientId === 'local')?.timedOut, false);
+  assert.equal(snapshot.participants.find(participant => participant.clientId === 'peer')?.timedOut, true);
+  assert.equal(snapshot.waitingCount, 1);
+  assert.equal(snapshot.gateReleased, false);
 });
 
 test('loading participants preserve visual model policy for previews', () => {

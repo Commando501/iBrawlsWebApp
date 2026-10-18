@@ -1,3 +1,4 @@
+import { updateRainyWeatherForScene } from './rainyWeather';
 import * as THREE from 'three';
 import { getSkyboxTexture } from '../../game/skyboxTextures';
 import { getPrimaryRemoteOpponent } from '../../game/roster';
@@ -7,6 +8,12 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { syncSkyAtmosphereForRefs } from './skyAtmosphereRuntime';
 import { type SpectateTargetData } from './spectateTargets';
 import { type GrifballThreeRefs } from './threeRefs';
+import { updateCanyonSkyMaterial } from './canyonLighting';
+import { updateCyberSkyMaterial } from './cyberLighting';
+import { updateJungleSkyMaterial } from './jungleLighting';
+import { updateAsteroidSkyMaterial } from './asteroidLighting';
+import { updateNeonSkyMaterial } from './neonLighting';
+import { updateRainySkyMaterial } from './rainyLighting';
 
 export const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -228,6 +235,7 @@ export const updateEmissiveGlowPulseForScene = ({
     if (child instanceof THREE.Mesh && child.material) {
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((mat) => {
+        if (mat.userData.preserveEmissiveIntensity === true) return;
         if (
           'emissive' in mat &&
           mat.emissive &&
@@ -279,6 +287,8 @@ export const syncAdminSettingsVisualStateForState = ({
     }
   }
 
+  const skyControlsChanged = state.settings.skyboxHue !== adminSettings.skyboxHue
+    || state.settings.skyboxBrightness !== adminSettings.skyboxBrightness;
   state.settings = adminSettings;
 
   if (refs.ambientLight) {
@@ -295,10 +305,6 @@ export const syncAdminSettingsVisualStateForState = ({
   const brightness = adminSettings.skyboxBrightness !== undefined ? adminSettings.skyboxBrightness : 4;
   const colorString = `hsl(${hue}, 70%, ${brightness}%)`;
   const finalColor = new THREE.Color(colorString);
-  refs.scene.background = finalColor;
-  if (refs.scene.fog) {
-    refs.scene.fog.color.copy(finalColor);
-  }
 
   let skyType = 'cyberpunk';
   const activeCustomMap = resolveActiveCustomMap({
@@ -309,6 +315,52 @@ export const syncAdminSettingsVisualStateForState = ({
   });
   const effectiveMapId = replayData ? replayData.mapType : selectedMap;
   const isHangar = effectiveMapId === 'hangar';
+
+  if (isHangar && !activeCustomMap) {
+    // The enclosed hangar owns its lighting. Explicit sky controls still work,
+    // but unrelated settings must not recreate the old laser/shaft atmosphere.
+    if (refs.skyboxMesh) {
+      refs.skyboxMesh.visible = adminSettings.showSkybox !== false;
+      if (skyControlsChanged && refs.skyboxMesh.material instanceof THREE.MeshBasicMaterial) {
+        refs.skyboxMesh.material.map = getSkyboxTexture('hangar', hue, brightness, colorString);
+        refs.skyboxMesh.material.needsUpdate = true;
+      }
+    }
+    if (skyControlsChanged) {
+      refs.scene.background = finalColor;
+      refs.scene.fog?.color.copy(finalColor);
+    }
+    return;
+  }
+
+  refs.scene.background = finalColor;
+  if (refs.scene.fog) refs.scene.fog.color.copy(finalColor);
+
+  if (activeCustomMap?.id === 'forerunner_canyon' || activeCustomMap?.id === 'cyber_hex_arena' || activeCustomMap?.id === 'botanical_outpost' || activeCustomMap?.id === 'vanguard_starbase' || activeCustomMap?.id === 'synthwave_grid_arena' || activeCustomMap?.id === 'rainy_industrial_streets') {
+    // This scene owns its outdoor sky; updating settings must not resurrect the
+    // legacy yellow backdrop/laser atmosphere or replace the shader with a map.
+    const isCyber = activeCustomMap.id === 'cyber_hex_arena';
+    const isJungle = activeCustomMap.id === 'botanical_outpost';
+    const isAsteroid = activeCustomMap.id === 'vanguard_starbase';
+    const isNeon = activeCustomMap.id === 'synthwave_grid_arena';
+    const isRainy = activeCustomMap.id === 'rainy_industrial_streets';
+    const fogColor = isRainy ? '#101c28' : isNeon ? '#323747' : isAsteroid ? '#101824' : isJungle ? '#7e9187' : isCyber ? '#182333' : '#9a7c66';
+    refs.scene.background = new THREE.Color(fogColor);
+    if (refs.scene.fog) refs.scene.fog.color.set(fogColor);
+    if (refs.skyboxMesh) {
+      refs.skyboxMesh.visible = adminSettings.showSkybox !== false;
+      const material = refs.skyboxMesh.material;
+      if (skyControlsChanged && material instanceof THREE.ShaderMaterial) {
+        if (isRainy) updateRainySkyMaterial(material, hue, brightness);
+        else if (isNeon) updateNeonSkyMaterial(material, hue, brightness);
+        else if (isAsteroid) updateAsteroidSkyMaterial(material, hue, brightness);
+        else if (isJungle) updateJungleSkyMaterial(material, hue, brightness);
+        else if (isCyber) updateCyberSkyMaterial(material, hue, brightness);
+        else updateCanyonSkyMaterial(material, hue, brightness);
+      }
+    }
+    return;
+  }
 
   if (activeCustomMap) {
     skyType = activeCustomMap.skyboxTexture || activeCustomMap.theme || 'cyberpunk';
@@ -380,6 +432,7 @@ export const updateWeatherParticlesForScene = ({
   frameState: WeatherParticleFrameState;
   now?: number;
 }): void => {
+  updateRainyWeatherForScene(scene, now);
   const rainObj = scene.getObjectByName('rain_particles');
   if (rainObj && rainObj instanceof THREE.Points) {
     if (frameState.lastRainTime === undefined) {

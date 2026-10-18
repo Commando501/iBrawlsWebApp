@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 import { type CustomMapData } from '../../types';
+import { syncHangarSceneryRadius } from './hangarArchitecture';
+import { configureHangarShadow } from './hangarLighting';
+import { syncCyberSceneryRadius } from './cyberArchitecture';
+import { configureCyberShadow } from './cyberLighting';
+import { syncJungleSceneryRadius } from './jungleArchitecture';
+import { configureJungleShadow } from './jungleLighting';
+import { syncAsteroidSceneryRadius } from './asteroidArchitecture';
+import { configureAsteroidShadow } from './asteroidLighting';
 
 /**
  * A spawn position that optionally carries an authored facing direction (yaw,
@@ -131,6 +139,30 @@ export const resizeArenaSceneForPlayerCount = (
 ): { scale: number; arenaRadius: number } => {
   const scale = 1.0 + Math.min(0.50, Math.floor((playerCount - 1) / 2) * 0.125);
   const arenaRadius = 20 * scale;
+
+  // Keep the upgraded shell aligned with the same existing roster-size rule.
+  if (scene.getObjectByName('hangar_scenery')) {
+    syncHangarSceneryRadius(scene, arenaRadius);
+    const key = scene.getObjectByName('hangar_directional_key');
+    if (key instanceof THREE.DirectionalLight) configureHangarShadow(key, arenaRadius, scene.userData.environmentQuality);
+  }
+  if (scene.getObjectByName('cyber_scenery')) {
+    syncCyberSceneryRadius(scene, arenaRadius);
+    const key = scene.getObjectByName('cyber_directional_key');
+    if (key instanceof THREE.DirectionalLight) configureCyberShadow(key, arenaRadius, scene.userData.environmentQuality);
+  }
+  const asteroid = scene.getObjectByName('asteroid_scenery');
+  if (asteroid) {
+    syncAsteroidSceneryRadius(scene, arenaRadius);
+    const key = scene.getObjectByName('asteroid_directional_key');
+    if (key instanceof THREE.DirectionalLight) configureAsteroidShadow(key, asteroid.userData.arenaRadius, scene.userData.environmentQuality);
+  }
+  const jungle = scene.getObjectByName('jungle_scenery');
+  if (jungle) {
+    syncJungleSceneryRadius(scene, arenaRadius);
+    const key = scene.getObjectByName('jungle_directional_key');
+    if (key instanceof THREE.DirectionalLight) configureJungleShadow(key, jungle.userData.arenaRadius, scene.userData.environmentQuality);
+  }
 
   scene.traverse((child) => {
     if (child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry) {

@@ -1,0 +1,99 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 16068,
+      "batches": 16,
+      "bytes": 706152,
+      "modules": {
+        "wall-bay": {
+          "dimensions": [
+            10.68,
+            12,
+            0.55
+          ],
+          "triangles": 5844,
+          "materialBatches": 5,
+          "pivot": "center"
+        },
+        "support-column": {
+          "dimensions": [
+            1.5,
+            12,
+            1.5
+          ],
+          "triangles": 2100,
+          "materialBatches": 5,
+          "pivot": "center"
+        },
+        "ceiling-truss": {
+          "dimensions": [
+            50,
+            1.5,
+            0.5
+          ],
+          "triangles": 5724,
+          "materialBatches": 3,
+          "pivot": "center"
+        },
+        "high-bay-light": {
+          "dimensions": [
+            4,
+            0.5,
+            1.2
+          ],
+          "triangles": 2400,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 3500,
+      "batches": 16,
+      "bytes": 203896,
+      "modules": {
+        "wall-bay": {
+          "dimensions": [
+            10.68,
+            12,
+            0.55
+          ],
+          "triangles": 1552,
+          "materialBatches": 5,
+          "pivot": "center"
+        },
+        "support-column": {
+          "dimensions": [
+            1.5,
+            12,
+            1.5
+          ],
+          "triangles": 780,
+          "materialBatches": 5,
+          "pivot": "center"
+        },
+        "ceiling-truss": {
+          "dimensions": [
+            50,
+            1.5,
+            0.5
+          ],
+          "triangles": 728,
+          "materialBatches": 3,
+          "pivot": "center"
+        },
+        "high-bay-light": {
+          "dimensions": [
+            4,
+            0.5,
+            1.2
+          ],
+          "triangles": 440,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}

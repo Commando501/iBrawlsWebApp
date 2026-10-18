@@ -4,12 +4,16 @@ import test from 'node:test';
 import { PREMADE_MAPS } from './premadeMaps';
 import { toGrifballArena } from './grifballMaps';
 import { getGoalPlates } from './grifballGoals';
+import { withChampionshipStadiumLayout } from './championshipStadiumLayout';
 import { seededRandom } from './simulationRandom';
 import { buildGrifballSpaceGeometry, createSpaceRouterFactory, isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
 
 test('stable routing preserves the audited 7,200-query supplied-map corpus', () => {
   const random = seededRandom(1907), results = [];
-  for (const map of PREMADE_MAPS.map(toGrifballArena).filter(map => getGoalPlates(map).length === 2)) {
+  // Keep the audited route corpus on its original Stadium geometry. The larger
+  // live Stadium has its own navigation/traversal checks in championshipStadiumLayout.test.ts.
+  const auditedMaps = PREMADE_MAPS.map(map => map.id === 'championship_stadium' ? withChampionshipStadiumLayout(map, 1) : map);
+  for (const map of auditedMaps.map(toGrifballArena).filter(map => getGoalPlates(map).length === 2)) {
     const geometry = buildGrifballSpaceGeometry(map, map.arenaRadius);
     const factory = createSpaceRouterFactory(geometry);
     const starts = Object.values(map.teamSpawns ?? {}).flat().map(p => ({ x: p.x, z: p.z }));

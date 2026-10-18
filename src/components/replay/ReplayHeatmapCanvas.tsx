@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getRectHalfExtents } from '../../game/arenaDimensions';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
+import { resolveChampionshipStadiumReplayLayout } from '../../game/championshipStadiumLayout';
 import { createDefaultArenaFloorTextureCanvases } from '../grifball/defaultArenaFloorTexture';
 import {
   type CustomMapData,
@@ -81,9 +82,9 @@ const TEAM_STROKES: Record<string, string> = {
   unknown: '#e5e7eb',
 };
 
-function resolveStoredMap(mapId: string): CustomMapData | null {
+function resolveStoredMap(mapId: string, replay: ReplayFile | null): CustomMapData | null {
   const premade = PREMADE_MAPS.find((map) => map.id === mapId);
-  if (premade) return premade;
+  if (premade) return resolveChampionshipStadiumReplayLayout(premade, replay?.stadiumLayoutRevision);
   if (typeof localStorage === 'undefined') return null;
   const stored = localStorage.getItem(`map_${mapId}`);
   if (!stored) return null;
@@ -94,11 +95,11 @@ function resolveStoredMap(mapId: string): CustomMapData | null {
   }
 }
 
-function resolveMapBounds(replay: ReplayFile | null): MapBounds {
+export function resolveReplayHeatmapMapBounds(replay: ReplayFile | null): MapBounds {
   const mapId = String(replay?.mapType ?? 'hangar');
   const customMap =
     mapId !== 'hangar' && mapId !== 'rectangular' && mapId !== 'circle'
-      ? resolveStoredMap(mapId)
+      ? resolveStoredMap(mapId, replay)
       : null;
 
   if (customMap) {
@@ -600,7 +601,7 @@ function drawHeatmap({
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const bounds = resolveMapBounds(replay);
+  const bounds = resolveReplayHeatmapMapBounds(replay);
   const padding = mode === 'preview' ? 10 : 22;
   const scale = Math.min(
     (width - padding * 2) / Math.max(1, bounds.halfX * 2),

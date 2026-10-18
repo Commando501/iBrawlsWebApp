@@ -53,6 +53,20 @@ import {
 } from './grifball/grifballObjectiveRuntime';
 import { disposeGrifballThrowTrajectoryVisualForRefs } from './grifball/grifballThrowTrajectoryRuntime';
 import { disposeStadiumResources } from './grifball/stadiumResourceDisposal';
+import { disposeCanyonResources } from './grifball/canyonResourceDisposal';
+import { disposeCanyonEnvironment } from './grifball/canyonLighting';
+import { disposeHangarResources } from './grifball/hangarResourceDisposal';
+import { disposeHangarEnvironment } from './grifball/hangarLighting';
+import { disposeCyberResources } from './grifball/cyberResourceDisposal';
+import { disposeCyberEnvironment } from './grifball/cyberLighting';
+import { disposeJungleResources } from './grifball/jungleResourceDisposal';
+import { disposeJungleEnvironment } from './grifball/jungleLighting';
+import { disposeAsteroidResources } from './grifball/asteroidResourceDisposal';
+import { disposeAsteroidEnvironment } from './grifball/asteroidLighting';
+import { disposeNeonResources } from './grifball/neonResourceDisposal';
+import { disposeRainyResources } from './grifball/rainyResourceDisposal';
+import { disposeNeonEnvironment } from './grifball/neonLighting';
+import { disposeRainyEnvironment } from './grifball/rainyLighting';
 import {
   type LiveCameraFrameState,
 } from './grifball/liveCamera';
@@ -647,6 +661,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!containerRef.current || !canvasRef.current) return;
 
     let disposed = false;
+    const mountController = new AbortController();
     let mountedRenderer: THREE.WebGLRenderer | null = null;
     let mountedScene: THREE.Scene | null = null;
     let unregisterInputEventListeners: (() => void) | null = null;
@@ -665,6 +680,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         camera,
         renderer,
       } = await initializeGrifballMountSceneForState({
+        signal: mountController.signal,
         state: stateRef.current,
         refs: threeRef.current,
         container: containerRef.current!,
@@ -684,6 +700,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         buildSilentOrchestratorEvents: () => buildOrchestratorEvents({ silentSpawn: true }),
         placeCombatantsAtGrifballSpawns,
         onLoadingStage: ({ progress, stage, detail }) => {
+          if (disposed) return;
           onLoadingStateChange?.({
             visible: true,
             progress,
@@ -697,6 +714,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (disposed) {
         disposeIronVanguardScene(scene);
         disposeStadiumResources(scene);
+        disposeCanyonResources(scene);
+        disposeCanyonEnvironment(scene);
+        disposeHangarResources(scene);
+        disposeHangarEnvironment(scene);
+        disposeCyberResources(scene);
+        disposeCyberEnvironment(scene);
+        disposeJungleResources(scene);
+        disposeJungleEnvironment(scene);
+        disposeAsteroidResources(scene);
+        disposeAsteroidEnvironment(scene);
+        disposeNeonResources(scene);
+        disposeRainyResources(scene);
+        disposeNeonEnvironment(scene);
+        disposeRainyEnvironment(scene);
         renderer.dispose();
         return;
       }
@@ -785,6 +816,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     void mountScene().catch((err) => {
+      if (disposed || mountController.signal.aborted) return;
       if (validationActive) validationTrial?.onError(err instanceof Error ? err : new Error(String(err)));
       console.error('Failed to mount Grifball scene:', err);
       onLoadingStateChange?.({
@@ -792,13 +824,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         progress: 100,
         stage: 'Load failed',
         detail: err instanceof Error ? err.message : String(err),
-        ready: true,
+        ready: false,
         error: err instanceof Error ? err.message : String(err),
       });
     });
 
     return () => {
       disposed = true;
+      mountController.abort();
       validationRuntimeRef.current?.dispose();
       validationRuntimeRef.current = null;
       if (secretAudioRef.current) {
@@ -818,6 +851,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
       disposeIronVanguardScene(mountedScene);
       disposeStadiumResources(mountedScene);
+      disposeCanyonResources(mountedScene);
+      if (mountedScene) disposeCanyonEnvironment(mountedScene);
+      disposeHangarResources(mountedScene);
+      if (mountedScene) disposeHangarEnvironment(mountedScene);
+      disposeCyberResources(mountedScene);
+      if (mountedScene) disposeCyberEnvironment(mountedScene);
+      disposeJungleResources(mountedScene);
+      if (mountedScene) disposeJungleEnvironment(mountedScene);
+      disposeAsteroidResources(mountedScene);
+      if (mountedScene) disposeAsteroidEnvironment(mountedScene);
+      disposeNeonResources(mountedScene);
+      disposeRainyResources(mountedScene);
+      if (mountedScene) disposeNeonEnvironment(mountedScene);
+      if (mountedScene) disposeRainyEnvironment(mountedScene);
       if (mountedRenderer) {
         mountedRenderer.dispose();
       }

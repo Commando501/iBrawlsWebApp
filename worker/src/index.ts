@@ -1717,6 +1717,13 @@ export class GameLobby implements DurableObject {
                   try { obs.send(syncPayload); } catch (e) {}
                 }
               });
+            } else if (message.action === 'match_loading_status') {
+              // Observers participate in loading, but cannot send gameplay updates.
+              [room.host, ...room.clients, ...room.observers].forEach(recipient => {
+                if (recipient !== gameWs && recipient.readyState === WebSocket.OPEN) {
+                  try { recipient.send(syncPayload); } catch (e) {}
+                }
+              });
             }
             break;
           }

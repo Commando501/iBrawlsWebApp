@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "generator": "scripts/neon-textures/author-surfaces.mjs",
+  "provenance": "Original deterministic authored material maps; no third-party source images.",
+  "normalConvention": "OpenGL (+Y)",
+  "tileMeters": {
+    "floor": 6
+  },
+  "panelMeters": 3,
+  "statistics": {
+    "floor": {
+      "min": 225.1693256254111,
+      "max": 236.92700175210064,
+      "mean": 234.54603588932864,
+      "standardDeviation": 0.992025970140183
+    }
+  },
+  "files": [
+    {
+      "path": "assets/neon/surfaces/panel-floor-albedo.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 173886,
+      "sha256": "dc141aa5b6aa49e5fc19f1b9e674b91ffd86fa0affa35c4b8e935219e8487a16",
+      "colorSpace": "sRGB"
+    },
+    {
+      "path": "assets/neon/surfaces/panel-floor-normal-gl.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 694691,
+      "sha256": "7953a73a67bfa07874e8d2e23fa598e005894e896014484e65c86516eaaeb656",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/neon/surfaces/panel-floor-roughness.png",
+      "width": 1024,
+      "height": 1024,
+      "bytes": 331465,
+      "sha256": "f0a19f172d5e01fbedf27b3d51ae578a5a9f4fbfaf8c7f987f352f6f3b1df72b",
+      "colorSpace": "linear / no color space"
+    },
+    {
+      "path": "assets/neon/surfaces/panel-floor-albedo-low.png",
+      "width": 512,
+      "height": 512,
+      "bytes": 69129,
+      "sha256": "b0f7143646dcf69d009e28227d1760565db9fd7af3baca1b340f90a959555c97",
+      "colorSpace": "sRGB"
+    }
+  ],
+  "design": "Quiet charcoal compacted regolith floor with broad restrained color variation; physical micrograin and roughness carry detail. Fractured neon rock and ore use richer rock relief. No baked shadows, glowing floor lines, loose ground debris, or displacement. Industrial armor separately reuses approved Stadium coating."
+}

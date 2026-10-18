@@ -1,0 +1,99 @@
+{
+  "loader": "Three.js GLTFLoader",
+  "variants": {
+    "high": {
+      "triangles": 12040,
+      "batches": 14,
+      "bytes": 865148,
+      "modules": {
+        "barrier-panel": {
+          "dimensions": [
+            8,
+            3.2,
+            0.7
+          ],
+          "triangles": 2264,
+          "materialBatches": 4,
+          "pivot": "bottom-center"
+        },
+        "support-pylon": {
+          "dimensions": [
+            2,
+            16,
+            2.5
+          ],
+          "triangles": 5892,
+          "materialBatches": 4,
+          "pivot": "bottom-center"
+        },
+        "light-fixture": {
+          "dimensions": [
+            6,
+            1.2,
+            1
+          ],
+          "triangles": 2880,
+          "materialBatches": 3,
+          "pivot": "center"
+        },
+        "vent-module": {
+          "dimensions": [
+            3,
+            2,
+            0.5
+          ],
+          "triangles": 1004,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    },
+    "low": {
+      "triangles": 3324,
+      "batches": 14,
+      "bytes": 250128,
+      "modules": {
+        "barrier-panel": {
+          "dimensions": [
+            8,
+            3.2,
+            0.7
+          ],
+          "triangles": 624,
+          "materialBatches": 4,
+          "pivot": "bottom-center"
+        },
+        "support-pylon": {
+          "dimensions": [
+            2,
+            16,
+            2.5
+          ],
+          "triangles": 1548,
+          "materialBatches": 4,
+          "pivot": "bottom-center"
+        },
+        "light-fixture": {
+          "dimensions": [
+            6,
+            1.2,
+            1
+          ],
+          "triangles": 708,
+          "materialBatches": 3,
+          "pivot": "center"
+        },
+        "vent-module": {
+          "dimensions": [
+            3,
+            2,
+            0.4999
+          ],
+          "triangles": 444,
+          "materialBatches": 3,
+          "pivot": "center"
+        }
+      }
+    }
+  }
+}
