@@ -70,8 +70,8 @@ test('Preview reaches late events when old duration metadata is short, and handl
 test('Theater renders a single selected match canvas rather than one canvas per replay', () => {
   const html = renderToStaticMarkup(<TheaterLibraryPanel {...panelProps()} />);
   assert.equal((html.match(/<canvas/g) ?? []).length, 1);
-  assert.equal((html.match(/class="theater-replay-row"/g) ?? []).length, 2);
-  for (const label of ['Watch replay', 'Edit details', 'Open heatmap', 'Contribute', 'Delete']) assert.ok(html.includes(label), label);
+  assert.equal((html.match(/class="theater-replay-row"/g) ?? []).length, 1);
+  for (const label of ['Watch replay', 'Open heatmap', 'Save', 'Delete']) assert.ok(html.includes(label), label);
   assert.match(html, /3 \/ 3 events/);
 });
 
@@ -89,17 +89,23 @@ test('Empty, loading, error, and legacy recordings retain the heatmap surface wi
   }
 });
 
-test('Contribution status is keyed by selected replay and keeps an uploaded replay disabled', () => {
-  const html = renderToStaticMarkup(<TheaterLibraryPanel {...panelProps()} replayUploadStatus={{ one: 'done', two: 'uploading' }} />);
-  assert.match(html, /disabled=""[^>]*title="Send an anonymous, compressed replay[^>]*>Contributed/);
-  assert.match(html, /Replay contributed to AI training/);
-  assert.match(html, /Sending/);
+test('Recent recordings show contribution status without offering duplicate uploads', () => {
+  const html = renderToStaticMarkup(<TheaterLibraryPanel {...panelProps()} replayUploadStatus={{ recent: 'done' }} />);
+  assert.match(html, /Sandbox · Contributed/);
+  assert.match(html, /Save to library/);
   assert.doesNotMatch(html, /Sending anonymous replay/);
 });
 
 test('A retained inactive Theater keeps selection markup but releases its map canvas', () => {
   const html = renderToStaticMarkup(<TheaterLibraryPanel {...panelProps()} active={false} />);
   assert.equal((html.match(/<canvas/g) ?? []).length, 0);
-  assert.match(html, /Match one/);
+  assert.match(html, /Match recent/);
   assert.match(html, /data-playing="false"/);
+});
+
+test('Theater defaults to Recent even with saved recordings available', () => {
+  const html = renderToStaticMarkup(<TheaterLibraryPanel {...panelProps()} />);
+  assert.match(html, /aria-selected="true"[^>]*[\s\S]*?Recent/);
+  assert.match(html, /Match recent/);
+  assert.doesNotMatch(html, /Match one/);
 });

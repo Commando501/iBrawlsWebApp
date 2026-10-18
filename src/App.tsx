@@ -49,7 +49,7 @@ import { resolveSessionVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.653e';
+const APP_VERSION = '0.750';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -672,6 +672,7 @@ export default function App() {
     if (!isMultiplayer || !matchLobbyConfig) {
       return {
         ...effectiveAdminSettings,
+        gameMode: singlePlayerMode === 'tournament' ? 'sandbox' as const : effectiveAdminSettings.gameMode,
         visualModelPolicy: activeVisualModelPolicy,
       };
     }
@@ -687,7 +688,7 @@ export default function App() {
       matchTimerSeconds: matchLobbyConfig.matchTimerSeconds,
       visualModelPolicy: activeVisualModelPolicy,
     };
-  }, [activeVisualModelPolicy, effectiveAdminSettings, isMultiplayer, matchLobbyConfig]);
+  }, [activeVisualModelPolicy, effectiveAdminSettings, isMultiplayer, matchLobbyConfig, singlePlayerMode]);
 
   // ── Lifetime stat tracking ────────────────────────────────────────────────
   // Open/close the tracked match on play transitions. Replays and the AI

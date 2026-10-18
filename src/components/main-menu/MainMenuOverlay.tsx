@@ -12,6 +12,7 @@ import { CreateScreen } from './CreateScreen';
 import { MenuSettingsScreen } from './MenuSettingsScreen';
 import { ProfileScreen } from './ProfileScreen';
 import { SocialScreen } from './SocialScreen';
+import { MenuSocialPane } from './MenuSocialPane';
 import { PlayerListSubframe } from './GlobalBroadcastPanel';
 import { TrainingScreen } from './TrainingScreen';
 import { TournamentScreen } from './TournamentScreen';
@@ -93,6 +94,12 @@ export function MainMenuOverlay({
     if (previousScreen.current !== screen) heading.current?.focus({preventScroll:true});
     previousScreen.current = screen;
   }, [screen]);
+  // Each visit starts a fresh training setup in iBrawls, including restored routes.
+  useEffect(() => {
+    if (isVisible && screen === 'training' && !trainingSetup.isPlaying) {
+      trainingSetup.setAdminSettings(previous => ({ ...previous, gameMode: 'sandbox' }));
+    }
+  }, [isVisible, screen, trainingSetup.isPlaying, trainingSetup.setAdminSettings]);
   const navigate = (destination: MenuScreen, section?: MenuSettingsSection) => {
     if (destination === 'training') primaryPanel.setSinglePlayerMode('sandbox');
     if (destination === 'tournament') primaryPanel.setSinglePlayerMode('tournament');
@@ -163,10 +170,13 @@ export function MainMenuOverlay({
           <nav className="menu-primary-nav" aria-label="Main menu">{PRIMARY.map(([id,label]) => <button key={id} aria-current={selectedPrimary === id ? 'page' : undefined} onClick={() => navigate(id)}>{label}</button>)}</nav>
           <nav className="menu-utility-nav" aria-label="Player and settings">{UTILITIES.map(([id,label]) => <button key={id} aria-current={screen === id ? 'page' : undefined} onClick={() => navigate(id)}>{label}</button>)}</nav>
         </header>
+        <div className="menu-body">
         <main className="menu-main">
           <div className="menu-page-heading"><div><span className="menu-eyebrow">{['training','tournament','online'].includes(screen) ? 'PLAY / ' : ''}{screen === 'play' ? 'READY WHEN YOU ARE' : screen === 'ai-editor' ? 'CREATE / AI LAB' : screen.toUpperCase()}</span><h1 ref={heading} tabIndex={-1}>{SCREEN_COPY[screen][0]}</h1><p>{SCREEN_COPY[screen][1]}</p></div><div className="menu-heading-actions">{childNav.isAdmin && screen === 'settings' && <button className="menu-secondary" onClick={childNav.onOpenAdminDashboard}>Admin dashboard</button>}{screen !== 'play' && <button className="menu-back" onClick={navigation.onBack}>← Back to {SCREEN_COPY[menuBackTarget(navigation.location)][0].replace('Choose your arena.','Play')}</button>}</div></div>
           <div className="menu-screen-stack">{RETAINED.filter(destination => visited.has(destination) || destination === screen).map(destination => <div className="menu-screen" key={destination} hidden={destination !== screen}>{panel(destination)}</div>)}{!RETAINED.includes(screen) && <div className="menu-screen" key={screen}>{panel(screen)}</div>}</div>
         </main>
+        <MenuSocialPane {...broadcastRail} onOpenProfile={() => navigate('profile')} onOpenSocial={() => navigate('social')} />
+        </div>
         <footer className="menu-footer"><span><i className="menu-status-dot" data-connected={broadcastRail.menuSocket?.readyState === 1} />{broadcastRail.menuSocket?.readyState === 1 ? `${header.onlineCount} online` : 'Local play available'}</span><span>Tab to navigate · Enter to select{screen !== 'play' ? ' · Esc to go back' : ''}</span><button onClick={() => navigate('settings','about')}>iBrawls / v{header.appVersion}</button></footer>
       </div>
     </>

@@ -133,7 +133,7 @@ function TournamentVictoryPanel({
       </div>
       <h3 className="text-xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-200 font-display">CHAMPION DECREED</h3>
       <p className="text-xs text-white/60 leading-relaxed max-w-xs select-text">
-        Congratulations! You have completed the iBrawls simulated tournament brackets and asserted yourself as the Grifball Champion.
+        Congratulations! You have completed the iBrawls simulated tournament brackets and asserted yourself as the iBrawls Champion.
       </p>
 
       <div className="w-full text-left bg-black/40 border border-white/5 rounded-lg p-3 flex flex-col gap-2">
