@@ -189,11 +189,12 @@ export function useGameplayPresetControls({
       return {
         ...adminSettings,
         ...withDefaultGameplaySettings(multiplayerPreset.settings),
+        allowModelVariants: multiplayerPreset.settings.allowModelVariants === true,
         playerHue: adminSettings.playerHue,
         playerName: adminSettings.playerName,
       };
     }
-    return adminSettings;
+    return { ...adminSettings, allowModelVariants: multiplayerPreset?.settings.allowModelVariants === true };
   }, [isMultiplayer, multiplayerPreset, adminSettings]);
 
   const handleBotConfigChange = useCallback((next: MultiplayerBotConfig) => {

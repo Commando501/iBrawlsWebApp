@@ -46,8 +46,8 @@ interface Props {
   account: AccountInfo;
   /** Current adminSettings (live multiplayer ruleset source). */
   settings: Record<string, unknown>;
-  /** Update one numeric mechanic/AI knob. */
-  onSettingChange: (key: string, value: number) => void;
+  /** Update one mechanic, AI knob, or model availability setting. */
+  onSettingChange: (key: string, value: number | boolean) => void;
   /** AI knob section metadata (App's AI_CUSTOM_KNOB_SECTIONS). */
   aiSections: KnobSection[];
   /**
@@ -156,6 +156,24 @@ const AdminDashboard: React.FC<Props> = ({
           <div className="border-t border-white/5 pt-4 mt-1">
             {mechanicsContent}
           </div>
+        </div>
+
+        <div className={cardCls}>
+          <span className={`${sectionTitleCls} text-[#38bdf8]`}>Character Models</span>
+          <label className="flex items-center justify-between gap-4 text-sm text-white/80">
+            Allow other model variants for everyone
+            <input
+              type="checkbox"
+              checked={settings.allowModelVariants === true}
+              onChange={(event) => onSettingChange('allowModelVariants', event.target.checked)}
+              className="h-5 w-5 accent-cyan-400"
+            />
+          </label>
+          <p className="text-[11px] text-white/45 leading-snug">
+            Off by default: everyone uses Version 3 Iron Vanguard and model selectors are hidden.
+            Turn on to restore other variants in training, tournaments, multiplayer, and the Armory.
+            Use Publish as Official Preset to apply this setting to everyone.
+          </p>
         </div>
 
         {/* 2. Multiplayer AI Tuning */}

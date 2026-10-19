@@ -6,10 +6,10 @@ import {
   withDefaultGameplaySettings,
 } from './gameplaySettings';
 
-test('default gameplay settings use the recommended V2 visual model policy', () => {
-  assert.equal(DEFAULT_ADMIN_SETTINGS.visualModelPolicy, 'v2');
-  assert.equal(createDefaultAdminSettings('Player').visualModelPolicy, 'v2');
-  assert.equal(withDefaultGameplaySettings({}).visualModelPolicy, 'v2');
+test('default gameplay settings use the recommended V3 visual model policy', () => {
+  assert.equal(DEFAULT_ADMIN_SETTINGS.visualModelPolicy, 'v3');
+  assert.equal(createDefaultAdminSettings('Player').visualModelPolicy, 'v3');
+  assert.equal(withDefaultGameplaySettings({}).visualModelPolicy, 'v3');
 });
 
 test('default rollout preserves supported visual model policy choices', () => {

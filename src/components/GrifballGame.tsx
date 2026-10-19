@@ -1,3 +1,5 @@
+import { useModelVariantsEnabled } from '../model/ModelVariantsContext';
+import { normalizeSelectableVisualModelPolicy } from '../model/modelSystem';
 import { onlineGrifball } from './grifball/onlineGrifballRuntime';
 import { disposeIronVanguardScene } from './iron-vanguard/ironVanguardModel';
 import { GrifballValidationRuntime } from './grifball/grifballValidationRuntime';
@@ -15,7 +17,7 @@ import { sfx } from './AudioEngine';
 import { DEFAULT_KEYBINDINGS, CustomMapData } from '../types';
 import { resolveCharacterModelType } from '../characterModelTypes';
 import { resolveLoadoutForVisualPolicy } from '../model/modelVisualPolicy';
-import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../model/modelSystem';
+import { type VisualModelPolicy } from '../model/modelSystem';
 import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
 import { loadNeuralBrain, type LoadedNeuralBrain } from '../game/neuralBrainLoader';
 import { DEFAULT_NEURAL_BRAIN_ID, isNeuralNetDifficulty } from '../game/neuralBrains';
@@ -158,10 +160,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
   const weatherParticleFrameRef = useRef<WeatherParticleFrameState>({});
   const liveCameraFrameRef = useRef<LiveCameraFrameState>({});
-  const activeVisualModelPolicy = normalizeVisualModelPolicy(
-    matchLobbyConfig?.visualModelPolicy
-      ?? visualModelPolicy
-      ?? (adminSettings as typeof adminSettings & { visualModelPolicy?: VisualModelPolicy }).visualModelPolicy
+  const allowModelVariants = useModelVariantsEnabled();
+  const activeVisualModelPolicy = normalizeSelectableVisualModelPolicy(
+    visualModelPolicy
+      ?? matchLobbyConfig?.visualModelPolicy
+      ?? (adminSettings as typeof adminSettings & { visualModelPolicy?: VisualModelPolicy }).visualModelPolicy,
+    allowModelVariants
   );
   const visualPlayerLoadout = useMemo(
     () => resolveLoadoutForVisualPolicy({

@@ -95,12 +95,10 @@ export function createArenaOrchestratorCallbacksForState({
   };
 
   const createOrUpdateRemotePlayer = (clientId: string, data: any) => {
-    const updateData = data?.controller === 'ai'
-      ? {
-          ...data,
-          visualModelPolicy: getVisualModelPolicy(),
-        }
-      : data;
+    const updateData = {
+      ...data,
+      visualModelPolicy: getVisualModelPolicy(),
+    };
 
     createOrUpdateRemoteCombatantForState({
       state: getState(),

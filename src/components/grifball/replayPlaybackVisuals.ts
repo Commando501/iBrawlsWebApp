@@ -71,7 +71,7 @@ export function updateReplayCombatantVisualsForFrame({
     const teamArmorTeam = replayData?.gameMode === 'grifball'
       ? player.team ?? resolveGrifballTeam(id)
       : null;
-    const visualLoadout = resolveReplayCombatantVisualLoadout(replayData, id);
+    const visualLoadout = resolveReplayCombatantVisualLoadout(replayData, id, settings?.allowModelVariants === true);
     const visualLoadoutKey = JSON.stringify(visualLoadout);
     const qualityChanged = visualLoadout.modelSystem === 'v3' && !isIronVanguardLoadout(visualLoadout) && (
       meshes?.group.userData.appliedV3QualityTier !== v3Options.v3QualityTier ||

@@ -1,3 +1,4 @@
+import { ModelVariantsContext } from '../../model/ModelVariantsContext';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
@@ -6,6 +7,13 @@ import { TournamentScreen, type TournamentScreenProps } from './TournamentScreen
 import { TournamentSetupPanel } from '../tournament/TournamentSetupPanel';
 import { TournamentBracketPanel } from '../tournament/TournamentBracketPanel';
 import type { TournamentState } from '../../types';
+
+function renderTournamentTree(props: TournamentScreenProps, allowVariants = false) {
+  let tree: React.ReactElement;
+  function Probe() { tree = TournamentScreen(props); return null; }
+  renderToStaticMarkup(<ModelVariantsContext.Provider value={allowVariants}><Probe /></ModelVariantsContext.Provider>);
+  return tree!;
+}
 
 const noop = () => {};
 function game(patch: Partial<TournamentScreenProps['game']> = {}): TournamentScreenProps['game'] {
@@ -32,7 +40,7 @@ function findElement(node: React.ReactNode, type: React.ElementType): React.Reac
 
 test('Tournament screen uses the existing setup component with unchanged callback and preset identities', () => {
   const values = game();
-  const tree = TournamentScreen({ game: values });
+  const tree = renderTournamentTree({ game: values });
   const setup = findElement(tree, TournamentSetupPanel)!;
   assert.ok(setup);
   for (const field of ['aiPresets','selectedTournamentPresets','setSelectedTournamentPresets','tournamentKillsToWin','setTournamentKillsToWin','tournamentRoundCount','setTournamentRoundCount','onInitializeTournament']) {
@@ -49,7 +57,7 @@ test('Tournament screen uses the existing setup component with unchanged callbac
 
 test('Active bracket keeps actual player identity and all start/resume/reset callbacks', () => {
   const values = game({ tournamentState: bracket({ status:'playing' }) });
-  const tree = TournamentScreen({ game: values });
+  const tree = renderTournamentTree({ game: values });
   const panel = findElement(tree, TournamentBracketPanel)!;
   assert.ok(panel);
   for (const field of ['tournamentState','playerName','playerHue','isPlaying','onStartTournamentMatch','onResetTournament']) assert.equal(panel.props[field], values[field as keyof typeof values]);
@@ -87,16 +95,12 @@ test('Existing victory and elimination actions remain available', () => {
   assert.doesNotMatch(defeat, /Start Next Match/);
 });
 
-test('Character model selector preserves all model options and changes only the shared visual policy', () => {
-  let update: ((previous: any) => any) | undefined;
-  const values = game({ setAdminSettings: next => { update = next; } });
-  const tree = TournamentScreen({ game: values });
-  const select = findElement(tree, 'select')!;
-  assert.equal(select.props.value, 'v3');
-  assert.deepEqual(React.Children.toArray(select.props.children).map((option: any) => option.props.value), ['v1', 'v2', 'v3']);
-  const previous = { visualModelPolicy: 'v3', gameMode: 'sandbox', botReactionTime: 250 };
-  select.props.onChange({ target: { value: 'v1' } });
-  assert.deepEqual(update!(previous), { ...previous, visualModelPolicy: 'v1' });
-  select.props.onChange({ target: { value: 'invalid' } });
-  assert.deepEqual(update!(previous), { ...previous, visualModelPolicy: 'v2' });
+test('Tournament model selector is hidden by default and restored by published policy', () => {
+  const locked = renderToStaticMarkup(<TournamentScreen game={game({ adminSettings: { visualModelPolicy: 'v1' } as any })} />);
+  assert.doesNotMatch(locked, /tournament-model-policy|Version 1 Classic|Version 2 Rigged/);
+  const enabled = renderToStaticMarkup(<ModelVariantsContext.Provider value={true}><TournamentScreen game={game()} /></ModelVariantsContext.Provider>);
+  assert.match(enabled, /tournament-model-policy/);
+  assert.match(enabled, /Version 1 Classic/);
+  assert.match(enabled, /Version 2 Rigged/);
+  assert.match(enabled, /Version 3 Iron Vanguard/);
 });

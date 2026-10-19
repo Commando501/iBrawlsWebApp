@@ -248,6 +248,7 @@ test('replay bot visuals apply recorded yaw and shared forward-facing sword rig'
 
   let animatedYaw: number | null = null;
   updateReplayCombatantVisualsForFrame({
+    settings: { allowModelVariants: true },
     refs,
     replayData: null,
     updatedPlayers: new Map([
@@ -290,7 +291,8 @@ test('replay bot visuals apply recorded yaw and shared forward-facing sword rig'
   assert.ok(meshes);
   assert.equal(meshes.group.rotation.y, Math.PI / 2);
   assert.equal(animatedYaw, Math.PI / 2);
-  assert.equal(meshes.sword.rotation.x, -Math.PI / 2);
+  // With published settings present, playback uses the shared weapon animator.
+  assert.equal(meshes.sword.rotation.x, Math.PI / 2);
 });
 
 test('replay visuals use legacy V1 loadout when replay has no visual policy', () => {
@@ -304,6 +306,7 @@ test('replay visuals use legacy V1 loadout when replay has no visual policy', ()
   } as any;
 
   updateReplayCombatantVisualsForFrame({
+    settings: { allowModelVariants: true },
     refs,
     replayData: {
       id: 'old',
@@ -368,6 +371,7 @@ test('grifball replay visuals attach solid team armor from replay player team', 
   } as any;
 
   updateReplayCombatantVisualsForFrame({
+    settings: { allowModelVariants: true },
     refs,
     replayData: {
       id: 'grifball-replay-outline',
@@ -433,6 +437,7 @@ test('grifball replay visuals paint the ball carrier golden yellow-orange', () =
   } as any;
 
   updateReplayCombatantVisualsForFrame({
+    settings: { allowModelVariants: true },
     refs,
     replayData: {
       id: 'grifball-replay-runner',
@@ -498,6 +503,7 @@ test('replay V3 visual policy selects Iron Vanguard', () => {
   } as any;
 
   updateReplayCombatantVisualsForFrame({
+    settings: { allowModelVariants: true },
     refs,
     replayData: {
       id: 'v3-replay',
@@ -575,6 +581,7 @@ test('replay Iron Vanguard body bypasses prototype animation', () => {
   const calls: any[] = [];
 
   updateReplayCombatantVisualsForFrame({
+    settings: { allowModelVariants: true },
     refs,
     replayData: {
       id: 'v3-replay-body',
@@ -621,7 +628,7 @@ test('replay Iron Vanguard body bypasses prototype animation', () => {
     animateSpartanModel: (...args: any[]) => { calls.push(args); },
     renderSwordLungeTrailVfx: () => {},
     updateBlinking: () => {},
-    settings: {},
+
   });
 
   assert.equal(calls.length, 0, 'V3 replay uses the object API with recorded posture');

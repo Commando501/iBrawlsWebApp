@@ -1,12 +1,15 @@
+import { ModelVariantsContext } from '../../model/ModelVariantsContext';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToStaticMarkup as renderMarkup } from 'react-dom/server';
 import type { ComponentProps } from 'react';
 import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { AiBehaviorEditorPanel } from './AiBehaviorEditorPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
+
+const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<ModelVariantsContext.Provider value={true}>{node}</ModelVariantsContext.Provider>);
 
 const noop = () => {};
 
@@ -90,11 +93,11 @@ test('SinglePlayerSetupPanel exposes Iron Vanguard for admin players', () => {
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V2', () => {
+test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V3', () => {
   const html = renderToStaticMarkup(<SinglePlayerSetupPanel {...baseSinglePlayerProps()} />);
 
   assert.match(html, /Model Set/);
-  assert.match(html, /V2/);
+  assert.match(html, /V3/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
@@ -120,4 +123,9 @@ test('AiBehaviorEditorPanel is custom-only and omits built-in difficulty choices
   assert.doesNotMatch(html, /Normal - Standard Combat/);
   assert.doesNotMatch(html, /Hard \(Calibrated\)/);
   assert.doesNotMatch(html, /Nightmare - Override/);
+});
+
+test('SinglePlayerSetupPanel hides model variants by default, including saved legacy selections', () => {
+  const html = renderMarkup(<SinglePlayerSetupPanel {...baseSinglePlayerProps()} />);
+  assert.doesNotMatch(html, /Version 1 Classic|Version 2 Rigged|Character selection|Model Sys|training-model-policy|Model Set/);
 });
