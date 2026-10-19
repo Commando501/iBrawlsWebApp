@@ -169,7 +169,7 @@ type MatchLobbyGameMode = "sandbox" | "grifball";
 type ModelSystem = "v1" | "v2" | "v3";
 type VisualModelPolicy = ModelSystem;
 
-const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = "v2";
+const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = "v3";
 
 interface MatchLobbyConfig {
   access: MatchLobbyAccess;

@@ -1,3 +1,5 @@
+import { useModelVariantsEnabled } from '../../model/ModelVariantsContext';
+import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import { isIronVanguardLoadout, preloadIronVanguard } from '../iron-vanguard/ironVanguardModel';
 import React from 'react';
 import type { CharacterModelType, UniversalSettings } from '../../types';
@@ -155,7 +157,7 @@ function persistPlayerHue(hue: number) {
 
 export function ArmoryPanel({
   isPainting,
-  playerLoadout,
+  playerLoadout: savedPlayerLoadout,
   customArmorCatalog,
   v3SuitProfileCatalog,
   playerHue = DEFAULT_PLAYER_HUE,
@@ -165,6 +167,8 @@ export function ArmoryPanel({
   setCustomizerWeapon,
   setAdminSettings,
 }: ArmoryPanelProps) {
+  const allowModelVariants = useModelVariantsEnabled();
+  const playerLoadout = allowModelVariants ? savedPlayerLoadout : resolveLoadoutForVisualPolicy({ visualModelPolicy: 'v3', loadout: savedPlayerLoadout });
   const isIronVanguard = isIronVanguardLoadout(playerLoadout);
   const [activeTab, setActiveTab] = React.useState<'color' | 'equipment' | 'loadouts'>('color');
   const [characterLoading, setCharacterLoading] = React.useState(false);
@@ -279,7 +283,7 @@ export function ArmoryPanel({
 
   return (
     <div ref={contentRef} className={`menu-armory ${isPainting ? 'menu-armory--painting' : ''}`}>
-      {isPainting ? (
+      {isPainting && allowModelVariants ? (
         <CharacterPainter loadout={playerLoadout} hue={playerHue} onSave={savePaintJob} onCancel={() => setIsPainting(false)} />
       ) : <>
         <GameModelStage hue={playerHue} heldWeapon={customizerWeapon} loadout={playerLoadout} />
@@ -417,11 +421,11 @@ export function ArmoryPanel({
 
 
               <p className="menu-armory__note">These controls change the preview pose. Your match mode determines the equipment available during play.</p>
-              {isIronVanguard && <p className="menu-armory__note">Iron Vanguard uses its original hammer and energy sword. Weapon skins are available for compatible Standard characters in More loadouts.</p>}
+              {isIronVanguard && <p className="menu-armory__note">Iron Vanguard uses its original hammer and energy sword. {allowModelVariants ? 'Weapon skins are available for compatible Standard characters in More loadouts.' : ''}</p>}
             </section>
             <section role="tabpanel" id="armory-panel-loadouts" aria-labelledby="armory-tab-loadouts" hidden={activeTab !== 'loadouts'}>
               <header className="menu-armory__section-title"><span>COMPATIBLE CUSTOMIZATION</span><h2>Your loadout.</h2><p>Options follow the character you choose.</p></header>
-              <div className="flex gap-2 mb-3" aria-label="Character selection">
+              {allowModelVariants && <div className="flex gap-2 mb-3" aria-label="Character selection">
                 <button type="button" disabled={characterLoading} aria-pressed={!isIronVanguard}
                   onClick={() => updateLoadout({ characterAsset: undefined, modelSystem: 'v2' })}
                   className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">Standard</button>
@@ -430,7 +434,7 @@ export function ArmoryPanel({
                   className="px-3 py-2 border border-white/20 rounded aria-pressed:bg-cyan-500/20 disabled:opacity-50">
                   {characterLoading ? 'Loading character…' : 'Version 3 Iron Vanguard'}
                 </button>
-              </div>
+              </div>}
               {characterError && <p role="alert" className="mb-3 text-red-300">{characterError}</p>}
           {!isIronVanguard && <>
           <button
@@ -506,7 +510,7 @@ export function ArmoryPanel({
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
               <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
 
-              {isIronVanguard ? <p className="text-white/70 leading-relaxed">Iron Vanguard uses its original body and equipment. Standard armor pieces, weapon skins, and painting apply to compatible Standard loadouts. The Model Set in match setup controls which models are used in a match.</p> : <>
+              {isIronVanguard ? <p className="text-white/70 leading-relaxed">Iron Vanguard uses its original body and equipment. {allowModelVariants ? 'Standard armor pieces, weapon skins, and painting apply to compatible Standard loadouts. The Model Set in match setup controls which models are used in a match.' : 'Customize your armor hue in the Color tab.'}</p> : <>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Model Sys</span>
                 <div className="flex gap-1.5 flex-1">

@@ -1,4 +1,4 @@
-import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
+import { normalizeSelectableVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import type { ReplayFile } from '../../types';
 import { sanitizeCharacterLoadoutForNetwork } from '../customArmor';
@@ -6,9 +6,8 @@ import type { CharacterLoadout } from '../VoxelModels';
 
 export const DEFAULT_REPLAY_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v1';
 
-export function resolveReplayVisualModelPolicy(replay: ReplayFile | null | undefined): VisualModelPolicy {
-  if (replay?.visualModelPolicy === undefined) return DEFAULT_REPLAY_VISUAL_MODEL_POLICY;
-  return normalizeVisualModelPolicy(replay.visualModelPolicy);
+export function resolveReplayVisualModelPolicy(replay: ReplayFile | null | undefined, allowModelVariants = false): VisualModelPolicy {
+  return normalizeSelectableVisualModelPolicy(replay?.visualModelPolicy, allowModelVariants, DEFAULT_REPLAY_VISUAL_MODEL_POLICY);
 }
 
 export function sanitizeReplayVisualLoadout(value: unknown): CharacterLoadout | undefined {
@@ -17,11 +16,12 @@ export function sanitizeReplayVisualLoadout(value: unknown): CharacterLoadout | 
 
 export function resolveReplayCombatantVisualLoadout(
   replay: ReplayFile | null | undefined,
-  combatantId: string
+  combatantId: string,
+  allowModelVariants = false
 ): CharacterLoadout {
   const stored = replay?.visualLoadouts?.[combatantId];
   return resolveLoadoutForVisualPolicy({
-    visualModelPolicy: resolveReplayVisualModelPolicy(replay),
+    visualModelPolicy: resolveReplayVisualModelPolicy(replay, allowModelVariants),
     loadout: sanitizeReplayVisualLoadout(stored),
   });
 }

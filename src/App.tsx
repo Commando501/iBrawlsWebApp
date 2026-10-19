@@ -1,3 +1,4 @@
+import { ModelVariantsContext } from './model/ModelVariantsContext';
 import { GrifballAILab } from './components/GrifballAILab';
 import { grifballLab } from './game/grifballLabStore';
 /**
@@ -360,15 +361,42 @@ export default function App() {
     setConnectionError,
   });
 
+  const {
+    gameplayPresets,
+    selectedPresetName,
+    newPresetNameInput,
+    setNewPresetNameInput,
+    multiplayerPreset,
+    mpAdminSettings,
+    setMpAdminSettings,
+    effectiveAdminSettings,
+    publishStatus,
+    isPublishing,
+    multiplayerBotConfig,
+    handleSavePreset,
+    handleDeletePreset,
+    handleSelectPreset,
+    handleBotConfigChange,
+    refreshMultiplayerPreset,
+    handlePublishOfficial,
+  } = useGameplayPresetControls({
+    adminSettings,
+    setAdminSettings,
+    isMultiplayer,
+    officialPresetName: OFFICIAL_MP_PRESET_NAME,
+  });
+
+  const allowModelVariants = multiplayerPreset?.settings.allowModelVariants === true;
   const isAdmin = account?.isAdmin ?? false;
   const activeVisualModelPolicy = useMemo(() => resolveSessionVisualModelPolicy({
+    allowModelVariants,
     localPolicy: adminSettings.visualModelPolicy,
     lobbyPolicy: matchLobbyConfig?.visualModelPolicy,
     isAdmin,
     isMultiplayer,
     isLocalTraining: isLocalTrainingSession && isPlaying,
     isReplay: Boolean(selectedReplay),
-  }), [adminSettings.visualModelPolicy, isAdmin, isMultiplayer, isLocalTrainingSession, isPlaying, selectedReplay, matchLobbyConfig?.visualModelPolicy]);
+  }), [allowModelVariants, adminSettings.visualModelPolicy, isAdmin, isMultiplayer, isLocalTrainingSession, isPlaying, selectedReplay, matchLobbyConfig?.visualModelPolicy]);
 
   const {
     gameLoadingState,
@@ -480,31 +508,6 @@ export default function App() {
     setConnectionMode,
     selectMainMenuPlayChild,
   ]);
-
-  const {
-    gameplayPresets,
-    selectedPresetName,
-    newPresetNameInput,
-    setNewPresetNameInput,
-    multiplayerPreset,
-    mpAdminSettings,
-    setMpAdminSettings,
-    effectiveAdminSettings,
-    publishStatus,
-    isPublishing,
-    multiplayerBotConfig,
-    handleSavePreset,
-    handleDeletePreset,
-    handleSelectPreset,
-    handleBotConfigChange,
-    refreshMultiplayerPreset,
-    handlePublishOfficial,
-  } = useGameplayPresetControls({
-    adminSettings,
-    setAdminSettings,
-    isMultiplayer,
-    officialPresetName: OFFICIAL_MP_PRESET_NAME,
-  });
 
   const {
     aiPresets,
@@ -747,6 +750,7 @@ export default function App() {
           };
 
   return (
+    <ModelVariantsContext.Provider value={allowModelVariants}>
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
       {/* BACKGROUND ARENA SIMULATION GRID */}
       <div
@@ -1157,5 +1161,6 @@ export default function App() {
         inviteNotifications={inviteNotifications}
         controllerCursorRef={controllerCursorRef}
       />    </div>
+    </ModelVariantsContext.Provider>
   );
 }

@@ -1,7 +1,8 @@
+import { ModelVariantsContext } from '../../model/ModelVariantsContext';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToStaticMarkup as renderMarkup } from 'react-dom/server';
 import type { ComponentProps } from 'react';
 import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
@@ -14,6 +15,8 @@ testGlobal.WebSocket ??= class TestWebSocket {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
 } as unknown as typeof WebSocket;
+
+const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<ModelVariantsContext.Provider value={true}>{node}</ModelVariantsContext.Provider>);
 
 const noop = () => {};
 
@@ -53,7 +56,7 @@ const baseProps = (): ComponentProps<typeof MultiplayerSetupPanel> => ({
   onResetMatchmakerUrl: noop,
 });
 
-test('MultiplayerSetupPanel hides V3 host visual model policy for non-admin players', () => {
+test('MultiplayerSetupPanel restores model variants for non-admin players when enabled', () => {
   const html = renderToStaticMarkup(<MultiplayerSetupPanel {...baseProps()} />);
 
   assert.match(html, /Model Set/);
@@ -63,7 +66,7 @@ test('MultiplayerSetupPanel hides V3 host visual model policy for non-admin play
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('MultiplayerSetupPanel hides V3 host visual model policy for admin players', () => {
+test('MultiplayerSetupPanel restores model variants for admin players when enabled', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -78,7 +81,7 @@ test('MultiplayerSetupPanel hides V3 host visual model policy for admin players'
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V2', () => {
+test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V3', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -223,4 +226,9 @@ test('Online shows the requested browser and keeps Quick Play cancelable during 
   assert.match(searching, /Searching for a match/);
   assert.match(searching, /Cancel/);
   assert.doesNotMatch(searching, /Create Lobby/);
+});
+
+test('MultiplayerSetupPanel hides model variants by default, including saved legacy selections', () => {
+  const html = renderMarkup(<MultiplayerSetupPanel {...baseProps()} />);
+  assert.doesNotMatch(html, /Version 1 Classic|Version 2 Rigged|Character selection|Model Sys|training-model-policy|Model Set/);
 });

@@ -136,6 +136,7 @@ export const LIVE_CONFIG_KEYS: string[] = [
   "teamOutlineColorMode",
   "teamOutlineThickness",
   "visualModelPolicy",
+  "allowModelVariants",
   "visualizeJumpZone",
   "weaponReadyTime",
   "weaponSwapLockout",

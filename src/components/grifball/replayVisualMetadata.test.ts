@@ -26,8 +26,8 @@ const baseReplay = (overrides: Partial<ReplayFile> = {}): ReplayFile => ({
 test('older replays without visual policy use legacy V1 visuals', () => {
   const replay = baseReplay();
 
-  assert.equal(resolveReplayVisualModelPolicy(replay), DEFAULT_REPLAY_VISUAL_MODEL_POLICY);
-  assert.deepEqual(resolveReplayCombatantVisualLoadout(replay, 'player'), { modelSystem: 'v1' });
+  assert.equal(resolveReplayVisualModelPolicy(replay, true), DEFAULT_REPLAY_VISUAL_MODEL_POLICY);
+  assert.deepEqual(resolveReplayCombatantVisualLoadout(replay, 'player', true), { modelSystem: 'v1' });
 });
 
 test('V3 replay visual policy preserves sanitized stored advanced loadouts', () => {
@@ -77,4 +77,12 @@ test('V3 replay visual policy preserves role paint but strips unsafe mesh fields
   assert.equal(loadout.paintJob.v3RoleColors.invalid, undefined);
   assert.equal(loadout.paintJob.v3RoleEmissive.visor, true);
   assert.equal(loadout.rawMesh, undefined);
+});
+
+test('locked replay playback uses Iron Vanguard even for old recordings', () => {
+  for (const visualModelPolicy of [undefined, 'v1', 'v2'] as const) {
+    const replay = baseReplay({ visualModelPolicy });
+    assert.equal(resolveReplayVisualModelPolicy(replay), 'v3');
+    assert.equal(resolveReplayCombatantVisualLoadout(replay, 'player').characterAsset, 'iron-vanguard');
+  }
 });

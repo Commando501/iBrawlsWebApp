@@ -1,10 +1,13 @@
+import { ModelVariantsContext } from '../../model/ModelVariantsContext';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToStaticMarkup as renderMarkup } from 'react-dom/server';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
 import { TrainingScreen, parseTrainingMap, trainingDifficultyPreset, type TrainingScreenProps } from './TrainingScreen';
+
+const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<ModelVariantsContext.Provider value={true}>{node}</ModelVariantsContext.Provider>);
 
 const noop = () => {};
 const base = (): TrainingScreenProps => ({
@@ -77,4 +80,9 @@ test('Map import rejects broken objects and invalid JSON before invoking the gam
   const html = renderToStaticMarkup(<TrainingScreen {...props} />);
   assert.match(html, /Import a custom map to continue/);
   assert.match(html, /disabled=""[^>]*>Start Training/);
+});
+
+test('TrainingScreen hides model variants by default, including saved legacy selections', () => {
+  const html = renderMarkup(<TrainingScreen {...base()} />);
+  assert.doesNotMatch(html, /Version 1 Classic|Version 2 Rigged|Character selection|Model Sys|training-model-policy|Model Set/);
 });

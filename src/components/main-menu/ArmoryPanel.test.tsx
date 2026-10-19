@@ -1,8 +1,9 @@
+import { ModelVariantsContext } from '../../model/ModelVariantsContext';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import type { ComponentProps } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToStaticMarkup as renderMarkup } from 'react-dom/server';
 import { ArmoryPanel } from './ArmoryPanel';
 import { ArmorModelEditor } from './ArmorModelEditor';
 import { DEFAULT_LOADOUT } from '../VoxelModels';
@@ -13,6 +14,8 @@ import {
 } from '../customArmor';
 import { createV3ArmorTemplateDraft } from './v3ArmorEditorTemplates';
 import type { V3SuitProfileCatalog } from './v3ArmorSuitProfiles';
+
+const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(<ModelVariantsContext.Provider value={true}>{node}</ModelVariantsContext.Provider>);
 
 const noop = () => {};
 const V3_INTERNAL_PROTOTYPE_LABEL = 'V3 Internal Prototype - Not Player Ready';
@@ -806,4 +809,9 @@ test('Iron Vanguard hides incompatible Standard customization without deleting i
   assert.doesNotMatch(html, /Start Paint Job|V3 Material Roles|Apply Suit|Alpha Suit/);
   assert.doesNotMatch(html, /Cyan Classic|Twin Arc|V2 \(Rigged\)/);
   assert.equal(props.playerLoadout.characterAsset, 'iron-vanguard');
+});
+
+test('ArmoryPanel hides model variants by default, including saved legacy selections', () => {
+  const html = renderMarkup(<ArmoryPanel {...baseProps('v2')} />);
+  assert.doesNotMatch(html, /Version 1 Classic|Version 2 Rigged|Character selection|Model Sys|training-model-policy|Model Set/);
 });

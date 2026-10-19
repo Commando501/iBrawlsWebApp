@@ -1,8 +1,9 @@
+import { useModelVariantsEnabled } from '../../model/ModelVariantsContext';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CustomMapData, CharacterModelType } from '../../types';
 import { AI_ARCHETYPE_OPTIONS, applyArchetypeToSettings, type AIArchetypeId } from '../../game/aiPersonalities';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
-import { normalizeVisualModelPolicy, VISUAL_MODEL_POLICY_OPTIONS, getVisualModelPolicyLabel } from '../../model/modelSystem';
+import { normalizeSelectableVisualModelPolicy, VISUAL_MODEL_POLICY_OPTIONS, getVisualModelPolicyLabel } from '../../model/modelSystem';
 import type { BotSetupOverlayProps } from './BotSetupOverlay';
 import { getArchetypeDescription, getPresetDescription } from './aiMenuContent';
 import { TopDownMapPreview } from '../loading/TopDownMapPreview';
@@ -54,6 +55,7 @@ export function trainingDifficultyPreset(preset: 'normal' | 'nightmare' | 'gradu
 }
 
 export function TrainingScreen(props: TrainingScreenProps) {
+  const allowModelVariants = useModelVariantsEnabled();
   const { adminSettings, setAdminSettings, offlineBotCount, onOfflineBotCountChange, selectedMap, onSelectedMapChange, lobbyCustomMapData, onCustomMapDataChange, botDifficulties, setBotDifficulties, botArchetypes, setBotArchetypes, botColors, setBotColors, botModelTypes, setBotModelTypes, aiPresets, playerName, onInitializeSimulation, onApplyAndResume, isPlaying, onOpenSettings, onOpenAI, active = true } = props;
   const [tab, setTab] = useState<typeof TABS[number]>('arena');
   const [selectedBot, setSelectedBot] = useState('main_ai');
@@ -71,7 +73,7 @@ export function TrainingScreen(props: TrainingScreenProps) {
   const selectedPremade = PREMADE_MAPS.find(map => map.id === selectedMap);
   const mapName = selectedMap === 'hangar' ? 'Industrial Hangar' : selectedMap === 'circle' ? 'Circle Arena' : selectedMap === 'custom_file' ? lobbyCustomMapData?.name ?? 'Custom arena' : selectedPremade?.name ?? selectedMap;
   const mapDescription = selectedMap === 'hangar' ? 'Steel columns, hazard stripes, and warm amber lights in the original industrial arena.' : selectedMap === 'circle' ? 'An open dueling arena with quiet ceramic flooring, a suspended cyan perimeter ring, and reinforced Vanguard supports.' : selectedMap === 'custom_file' ? lobbyCustomMapData?.description ?? 'Import a map exported from the standalone Map Maker.' : selectedPremade?.description;
-  const policy = normalizeVisualModelPolicy(adminSettings.visualModelPolicy);
+  const policy = normalizeSelectableVisualModelPolicy(adminSettings.visualModelPolicy, allowModelVariants);
   const activeDifficulties = BOTS.slice(0, count).map(entry => botDifficulties[entry.id] || 'normal');
   const difficultyLabel = (value: string) => aiPresets.find(preset => preset.id === value)?.name ?? titleCase(value);
   const rosterDifficulty = new Set(activeDifficulties).size === 1 ? difficultyLabel(activeDifficulties[0]) : 'Mixed difficulties';
@@ -136,7 +138,7 @@ export function TrainingScreen(props: TrainingScreenProps) {
         </section>
         <section role="tabpanel" id="training-panel-rules" aria-labelledby="training-tab-rules" hidden={tab !== 'rules'}>
           <header><h2>Fine-tune your session</h2><p>Keep the quick setup simple. Make deeper changes here.</p></header>
-          <div className="menu-training__field-row"><div><label htmlFor="training-model-policy">Character model set</label><p>Applies to you and every AI bot.</p></div><select id="training-model-policy" value={policy} onChange={event => setAdminSettings(previous => ({ ...previous, visualModelPolicy: normalizeVisualModelPolicy(event.target.value) }))}>{VISUAL_MODEL_POLICY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><p className="menu-training__quiet">{policy === 'v3' ? 'Iron Vanguard uses its shipping movement, hammer, sword, and ball animations.' : 'Your selected model set is used for this session. Appearance choices remain in Armory.'}</p>
+          {allowModelVariants && <div className="menu-training__field-row"><div><label htmlFor="training-model-policy">Character model set</label><p>Applies to you and every AI bot.</p></div><select id="training-model-policy" value={policy} onChange={event => setAdminSettings(previous => ({ ...previous, visualModelPolicy: normalizeSelectableVisualModelPolicy(event.target.value, allowModelVariants) }))}>{VISUAL_MODEL_POLICY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}<p className="menu-training__quiet">{policy === 'v3' ? 'Iron Vanguard uses its shipping movement, hammer, sword, and ball animations.' : 'Your selected model set is used for this session. Appearance choices remain in Armory.'}</p>
           {onOpenSettings && <button type="button" className="menu-training__disclosure" onClick={onOpenSettings}><span><strong>Gameplay mechanics & controls</strong><small>Movement, health, weapons, runner, keyboard, and gamepad</small></span><span aria-hidden="true">↗</span></button>}
           {onOpenAI && <button type="button" className="menu-training__disclosure" onClick={onOpenAI}><span><strong>AI Behavior Editor</strong><small>Create and tune saved AI presets</small></span><span aria-hidden="true">↗</span></button>}
           <div className="menu-training__rule-note"><strong>Return to the same setup</strong><p>Your map, roster, and model choices stay here while you visit Settings.</p></div>

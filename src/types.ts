@@ -58,6 +58,7 @@ export interface UniversalSettings {
   nameVisibilityFontSize?: number;        // Font size of the floating name
   playerName?: string;                    // Persistent customized player name / handle
   visualModelPolicy?: VisualModelPolicy;  // Match-wide visual model set for offline sandbox/tournament previews.
+  allowModelVariants?: boolean; // Admin-published availability; defaults to Iron Vanguard only.
   aiDifficulty?: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom' | string;
   aiNeuralBrainId?: string;              // Selected browser inference brain when aiDifficulty === 'neural-net'
   aiReactionLatency?: number;             // Reaction latency in seconds (0.0 to 1.5)

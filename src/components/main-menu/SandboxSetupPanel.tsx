@@ -1,3 +1,4 @@
+import { useModelVariantsEnabled } from '../../model/ModelVariantsContext';
 import {
   getSelectableVisualModelPolicyOptions,
   normalizeSelectableVisualModelPolicy,
@@ -18,8 +19,9 @@ export function SandboxSetupPanel({
   onOpenBotSetup,
   isAdmin = false,
 }: SandboxSetupPanelProps) {
-  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(isAdmin, 'trainingSandbox');
-  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, isAdmin, undefined, 'trainingSandbox');
+  const allowModelVariants = useModelVariantsEnabled();
+  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(allowModelVariants, 'trainingSandbox');
+  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, allowModelVariants, undefined, 'trainingSandbox');
 
   return (
     <div className="flex flex-col h-full min-h-0 justify-between">
@@ -33,7 +35,7 @@ export function SandboxSetupPanel({
         <p className="text-white/60 text-xs leading-relaxed bg-white/5 border border-white/5 rounded-lg p-3.5 leading-normal select-text shrink-0">
           This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Gameplay/Mechanics Options only impact you, so coordinate with your opponent on the dials you want to match.
         </p>
-        <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+        {allowModelVariants && <div className="rounded-lg border border-white/10 bg-black/30 p-3">
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">Model Set</span>
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan-300">
@@ -62,7 +64,7 @@ export function SandboxSetupPanel({
               Use Iron Vanguard for you and every AI bot. Includes directional movement, slides, jumps, hammer attacks, sword slash/lunge, and ball carry/throw/punch. Pistol poses are provisional.
             </p>
           )}
-        </div>
+        </div>}
       </div>
 
       <div className="flex flex-col gap-3.5 mt-auto shrink-0 pt-4">

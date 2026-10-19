@@ -1,3 +1,4 @@
+import { useModelVariantsEnabled } from '../../model/ModelVariantsContext';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { MessageSquare, Send } from 'lucide-react';
 import type { CustomMapData, UniversalSettings } from '../../types';
@@ -24,6 +25,7 @@ import {
   getSelectableVisualModelPolicyOptions,
   getVisualModelPolicyLabel,
   normalizeSelectableVisualModelPolicy,
+  normalizeVisualModelPolicy,
   type VisualModelPolicy,
 } from '../../model/modelSystem';
 import { AdvancedSection } from '../main-menu/AdvancedSection';
@@ -114,6 +116,7 @@ export function MultiplayerSetupPanel({
   onApplyMatchmakerUrl,
   onResetMatchmakerUrl,
 }: MultiplayerSetupPanelProps) {
+  const allowModelVariants = useModelVariantsEnabled();
   const [view, setView] = useState<OnlineMenuView>(requestedView);
   const [access, setAccess] = useState<MatchLobbyAccess>('open');
   const [password, setPassword] = useState('');
@@ -122,7 +125,7 @@ export function MultiplayerSetupPanel({
   const [allowObservers, setAllowObservers] = useState(true);
   const [matchTimerMinutes, setMatchTimerMinutes] = useState(toMinutes(adminSettings.matchTimerSeconds ?? DEFAULT_MATCH_TIMER_SECONDS));
   const [visualModelPolicy, setVisualModelPolicy] = useState<VisualModelPolicy>(
-    normalizeSelectableVisualModelPolicy(adminSettings.visualModelPolicy, isAdmin)
+    normalizeVisualModelPolicy(adminSettings.visualModelPolicy)
   );
   const [winTarget, setWinTarget] = useState(
     gameMode === 'grifball'
@@ -135,13 +138,9 @@ export function MultiplayerSetupPanel({
     setWinTarget(getDefaultWinTargetForMode(gameMode));
   }, [gameMode]);
 
-  useEffect(() => {
-    setVisualModelPolicy((current) => normalizeSelectableVisualModelPolicy(current, isAdmin));
-  }, [isAdmin]);
-
   const selectedPremadeMap = PREMADE_MAPS.find(map => map.id === selectedMap);
-  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, isAdmin);
-  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(isAdmin);
+  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, allowModelVariants);
+  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(allowModelVariants);
   const activeConfig = useMemo(() => normalizeMatchLobbyConfig({
     access,
     gameMode,
@@ -167,7 +166,7 @@ export function MultiplayerSetupPanel({
     ...(matchLobbyConfig ?? activeConfig),
     visualModelPolicy: normalizeSelectableVisualModelPolicy(
       (matchLobbyConfig ?? activeConfig).visualModelPolicy,
-      isAdmin
+      allowModelVariants
     ),
   });
   const isStaging = Boolean(multiplayerSocket && matchLobbyConfig && (connectionStatus === 'hosting' || connectionStatus === 'connected'));
@@ -395,7 +394,7 @@ export function MultiplayerSetupPanel({
             </div>
 
           </div>
-          <aside className="menu-online-summary"><span className="menu-online-kicker">Your lobby</span><h2>{getMatchLobbyModeLabel(gameMode)}</h2><dl><div><dt>Map</dt><dd>{lobbyCustomMapData && selectedMap === 'custom_file' ? lobbyCustomMapData.name : selectedPremadeMap?.name || (selectedMap === 'hangar' ? 'Industrial Hangar' : selectedMap === 'circle' ? 'Circle Arena' : selectedMap)}</dd></div><div><dt>Capacity</dt><dd>{activeConfig.maxPlayers} players</dd></div><div><dt>Target</dt><dd>{getMatchLobbyTargetLabel(activeConfig)}</dd></div><div><dt>Timer</dt><dd>{formatMatchTimerLabel(activeConfig.matchTimerSeconds)}</dd></div><div><dt>Access</dt><dd>{access === 'password' ? 'Password required' : access === 'private' ? 'Private' : 'Open'}</dd></div><div><dt>Observers</dt><dd>{allowObservers ? 'Allowed' : 'Off'}</dd></div></dl><div className="menu-online-model-options">
+          <aside className="menu-online-summary"><span className="menu-online-kicker">Your lobby</span><h2>{getMatchLobbyModeLabel(gameMode)}</h2><dl><div><dt>Map</dt><dd>{lobbyCustomMapData && selectedMap === 'custom_file' ? lobbyCustomMapData.name : selectedPremadeMap?.name || (selectedMap === 'hangar' ? 'Industrial Hangar' : selectedMap === 'circle' ? 'Circle Arena' : selectedMap)}</dd></div><div><dt>Capacity</dt><dd>{activeConfig.maxPlayers} players</dd></div><div><dt>Target</dt><dd>{getMatchLobbyTargetLabel(activeConfig)}</dd></div><div><dt>Timer</dt><dd>{formatMatchTimerLabel(activeConfig.matchTimerSeconds)}</dd></div><div><dt>Access</dt><dd>{access === 'password' ? 'Password required' : access === 'private' ? 'Private' : 'Open'}</dd></div><div><dt>Observers</dt><dd>{allowObservers ? 'Allowed' : 'Off'}</dd></div></dl>{allowModelVariants && <div className="menu-online-model-options">
             <div className="bg-white/[0.035] border border-white/5 rounded-lg p-3 flex flex-col gap-2">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">Model Set</span>
@@ -423,7 +422,7 @@ export function MultiplayerSetupPanel({
             </div>
 
 
-          </div><p>Players review these rules before the host starts the match.</p></aside>
+          </div>}<p>Players review these rules before the host starts the match.</p></aside>
         </section>
         <section className="menu-online-join" hidden={view !== 'join'} aria-labelledby="menu-online-join-title"><div className="menu-online-form"><span className="menu-online-kicker">Join a friend</span><h2 id="menu-online-join-title">The same room.<br />A new match.</h2><p className="menu-online-intro">Enter a room code or host IP address. Add a password if the room requires one.</p>
             <div className="flex gap-2">
