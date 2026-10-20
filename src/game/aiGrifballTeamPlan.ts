@@ -11,6 +11,7 @@ import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceG
 import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './aiGrifballAgency';
 import type { RunnerClashDecision } from './aiGrifballRunnerClash';
 import type { SwordGuardDecision } from './aiGrifballSwordGuard';
+import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballHammerDefense';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -65,8 +66,11 @@ export interface GrifballAssignment {
   agency?: SupportAgencyDecision;
   runnerClash?: RunnerClashDecision;
   swordGuard?: SwordGuardDecision;
+  hammerDefense?: HammerDefenseDecision;
 }
 export interface GrifballTeamPlanState {
+  observedThrow?: ObservedGrifballThrow;
+  hammerDefenseCommitments?: Record<string, HammerDefenseDecision>;
   assignments: Map<string, GrifballAssignment>;
   snapshot: GrifballTacticalSnapshot | null;
   signature: string;
@@ -92,6 +96,7 @@ export const createGrifballTeamPlanState = (): GrifballTeamPlanState => ({
 });
 
 export function resetGrifballTeamPlan(state: GrifballTeamPlanState): void {
+  delete state.observedThrow; delete state.hammerDefenseCommitments;
   state.assignments.clear();
   state.styleSeed = 1; state.stylePlay = 0; state.styleMemory = {}; state.stylePlans = {};
   state.snapshot = null;
@@ -142,6 +147,14 @@ export function updateGrifballTeamPlan(
     state.transition = {}; state.passFlight = null; state.passCharge = null;
   }
   const oldHolder = state.snapshot?.players.find(p => p.id === state.snapshot?.holderId);
+  // Public possession history survives the ball's short release-clearance ID.
+  // Unknown mid-flight imports stay unknown; never infer intent from pass orders.
+  if (!snapshot.playing || state.snapshot?.round !== snapshot.round || snapshot.ballPhysics?.state !== 'thrown') {
+    delete state.observedThrow;
+  } else if (oldHolder && state.snapshot?.ballPhysics?.state === 'held') {
+    state.observedThrow = { team: oldHolder.team, carrierId: oldHolder.id, age: 0 };
+  } else if (state.observedThrow) state.observedThrow.age += Math.max(0, dt);
+  if (!snapshot.playing || state.snapshot?.round !== snapshot.round) delete state.hammerDefenseCommitments;
   for (const team of ['blue', 'red']) {
     state.transition[team] = Math.max(0, (state.transition[team] ?? 0) - Math.max(0, dt));
     if (snapshot.playing && state.snapshot?.playing && state.snapshot.round === snapshot.round && oldHolder?.team === team && oldHolder.id !== snapshot.holderId) {

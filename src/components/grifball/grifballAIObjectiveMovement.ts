@@ -12,6 +12,8 @@ import { observeLiveRunnerSwordThreat } from './runnerClashObservation';
 import { getModelTargetRadiusBonus } from './modelHitbox';
 import type { RunnerSwordThreat } from '../../game/aiGrifballRunnerClash';
 import { resolveGrifballPlayerStyle } from '../../game/grifballPlayerStyles';
+import { observeLiveGrifballHammerDefense } from './grifballHammerDefense';
+import { resolveScaledAIWeaponReloadTime } from '../../game/aiWeaponTiming';
 
 export interface GrifballAIObjectiveFrame {
   pos: THREE.Vector3;
@@ -30,7 +32,7 @@ type GroundConstraint = (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 
 export type GrifballAIObjectiveState = Pick<GrifballRuntimeState, 'settings' | 'grifball' |
   'playerHP' | 'playerRespawnTimer' | 'isObserverMode' | 'localPlayerTeam' | 'playerPos' | 'playerInvulnerabilityTimer'> &
-  Partial<Pick<GrifballRuntimeState, 'playerVel' | 'activeWeapon' | 'pSwordState' | 'pSwordTimer' | 'isLunging' | 'lungeTimer' | 'isCrouching' | 'playerModelType'>> & {
+  Partial<Pick<GrifballRuntimeState, 'isMultiplayer' | 'playerVel' | 'activeWeapon' | 'pSwordState' | 'pSwordTimer' | 'isLunging' | 'lungeTimer' | 'isCrouching' | 'playerModelType'>> & {
   aiMatchContext: Pick<GrifballRuntimeState['aiMatchContext'], 'grifballTeamPlan'>;
   otherPlayers: ReadonlyMap<string, Pick<Combatant, 'id' | 'hp' | 'respawnTimer' | 'team' | 'pos' | 'invulnerabilityTimer'> &
     Partial<Pick<Combatant, 'vel' | 'activeWeapon' | 'weaponState' | 'weaponTimer' | 'isLunging' | 'lungeTimer' | 'isCrouching' | 'modelType'>>>;
@@ -84,6 +86,16 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
    * same frame to the caller's existing committed-dash execution owner. */
   tryRunnerEvasion?: (movement: { x: number; z: number }) => boolean;
 }): boolean {
+  const hammerDefense = observeLiveGrifballHammerDefense(state, self, frame, canStartWeaponAction, dt);
+  if (hammerDefense && hammerDefense.action !== 'continue') {
+    frame.pickupRequested = false; frame.vel.set(0, 0, 0);
+    frame.yaw = getYawForHeading(hammerDefense.heading!.x, hammerDefense.heading!.z);
+    if (hammerDefense.action === 'strike') {
+      frame.aiState = 'COOLDOWN'; frame.timer = resolveScaledAIWeaponReloadTime(state.settings, 'hammer', 1);
+      triggerCombatantAttack(self, 'hammer'); frame.weaponState = 'swing_up';
+    } else frame.timer = Math.max(0, frame.timer - dt);
+    return true;
+  }
   if (state.settings.gameMode !== 'grifball') return false;
   if (state.grifball.phase !== 'playing') return false;
   if (self.isLunging || self.isJumping || frame.pos.y > 0.01 || frame.vel.y !== 0 || frame.dashRemaining > 0 || frame.slideActive) return false;

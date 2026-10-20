@@ -3,6 +3,9 @@ import type { BotCoordinatorState } from '../game/aiBotCoordinator';
 import { publishGrifballTacticalEngagements } from '../game/aiCoordinationFrame';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import { resolvePunchCooldown } from '../game/runnerBallSettings';
+import { resolveScaledAIWeaponReloadTime } from '../game/aiWeaponTiming';
+import { observeSimGrifballHammerDefense } from './grifballHammerDefense';
+import { idleAction } from './actions';
 import { startAISpatialDodgeMotion } from '../game/aiDashMotion';
 import { updateGrifballTeamPlan, type GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import type { GrifballTacticsConfig } from '../game/grifballTacticsConfig';
@@ -33,7 +36,8 @@ export interface ScriptedObjectivePlanner {
   /** Explicit readiness from the caller's AI cooldown owner. Missing carrier
    * readiness delegates rather than disabling attacks silently. */
   weaponReady?: Readonly<Record<string, boolean>>;
-  /** Explicitly owns grounded objective reloads and punch commands for these IDs.
+  /** Explicitly owns grounded objective reloads, punch commands and enabled
+   * hammer pass-defense strikes for these IDs.
    * Other carrier decisions retain the existing readiness/handoff contract. */
   punchControl?: ScriptedCarrierPunchControl;
   /** Charge/recheck/release in the objective phase for IDs with owned AI reloads. */
@@ -116,6 +120,18 @@ export function beginScriptedObjectivePlanning(state: SimState, planner: Scripte
     const swapTick = swapTimersAdvanced.has(actor.id) ? 0 : dt;
     const ready = controlled ? planner.punchControl!.cooldowns[actor.id] <= 0 && Math.max(0, actor.weaponReadyTimer - swapTick) <= 0
       : planner.weaponReady?.[actor.id] ?? false;
+    // The composed planner owns these same AI reloads for objective strikes.
+    const hammerDefense = observeSimGrifballHammerDefense(view, planner.plan, actor, planner.scriptedBots, controlled && ready, dt);
+    if (hammerDefense && hammerDefense.action !== 'continue') {
+      const action = { ...idleAction(), crouch: actor.isCrouching, aim: Math.atan2(hammerDefense.heading!.x, hammerDefense.heading!.z),
+        attackPrimary: hammerDefense.action === 'strike' };
+      const movement = { x: 0, z: 0 };
+      if (controlled) planner.punchControl!.cooldowns[actor.id] = action.attackPrimary
+        ? resolveScaledAIWeaponReloadTime(settings, 'hammer', 1) : Math.max(0, planner.punchControl!.cooldowns[actor.id] - dt);
+      const reason = action.attackPrimary ? 'hammer-deflection' : 'hammer-deflection-committed';
+      record({ kind: 'support', reason, action, movement });
+      return { action, movement, objective: { kind: 'support' as const, reason } };
+    }
     const decision = carrier ? resolveSimGrifballCarrierInput(view, planner.plan, actor.id, planner.scriptedBots, ready, dt,
       { punch: controlled, pass: controlled && planner.passControl === SCRIPTED_PASS_VERSION,
         evasion: controlled && planner.runnerEvasion === SCRIPTED_RUNNER_EVASION_VERSION }) : null;
