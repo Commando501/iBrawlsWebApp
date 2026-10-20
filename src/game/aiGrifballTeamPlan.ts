@@ -13,6 +13,7 @@ import type { RunnerClashDecision } from './aiGrifballRunnerClash';
 import type { SwordGuardDecision } from './aiGrifballSwordGuard';
 import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballHammerDefense';
 import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
+import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -345,7 +346,12 @@ export function updateGrifballTeamPlan(
     const teamAssignments = [...next.values()].filter(a => a.team === team);
     if (passRecovery) for (const assignment of teamAssignments) assignment.passRecovery = passRecovery;
     if (state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
-    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0, state.carrierMotion?.stationarySeconds ?? 0);
+    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) {
+      const passSupport = resolveGrifballPassSupport({ snapshot, assignments: teamAssignments, team,
+        flight: state.passFlight, tuning, routers, recovery });
+      applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0,
+        state.carrierMotion?.stationarySeconds ?? 0, passSupport);
+    }
     delete state.passPlans[team];
     if (friendly && holder && routers && tuning.spaceEnabled && tuning.passingEnabled) {
       const pass = planGrifballPass(snapshot, holder, tuning, routers);

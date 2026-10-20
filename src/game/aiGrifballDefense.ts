@@ -4,6 +4,7 @@ import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter, type SpaceRoute } from './grifballSpaceGeometry';
 import { pointAlongRunnerRoute, type SpaceRouters } from './aiGrifballRunner';
 import { grifballDefenseStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
+import type { PassLandingSupport } from './aiGrifballPassSupport';
 
 export interface DefensePressureCandidate {
   botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
@@ -14,6 +15,7 @@ export interface DefenseOrder {
   mode: 'intercept' | 'contain' | 'mark' | 'last-defender' | 'recover';
   targetId: string | null; intercept: FieldPoint; arrivalETA: number; carrierETA: number;
   advantage: number; reinforcementIn: number; emergency: boolean; transitioning: boolean;
+  passSupport?: PassLandingSupport;
   individuality?: {
     style: GrifballPlayerStyle; strength: number; reason: string;
     pressureCandidates?: DefensePressureCandidate[];
@@ -39,7 +41,8 @@ const toward = (from: FieldPoint, to: FieldPoint, amount: number): FieldPoint =>
 
 /** Defenders share one projection, one safety, and distinct marks. No orders for observed players. */
 export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignments: GrifballAssignment[],
-  tuning: TeamTactics, routers: SpaceRouters, previous: Map<string, GrifballAssignment>, transition: number, carrierStationarySeconds = 0): void {
+  tuning: TeamTactics, routers: SpaceRouters, previous: Map<string, GrifballAssignment>, transition: number, carrierStationarySeconds = 0,
+  passSupport?: PassLandingSupport): void {
   if (!assignments.length) return;
   const team = assignments[0].team, goal = snapshot.goals[team];
   const carrier = snapshot.players.find(p => p.id === snapshot.holderId);
@@ -47,7 +50,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const players = snapshot.players, allies = players.filter(p => p.team === team), enemies = players.filter(p => p.team !== team);
   let defenders = assignments.filter(a => a.role !== 'retriever');
   if (!defenders.length) return;
-  const anchor = carrier?.pos ?? snapshot.ball;
+  const anchor = carrier?.pos ?? passSupport?.point ?? snapshot.ball;
   const advantage = allies.length - enemies.length;
   const reinforcementIn = Math.min(Infinity, ...(snapshot.respawns ?? []).filter(p => p.team === team).map(p => {
     const router = createSpaceRouter(snapshot.geometry!, p.pos), route = router(anchor, true);
@@ -167,6 +170,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     a.defense = { mode, targetId: target?.id ?? null, intercept: { ...point },
       arrivalETA: estimateSpaceAttackTime(self, point, routeLength(self.id, point)), carrierETA,
       advantage, reinforcementIn, emergency, transitioning: transition > 0 };
+    if (passSupport) a.defense.passSupport = { ...passSupport, point: { ...passSupport.point } };
     if (strength > 0 && carrier) a.defense.individuality = {
       style: styleOf(a.botId), strength,
       reason: emergency ? 'Goal emergency overrides player preferences.'
@@ -175,6 +179,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
         : 'Keep team coverage when no similarly useful individual job is available.',
     };
     a.reason = `${mode}: ${emergency ? 'contest the scoring threat' : transition > 0 ? 'recover shape after possession loss' : contain ? 'hold the goal side until pressure is safe' : expiredMotion ? 'pressure the stationary carrier and protect the goal' : 'cut the carrier route and protect the goal'}`;
+    if (passSupport) a.reason = `${mode}: ${mode === 'last-defender' ? 'protect the goal side of' : 'cover beside'} ${passSupport.receiverId}'s pass landing area`;
   };
   let safetyDestination = emergency ? anchor : safetyPoint;
   let safetyCarrierETA = 0;
@@ -206,7 +211,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const rest = defenders.filter(a => a !== safety);
   if (!carrier) {
     rest.forEach((a, i) => {
-      const center = toward(anchor, goal, 4), d = Math.max(0.001, distance(anchor, goal));
+      const center = toward(anchor, goal, passSupport ? tuning.passSupportDepth : 4), d = Math.max(0.001, distance(anchor, goal));
       const side = (i % 2 ? -1 : 1) * tuning.lateralSpacing * (1 + Math.floor(i / 2));
       assign(a, 'recover', { x: center.x - (goal.z - anchor.z) / d * side, z: center.z + (goal.x - anchor.x) / d * side }, undefined);
     });
