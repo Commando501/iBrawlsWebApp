@@ -3,11 +3,14 @@ import type { FieldPoint, GrifballAssignment, GrifballTeamPlanState } from './ai
 import { tickBallPhysics, GRIFBALL_BALL_RADIUS, type GrifballBall, type BallArenaBounds, type Vec3 } from './grifballBall';
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { resolveHammerSlamTiming } from './hammerSlamTiming';
+import { GRIFBALL_HAMMER_DEFENSE_PREFERENCES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
 export interface HammerDefenseDecision {
   action: 'continue' | 'strike' | 'committed'; reason: string;
   reaction: number; throwAge: number; impactIn: number;
   heading?: FieldPoint; predictedBall?: Vec3;
+  individuality?: { style: GrifballPlayerStyle; strength: number; reason: string;
+    teamReaction: number; teamMargin: number; margin: number };
 }
 export interface ObservedGrifballThrow { team: string; carrierId: string; age: number }
 
@@ -28,17 +31,24 @@ export function chooseGrifballHammerDefense(input: {
   pos: Vec3; team: string; ball: GrifballBall; bounds: BallArenaBounds | undefined;
   ownGoal: FieldPoint | null | undefined; observedThrow: ObservedGrifballThrow | undefined;
   eligible: boolean; nearbyEnemy: boolean;
+  playerStyle?: GrifballPlayerStyle;
 }): HammerDefenseDecision | null {
   const { assignment, settings, ball, pos, observedThrow, dt } = input, tuning = assignment?.tuning;
   if (!tuning?.enabled || !tuning.spaceEnabled || !tuning.defenseEnabled || !tuning.hammerDefenseEnabled ||
     !assignment.geometry || !input.eligible || !Number.isFinite(dt) || dt <= 0) return null;
+  const strength = tuning.hammerDefenseAgencyStrength ?? 0, style = input.playerStyle ?? 'balanced';
+  const preference = GRIFBALL_HAMMER_DEFENSE_PREFERENCES[style], teamMargin = .2;
+  const reaction = Math.max(0, Math.min(.3, tuning.hammerDefenseReaction + strength * preference.reaction));
+  const margin = teamMargin + strength * preference.margin;
+  const individuality = strength > 0 ? { style, strength, reason: preference.reason,
+    teamReaction: tuning.hammerDefenseReaction, teamMargin, margin } : undefined;
   const decision = (reason: string): HammerDefenseDecision => ({ action: 'continue', reason,
-    reaction: tuning.hammerDefenseReaction, throwAge: observedThrow?.age ?? 0, impactIn: 0 });
+    reaction, throwAge: observedThrow?.age ?? 0, impactIn: 0, ...(individuality ? { individuality } : {}) });
   if (ball.state !== 'thrown') return decision('No ball in flight');
   if (!(settings.hammerBallDeflectionEnabled ?? true) || !((settings.hammerBallDeflectionStrength ?? 1) > 0))
     return decision('Hammer ball deflection is disabled in match rules');
   if (!observedThrow || observedThrow.team === input.team) return decision('Preserve friendly or unidentified throws');
-  if (observedThrow.age + 1e-9 < tuning.hammerDefenseReaction) return decision('Observed throw has not reached the reaction delay');
+  if (observedThrow.age + 1e-9 < reaction) return decision('Observed throw has not reached the reaction delay');
   if (input.nearbyEnemy) return decision('Nearby combat takes priority over pass defense');
   const goal = input.ownGoal;
   if (!goal || !input.bounds) return decision('Goal or court observation unavailable');
@@ -61,7 +71,7 @@ export function chooseGrifballHammerDefense(input: {
   if (!isSpaceSegmentOpen(assignment.geometry, pos, predicted.pos)) return decision('Strike path is blocked');
   const heading = { x: dx / distance, z: dz / distance };
   const miss = Math.hypot(dx - heading.x * range, predicted.pos.y - pos.y - 1.2, dz - heading.z * range);
-  if (miss > radius + GRIFBALL_BALL_RADIUS - .2) return { ...decision('Ball will be outside the blast margin'), impactIn };
+  if (miss > radius + GRIFBALL_BALL_RADIUS - margin) return { ...decision('Ball will be outside the blast margin'), impactIn };
   return { ...decision('Strike the incoming enemy pass away from our goal'), action: 'strike', impactIn,
     heading, predictedBall: { ...predicted.pos } };
 }
@@ -69,7 +79,7 @@ export function chooseGrifballHammerDefense(input: {
 /** Keep a selected strike's heading and position until its own animation ends.
  * Death, flight, weapon changes and reset revoke this short commitment. */
 export function resolveGrifballHammerDefense(plan: GrifballTeamPlanState, botId: string,
-  allowed: boolean, activeStrike: boolean, input: Omit<Parameters<typeof chooseGrifballHammerDefense>[0], 'assignment'>) {
+  allowed: boolean, activeStrike: boolean, input: Omit<Parameters<typeof chooseGrifballHammerDefense>[0], 'assignment' | 'playerStyle'>) {
   const assignment = plan.assignments.get(botId);
   if (assignment) delete assignment.hammerDefense;
   const committed = plan.hammerDefenseCommitments?.[botId];
@@ -82,7 +92,8 @@ export function resolveGrifballHammerDefense(plan: GrifballTeamPlanState, botId:
   }
   if (plan.hammerDefenseCommitments) delete plan.hammerDefenseCommitments[botId];
   if (!allowed) return null;
-  const result = chooseGrifballHammerDefense({ ...input, assignment });
+  const result = chooseGrifballHammerDefense({ ...input, assignment,
+    playerStyle: resolveGrifballPlayerStyle(plan.snapshot?.tactics?.botStyles, botId) });
   if (result?.action === 'strike') (plan.hammerDefenseCommitments ??= {})[botId] = result;
   if (assignment && result) assignment.hammerDefense = result;
   return result;

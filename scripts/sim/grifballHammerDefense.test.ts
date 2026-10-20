@@ -20,10 +20,11 @@ import { createAISingleEntityUpdaterForState } from '../../src/components/grifba
 import { createTacticalTargetCallbacksForState } from '../../src/components/grifball/tacticalTargetCallbacks';
 import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
+import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from '../../src/game/grifballPlayerStyles';
 
 const dt = 1 / 60, noop = () => {};
 const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) < 1e-8, `${label}: ${a} != ${b}`);
-function fixture(enabled = true, mirror = false, main = false, tuned = false) {
+function fixture(enabled = true, mirror = false, main = false, tuned = false, style?: GrifballPlayerStyle, edge = false) {
   const id = main ? 'main_ai' : 'hammer', sign = mirror ? -1 : 1;
   const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', speedForward: 0, weaponReadyTime: 0,
     ...(tuned ? { hammerSlamWindupTime: .08, hammerSlamAttackTime: .04 } : {}) }, 'thrower');
@@ -42,6 +43,12 @@ function fixture(enabled = true, mirror = false, main = false, tuned = false) {
   target.difficulty = 'neural-net'; // Publicly visible thrower, no autonomous inputs.
   sim.combatants.push({ ...structuredClone(actor), id: 'outside', controller: 'remote', alive: false, hp: 0, pos: { x: 40, y: 35, z: 0 } });
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.hammerDefenseEnabled = enabled;
+  if (style) {
+    state.grifballTactics.defaults.hammerDefenseAgencyStrength = 1;
+    state.grifballTactics.botStyles[id] = style;
+    state.grifballTactics.botStyles.thrower = style === 'guardian' ? 'enforcer' : 'guardian';
+  }
+  if (edge) state.grifballTactics.defaults.hammerDefenseReaction = 0;
   const planner: ScriptedObjectivePlanner = { version: SCRIPTED_OBJECTIVE_PLANNER_VERSION,
     scriptedBots: { [id]: 'normal' }, plan: createGrifballTeamPlanState(), tactics: structuredClone(state.grifballTactics),
     punchControl: { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { [id]: 0 } } };
@@ -56,7 +63,7 @@ function fixture(enabled = true, mirror = false, main = false, tuned = false) {
   observe();
   setSimCarrier(thrower, false, sim.settings); setGrifballCarrierForState({ state, id: target.id, carrying: false });
   for (const ball of [sim.match.ball, state.grifball.ball]) Object.assign(ball, { state: 'thrown', holderId: null,
-    pos: { x: 8 * sign, y: 3, z: 0 }, vel: { x: -10 * sign, y: 0, z: 0 } });
+    pos: { x: (edge ? 12.05 : 8) * sign, y: 3, z: 0 }, vel: { x: -10 * sign, y: 0, z: 0 } });
   if (mirror) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
   const memory: SimCombatPriorityMemory = { aiState: 'APPROACHING', timer: 0, swayTimer: 0, coordCommitTimer: 0,
     cooldownMultiplier: 1, pendingPostEvasionCharge: false };
@@ -80,9 +87,17 @@ function liveUpdater(f: ReturnType<typeof fixture>, knobs: AIResolvedKnobs) {
   });
 }
 
+const styles = Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[];
+const cases: { enabled: boolean; mirror: boolean; main: boolean; tuned: boolean; style?: GrifballPlayerStyle; edge?: boolean }[] = [];
 for (const enabled of [false, true]) for (const mirror of [false, true]) for (const main of [false, true]) for (const tuned of [false, true])
-  test(`full live/composed pass defense and physical deflection ${enabled}/${mirror}/${main}/${tuned}`, () => {
-    const f = fixture(enabled, mirror, main, tuned), id = f.bot.id;
+  cases.push({ enabled, mirror, main, tuned });
+for (const style of styles) for (const mirror of [false, true]) {
+  cases.push({ enabled: true, mirror, main: mirror, tuned: mirror, style });
+  cases.push({ enabled: true, mirror, main: mirror, tuned: false, style, edge: true });
+}
+for (const { enabled, mirror, main, tuned, style, edge } of cases)
+  test(`full live/composed pass defense and physical deflection ${enabled}/${mirror}/${main}/${tuned}/${style ?? 'team'}/${edge ?? false}`, () => {
+    const f = fixture(enabled, mirror, main, tuned, style, edge), id = f.bot.id;
     const knobs: AIResolvedKnobs = { difficulty: 'normal', reactionLatency: .15, anticipationFactor: .5, movementComplexity: 0,
       weaponSwapIQ: 0, aiPlaystyle: 50, weaponPrioritization: 0 };
     const update = liveUpdater(f, knobs), matchContext = createAIMatchContext(); matchContext.grifballTeamPlan = f.planner.plan;
@@ -91,10 +106,13 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
       isObserverMode: true, spawnPoints: f.map.spawnPoints, navigation: {}, planner: f.planner };
     const random = seededRandom(7), initialThrowerHp = f.target.hp; let attackTick = 0, deflectionTick = 0;
     for (let tick = 1; tick <= 36; tick++) {
-      if (enabled && main && tick === 7) {
+      if (enabled && main && tick === 9) {
         // A live tuning edit does not redirect or cancel an already begun strike.
         f.state.grifballTactics.defaults.hammerDefenseEnabled = false;
         f.planner.tactics!.defaults.hammerDefenseEnabled = false;
+        for (const config of [f.state.grifballTactics, f.planner.tactics!]) {
+          config.botStyles[id] = 'balanced'; config.defaults.hammerDefenseAgencyStrength = 0;
+        }
       }
       f.weaponFrame(dt); f.respawns(dt); updateGrifballTeamPlanForState(f.state, dt, f.goal, f.map);
       withSimulationRandom(random, tick * dt, () => update(id, dt));
@@ -104,6 +122,10 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
         placeCombatantsAtGrifballSpawns: () => assert.fail('Unexpected reset'), pushStatsUpdate: noop });
       f.visuals(dt);
       stepSimulation(f.sim, {}, createSimGrifballActorStepOptions(f.sim, control));
+      const liveDefense = f.state.aiMatchContext.grifballTeamPlan.assignments.get(id)?.hammerDefense;
+      const simDefense = f.planner.plan.assignments.get(id)?.hammerDefense;
+      assert.deepEqual(liveDefense?.individuality, simDefense?.individuality, `${tick}/style diagnostics`);
+      if (style && liveDefense?.action === 'committed') assert.equal(liveDefense.individuality!.style, style, 'Committed style survives edits');
       assert.equal(f.actor.weaponState, ({ ready: 'idle', swing_up: 'windup', swing_down: 'active', recovering: 'recovering' } as Record<string, string>)[f.bot.weaponState!], `tick ${tick}/phase`);
       near(f.memory.timer ?? 0, f.bot.aiTimer ?? 0, `${tick}/AI reload`);
       for (const axis of ['x', 'y', 'z'] as const) {
@@ -120,8 +142,10 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
       assert.equal(f.actor.hp, f.bot.hp); assert.equal(f.thrower.hp, f.target.hp);
       if (attackTick && !deflectionTick) assert.ok((f.memory.timer ?? 0) > 0, 'Composed objective preserves normal reload');
     }
-    assert.equal(attackTick, enabled ? 6 : 0, 'Decision waits for the observed .08-second reaction window');
-    assert.equal(deflectionTick, enabled ? tuned ? 13 : 30 : 0, 'Actual default 17+8 or tuned 5+3 animation ticks');
+    const expectedAttack = !enabled ? 0 : edge ? ({ balanced: 2, enforcer: 1, opportunist: 3, guardian: 4 })[style!]
+      : style === 'enforcer' || style === 'guardian' ? 5 : style === 'opportunist' ? 7 : 6;
+    assert.equal(attackTick, expectedAttack, 'Observed timing and required contact cushion determine commitment');
+    assert.equal(deflectionTick, enabled ? expectedAttack + (tuned ? 7 : 24) : 0, 'Actual default 17+8 or tuned 5+3 animation ticks');
     assert.equal(f.target.hp, initialThrowerHp, 'This interception does not hit the distant thrower');
   });
 

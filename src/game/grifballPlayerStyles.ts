@@ -57,6 +57,15 @@ export const GRIFBALL_SWORD_GUARD_PREFERENCES = {
   guardian: { reaction: -.02, clearance: .25, reason: 'Respond sooner and leave more room, giving up some recovery pressure.' },
 } satisfies Record<GrifballPlayerStyle, { reaction: number; clearance: number; reason: string }>;
 
+/** Reaction offsets in seconds; margin is extra contact cushion inside the
+ * physical blast boundary. A larger cushion can forfeit a brief opportunity. */
+export const GRIFBALL_HAMMER_DEFENSE_PREFERENCES = {
+  balanced: { reaction: 0, margin: 0, reason: 'Use team pass reaction and blast contact margin.' },
+  enforcer: { reaction: -.02, margin: -.1, reason: 'Attempt earlier, tighter deflections, accepting less room for trajectory changes.' },
+  opportunist: { reaction: .02, margin: .15, reason: 'Wait for a cleaner contact window, risking a late or missed interception.' },
+  guardian: { reaction: -.02, margin: .35, reason: 'Recognize throws sooner but require more contact margin, passing up marginal attempts.' },
+} satisfies Record<GrifballPlayerStyle, { reaction: number; margin: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress
