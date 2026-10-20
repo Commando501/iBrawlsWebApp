@@ -66,6 +66,15 @@ export const GRIFBALL_HAMMER_DEFENSE_PREFERENCES = {
   guardian: { reaction: -.02, margin: .35, reason: 'Recognize throws sooner but require more contact margin, passing up marginal attempts.' },
 } satisfies Record<GrifballPlayerStyle, { reaction: number; margin: number; reason: string }>;
 
+/** Seconds added to the current receiver's handoff margin. This changes only
+ * willingness to yield; candidate travel estimates and eligibility stay physical. */
+export const GRIFBALL_PASS_RECOVERY_PREFERENCES = {
+  balanced: { advantage: 0, reason: 'Use the team recovery handoff margin.' },
+  enforcer: { advantage: .25, reason: 'Hold marginal receiving assignments longer, accepting a slower pickup.' },
+  opportunist: { advantage: -.15, reason: 'Yield to quicker pickups with a smaller advantage, accepting more handoffs.' },
+  guardian: { advantage: -.25, reason: 'Yield marginal recoveries sooner, accepting more assignment changes.' },
+} satisfies Record<GrifballPlayerStyle, { advantage: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

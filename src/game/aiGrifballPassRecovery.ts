@@ -2,6 +2,7 @@ import type { FieldPoint, GrifballTacticalSnapshot } from './aiGrifballTeamPlan'
 import type { SpaceRouters } from './aiGrifballRunner';
 import type { BallRecovery } from './aiGrifballPassing';
 import type { TeamTactics } from './grifballTacticsConfig';
+import { GRIFBALL_PASS_RECOVERY_PREFERENCES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
 export interface PassRecoveryDecision {
   action: 'retain' | 'handoff' | 'unavailable';
@@ -11,6 +12,7 @@ export interface PassRecoveryDecision {
   point: FieldPoint;
   settleIn: number;
   requiredAdvantage: number;
+  individuality?: { style: GrifballPlayerStyle; strength: number; reason: string; teamAdvantage: number };
   candidates: { id: string; arrivalETA: number; pickupETA: number; reason: string }[];
 }
 
@@ -26,6 +28,13 @@ export function chooseGrifballPassRecovery(input: {
     !['thrown', 'loose'].includes(snapshot.ballPhysics?.state ?? '') ||
     snapshot.ballPhysics?.state === 'thrown' && !recovery?.settled) return null;
   const point = recovery?.point ?? snapshot.ball, settleIn = recovery?.seconds ?? 0;
+  // The reservation owner's style controls yielding, not the thrower's or the
+  // challenger’s. A handoff therefore gives the new receiver its own next decision.
+  const strength = tuning.passRecoveryAgencyStrength ?? 0;
+  const style = resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, receiverId);
+  const preference = GRIFBALL_PASS_RECOVERY_PREFERENCES[style];
+  const requiredAdvantage = Math.max(0, Math.min(3, tuning.passRecoveryAdvantage + strength * preference.advantage));
+  const individuality = strength > 0 ? { style, strength, reason: preference.reason, teamAdvantage: tuning.passRecoveryAdvantage } : undefined;
   const candidates = snapshot.players.filter(p => p.scripted && p.team === team).map(p => {
     const route = routers.get(p.id)?.(point, true);
     const available = (p.height ?? 0) <= .01 && p.space?.phase !== 'lunging';
@@ -37,12 +46,12 @@ export function chooseGrifballPassRecovery(input: {
   }).sort((a, b) => a.pickupETA - b.pickupETA || a.id.localeCompare(b.id));
   const best = candidates.find(c => Number.isFinite(c.pickupETA));
   const intended = candidates.find(c => c.id === receiverId && Number.isFinite(c.pickupETA));
-  const retain = intended && best && intended.pickupETA <= best.pickupETA + tuning.passRecoveryAdvantage + 1e-9;
+  const retain = intended && best && intended.pickupETA <= best.pickupETA + requiredAdvantage + 1e-9;
   const selected = retain ? intended : best;
   return { action: !selected ? 'unavailable' : selected.id === receiverId ? 'retain' : 'handoff',
     reason: !selected ? 'No available scripted ground receiver; use ordinary recovery' : retain
       ? 'Keep the receiver: no teammate can collect the ball sufficiently sooner'
       : intended ? 'Hand off the pass recovery to a teammate who can collect it sooner' : 'Replace the unavailable pass receiver',
     previousReceiverId: receiverId, receiverId: selected?.id ?? null, point: { ...point }, settleIn,
-    requiredAdvantage: tuning.passRecoveryAdvantage, candidates };
+    requiredAdvantage, candidates, ...(individuality ? { individuality } : {}) };
 }

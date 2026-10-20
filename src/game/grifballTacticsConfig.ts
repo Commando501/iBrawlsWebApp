@@ -2,6 +2,7 @@ import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from './grifballPlay
 
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  passRecoveryAgencyStrength: { label: 'Pass recovery individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply the current receiver’s Grifball style to the handoff margin: Enforcers hold marginal assignments longer; Opportunists and Guardians yield sooner. Zero keeps team behavior. Requires Adaptive pass recovery, coordination, space awareness and Pass and receive decisions. Unavailable receivers still yield immediately at a tactical refresh.' },
   passRecoveryAdvantage: { label: 'Pass recovery handoff advantage', min: 0, max: 3, step: .1, value: .5, unit: 's', module: 'defense', description: 'With Adaptive pass recovery enabled, another scripted teammate must be able to collect the ball this much sooner to replace the current receiver. Accounts for routing, movement readiness and ball settling. Unavailable receivers can be replaced immediately at a tactical refresh.' },
   hammerDefenseAgencyStrength: { label: 'Hammer defense individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply each hammer defender’s Grifball style: earlier, tighter Enforcer attempts; later, cleaner Opportunist windows; and early Guardian recognition with more contact margin. Zero keeps team behavior. Requires Hammer pass defense, coordination, space awareness, coordinated defense and hammer ball deflection in match rules.' },
   hammerDefenseReaction: { label: 'Hammer pass reaction delay', min: 0, max: .3, step: .01, value: .08, unit: 's', module: 'defense', description: 'Minimum observed enemy throw age before a stationary hammer interception. Requires Hammer pass defense and hammer ball deflection in match rules.' },
@@ -85,14 +86,14 @@ export type TeamTactics = Record<TacticalNumber, number> & {
   passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 17;
+  schemaVersion: 18;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
   /** Stable roster IDs: styles follow bots when teams are mirrored. */
   botStyles: Record<string, GrifballPlayerStyle>;
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 17, defaults: {
+  return { schemaVersion: 18, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
     passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {}, botStyles: {} };
@@ -101,7 +102,7 @@ const booleanKeys = ['passRecoveryEnabled', 'hammerDefenseEnabled', 'swordGuardE
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–17, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–18, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams', 'botStyles'].includes(key))) throw new Error('Unknown configuration field.');
   const styles = value.botStyles === undefined && (value.schemaVersion as number) < 7 ? {} : value.botStyles;
   if (!object(styles) || Object.keys(styles).length > 128 || Object.entries(styles).some(([id, style]) =>
@@ -117,6 +118,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 18 ? { passRecoveryAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 17 ? { passRecoveryEnabled: false, passRecoveryAdvantage: .5 } : {}),
       ...((value.schemaVersion as number) < 16 ? { hammerDefenseAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 15 ? { hammerDefenseEnabled: false, hammerDefenseReaction: .08 } : {}),
@@ -147,7 +149,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 17, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
+  return { schemaVersion: 18, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };

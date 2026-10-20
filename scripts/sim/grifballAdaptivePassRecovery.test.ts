@@ -11,17 +11,21 @@ import { updateGrifballTeamPlanForState } from '../../src/components/grifball/gr
 import { resolvePrimaryGrifballAIObjectiveMovementForCombatant } from '../../src/components/grifball/grifballAIObjectiveMovement';
 import { setGrifballCarrierForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
+import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from '../../src/game/grifballPlayerStyles';
 
 const dt = 1 / 60;
 const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a} != ${b}`);
+for (const style of Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[])
 for (const enabled of [false, true]) for (const main of [false, true]) for (const mirror of [false, true]) for (const reverse of [false, true])
-  test(`live/sim deflected pass recovery enabled=${enabled}/main=${main}/mirror=${mirror}/reverse=${reverse}`, () => {
+  test(`live/sim deflected pass recovery style=${style}/enabled=${enabled}/main=${main}/mirror=${mirror}/reverse=${reverse}`, () => {
     const id = main ? 'main_ai' : 'carrier', sign = mirror ? -1 : 1;
     const f = createBotParityFixture(id, true, { aiDifficulty: 'normal' }, 'receiver');
     const { sim, state, bot, target } = f, [actor, receiver] = sim.combatants;
     sim.combatExecution = 'live-roster-v2'; sim.match.phase = 'playing'; state.grifball = structuredClone(sim.match);
     state.grifballTactics = defaultGrifballTactics();
-    Object.assign(state.grifballTactics.defaults, { passRecoveryEnabled: enabled, stylesEnabled: false });
+    Object.assign(state.grifballTactics.defaults, { passRecoveryEnabled: enabled, passRecoveryAgencyStrength: 1, stylesEnabled: false });
+    state.grifballTactics.teams.red = { passRecoveryAgencyStrength: .5 };
+    state.grifballTactics.botStyles = { receiver: style, [id]: style === 'enforcer' ? 'guardian' : 'enforcer' };
     actor.id = id; receiver.id = target.id;
     for (const [i, [c, live]] of ([[actor, bot], [receiver, target]] as const).entries()) {
       c.controller = live.controller = 'ai'; c.team = live.team = mirror ? 'red' : 'blue';
@@ -75,6 +79,12 @@ for (const enabled of [false, true]) for (const main of [false, true]) for (cons
         for (const axis of ['x', 'y', 'z'] as const) near(c.pos[axis], live.pos[axis], `${tick}/${c.id}/position.${axis}`);
         assert.deepEqual(planner.plan.assignments.get(c.id)?.passRecovery,
           state.aiMatchContext.grifballTeamPlan.assignments.get(c.id)?.passRecovery, `${tick}/${c.id}/recovery decision`);
+        const recovery = planner.plan.assignments.get(c.id)?.passRecovery;
+        if (recovery) {
+          assert.ok(enabled);
+          assert.equal(recovery.individuality!.style, planner.tactics!.botStyles[recovery.previousReceiverId]);
+          assert.equal(recovery.individuality!.strength, mirror ? .5 : 1);
+        }
       }
       if (events.scriptedPass?.kind === 'release') { assert.equal(releaseTick, 0); releaseTick = tick; }
       if (planner.plan.passFlight?.receiverId === id) handoff = true;
