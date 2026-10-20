@@ -3,11 +3,22 @@ import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter, type SpaceRoute } from './grifballSpaceGeometry';
 import { pointAlongRunnerRoute, type SpaceRouters } from './aiGrifballRunner';
+import { grifballDefenseStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
+
+export interface DefensePressureCandidate {
+  botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
+  recoveryOpening: boolean; eligible: boolean; reason: string;
+}
 
 export interface DefenseOrder {
   mode: 'intercept' | 'contain' | 'mark' | 'last-defender' | 'recover';
   targetId: string | null; intercept: FieldPoint; arrivalETA: number; carrierETA: number;
   advantage: number; reinforcementIn: number; emergency: boolean; transitioning: boolean;
+  individuality?: {
+    style: GrifballPlayerStyle; strength: number; reason: string;
+    pressureCandidates?: DefensePressureCandidate[];
+    marking?: { baseCost: number; bonus: number; recoveryOpening: boolean };
+  };
 }
 export interface DefenseCarrierMotion {
   carrierId: string; team: string; anchor: FieldPoint; stationarySeconds: number;
@@ -45,6 +56,8 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const emergency = !!carrier && distance(carrier.pos, goal) <= tuning.defenseEmergencyDistance;
   const contain = !emergency && (advantage < 0 || transition > 0 || tuning.defensePressure < 0.4 ||
     (reinforcementIn <= tuning.defenseRespawnWait && advantage <= 0));
+  const strength = tuning.enabled && tuning.spaceEnabled && tuning.defenseEnabled ? tuning.defenseAgencyStrength : 0;
+  const styleOf = (id: string) => resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, id);
   let projected = { ...anchor };
   let carrierRoute: SpaceRoute | undefined, carrierTravel = 0;
   const expiredMotion = !!carrier && carrierStationarySeconds >= tuning.defenseLookahead;
@@ -64,6 +77,12 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   }
   const routeLength = (id: string, point: FieldPoint) => {
     const route = routers.get(id)!(point, true); return route.status === 'blocked' ? Infinity : route.length;
+  };
+  const recoveryOpening = (id: string, target: GrifballTacticalPlayer, notBefore: number) => {
+    const self = players.find(p => p.id === id)!;
+    return !!target.space?.phase.includes('recover') &&
+      isSpaceSegmentOpen(snapshot.geometry!, self.pos, target.pos) &&
+      Math.max(notBefore, estimateSpaceAttackTime(self, target.pos, routeLength(id, target.pos))) + .1 < target.space.attackIn;
   };
   const pressureMargin = tuning.defenseContainMargin * (1.5 - tuning.defensePressure * 0.5);
   const enemyReach = Math.max(0, ...enemies.filter(p => distance(p.pos, anchor) < 12).map(p => Math.max(p.space?.reach ?? 3, p.space?.lungeReach ?? 0)));
@@ -148,6 +167,13 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     a.defense = { mode, targetId: target?.id ?? null, intercept: { ...point },
       arrivalETA: estimateSpaceAttackTime(self, point, routeLength(self.id, point)), carrierETA,
       advantage, reinforcementIn, emergency, transitioning: transition > 0 };
+    if (strength > 0 && carrier) a.defense.individuality = {
+      style: styleOf(a.botId), strength,
+      reason: emergency ? 'Goal emergency overrides player preferences.'
+        : contain ? 'Team containment overrides player preferences.'
+        : mode === 'last-defender' ? 'Reserved goal-side coverage overrides player preferences.'
+        : 'Keep team coverage when no similarly useful individual job is available.',
+    };
     a.reason = `${mode}: ${emergency ? 'contest the scoring threat' : transition > 0 ? 'recover shape after possession loss' : contain ? 'hold the goal side until pressure is safe' : expiredMotion ? 'pressure the stationary carrier and protect the goal' : 'cut the carrier route and protect the goal'}`;
   };
   let safetyDestination = emergency ? anchor : safetyPoint;
@@ -200,6 +226,33 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
       routeLength(a.botId, interception(a).point) - routeLength(b.botId, interception(b).point) : 0) ||
       routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId);
   });
+  let pressureCandidates: DefensePressureCandidate[] | undefined;
+  if (strength > 0 && !contain && !emergency && !carrierSafety) {
+    const first = interception(rest[0]);
+    const scoringDeadline = routeLength(carrier.id, goal) / Math.max(.1, carrier.space?.speed ?? 5.8);
+    pressureCandidates = rest.map(a => {
+      const cut = interception(a), style = styleOf(a.botId);
+      // An opening must survive until both the defender and carrier reach the cut.
+      const opening = recoveryOpening(a.botId, carrier, Math.max(cut.time, cut.arrival));
+      // Compare only defenders who can make the SAME earliest cut. A preference
+      // cannot exchange the only viable interceptor for a later or blocked one.
+      const eligible = first.reachable && cut.reachable && cut.time === first.time &&
+        cut.arrival <= first.arrival + .25 && cut.arrival <= scoringDeadline;
+      return { botId: a.botId, style, arrival: cut.arrival, recoveryOpening: opening,
+        bonus: eligible ? grifballDefenseStyleBonus(style, strength, 'pressure', opening) : 0, eligible,
+        reason: !cut.reachable ? 'Cannot reach a timely cut.'
+          : cut.time !== first.time ? 'Would miss the earliest cut.'
+          : cut.arrival > scoringDeadline ? 'Would miss the scoring deadline.'
+          : !eligible ? 'Arrival is more than 0.25 s behind the first defender.'
+          : 'Can contest the earliest cut within the readiness margin.' };
+    });
+    const preferred = pressureCandidates.filter(c => c.eligible)
+      .sort((a, b) => (a.arrival - a.bonus) - (b.arrival - b.bonus))[0];
+    if (preferred) {
+      const index = rest.findIndex(a => a.botId === preferred.botId);
+      rest.unshift(...rest.splice(index, 1));
+    }
+  }
   if (emergency) {
     const arrival = (a: GrifballAssignment) => estimateSpaceAttackTime(
       players.find(p => p.id === a.botId)!, anchor, routeLength(a.botId, anchor));
@@ -217,6 +270,12 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const containment = toward(projected, goal, containmentDepth);
     assign(primary, contain ? 'contain' : 'intercept', emergency ? anchor : contain ? containment : intercept.point, carrier, intercept.time);
     primary.role = 'chaser';
+    if (primary.defense!.individuality && pressureCandidates) {
+      primary.defense!.individuality.pressureCandidates = pressureCandidates;
+      primary.defense!.individuality.reason = pressureCandidates.some(c => c.eligible && c.bonus !== 0)
+        ? 'Player preference ranks timely defenders at the same earliest cut; goal coverage stays reserved.'
+        : 'Team interception timing remains decisive; no eligible style advantage.';
+    }
   }
   const marks = enemies.filter(p => p !== carrier).sort((a, b) => distance(a.pos, goal) - distance(b.pos, goal) || a.id.localeCompare(b.id));
   const available = new Set(rest);
@@ -229,12 +288,25 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     // that can make flank defenders cross through the carrier's lane.
     const choices = [...available].map(a => {
       const old = previous.get(a.botId)?.defense;
-      return { assignment: a, cost: routeLength(a.botId, point) -
-        (old?.mode === 'mark' && old.targetId === target.id ? tuning.reassignmentAdvantage : 0) };
+      const coverageDistance = routeLength(a.botId, point);
+      const baseCost = coverageDistance -
+        (old?.mode === 'mark' && old.targetId === target.id ? tuning.reassignmentAdvantage : 0);
+      const self = players.find(p => p.id === a.botId)!;
+      const coverageETA = Math.max(self.space?.mobileIn ?? Infinity,
+        coverageDistance / Math.max(.1, self.space?.speed ?? 0)) + (self.space?.attackIn ?? Infinity);
+      const opening = strength > 0 && !contain && !emergency && recoveryOpening(a.botId, target, coverageETA);
+      const bonus = !contain && !emergency ? grifballDefenseStyleBonus(styleOf(a.botId), strength, 'mark', opening) : 0;
+      return { assignment: a, baseCost, bonus, recoveryOpening: opening, cost: baseCost - bonus };
     }).filter(c => Number.isFinite(c.cost))
       .sort((a, b) => a.cost - b.cost || a.assignment.botId.localeCompare(b.assignment.botId));
-    const marker = choices[0]?.assignment;
-    if (marker) { assign(marker, 'mark', point, target); available.delete(marker); }
+    const choice = choices[0], marker = choice?.assignment;
+    if (marker) {
+      assign(marker, 'mark', point, target); available.delete(marker);
+      if (marker.defense!.individuality && !contain && !emergency) {
+        marker.defense!.individuality.marking = { baseCost: choice.baseCost, bonus: choice.bonus, recoveryOpening: choice.recoveryOpening };
+        marker.defense!.individuality.reason = 'Pair reachable escort marks by coverage distance and player preference, retaining useful existing marks.';
+      }
+    }
   }
   [...available].forEach((a, i) => {
     const d = Math.max(0.001, distance(anchor, goal)), side = (i % 2 ? -1 : 1) * tuning.lateralSpacing;

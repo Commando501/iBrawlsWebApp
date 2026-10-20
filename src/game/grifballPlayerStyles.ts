@@ -25,6 +25,22 @@ export const GRIFBALL_RUNNER_PREFERENCES = {
   guardian: 'Favor lower exposure and a useful coverage rendezvous.',
 } satisfies Record<GrifballPlayerStyle, string>;
 
+export const GRIFBALL_DEFENSE_PREFERENCES = {
+  balanced: 'Use team interception timing and coverage distance.',
+  enforcer: 'Step up for carrier pressure when another defender can cover the goal.',
+  opportunist: 'Favor pressure and marks with a visible, reachable recovery window.',
+  guardian: 'Favor nearby escort marking while a teammate contests the carrier.',
+} satisfies Record<GrifballPlayerStyle, string>;
+
+/** Preferences only rank viable jobs; they never extend an interception deadline. */
+export function grifballDefenseStyleBonus(style: GrifballPlayerStyle, strength: number,
+  job: 'pressure' | 'mark', recoveryOpening: boolean): number {
+  const bonus = job === 'pressure'
+    ? style === 'enforcer' ? .2 : style === 'opportunist' && recoveryOpening ? .25 : style === 'guardian' ? -.1 : 0
+    : style === 'guardian' ? 2 : style === 'opportunist' && recoveryOpening ? 1.5 : 0;
+  return strength * bonus;
+}
+
 /** At most three score points of preference; route eligibility remains authoritative. */
 export function grifballRunnerStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { action: string; progress: number; risk: number; recoveryOpening: number }): number {
