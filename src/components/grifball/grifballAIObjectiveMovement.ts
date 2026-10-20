@@ -11,6 +11,7 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { observeLiveRunnerSwordThreat } from './runnerClashObservation';
 import { getModelTargetRadiusBonus } from './modelHitbox';
 import type { RunnerSwordThreat } from '../../game/aiGrifballRunnerClash';
+import { resolveGrifballPlayerStyle } from '../../game/grifballPlayerStyles';
 
 export interface GrifballAIObjectiveFrame {
   pos: THREE.Vector3;
@@ -129,7 +130,8 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     const decision = resolveGrifballCarrierDecision({ assignment, pos: frame.pos,
       players: state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [], threats, avoidanceEnemies: enemiesList,
       goal: getEnemyGoalPos(self.team), weaponState: frame.weaponState, canStartWeaponAction, settings: state.settings, dt,
-      clashThreats, runnerRadiusBonus: getModelTargetRadiusBonus(self.modelType), runnerBodyHeight: self.isCrouching ? .52 : .825 });
+      clashThreats, runnerRadiusBonus: getModelTargetRadiusBonus(self.modelType), runnerBodyHeight: self.isCrouching ? .52 : .825,
+      playerStyle: resolveGrifballPlayerStyle(state.aiMatchContext.grifballTeamPlan.snapshot?.tactics?.botStyles, botId) });
     if (!decision) return false;
     if (assignment) {
       if (decision.clash) assignment.runnerClash = decision.clash; else delete assignment.runnerClash;

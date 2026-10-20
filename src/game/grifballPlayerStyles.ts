@@ -39,6 +39,15 @@ export const GRIFBALL_PASS_PREFERENCES = {
   guardian: 'Favor larger pickup and attack margins for the receiver.',
 } satisfies Record<GrifballPlayerStyle, string>;
 
+/** Small execution preferences in seconds, independent of combat difficulty.
+ * Earlier commitment can be wasted; later commitment leaves less timing margin. */
+export const GRIFBALL_CLASH_PREFERENCES = {
+  balanced: { reaction: 0, window: 0, reason: 'Use team counter timing.' },
+  enforcer: { reaction: 0, window: .03, reason: 'Commit earlier once the sword attack is recognized.' },
+  opportunist: { reaction: 0, window: -.03, reason: 'Hold the punch for closer sword contact, accepting a smaller timing margin.' },
+  guardian: { reaction: -.02, window: 0, reason: 'Recognize a visible sword attack sooner while retaining the team counter window.' },
+} satisfies Record<GrifballPlayerStyle, { reaction: number; window: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

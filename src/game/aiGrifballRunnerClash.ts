@@ -3,6 +3,7 @@ import type { FieldPoint } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
 import { resolvePunchLungeDistance, GRIFBALL_PUNCH_RADIUS } from './runnerBallSettings';
+import { GRIFBALL_CLASH_PREFERENCES, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
 /** Fresh, public animation observations. Hosts normalize elapsed/remaining clocks. */
 export interface RunnerSwordThreat {
@@ -25,6 +26,8 @@ export interface RunnerClashDecision {
   reaction: number;
   window: number;
   heading?: FieldPoint;
+  individuality?: { style: GrifballPlayerStyle; strength: number; reason: string;
+    teamReaction: number; teamWindow: number; preferredWindow: number };
 }
 
 /** Timing selects an ordinary punch; the combat owners still decide contact,
@@ -33,11 +36,17 @@ export function chooseRunnerPunchClash(input: {
   pos: FieldPoint & { y: number }; threats: readonly RunnerSwordThreat[];
   geometry: GrifballSpaceGeometry; tuning: TeamTactics; settings: UniversalSettings;
   canPunch: boolean; finishIn?: number; runnerRadiusBonus?: number; runnerBodyHeight?: number; dt: number;
+  playerStyle?: GrifballPlayerStyle;
 }): RunnerClashDecision {
   const { pos, threats, geometry, tuning, settings } = input;
   const active = (settings.hammerMeleeSpeed ?? .24) + Math.max(.03, (settings.hammerMeleeSpeed ?? .24) * .5);
-  const window = Math.max(0, Math.min(tuning.runnerClashLead, active - Math.max(1 / 60, input.dt)));
-  const base = { reaction: tuning.runnerClashReaction, window };
+  const strength = tuning.runnerClashAgencyStrength ?? 0, style = input.playerStyle ?? 'balanced';
+  const preference = GRIFBALL_CLASH_PREFERENCES[style];
+  const reaction = strength > 0 ? Math.max(0, Math.min(.3, tuning.runnerClashReaction + preference.reaction * strength)) : tuning.runnerClashReaction;
+  const preferredWindow = strength > 0 ? Math.max(.02, Math.min(.3, tuning.runnerClashLead + preference.window * strength)) : tuning.runnerClashLead;
+  const window = Math.max(0, Math.min(preferredWindow, active - Math.max(1 / 60, input.dt)));
+  const base = { reaction, window, ...(strength > 0 ? { individuality: { style, strength, reason: preference.reason,
+    teamReaction: tuning.runnerClashReaction, teamWindow: tuning.runnerClashLead, preferredWindow } } : {}) };
   const candidates: { threat: RunnerSwordThreat; impactIn: number; heading: FieldPoint }[] = [];
   for (const threat of threats) {
     if ((threat.invulnerabilityTimer ?? 0) > 0 ||

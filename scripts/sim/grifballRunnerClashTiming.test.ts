@@ -13,11 +13,14 @@ import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { idleAction } from '../../src/sim/actions';
 import { getYawForHeading } from '../../src/game/yaw';
 import type { PassCandidate } from '../../src/game/aiGrifballPassing';
+import type { GrifballPlayerStyle } from '../../src/game/grifballPlayerStyles';
+import { createSimGrifballTacticalSnapshot } from '../../src/sim/grifballTacticalAdapter';
 
 const dt = 1 / 60;
 /** Authored stationary coverage job and incoming slash; counter timing is decided
  * each frame by the production carrier owners, then real weapon owners resolve it. */
-function fixture(enabled: boolean, mirror: boolean, reverse: boolean, reaction = .06, slash = .4) {
+function fixture(enabled: boolean, mirror: boolean, reverse: boolean, reaction = .06, slash = .4,
+  style: GrifballPlayerStyle = 'balanced', strength = 0) {
   const f = createBotParityFixture('sword', true, { swordSlashSpeed: slash, grifballRunnerHealth: 7,
     grifballRunnerHealRate: 0, enableSwordTrade: false, enableHammerSwordTrade: false }, 'runner');
   const { sim, state, bot, target } = f, [enemy, runner] = sim.combatants;
@@ -37,7 +40,8 @@ function fixture(enabled: boolean, mirror: boolean, reverse: boolean, reaction =
   sim.match.ball.holderId = state.grifball.ball.holderId = 'runner';
   setSimCarrier(runner, true, sim.settings); setGrifballCarrierForState({ state, id: 'runner', carrying: true });
   const config = defaultGrifballTactics();
-  Object.assign(config.defaults, { runnerClashEnabled: enabled, runnerClashReaction: reaction });
+  Object.assign(config.defaults, { runnerClashEnabled: enabled, runnerClashReaction: reaction, runnerClashAgencyStrength: strength });
+  config.botStyles.runner = style;
   state.grifballTactics = config;
   const assignment: GrifballAssignment = { botId: 'runner', team: runner.team, role: 'runner', slot: 0,
     carrierId: 'runner', destination: { x: 0, z: 0 }, anchor: { x: 0, z: 0 }, reason: 'Authored coverage pause',
@@ -45,15 +49,16 @@ function fixture(enabled: boolean, mirror: boolean, reverse: boolean, reaction =
     runner: { selected: { action: 'wait' } } as GrifballAssignment['runner'] };
   const plan = createGrifballTeamPlanState(); plan.assignments.set('runner', structuredClone(assignment));
   state.aiMatchContext.grifballTeamPlan.assignments.set('runner', structuredClone(assignment));
+  plan.snapshot = createSimGrifballTacticalSnapshot(sim, { scriptedBots: { runner: 'normal' }, tactics: config });
+  state.aiMatchContext.grifballTeamPlan.snapshot = structuredClone(plan.snapshot);
   if (reverse) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
   f.attack();
   stepCombatantWeapons(sim, enemy, { ...idleAction(), attackPrimary: true }, sim.settings, 0, []);
   return { ...f, enemy, runner, plan };
 }
 
-for (const enabled of [false, true]) for (const mirror of [false, true]) for (const reverse of [false, true])
-  test(`ordinary punch wins the slash through both owners enabled=${enabled}/mirror=${mirror}/reverse=${reverse}`, () => {
-    const f = fixture(enabled, mirror, reverse), { sim, state, bot, target, runner, enemy, plan } = f;
+function runEncounter(f: ReturnType<typeof fixture>) {
+    const { sim, state, bot, target, runner, enemy, plan } = f;
     let livePunchTick = 0, simPunchTick = 0;
     for (let tick = 1; tick <= 25; tick++) {
       const frame = { pos: target.pos, vel: target.vel, yaw: target.yaw, aiState: target.aiState, timer: target.aiTimer ?? 0,
@@ -81,13 +86,39 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
       assert.equal(enemy.hp, bot.hp, `tick ${tick}: attacker HP`);
     }
     assert.equal(livePunchTick, simPunchTick);
+    return { punchTick: livePunchTick, runnerHP: target.hp, swordHP: bot.hp };
+}
+
+for (const enabled of [false, true]) for (const mirror of [false, true]) for (const reverse of [false, true])
+  test(`slash outcome agrees through both owners enabled=${enabled}/mirror=${mirror}/reverse=${reverse}`, () => {
+    const result = runEncounter(fixture(enabled, mirror, reverse));
     if (enabled) {
-      assert.ok(livePunchTick >= 8 && livePunchTick <= 10, `counter tick ${livePunchTick}`);
-      assert.equal(target.hp, 7); assert.equal(bot.hp, 1, 'counter deals normal one-point damage');
+      assert.ok(result.punchTick >= 8 && result.punchTick <= 10, `counter tick ${result.punchTick}`);
+      assert.equal(result.runnerHP, 7); assert.equal(result.swordHP, 1, 'counter deals normal one-point damage');
     } else {
-      assert.equal(livePunchTick, 0); assert.equal(target.hp, 0, 'proximity-only runner loses to the slash at 2.5m');
+      assert.equal(result.punchTick, 0); assert.equal(result.runnerHP, 0, 'proximity-only runner loses to the slash at 2.5m');
     }
   });
+
+for (const mirror of [false, true]) for (const reverse of [false, true])
+  test(`individual counters produce distinct real timing in both hosts mirror=${mirror}/reverse=${reverse}`, () => {
+    const long = {} as Record<GrifballPlayerStyle, number>, short = {} as Record<GrifballPlayerStyle, number>;
+    for (const style of ['balanced', 'enforcer', 'opportunist', 'guardian'] as const) {
+      for (const [slash, results] of [[.4, long], [.22, short]] as const) {
+        const result = runEncounter(fixture(true, mirror, reverse, .06, slash, style, 1));
+        results[style] = result.punchTick;
+        assert.ok(result.punchTick > 0); assert.equal(result.runnerHP, 7); assert.equal(result.swordHP, 1);
+      }
+    }
+    assert.ok(long.enforcer < long.balanced); assert.ok(long.opportunist > long.balanced);
+    assert.ok(short.guardian < short.balanced);
+  });
+
+test('zero individuality repeats the same physical encounter across styles', () => {
+  const baseline = runEncounter(fixture(true, false, false));
+  for (const style of ['enforcer', 'opportunist', 'guardian'] as const)
+    assert.deepEqual(runEncounter(fixture(true, false, false, .06, .4, style, 0)), baseline);
+});
 
 function decideLive(f: ReturnType<typeof fixture>, ready = true) {
   const { state, target, bot } = f;

@@ -5,6 +5,7 @@ import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { resolveDirectionalSpeedMultiplier } from './runnerBallSettings';
 import type { UniversalSettings } from '../types';
 import { chooseRunnerPunchClash, type RunnerSwordThreat, type RunnerClashDecision } from './aiGrifballRunnerClash';
+import type { GrifballPlayerStyle } from './grifballPlayerStyles';
 
 export interface GrifballGroundMovement {
   velocity: FieldPoint;
@@ -66,13 +67,14 @@ export interface GrifballCarrierDecision extends GrifballGroundMovement {
 /** Decide carrier intent from public observations. Punch/pass commitment and all
  * state integration remain owned by the host. Threat order breaks equal ranges. */
 export function resolveGrifballCarrierDecision({ assignment, pos, players, threats, avoidanceEnemies, goal,
-  weaponState, canStartWeaponAction, settings, dt, clashThreats, runnerRadiusBonus, runnerBodyHeight }: {
+  weaponState, canStartWeaponAction, settings, dt, clashThreats, runnerRadiusBonus, runnerBodyHeight, playerStyle }: {
   assignment: GrifballAssignment | undefined; pos: FieldPoint & { y: number };
   players: GrifballTacticalPlayer[];
   threats: { id?: string; pos: FieldPoint & { y: number }; invulnerabilityTimer?: number }[];
   avoidanceEnemies: FieldPoint[]; goal: FieldPoint | null; weaponState: string;
   canStartWeaponAction: boolean; settings: UniversalSettings; dt: number;
   clashThreats?: readonly RunnerSwordThreat[]; runnerRadiusBonus?: number; runnerBodyHeight?: number;
+  playerStyle?: GrifballPlayerStyle;
 }): GrifballCarrierDecision | null {
   const { geometry, space } = assignment ?? {};
   const waypoint = geometry && space ? getGrifballSpaceWaypoint(geometry, pos, space) : null;
@@ -95,7 +97,7 @@ export function resolveGrifballCarrierDecision({ assignment, pos, players, threa
     routeDistance / speed < (settings.hammerMeleeSpeed ?? .24);
   const tuning = assignment?.tuning;
   if (geometry && clashThreats && tuning?.enabled && tuning.spaceEnabled && tuning.runnerEnabled && tuning.runnerClashEnabled) {
-    clash = chooseRunnerPunchClash({ pos, threats: clashThreats, geometry, tuning, settings, dt, runnerRadiusBonus, runnerBodyHeight,
+    clash = chooseRunnerPunchClash({ pos, threats: clashThreats, geometry, tuning, settings, dt, runnerRadiusBonus, runnerBodyHeight, playerStyle,
       canPunch: canStartWeaponAction && weaponState === 'ready',
       finishIn: finishBeforePunch ? routeDistance / speed : undefined });
     if (clash.action === 'punch') return stopped('punch', clash.heading);

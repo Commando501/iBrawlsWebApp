@@ -6,6 +6,7 @@ import { createSimGrifballTacticalSnapshot, observeSimGrifballSpace } from './gr
 import { combatExecutionForActor } from './simState';
 import { getModelTargetRadiusBonus } from '../components/grifball/modelHitbox';
 import type { RunnerSwordThreat } from '../game/aiGrifballRunnerClash';
+import { resolveGrifballPlayerStyle } from '../game/grifballPlayerStyles';
 import { getYawForHeading } from '../game/yaw';
 import type { SimState } from './simState';
 import { idleAction } from './actions';
@@ -37,7 +38,8 @@ export function resolveSimGrifballCarrierInput(state: SimState, plan: GrifballTe
     goal: state.goalPlates.find(p => p.team !== actor.team)?.position ?? null,
     weaponState: actor.weaponState === 'idle' ? 'ready' : actor.weaponState === 'windup' ? 'swing_up' : actor.weaponState === 'active' ? 'swing_down' : 'recovering',
     canStartWeaponAction, settings: state.settings, dt, clashThreats, runnerRadiusBonus: getModelTargetRadiusBonus(actor.modelType),
-    runnerBodyHeight: actor.isCrouching ? .52 : .825 });
+    runnerBodyHeight: actor.isCrouching ? .52 : .825,
+    playerStyle: resolveGrifballPlayerStyle(plan.snapshot?.tactics?.botStyles, botId) });
   if (!decision) return null;
   if (execution.punch && assignment) {
     if (decision.clash) assignment.runnerClash = decision.clash; else delete assignment.runnerClash;
