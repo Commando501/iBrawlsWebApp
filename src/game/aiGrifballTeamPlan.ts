@@ -8,6 +8,7 @@ import { TACTICS_FIELDS, type TacticalNumber, defaultGrifballTactics, resolveTea
 import type { TeamId } from './teamScoring';
 import { createGrifballSpaceEvaluator, estimateSpaceAttackTime, type GrifballSpaceDecision, type SpaceObservation } from './aiGrifballSpace';
 import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
+import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './aiGrifballAgency';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -59,6 +60,7 @@ export interface GrifballAssignment {
   escort?: EscortOrder;
   space?: GrifballSpaceDecision;
   geometry?: GrifballSpaceGeometry;
+  agency?: SupportAgencyDecision;
 }
 export interface GrifballTeamPlanState {
   assignments: Map<string, GrifballAssignment>;
@@ -328,6 +330,8 @@ export function updateGrifballTeamPlan(
         receiver.reason = `Receive from ${holder.id} after the ball settles`;
       }
     }
+    if (friendly && state.tankingMemory[team] && routers)
+      applyGrifballSupportInitiative(snapshot, teamAssignments, tuning, state.tankingMemory[team], routers, previous);
     if (tuning.spaceEnabled && evaluateSpace) for (const assignment of teamAssignments) {
       assignment.geometry = snapshot.geometry;
       evaluateSpace(assignment, players.find(p => p.id === assignment.botId)!, previous.get(assignment.botId), !!assignment.escort || !!assignment.tanking || !!assignment.defense || !!assignment.receive);

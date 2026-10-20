@@ -48,7 +48,7 @@ export function createGrifballTacticalSnapshot(input: TacticalFrameInput): Versi
       pickupRadius: settings.grifballPickupRadius ?? 1.6,
       bounds: { arenaRadius: map?.arenaRadius ?? arenaRadius, mapShape: map?.mapShape,
         arenaHalfExtents: map?.arenaHalfExtents ? { ...map.arenaHalfExtents } : undefined, arenaCeiling: map?.arenaCeiling } },
-    tactics: { ...tactics, defaults: { ...tactics.defaults }, teams: Object.fromEntries(Object.entries(tactics.teams).map(([team, tuning]) => [team, { ...tuning }])) },
+    tactics: { ...tactics, defaults: { ...tactics.defaults }, teams: Object.fromEntries(Object.entries(tactics.teams).map(([team, tuning]) => [team, { ...tuning }])), botStyles: { ...tactics.botStyles } },
     geometry: buildGrifballSpaceGeometry(map, arenaRadius), spacing: settings.grifballEscortSpacing ?? 4,
   };
 }

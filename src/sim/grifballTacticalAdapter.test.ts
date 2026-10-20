@@ -11,6 +11,21 @@ import { createGrifballTeamPlanState, updateGrifballTeamPlan } from '../game/aiG
 import { defaultGrifballTactics } from '../game/grifballTacticsConfig';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 
+test('individual Grifball styles are copied equally by live and simulation observations', () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  const tactics = defaultGrifballTactics(); tactics.defaults.agencyStrength = .8;
+  for (const id of Object.keys(scriptedBots)) tactics.botStyles[id] = 'enforcer';
+  live.grifballTactics = tactics;
+  const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics });
+  const b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+  assert.deepEqual(a, b);
+  const first = createGrifballTeamPlanState(), second = createGrifballTeamPlanState();
+  updateGrifballTeamPlan(first, a, .2); updateGrifballTeamPlan(second, b, .2);
+  assert.deepEqual(first.assignments, second.assignments);
+  const id = Object.keys(scriptedBots)[0]; tactics.botStyles[id] = 'guardian';
+  assert.equal(a.tactics!.botStyles[id], 'enforcer'); assert.equal(b.tactics!.botStyles[id], 'enforcer');
+});
+
 for (const execution of ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'] as const) {
   for (const yaw of [0, Math.PI / 2, Math.PI, -.73]) test(`${execution}: tactical heading matches actual world aim ${yaw}`, () => {
     const { sim, live, scriptedBots, goals } = fixture();

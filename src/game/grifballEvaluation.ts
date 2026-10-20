@@ -57,6 +57,7 @@ export function createEvaluationJobs(request: EvaluationRequest): EvaluationJob[
     for (const mirrored of request.mirrored ? [false, true] : [false]) for (const variant of ['baseline', 'candidate'] as const) {
       const focalTeam = mirrored ? 'red' : 'blue';
       const config = defaultGrifballTactics();
+      config.botStyles = { ...configs[variant].botStyles };
       const rival = { ...config.defaults, adaptationEnabled: false };
       if (opponent === 'patient') Object.assign(rival, { styleAggression: 0.2, stylePatience: 0.8, styleWidth: 0.7, styleRunnerRisk: 0.25 });
       if (opponent === 'aggressive') Object.assign(rival, { styleAggression: 0.85, stylePatience: 0.2, styleWidth: 0.35, styleRunnerRisk: 0.75 });

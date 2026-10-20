@@ -4,6 +4,8 @@ import type { RunnerPlan, SpaceRouters } from './aiGrifballRunner';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance, isSpaceSegmentOpen } from './grifballSpaceGeometry';
+import { grifballPlayerStyleBonus, resolveGrifballPlayerStyle } from './grifballPlayerStyles';
+import { supportInitiativeStillUseful } from './aiGrifballAgency';
 
 export type TankingMode = 'engage' | 'punish' | 'cover' | 'delay' | 'release';
 export interface EngagementScore {
@@ -82,8 +84,10 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
         ? Math.min(fieldDistance(a.destination, enemy.pos), fieldDistance(anchor, enemy.pos))
         : fieldDistance(a.destination, enemy.pos);
       const coverageLost = Math.min(2, coverageDistance / Math.max(1, tuning.coverageBoundary)) + (a.role === 'safety' ? 0.5 : 0);
-      const score = !Number.isFinite(attackETA) || purpose <= 0 || obsolete || attackETA > tuning.threatHorizon + 1 ? -Infinity
+      let score = !Number.isFinite(attackETA) || purpose <= 0 || obsolete || attackETA > tuning.threatHorizon + 1 ? -Infinity
         : purpose + trade * tuning.tankTradeWeight - coverageLost * tuning.tankCoverageWeight - attackETA * 0.25;
+      if (friendly && tuning.agencyStrength > 0 && Number.isFinite(score))
+        score += grifballPlayerStyleBonus(resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, bot.id), tuning.agencyStrength, { protection, opening, trade, coverageLost });
       return { targetId: enemy.id, score, protection, opening, delay, trade, coverageLost, attackETA, opponentETA, purpose };
     }).sort((a, b) => b.score - a.score || a.targetId.localeCompare(b.targetId)));
   }
@@ -183,7 +187,8 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
   }
   for (const a of support) {
     const old = previous.get(a.botId)?.tanking, order = a.tanking!;
-    if (old?.attack && !order.attack && order.mode === 'cover') {
+    if (old?.attack && !order.attack && order.mode === 'cover' &&
+      !(friendly && tuning.agencyStrength > 0 && previous.get(a.botId)?.agency?.choice === 'initiative')) {
       memory.releaseRemaining[a.botId] = tuning.tankReleaseSeconds;
       order.mode = 'release'; order.reason = 'Release the duel and restore coverage';
     } else if (order.mode === 'cover' && memory.releaseRemaining[a.botId]) {
@@ -205,7 +210,7 @@ export function selectTankingThreat(assignment: GrifballAssignment, self: FieldP
   const attacker = players.find(p => p.id === assignment.botId);
   const punishOpen = target && attacker && recovering(target) && (target.space?.attackIn ?? 0) >
     estimateSpaceAttackTime({ ...attacker, pos: self }, target.pos, fieldDistance(self, target.pos)) + 0.1;
-  if (order.attack && target && (order.mode !== 'punish' || punishOpen) &&
+  if (order.attack && target && (assignment.agency?.choice !== 'initiative' || supportInitiativeStillUseful(assignment, self, players)) && (order.mode !== 'punish' || punishOpen) &&
     fieldDistance(self, target.pos) <= (assignment.tuning?.engagementDistance ?? 6) &&
     fieldDistance(self, assignment.destination) <= (assignment.tuning?.coverageBoundary ?? 9)) return target.id;
   return players.filter(p => visible(p) && (fieldDistance(self, p.pos) <= 2.5 ||
