@@ -75,6 +75,15 @@ export const GRIFBALL_PASS_RECOVERY_PREFERENCES = {
   guardian: { advantage: -.25, reason: 'Yield marginal recoveries sooner, accepting more assignment changes.' },
 } satisfies Record<GrifballPlayerStyle, { advantage: number; reason: string }>;
 
+/** Metres relative to the team's lateral landing-cover slot. Preferences only
+ * apply when the proposed ground position preserves timing and separation. */
+export const GRIFBALL_PASS_SUPPORT_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team landing-cover position.' },
+  enforcer: { depth: -1, width: 0, reason: 'Cover closer to the receiver, giving up some goal-side depth.' },
+  opportunist: { depth: 0, width: 1.5, reason: 'Cover a wider outlet, accepting a longer return to the receiver.' },
+  guardian: { depth: 1.5, width: 0, reason: 'Hold deeper recovery cover, giving up some forward support.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

@@ -12,19 +12,22 @@ import { resolvePrimaryGrifballAIObjectiveMovementForCombatant } from '../../src
 import { setGrifballCarrierForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
 import { createOfflineBotCombatant } from '../../src/game/roster';
+import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from '../../src/game/grifballPlayerStyles';
 
 const dt = 1 / 60;
 const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a} != ${b}`);
+for (const style of Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[])
 for (const redirect of [false, true])
 for (const enabled of [false, true]) for (const main of [false, true]) for (const mirror of [false, true]) for (const reverse of [false, true])
-  test(`live/sim pass landing support redirect=${redirect}/enabled=${enabled}/main=${main}/mirror=${mirror}/reverse=${reverse}`, () => {
+  test(`live/sim pass landing support style=${style}/redirect=${redirect}/enabled=${enabled}/main=${main}/mirror=${mirror}/reverse=${reverse}`, () => {
     const id = main ? 'main_ai' : 'carrier', sign = mirror ? -1 : 1;
     const f = createBotParityFixture(id, true, { aiDifficulty: 'normal' }, 'receiver');
     const { sim, state, bot, target } = f, [actor, receiver] = sim.combatants;
     sim.combatExecution = 'live-roster-v2'; sim.match.phase = 'playing'; state.grifball = structuredClone(sim.match);
     state.grifballTactics = defaultGrifballTactics();
-    Object.assign(state.grifballTactics.defaults, { passSupportEnabled: enabled, passRecoveryEnabled: true, stylesEnabled: false });
-    state.grifballTactics.teams.red = { passSupportDepth: 6 };
+    Object.assign(state.grifballTactics.defaults, { passSupportEnabled: enabled, passSupportAgencyStrength: 1, passRecoveryEnabled: true, stylesEnabled: false });
+    state.grifballTactics.teams.red = { passSupportDepth: 6, passSupportAgencyStrength: .5 };
+    state.grifballTactics.botStyles = { [id]: style, receiver: style, support: style };
     actor.id = id; receiver.id = target.id;
     for (const [i, [c, live]] of ([[actor, bot], [receiver, target]] as const).entries()) {
       c.controller = live.controller = 'ai'; c.team = live.team = mirror ? 'red' : 'blue';
@@ -47,7 +50,7 @@ for (const enabled of [false, true]) for (const main of [false, true]) for (cons
       tactics: structuredClone(state.grifballTactics),
       punchControl: { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { [id]: 0, receiver: 0, support: 0 } }, passControl: SCRIPTED_PASS_VERSION };
     const goal = (team: string | undefined) => sim.goalPlates.find(p => p.team !== team)!.position;
-    let releaseTick = 0, receiptTick = 0, handoff = false, deflected = false, supportTicks = 0;
+    let releaseTick = 0, receiptTick = 0, handoff = false, deflected = false, supportTicks = 0, personalTicks = 0;
     const landingPoints = new Set<string>();
     for (let tick = 1; tick <= 600; tick++) {
       // Apply the same real hammer contact independently to each engine's ball,
@@ -92,6 +95,12 @@ for (const enabled of [false, true]) for (const main of [false, true]) for (cons
           assert.ok(receiverOrder); assert.equal(a.defense.passSupport.receiverId, receiverOrder.botId);
           assert.deepEqual(a.anchor, receiverOrder.receive!.point);
           landingPoints.add(a.anchor.x.toFixed(1));
+          const individual = a.defense.passSupport.individuality;
+          if (a.defense.mode === 'last-defender') assert.equal(individual, undefined);
+          else {
+            assert.ok(individual); assert.equal(individual.style, style); assert.equal(individual.strength, mirror ? .5 : 1);
+            if (individual.applied) personalTicks++;
+          }
         }
       }
       const orders = [...planner.plan.assignments.values()], supporting = orders.filter(a => a.defense?.passSupport);
@@ -107,6 +116,7 @@ for (const enabled of [false, true]) for (const main of [false, true]) for (cons
     }
     assert.ok(receiptTick > releaseTick, `release=${releaseTick}, receipt=${receiptTick}`);
     assert.equal(deflected, redirect); assert.equal(supportTicks > 0, enabled);
+    assert.equal(personalTicks > 0, enabled && style !== 'balanced', 'style must produce an actual personal cover position when eligible');
     if (redirect) assert.ok(handoff, 'redirected pass must exercise a receiver handoff');
     if (enabled && redirect) assert.ok(landingPoints.size > 1, 'support must update after the changed trajectory');
     // Possession clears landing support at the next shared planner update.

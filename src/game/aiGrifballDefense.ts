@@ -4,7 +4,7 @@ import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter, type SpaceRoute } from './grifballSpaceGeometry';
 import { pointAlongRunnerRoute, type SpaceRouters } from './aiGrifballRunner';
 import { grifballDefenseStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
-import type { PassLandingSupport } from './aiGrifballPassSupport';
+import { chooseGrifballPassSupportPosition, type PassLandingSupport } from './aiGrifballPassSupport';
 
 export interface DefensePressureCandidate {
   botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
@@ -210,11 +210,25 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   safety.role = 'safety';
   const rest = defenders.filter(a => a !== safety);
   if (!carrier) {
-    rest.forEach((a, i) => {
+    const slots = rest.map((a, i) => {
       const center = toward(anchor, goal, passSupport ? tuning.passSupportDepth : 4), d = Math.max(0.001, distance(anchor, goal));
       const side = (i % 2 ? -1 : 1) * tuning.lateralSpacing * (1 + Math.floor(i / 2));
-      assign(a, 'recover', { x: center.x - (goal.z - anchor.z) / d * side, z: center.z + (goal.x - anchor.x) / d * side }, undefined);
+      return { a, side, point: { x: center.x - (goal.z - anchor.z) / d * side, z: center.z + (goal.x - anchor.x) / d * side } };
     });
+    // Retain earlier personal choices and later team slots, so each choice has
+    // space without moving the receiver, safety or an earned tanking assignment.
+    const reserved = assignments.filter(a => !rest.includes(a)).map(a => a.destination);
+    for (const slot of slots) {
+      const choice = passSupport ? chooseGrifballPassSupportPosition({ snapshot, botId: slot.a.botId, support: passSupport,
+        tuning, routers, teamPoint: slot.point, goal, side: slot.side,
+        reserved: [...reserved, ...slots.filter(other => other !== slot).map(other => other.point)] }) : { point: slot.point };
+      slot.point = choice.point;
+      assign(slot.a, 'recover', choice.point, undefined);
+      if (choice.individuality) {
+        slot.a.defense!.passSupport!.individuality = choice.individuality;
+        slot.a.reason += `; ${choice.individuality.reason}`;
+      }
+    }
     return;
   }
   // A lone defender keeps its goal-side line; no secondary pressure or marks.
