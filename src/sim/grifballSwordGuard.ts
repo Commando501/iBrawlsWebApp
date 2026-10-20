@@ -5,6 +5,7 @@ import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import type { GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import type { SimCombatPriorityMemory } from './grifballCombatPriorities';
 import { isMixedPlayer, type SimState } from './simState';
+import { resolveGrifballPlayerStyle } from '../game/grifballPlayerStyles';
 
 export function observeSimGrifballSwordGuard(state: SimState, plan: GrifballTeamPlanState, botId: string, targetId: string,
   scriptedBots: Readonly<Record<string, string>>, memory: SimCombatPriorityMemory, dt: number) {
@@ -19,6 +20,7 @@ export function observeSimGrifballSwordGuard(state: SimState, plan: GrifballTeam
   const phase = runner.weaponState === 'windup' ? 'swing_up' : runner.weaponState === 'active' ? 'swing_down' : 'recovering';
   const elapsed = phase === 'swing_up' ? up - runner.weaponTimer : down - runner.weaponTimer;
   const result = chooseGrifballSwordGuard({ assignment, settings: state.settings, dt, pos: self.pos,
+    playerStyle: resolveGrifballPlayerStyle(plan.snapshot?.tactics?.botStyles, botId),
     bodyHeight: human ? .825 : self.isCrouching ? .52 : .825, radiusBonus: getModelTargetRadiusBonus(self.modelType),
     ownGoals: state.goalPlates.filter(goal => goal.team === self.team),
     eligible: self.controller === 'ai' && !isMixedPlayer(state, self) && self.weapon === 'sword' && self.weaponState === 'idle' &&

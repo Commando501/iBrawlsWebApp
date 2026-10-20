@@ -4,6 +4,7 @@ import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
 import { chooseGrifballSwordGuard, runnerPunchClock } from './aiGrifballSwordGuard';
 import { defaultGrifballTactics, resolveTeamTactics, validateGrifballTactics } from './grifballTacticsConfig';
 import type { GrifballAssignment } from './aiGrifballTeamPlan';
+import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
 function fixture() {
   const config = defaultGrifballTactics(); config.defaults.swordGuardEnabled = true;
@@ -77,7 +78,7 @@ test('schema 12 migrates awareness off, retaining all prior individuality; overr
   delete legacy.defaults.swordGuardEnabled; delete legacy.defaults.swordGuardReaction;
   legacy.defaults.runnerClashAgencyStrength = .8; legacy.botStyles.runner = 'guardian';
   const migrated = validateGrifballTactics(legacy);
-  assert.equal(migrated.schemaVersion, 13); assert.equal(migrated.defaults.swordGuardEnabled, false);
+  assert.equal(migrated.schemaVersion, 14); assert.equal(migrated.defaults.swordGuardEnabled, false);
   assert.equal(migrated.defaults.runnerClashAgencyStrength, .8); assert.equal(migrated.botStyles.runner, 'guardian');
   migrated.teams.red = { swordGuardEnabled: true, swordGuardReaction: .12 };
   const copy = validateGrifballTactics(JSON.parse(JSON.stringify(migrated)));
@@ -85,4 +86,81 @@ test('schema 12 migrates awareness off, retaining all prior individuality; overr
   assert.equal(resolveTeamTactics(copy, 'blue').swordGuardEnabled, false);
   assert.throws(() => validateGrifballTactics({ ...copy, teams: { red: { swordGuardReaction: -1 } } }));
   assert.throws(() => validateGrifballTactics({ ...copy, teams: { red: { swordGuardEnabled: 1 } } }));
+});
+
+const styles = Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[];
+for (const style of styles) {
+  test(`${style} at zero strength is exactly the team sword response`, () => {
+    const f = fixture(), baseline = f.run(); f.input.playerStyle = style;
+    assert.deepEqual(f.run(), baseline);
+    f.config.defaults.swordGuardAgencyStrength = 1;
+    const result = f.run()!;
+    assert.equal(result.individuality!.style, style);
+    if (style === 'balanced') { const { individuality, ...decision } = result; assert.deepEqual(decision, baseline); }
+  });
+  test(`${style} preserves ownership, geometry, final punch frame and goal urgency at full strength`, () => {
+    const f = fixture(); f.input.playerStyle = style; f.config.defaults.swordGuardAgencyStrength = 1;
+    f.input.punch!.age = .1; f.input.punch!.remaining = .001;
+    assert.equal(f.run()?.action, 'space');
+    f.input.punch!.remaining = 0; assert.equal(f.run()?.action, 'continue'); f.input.punch!.remaining = .2;
+    f.input.eligible = false; assert.equal(f.run(), null); f.input.eligible = true;
+    for (const key of ['enabled', 'spaceEnabled', 'defenseEnabled', 'swordGuardEnabled'] as const) {
+      f.config.defaults[key] = false; assert.equal(f.run(), null); f.config.defaults[key] = true;
+    }
+    f.input.assignment!.geometry!.x = 2.52; assert.deepEqual(f.run()?.velocity, { x: 0, z: 0 });
+    f.input.assignment!.geometry!.x = 50;
+    f.input.punch!.heading.x = -1; assert.equal(f.run()?.action, 'continue'); f.input.punch!.heading.x = 1;
+    f.input.ownGoals = [{ team: 'blue', position: { x: -6, y: 0, z: 0 }, halfExtents: { x: 5, z: 2 } }];
+    assert.equal(f.run()?.action, 'continue'); assert.match(f.run()!.reason, /goal threat/);
+  });
+}
+
+test('reaction preferences blend, clamp at the team range, and change recognition rather than punch duration', () => {
+  const f = fixture(); f.config.defaults.swordGuardAgencyStrength = 1;
+  f.input.playerStyle = 'enforcer'; assert.equal(f.run()?.action, 'continue'); assert.equal(f.run()?.reaction, .08);
+  f.input.punch!.age = .08; assert.equal(f.run()?.action, 'space');
+  f.input.playerStyle = 'guardian'; f.input.punch!.age = .045; assert.equal(f.run()?.action, 'space');
+  f.config.defaults.swordGuardAgencyStrength = .5; assert.equal(f.run()?.action, 'continue');
+  assert.ok(Math.abs(f.run()!.reaction - .05) < 1e-9);
+  f.config.defaults.swordGuardReaction = 0; assert.equal(f.run()?.reaction, 0);
+  f.config.defaults.swordGuardReaction = .3; f.input.playerStyle = 'enforcer'; assert.equal(f.run()?.reaction, .3);
+});
+
+test('spacing preferences alter actual displacement, scale smoothly, and retain positive clearance and speed limits', () => {
+  const f = fixture(); f.input.pos.x = 3.52; f.input.punch!.age = .1;
+  f.input.settings.speedBackward = f.input.settings.speedForward = 100;
+  const team = f.run()!.velocity!.x;
+  f.config.defaults.swordGuardAgencyStrength = 1;
+  f.input.playerStyle = 'opportunist'; assert.equal(f.run()!.velocity!.x, 0);
+  f.input.playerStyle = 'guardian'; assert.ok(f.run()!.velocity!.x > team);
+  assert.ok(f.run()!.velocity!.x <= 5.2);
+  f.input.pos.x = 3.31; f.input.playerStyle = 'opportunist';
+  const full = f.run()!.individuality!.clearance;
+  assert.ok(full > 0); f.config.defaults.swordGuardAgencyStrength = .5;
+  assert.ok(Math.abs(f.run()!.individuality!.clearance - (.25 + full) / 2) < 1e-9);
+  const original = structuredClone(f.input), result = f.run()!;
+  assert.deepEqual(chooseGrifballSwordGuard(structuredClone(original)), result); assert.deepEqual(f.input, original);
+  f.input.pos.x *= -1; f.input.punch!.heading.x *= -1;
+  assert.equal(f.run()!.velocity!.x, -result.velocity!.x);
+  f.input.settings.speedForward = 0; assert.equal(Math.abs(f.run()!.velocity!.x), 0);
+});
+
+test('v13 imports leave sword individuality off while preserving awareness, styles and independent team overrides', () => {
+  const legacy = JSON.parse(JSON.stringify(defaultGrifballTactics())); legacy.schemaVersion = 13;
+  delete legacy.defaults.swordGuardAgencyStrength;
+  Object.assign(legacy.defaults, { swordGuardEnabled: true, swordGuardReaction: .12, runnerClashAgencyStrength: .8 });
+  legacy.botStyles.sword = 'opportunist'; legacy.teams.red = { swordGuardReaction: .2 };
+  const config = validateGrifballTactics(legacy);
+  assert.equal(config.schemaVersion, 14); assert.equal(config.defaults.swordGuardAgencyStrength, 0);
+  assert.equal(config.defaults.swordGuardEnabled, true); assert.equal(config.defaults.swordGuardReaction, .12);
+  assert.equal(config.defaults.runnerClashAgencyStrength, .8); assert.equal(config.botStyles.sword, 'opportunist');
+  assert.deepEqual(config.teams, legacy.teams);
+  config.teams.red!.swordGuardAgencyStrength = .7;
+  assert.equal(resolveTeamTactics(config, 'red').swordGuardAgencyStrength, .7);
+  assert.equal(resolveTeamTactics(config, 'blue').swordGuardAgencyStrength, 0);
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
+  for (const value of [-.1, 1.1, NaN, '1'])
+    assert.throws(() => validateGrifballTactics({ ...config, teams: { red: { swordGuardAgencyStrength: value } } }));
+  delete (config.defaults as Partial<typeof config.defaults>).swordGuardAgencyStrength;
+  assert.throws(() => validateGrifballTactics(config), /incomplete/);
 });

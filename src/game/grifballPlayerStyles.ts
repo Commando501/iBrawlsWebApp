@@ -48,6 +48,15 @@ export const GRIFBALL_CLASH_PREFERENCES = {
   guardian: { reaction: -.02, window: 0, reason: 'Recognize a visible sword attack sooner while retaining the team counter window.' },
 } satisfies Record<GrifballPlayerStyle, { reaction: number; window: number; reason: string }>;
 
+/** Reaction offsets in seconds; clearance is extra room beyond the punch reach.
+ * Less clearance leaves a quicker recovery opportunity but less movement margin. */
+export const GRIFBALL_SWORD_GUARD_PREFERENCES = {
+  balanced: { reaction: 0, clearance: 0, reason: 'Use team sword reaction and punch clearance.' },
+  enforcer: { reaction: .02, clearance: 0, reason: 'Keep pressure longer before responding, accepting more punch risk.' },
+  opportunist: { reaction: 0, clearance: -.15, reason: 'Give less extra room to stay close for recovery, accepting a smaller movement margin.' },
+  guardian: { reaction: -.02, clearance: .25, reason: 'Respond sooner and leave more room, giving up some recovery pressure.' },
+} satisfies Record<GrifballPlayerStyle, { reaction: number; clearance: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

@@ -20,9 +20,10 @@ import { createAISingleEntityUpdaterForState } from '../../src/components/grifba
 import { createTacticalTargetCallbacksForState } from '../../src/components/grifball/tacticalTargetCallbacks';
 import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
 import { withSimulationRandom, seededRandom } from '../../src/game/simulationRandom';
+import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from '../../src/game/grifballPlayerStyles';
 
 const dt = 1 / 60, noop = () => {};
-function fixture(enabled = true, mirror = false, reverse = false, main = false) {
+function fixture(enabled = true, mirror = false, reverse = false, main = false, style?: GrifballPlayerStyle) {
   const id = main ? 'main_ai' : 'sword';
   const f = createBotParityFixture(id, true, { speedBackward: 0, maxHP: 3, grifballRunnerHealth: 7,
     grifballRunnerHealRate: 0, weaponReadyTime: 0, enableSwordTrade: false, enableHammerSwordTrade: false }, 'runner');
@@ -47,10 +48,16 @@ function fixture(enabled = true, mirror = false, reverse = false, main = false) 
   setSimCarrier(runner, true, sim.settings); setGrifballCarrierForState({ state, id: 'runner', carrying: true });
   target.weaponState = 'swing_up'; target.weaponTimer = .07; runner.weaponState = 'windup'; runner.attackKind = 'punch'; runner.weaponTimer = .17; runner.weaponPhaseElapsed = .07;
   const config = defaultGrifballTactics(); config.defaults.swordGuardEnabled = enabled; state.grifballTactics = config;
+  if (style) {
+    config.defaults.swordGuardAgencyStrength = 1; config.botStyles[id] = style;
+    // The carrier deliberately has a different style: the defender owns this choice.
+    config.botStyles.runner = style === 'guardian' ? 'enforcer' : 'guardian';
+  }
   const assignment: GrifballAssignment = { botId: id, team: sword.team, role: 'chaser', slot: 0,
     carrierId: 'runner', destination: { x: 0, z: 0 }, anchor: { x: 0, z: 0 }, reason: 'Authored runner confrontation',
     tuning: config.defaults, geometry: buildGrifballSpaceGeometry(f.map, f.map.arenaRadius),
-    defense: { targetId: 'runner', mode: 'intercept', emergency: false } as GrifballAssignment['defense'] };
+    defense: { targetId: 'runner', mode: 'intercept', emergency: false, intercept: { x: bot.pos.x, z: bot.pos.z },
+      arrivalETA: 0, carrierETA: 0, advantage: 0, reinforcementIn: Infinity, transitioning: false } };
   const plan = createGrifballTeamPlanState(); plan.assignments.set(id, structuredClone(assignment));
   plan.snapshot = createSimGrifballTacticalSnapshot(sim, { scriptedBots: { [id]: 'normal' }, tactics: config });
   state.aiMatchContext.grifballTeamPlan = structuredClone(plan);
@@ -90,7 +97,7 @@ test('local human pitch/crouch observations use fresh human punch geometry in bo
 
 for (const gate of ['disabled', 'cooldown', 'attack', 'lunge', 'dash', 'slide', 'airborne', 'shield', 'hammer', 'friendly', 'released', 'neural'] as const)
   test(`both hosts preserve ${gate} ownership`, () => {
-    const f = fixture(gate !== 'disabled');
+    const f = fixture(gate !== 'disabled', false, false, false, 'guardian');
     if (gate === 'cooldown') { f.bot.aiState = 'COOLDOWN'; f.bot.aiTimer = 1; f.memory.aiState = 'COOLDOWN'; f.memory.timer = 1; }
     if (gate === 'attack') { f.bot.weaponState = 'swing_up'; f.sword.weaponState = 'windup'; }
     if (gate === 'lunge') f.bot.isLunging = f.sword.isLunging = true;
@@ -151,9 +158,10 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
     }
   });
 
-for (const enabled of [false, true]) for (const reverse of [false, true])
-  test(`real punch and sword outcomes after the full decision path ${enabled}/${reverse}`, () => {
-    const f = fixture(enabled, false, reverse), id = f.bot.id;
+for (const style of [undefined, 'enforcer', 'opportunist', 'guardian'] as const)
+  for (const enabled of [false, true]) for (const reverse of [false, true])
+  test(`real punch and sword outcomes after the full decision path ${enabled}/${reverse}/${style ?? 'team'}`, () => {
+    const f = fixture(enabled, false, reverse, reverse, style), id = f.bot.id;
     const knobs: AIResolvedKnobs = { difficulty: 'normal', reactionLatency: .15, anticipationFactor: .5, movementComplexity: 0,
       weaponSwapIQ: 0, aiPlaystyle: 50, weaponPrioritization: 100 };
     const update = liveUpdater(f, knobs), random = seededRandom(7);
@@ -173,6 +181,35 @@ for (const enabled of [false, true]) for (const reverse of [false, true])
     assert.equal(liveAttack, simAttack);
     assert.equal(f.bot.hp, f.sword.hp); assert.equal(f.target.hp, f.runner.hp);
     assert.equal(f.bot.hp, 2, 'ordinary runner punch still deals one damage; patience grants no immunity');
-    if (enabled) { assert.ok(liveAttack > 12); assert.equal(f.target.hp, 0, 'sword hits during runner recovery'); }
+    if (enabled && style !== 'enforcer') { assert.ok(liveAttack > 12); assert.equal(f.target.hp, 0, 'sword hits during runner recovery'); }
     else { assert.equal(liveAttack, 1); assert.equal(f.target.hp, 7, 'immediate slash loses the punch clash'); }
+  });
+
+for (const style of Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[]) for (const mirror of [false, true])
+  test(`both production hosts execute ${style} spacing with stable defender identity, mirror=${mirror}`, () => {
+    const f = fixture(true, mirror, mirror, mirror, style), id = f.bot.id, sign = mirror ? -1 : 1;
+    f.bot.pos.z = f.sword.pos.z = -3.52 * sign;
+    f.target.weaponTimer = .1; f.runner.weaponTimer = .14; f.runner.weaponPhaseElapsed = .1;
+    f.state.settings.speedBackward = f.sim.settings.speedBackward = 60;
+    const live = f.liveDecision()!, sim = f.simDecision()!;
+    assert.equal(live.individuality!.style, style); assert.deepEqual(live.individuality, sim.individuality);
+    assert.equal(live.action, 'space'); assert.equal(sim.action, 'space');
+    const knobs: AIResolvedKnobs = { difficulty: 'normal', reactionLatency: .15, anticipationFactor: .5, movementComplexity: 0,
+      weaponSwapIQ: 0, aiPlaystyle: 50, weaponPrioritization: 100 };
+    const update = liveUpdater(f, knobs), matchContext = createAIMatchContext(); matchContext.grifballTeamPlan = f.plan;
+    const control = { scriptedBots: { [id]: 'normal' }, configs: { [id]: { knobs, derived: deriveAIParams(f.sim.settings, knobs), flags: NEUTRAL_PERSONALITY_FLAGS } },
+      memories: { [id]: f.memory, runner: { ...f.memory } }, matchContext, random: seededRandom(7),
+      getScoreContext: () => ({ scorePlayer: 0, scoreEnemy: 0 }), isObserverMode: true, spawnPoints: f.map.spawnPoints, navigation: {} };
+    withSimulationRandom(seededRandom(7), dt, () => update(id, dt));
+    stepSimulation(f.sim, { runner: { ...idleAction(), aim: f.runner.yaw } }, createSimGrifballActorStepOptions(f.sim, control));
+    const expected = style === 'opportunist' ? 3.52 : style === 'guardian' ? 3.572 : 3.55;
+    assert.ok(Math.abs(Math.abs(f.bot.pos.z) - expected) < 1e-9, 'live movement follows the style clearance');
+    assert.ok(Math.abs(f.bot.pos.z - f.sword.pos.z) < 1e-9, 'sim executes identical movement');
+    assert.equal(f.bot.weaponState, 'ready'); assert.equal(f.sword.weaponState, 'idle');
+    // A style edit changes the next free decision; disabling the strength removes stale diagnostics.
+    for (const plan of [f.plan, f.state.aiMatchContext.grifballTeamPlan]) {
+      plan.snapshot!.tactics!.botStyles[id] = 'balanced';
+      plan.assignments.get(id)!.tuning!.swordGuardAgencyStrength = 0;
+    }
+    assert.equal(f.liveDecision()!.individuality, undefined); assert.equal(f.simDecision()!.individuality, undefined);
   });

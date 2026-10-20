@@ -3,6 +3,7 @@ import type { FieldPoint, GrifballAssignment } from './aiGrifballTeamPlan';
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from './runnerBallSettings';
 import { isOverGoalPlate, type GoalPlate } from './grifballGoals';
+import { GRIFBALL_SWORD_GUARD_PREFERENCES, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
 type Point = FieldPoint & { y: number };
 export interface ObservedRunnerPunch {
@@ -13,6 +14,8 @@ export interface SwordGuardDecision {
   action: 'space' | 'continue'; reason: string; targetId: string;
   reaction: number; punchAge: number; punchRemaining: number;
   velocity?: FieldPoint;
+  individuality?: { style: GrifballPlayerStyle; strength: number; reason: string;
+    teamReaction: number; teamClearance: number; clearance: number };
 }
 
 /** A short, visible-punch response before ordinary combat arbitration. It never
@@ -21,14 +24,21 @@ export function chooseGrifballSwordGuard(input: {
   assignment: GrifballAssignment | undefined; settings: UniversalSettings; dt: number;
   pos: Point; bodyHeight: number; radiusBonus: number; ownGoals?: readonly GoalPlate[];
   eligible: boolean; punch: ObservedRunnerPunch | null;
+  playerStyle?: GrifballPlayerStyle;
 }): SwordGuardDecision | null {
   const { assignment, punch, settings, pos, dt } = input, tuning = assignment?.tuning;
   if (!tuning?.enabled || !tuning.spaceEnabled || !tuning.defenseEnabled || !tuning.swordGuardEnabled ||
     !assignment?.geometry || !input.eligible || !punch) return null;
+  const strength = tuning.swordGuardAgencyStrength ?? 0, style = input.playerStyle ?? 'balanced';
+  const preference = GRIFBALL_SWORD_GUARD_PREFERENCES[style], teamClearance = .25;
+  const reaction = Math.max(0, Math.min(.3, tuning.swordGuardReaction + strength * preference.reaction));
+  const clearance = teamClearance + strength * preference.clearance;
+  const individuality = strength > 0 ? { style, strength, reason: preference.reason,
+    teamReaction: tuning.swordGuardReaction, teamClearance, clearance } : undefined;
   const decision = (reason: string): SwordGuardDecision => ({ action: 'continue', reason, targetId: punch.id,
-    reaction: tuning.swordGuardReaction, punchAge: punch.age, punchRemaining: punch.remaining });
+    reaction, punchAge: punch.age, punchRemaining: punch.remaining, ...(individuality ? { individuality } : {}) });
   if (punch.remaining <= 0) return decision('Runner punch is inactive; resume ordinary combat');
-  if (punch.age + 1e-9 < tuning.swordGuardReaction) return decision('Visible punch has not reached the reaction delay');
+  if (punch.age + 1e-9 < reaction) return decision('Visible punch has not reached the reaction delay');
   const dx = pos.x - punch.pos.x, dz = pos.z - punch.pos.z, distance = Math.hypot(dx, dz);
   if (distance < .001 || !isSpaceSegmentOpen(assignment.geometry, pos, punch.pos))
     return decision('No clear approach to the runner');
@@ -56,7 +66,7 @@ export function chooseGrifballSwordGuard(input: {
   const goalMargin = .5 + Math.max(0, 5.2 * settings.speedForward / 100) * Math.min(.6, punch.remaining + .15);
   if (input.ownGoals?.some(goal => isOverGoalPlate(punch.pos.x, punch.pos.z, goal, goalMargin)))
     return decision('Immediate goal threat takes priority over waiting for the punch');
-  const gap = reach + radius + .25;
+  const gap = reach + radius + clearance;
   // Keep this short retreat within the shared grounded objective walk budget.
   const speed = Math.min(Math.max(0, 5.2 * Math.min(settings.speedBackward, settings.speedForward) / 100), Math.max(0, gap - distance) / dt);
   const velocity = { x: dx / distance * speed, z: dz / distance * speed };

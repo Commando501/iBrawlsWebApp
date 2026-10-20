@@ -4,6 +4,7 @@ import type { GrifballRuntimeState } from './runtimeState';
 import type { Combatant, CustomMapData } from '../../types';
 import { getGoalPlates } from '../../game/grifballGoals';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
+import { resolveGrifballPlayerStyle } from '../../game/grifballPlayerStyles';
 
 export function observeLiveGrifballSwordGuard(state: GrifballRuntimeState, self: Combatant, targetId: string,
   canStartWeaponAction: boolean, dt: number, map: CustomMapData | null) {
@@ -19,6 +20,7 @@ export function observeLiveGrifballSwordGuard(state: GrifballRuntimeState, self:
   const pos = runner?.pos ?? state.playerPos;
   const team = runner?.team ?? state.localPlayerTeam;
   const result = chooseGrifballSwordGuard({ assignment, settings: state.settings, dt, pos: self.pos,
+    playerStyle: resolveGrifballPlayerStyle(state.aiMatchContext.grifballTeamPlan.snapshot?.tactics?.botStyles, self.id),
     bodyHeight: human ? .825 : self.isCrouching ? .52 : .825, radiusBonus: getModelTargetRadiusBonus(self.modelType),
     ownGoals: getGoalPlates(map).filter(goal => goal.team === self.team),
     eligible: self.controller === 'ai' && self.activeWeapon === 'sword' && self.weaponState === 'ready' &&

@@ -91,7 +91,7 @@ test('v11 migration retains enabled timing, styles and overrides while counter i
   Object.assign(old.defaults, { runnerClashEnabled: true, runnerClashReaction: .12, runnerClashLead: .14, runnerAgencyStrength: .8 });
   old.botStyles.runner = 'opportunist'; old.teams.red = { runnerClashReaction: .2 };
   const config = validateGrifballTactics(old);
-  assert.equal(config.schemaVersion, 13); assert.equal(config.defaults.runnerClashAgencyStrength, 0);
+  assert.equal(config.schemaVersion, 14); assert.equal(config.defaults.runnerClashAgencyStrength, 0);
   assert.equal(config.defaults.runnerClashEnabled, true); assert.equal(config.defaults.runnerClashReaction, .12);
   assert.equal(config.defaults.runnerClashLead, .14); assert.equal(config.defaults.runnerAgencyStrength, .8);
   assert.equal(config.botStyles.runner, 'opportunist'); assert.deepEqual(config.teams, old.teams);
