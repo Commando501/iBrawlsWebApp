@@ -1,4 +1,5 @@
 import type { CustomMapData } from '../../types';
+import { observeLiveGrifballSwordGuard } from './grifballSwordGuard';
 import { resolveAIGroundState } from '../../game/aiGroundState';
 import { selectGrifballEscortEvasion } from '../../game/aiGrifballEvasion';
 import { selectGrifballRunnerEvasion } from '../../game/aiGrifballRunnerEvasion';
@@ -829,6 +830,16 @@ export function createAISingleEntityUpdaterForState({
         enemyInKillRange, selfGrounded, stationarySwingReach } = engagementPreparation.range;
       coordCommitTimer = engagementPreparation.coordCommitTimer;
       psychState.standoffTimer = engagementPreparation.standoffTimer;
+
+      const swordGuard = observeLiveGrifballSwordGuard(s, self, target.id, canStartWeaponAction, dt, activeCustomMap);
+      if (swordGuard?.action === 'space') {
+        vel.x = swordGuard.velocity!.x; vel.z = swordGuard.velocity!.z;
+        pos.x += vel.x * dt; pos.z += vel.z * dt;
+        timer = (timer ?? 0) - dt; swayTimer += dt;
+        constrainCombatantToArena(pos, vel);
+        syncStateAndMesh();
+        return;
+      }
 
       // Adaptive learning: sample this acting combatant's OWN position (edge proximity) and
       // approach speed into its own model, so opponents that target it can read those

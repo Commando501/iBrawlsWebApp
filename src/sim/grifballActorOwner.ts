@@ -1,4 +1,5 @@
 import { hasCoherentSimCarrierState } from './grifballCarrierState';
+import { observeSimGrifballSwordGuard } from './grifballSwordGuard';
 import { recordCalibrationCounterAttempt } from '../game/aiSkillCalibration';
 import { getEffectivePressureAggression } from '../components/grifball/matchPressure';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
@@ -112,6 +113,13 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
         ...(actor.isLunging ? { committedFlight: true as const } : {}),
       }, dt);
       if (!engagement) throw new Error(`Composed observation lost its selected target: ${actorId}`);
+      const swordGuard = observeSimGrifballSwordGuard(view, ai.grifballTeamPlan, actorId, turn.targetId, scriptedBots, memory, dt);
+      if (swordGuard?.action === 'space') {
+        memory.timer = (memory.timer ?? 0) - dt; memory.swayTimer += dt;
+        const speed = 5.2 * view.settings.speedForward / 100;
+        return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw, crouch: actor.isCrouching },
+          movement: speed > 0 ? { x: swordGuard.velocity!.x / speed, z: swordGuard.velocity!.z / speed } : { x: 0, z: 0 } };
+      }
       const playerModel = getPlayerModelSnapshot(ai, turn.targetId);
       const priorities = resolveSimGrifballCombatPriorities(view, actorId, scriptedBots, {
         ...a, spacingFactor: engagement.spacingFactor, pressureAggression: a.derivedParams.pressureAggression,

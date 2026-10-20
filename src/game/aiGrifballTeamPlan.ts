@@ -10,6 +10,7 @@ import { createGrifballSpaceEvaluator, estimateSpaceAttackTime, type GrifballSpa
 import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
 import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './aiGrifballAgency';
 import type { RunnerClashDecision } from './aiGrifballRunnerClash';
+import type { SwordGuardDecision } from './aiGrifballSwordGuard';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -63,6 +64,7 @@ export interface GrifballAssignment {
   geometry?: GrifballSpaceGeometry;
   agency?: SupportAgencyDecision;
   runnerClash?: RunnerClashDecision;
+  swordGuard?: SwordGuardDecision;
 }
 export interface GrifballTeamPlanState {
   assignments: Map<string, GrifballAssignment>;
