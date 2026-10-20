@@ -32,6 +32,21 @@ export const GRIFBALL_DEFENSE_PREFERENCES = {
   guardian: 'Favor nearby escort marking while a teammate contests the carrier.',
 } satisfies Record<GrifballPlayerStyle, string>;
 
+export const GRIFBALL_PASS_PREFERENCES = {
+  balanced: 'Use team pass scores.',
+  enforcer: 'Favor passes that gain more ground.',
+  opportunist: 'Favor a quicker release from the eligible passes.',
+  guardian: 'Favor larger pickup and attack margins for the receiver.',
+} satisfies Record<GrifballPlayerStyle, string>;
+
+export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
+  candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
+  const bonus = style === 'enforcer' ? .2 * candidate.progress
+    : style === 'opportunist' ? -2.5 * candidate.chargeSeconds
+    : style === 'guardian' ? .5 * Math.min(3, candidate.pickupMargin) + .5 * Math.min(3, candidate.attackMargin) : 0;
+  return strength * Math.max(-3, Math.min(3, bonus));
+}
+
 /** Preferences only rank viable jobs; they never extend an interception deadline. */
 export function grifballDefenseStyleBonus(style: GrifballPlayerStyle, strength: number,
   job: 'pressure' | 'mark', recoveryOpening: boolean): number {

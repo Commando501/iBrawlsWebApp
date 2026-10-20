@@ -389,7 +389,8 @@ export function tickScriptedGrifballPassForState(state: GrifballRuntimeState, re
   // The roster has moved since planning. Recheck current positions, availability and weapon timing at release.
   const snapshot = { ...plan.snapshot, passing: { ...plan.snapshot.passing!, allowed: resolveRunnerThrowAllowed(state.settings),
     minSpeed: state.settings.grifballPassSpeedMin ?? 9, maxSpeed: state.settings.grifballPassSpeedMax ?? 26,
-    chargeMax: state.settings.grifballChargeMax ?? 1.2, pickupRadius: state.settings.grifballPickupRadius ?? 1.6 }, players: plan.snapshot.players.flatMap(p => {
+    chargeMax: state.settings.grifballChargeMax ?? 1.2, pickupRadius: state.settings.grifballPickupRadius ?? 1.6,
+    hammerDeflection: (state.settings.hammerBallDeflectionEnabled ?? true) && (state.settings.hammerBallDeflectionStrength ?? 1) > 0 }, players: plan.snapshot.players.flatMap(p => {
     const live = state.otherPlayers.get(p.id);
     if (p.id === 'player') return !state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0 ? [{ ...p,
       pos: { x: state.playerPos.x, z: state.playerPos.z }, vel: { x: state.playerVel.x, z: state.playerVel.z },

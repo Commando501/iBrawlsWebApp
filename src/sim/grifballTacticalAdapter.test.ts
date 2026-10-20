@@ -19,7 +19,7 @@ test('individual Grifball styles are copied equally by live and simulation obser
     else live.otherPlayers.get(actor.id)!.yaw = actor.yaw + Math.PI;
   }
   const tactics = defaultGrifballTactics(); tactics.defaults.agencyStrength = .8; tactics.defaults.runnerAgencyStrength = .7;
-  tactics.defaults.defenseAgencyStrength = .6;
+  tactics.defaults.defenseAgencyStrength = .6; tactics.defaults.passAgencyStrength = .5;
   for (const id of Object.keys(scriptedBots)) tactics.botStyles[id] = 'enforcer';
   const carrier = sim.combatants.find(c => c.controller === 'ai')!;
   carrier.weapon = 'ball'; live.otherPlayers.get(carrier.id)!.activeWeapon = 'ball';
@@ -35,6 +35,9 @@ test('individual Grifball styles are copied equally by live and simulation obser
   updateGrifballTeamPlan(first, a, .2); updateGrifballTeamPlan(second, b, .2);
   assert.deepEqual(first.assignments, second.assignments);
   assert.deepEqual(first.runnerPlans, second.runnerPlans);
+  assert.deepEqual([...first.assignments.values()].map(a => a.pass), [...second.assignments.values()].map(a => a.pass));
+  assert.equal(a.tactics!.defaults.passAgencyStrength, .5);
+  assert.equal(b.tactics!.defaults.passAgencyStrength, .5);
   assert.equal(first.runnerPlans[carrier.team].individuality?.style, 'enforcer');
   assert.equal(first.runnerPlans[carrier.team].individuality?.strength, .7);
   const defenders = [...first.assignments.values()].filter(a => a.defense);
@@ -42,6 +45,22 @@ test('individual Grifball styles are copied equally by live and simulation obser
   assert.ok(defenders.every(a => a.defense!.individuality?.strength === .6));
   const id = Object.keys(scriptedBots)[0]; tactics.botStyles[id] = 'guardian';
   assert.equal(a.tactics!.botStyles[id], 'enforcer'); assert.equal(b.tactics!.botStyles[id], 'enforcer');
+});
+
+for (const [enabled, strength, expected] of [
+  [undefined, undefined, true], [true, 1, true], [false, 1, false], [true, 0, false], [true, .1, true],
+] as const) test(`live and simulation share hammer deflection rules: ${enabled}/${strength}`, () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  for (const settings of [sim.settings, live.settings]) {
+    settings.hammerBallDeflectionEnabled = enabled;
+    settings.hammerBallDeflectionStrength = strength;
+  }
+  const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
+  const b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+  assert.equal(a.passing!.hammerDeflection, expected);
+  assert.deepEqual(a.passing, b.passing);
+  live.settings.hammerBallDeflectionEnabled = !expected;
+  assert.equal(b.passing!.hammerDeflection, expected, 'snapshot does not alias current mechanics');
 });
 
 for (const execution of ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'] as const) {

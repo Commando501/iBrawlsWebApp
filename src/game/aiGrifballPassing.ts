@@ -4,15 +4,20 @@ import type { SpaceRouters } from './aiGrifballRunner';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter } from './grifballSpaceGeometry';
 import { createInitialBall, throwBall, tickBallPhysics, type BallArenaBounds, type GrifballBall, type Vec3 } from './grifballBall';
+import { GRIFBALL_PASS_PREFERENCES, grifballPassStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
+import { findPassDeflectionThreat, type PassDeflectionThreat } from './aiGrifballPassDeflection';
 
-export interface PassingRules { allowed: boolean; minSpeed: number; maxSpeed: number; chargeMax: number; pickupRadius: number; bounds: BallArenaBounds }
+export interface PassingRules { allowed: boolean; minSpeed: number; maxSpeed: number; chargeMax: number; pickupRadius: number; bounds: BallArenaBounds; hammerDeflection?: boolean }
 export interface BallRecovery { point: FieldPoint; seconds: number; path: Vec3[]; settled: boolean }
 export interface PassCandidate extends BallRecovery {
   receiverId: string; direction: FieldPoint; speed: number; chargeSeconds: number;
   receiverETA: number; opponentETA: number; attackETA: number; progress: number; score: number;
   viable: boolean; reason: string;
+  deflection?: PassDeflectionThreat;
+  individuality?: { baseScore: number; bonus: number; pickupMargin: number; attackMargin: number };
 }
-export interface PassPlan { carrierId: string; selected: PassCandidate | null; candidates: PassCandidate[]; reason: string }
+export interface PassPlan { carrierId: string; selected: PassCandidate | null; candidates: PassCandidate[]; reason: string;
+  individuality?: { style: GrifballPlayerStyle; strength: number; reason: string } }
 export interface PassCharge { carrierId: string; receiverId: string; speed: number; elapsed: number }
 export interface ReceiveOrder { carrierId: string | null; point: FieldPoint; seconds: number }
 
@@ -38,6 +43,10 @@ export function planGrifballPass(snapshot: GrifballTacticalSnapshot, carrier: Gr
   if (!carrier.scripted || (carrier.height ?? 0) > 0.01 || carrier.space?.phase !== 'ready' || (carrier.space?.mobileIn ?? 0) > 0) { plan.reason = 'Carrier unavailable to throw'; return plan; }
   const goal = snapshot.goals[carrier.team === 'blue' ? 'red' : 'blue'];
   if (!goal || distance(carrier.pos, goal) <= tuning.runnerFinishDistance) { plan.reason = 'Keep the scoring run'; return plan; }
+  if (tuning.passAgencyStrength > 0) {
+    const style = resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, carrier.id);
+    plan.individuality = { style, strength: tuning.passAgencyStrength, reason: GRIFBALL_PASS_PREFERENCES[style] };
+  }
   const enemies = snapshot.players.filter(p => p.team !== carrier.team);
   // Scripted receivers can honor a rendezvous. Observed humans/neural players are never assumed to accept an order.
   const receivers = snapshot.players.filter(p => p.team === carrier.team && p.id !== carrier.id && p.scripted &&
@@ -65,18 +74,26 @@ export function planGrifballPass(snapshot: GrifballTacticalSnapshot, carrier: Gr
       }));
       const progress = distance(carrier.pos, goal) - distance(recovery.point, goal);
       const pathOpen = recovery.path.every((p, i, all) => !i || isSpaceSegmentOpen(geometry, all[i - 1], p));
-      const carrierSafe = enemies.every(p => {
+      const chargeThreat = [...enemies].sort((a, b) => a.id.localeCompare(b.id)).find(p => {
         const route = routers.get(p.id)!(carrier.pos, true);
-        return route.status === 'blocked' || estimateSpaceAttackTime(p, carrier.pos, route.length) > chargeSeconds + 0.15;
+        return route.status !== 'blocked' && estimateSpaceAttackTime(p, carrier.pos, route.length) <= chargeSeconds + 0.15;
       });
-      const reason = !recovery.settled ? 'Ball does not settle in the prediction window' : !pathOpen ? 'Throw crosses blocked space' :
-        !carrierSafe ? 'Carrier cannot safely charge' : !Number.isFinite(receiverETA) ? 'Receiver route blocked' :
+      let reason = !recovery.settled ? 'Ball does not settle in the prediction window' : !pathOpen ? 'Throw crosses blocked space' :
+        chargeThreat ? chargeThreat.space?.weapon === 'sword' ? 'Carrier exposed to a lethal sword hit while charging' : 'Carrier cannot safely charge' : !Number.isFinite(receiverETA) ? 'Receiver route blocked' :
         receiverETA > tuning.passMaxReceiveSeconds ? 'Receiver too far from recovery' : progress < tuning.passMinProgress ? 'Insufficient goal progress' :
         opponentETA <= pickupTime + tuning.passSafetyMargin ? 'Opponent can contest the pickup' :
         attackETA <= pickupTime + tuning.passThreatMargin ? 'Receiver exposed to an attack' : 'Clear receiver and recovery margin';
+      const deflection = reason === 'Clear receiver and recovery margin' ? findPassDeflectionThreat(snapshot, carrier, recovery, chargeSeconds, routers) : undefined;
+      if (deflection) reason = 'Opponent can deflect the ball in flight';
       const viable = reason === 'Clear receiver and recovery margin';
+      const baseScore = progress - pickupTime * 2 - receiverETA + Math.min(3, opponentETA - pickupTime);
+      const margins = { pickupMargin: opponentETA - pickupTime, attackMargin: attackETA - pickupTime };
+      const bonus = plan.individuality && viable
+        ? grifballPassStyleBonus(plan.individuality.style, plan.individuality.strength, { progress, chargeSeconds, ...margins }) : 0;
       plan.candidates.push({ ...recovery, receiverId: receiver.id, direction, speed, chargeSeconds, receiverETA, opponentETA, attackETA, progress,
-        viable, reason, score: progress - pickupTime * 2 - receiverETA + Math.min(3, opponentETA - pickupTime) });
+        viable, reason, score: baseScore + bonus,
+        ...(deflection ? { deflection } : {}),
+        ...(plan.individuality ? { individuality: { baseScore, bonus, ...margins } } : {}) });
     }
   }
   plan.selected = plan.candidates.filter(c => c.viable).sort((a, b) => b.score - a.score || a.receiverId.localeCompare(b.receiverId) || a.speed - b.speed)[0] ?? null;
