@@ -12,6 +12,7 @@ import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './ai
 import type { RunnerClashDecision } from './aiGrifballRunnerClash';
 import type { SwordGuardDecision } from './aiGrifballSwordGuard';
 import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballHammerDefense';
+import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -60,6 +61,7 @@ export interface GrifballAssignment {
   defense?: DefenseOrder;
   pass?: PassPlan;
   receive?: ReceiveOrder;
+  passRecovery?: PassRecoveryDecision;
   escort?: EscortOrder;
   space?: GrifballSpaceDecision;
   geometry?: GrifballSpaceGeometry;
@@ -276,6 +278,7 @@ export function updateGrifballTeamPlan(
     }
 
 
+    let passRecovery: PassRecoveryDecision | null = null;
     if (!holder && bots.length) {
       // Compare arrival estimates, including the visible wait for ground steering.
       // A nearby airborne bot must not monopolize recovery over an available ally.
@@ -292,6 +295,11 @@ export function updateGrifballTeamPlan(
       if (incumbent && Number.isFinite(recoveryTime(incumbent)) && recoveryTime(incumbent) <= recoveryTime(retriever) + tuning.reassignmentAdvantage / recoverySpeed(incumbent)) retriever = incumbent;
       const intended = tuning.passingEnabled && state.passFlight?.team === team ? ranked.find(p => p.id === state.passFlight!.receiverId) : undefined;
       if (intended && routers?.get(intended.id)?.(recoveryPoint, true).status !== 'blocked') retriever = intended;
+      if (state.passFlight?.team === team && routers) {
+        passRecovery = chooseGrifballPassRecovery({ snapshot, team, receiverId: state.passFlight.receiverId, tuning, routers, recovery });
+        if (passRecovery?.receiverId) retriever = ranked.find(p => p.id === passRecovery!.receiverId)!;
+        else if (passRecovery) retriever = ranked[0];
+      }
       const externalRetriever = teammates.find(p => {
         if (p.scripted || !Number.isFinite(recoveryDistance(p))) return false;
         const d = distance(p.pos, snapshot.ball);
@@ -301,8 +309,13 @@ export function updateGrifballTeamPlan(
       if (!externalRetriever) {
         add(retriever, 'retriever', -1, { ...recoveryPoint }, incumbent?.id === retriever.id ? 'Keep the ball recovery assignment' : 'Earliest available reachable ball retriever');
         if (tuning.passingEnabled && recovery?.settled) next.get(retriever.id)!.receive = { carrierId: state.passFlight?.carrierId ?? null, point: { ...recoveryPoint }, seconds: recovery.seconds };
+        if (passRecovery?.receiverId && state.passFlight) {
+          state.passFlight.receiverId = passRecovery.receiverId;
+          next.get(retriever.id)!.receive = { carrierId: state.passFlight.carrierId, point: { ...passRecovery.point }, seconds: passRecovery.settleIn };
+          next.get(retriever.id)!.reason = passRecovery.reason;
+        }
         bots.splice(bots.indexOf(retriever), 1);
-      }
+      } else passRecovery = null; // Observed human/neural pursuit keeps its existing priority.
     }
 
     const defending = !!holder && !friendly;
@@ -330,6 +343,7 @@ export function updateGrifballTeamPlan(
       add(bot, role, slot, destination, defending ? 'Pressure with goal-side coverage' : holder ? 'Protect the carrier and preserve recovery coverage' : 'Screen the pickup and cover a turnover');
     }
     const teamAssignments = [...next.values()].filter(a => a.team === team);
+    if (passRecovery) for (const assignment of teamAssignments) assignment.passRecovery = passRecovery;
     if (state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
     if (tuning.spaceEnabled && routers && tuning.defenseEnabled) applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0, state.carrierMotion?.stationarySeconds ?? 0);
     delete state.passPlans[team];
