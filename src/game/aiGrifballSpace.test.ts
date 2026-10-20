@@ -94,7 +94,7 @@ test('v1 tactical presets migrate without losing team overrides and still reject
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'space') delete old.defaults[key];
   old.teams.blue = { leadForward: 9 };
   const migrated = validateGrifballTactics(old);
-  assert.equal(migrated.schemaVersion, 10); assert.equal(migrated.defaults.spaceEnabled, true); assert.equal(migrated.teams.blue!.leadForward, 9);
+  assert.equal(migrated.schemaVersion, 11); assert.equal(migrated.defaults.spaceEnabled, true); assert.equal(migrated.teams.blue!.leadForward, 9);
   delete old.defaults.enabled; assert.throws(() => validateGrifballTactics(old));
 });
 

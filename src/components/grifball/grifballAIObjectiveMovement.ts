@@ -8,6 +8,9 @@ import { type AIBehaviorState, type WeaponState, type Combatant } from '../../ty
 import { type GrifballAwarenessPoint } from './grifballAITeamAwareness';
 import { type GrifballCombatantRef } from './grifballObjectiveRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
+import { observeLiveRunnerSwordThreat } from './runnerClashObservation';
+import { getModelTargetRadiusBonus } from './modelHitbox';
+import type { RunnerSwordThreat } from '../../game/aiGrifballRunnerClash';
 
 export interface GrifballAIObjectiveFrame {
   pos: THREE.Vector3;
@@ -25,9 +28,11 @@ type CombatantLike = any;
 type GroundConstraint = (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 
 export type GrifballAIObjectiveState = Pick<GrifballRuntimeState, 'settings' | 'grifball' |
-  'playerHP' | 'playerRespawnTimer' | 'isObserverMode' | 'localPlayerTeam' | 'playerPos' | 'playerInvulnerabilityTimer'> & {
+  'playerHP' | 'playerRespawnTimer' | 'isObserverMode' | 'localPlayerTeam' | 'playerPos' | 'playerInvulnerabilityTimer'> &
+  Partial<Pick<GrifballRuntimeState, 'playerVel' | 'activeWeapon' | 'pSwordState' | 'pSwordTimer' | 'isLunging' | 'lungeTimer' | 'isCrouching' | 'playerModelType'>> & {
   aiMatchContext: Pick<GrifballRuntimeState['aiMatchContext'], 'grifballTeamPlan'>;
-  otherPlayers: ReadonlyMap<string, Pick<Combatant, 'id' | 'hp' | 'respawnTimer' | 'team' | 'pos' | 'invulnerabilityTimer'>>;
+  otherPlayers: ReadonlyMap<string, Pick<Combatant, 'id' | 'hp' | 'respawnTimer' | 'team' | 'pos' | 'invulnerabilityTimer'> &
+    Partial<Pick<Combatant, 'vel' | 'activeWeapon' | 'weaponState' | 'weaponTimer' | 'isLunging' | 'lungeTimer' | 'isCrouching' | 'modelType'>>>;
 };
 
 const settleAsApproaching = (
@@ -102,16 +107,36 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     return true;
   }
   if (heldByMe) {
-    const threats: { pos: THREE.Vector3; invulnerabilityTimer?: number }[] = [];
-    if (state.playerHP > 0 && state.playerRespawnTimer <= 0 && !state.isObserverMode && state.localPlayerTeam !== self.team)
-      threats.push({ pos: state.playerPos, invulnerabilityTimer: state.playerInvulnerabilityTimer });
+    const threats: { id: string; pos: THREE.Vector3; invulnerabilityTimer?: number }[] = [];
+    const clashThreats: RunnerSwordThreat[] = [];
+    const clashEnabled = assignment?.tuning?.runnerClashEnabled;
+    if (state.playerHP > 0 && state.playerRespawnTimer <= 0 && !state.isObserverMode && state.localPlayerTeam !== self.team) {
+      threats.push({ id: 'player', pos: state.playerPos, invulnerabilityTimer: state.playerInvulnerabilityTimer });
+      const observed = clashEnabled && observeLiveRunnerSwordThreat('player', {
+        pos: state.playerPos, vel: state.playerVel, activeWeapon: state.activeWeapon, weaponState: state.pSwordState,
+        weaponTimer: state.pSwordTimer, isLunging: state.isLunging, lungeTimer: state.lungeTimer,
+        isCrouching: state.isCrouching, modelType: state.playerModelType, invulnerabilityTimer: state.playerInvulnerabilityTimer,
+      }, state.settings);
+      if (observed) clashThreats.push(observed);
+    }
     state.otherPlayers.forEach(other => {
-      if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && other.team !== self.team) threats.push(other);
+      if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && other.team !== self.team) {
+        threats.push(other);
+        const observed = clashEnabled && observeLiveRunnerSwordThreat(other.id, other, state.settings);
+        if (observed) clashThreats.push(observed);
+      }
     });
     const decision = resolveGrifballCarrierDecision({ assignment, pos: frame.pos,
       players: state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [], threats, avoidanceEnemies: enemiesList,
-      goal: getEnemyGoalPos(self.team), weaponState: frame.weaponState, canStartWeaponAction, settings: state.settings, dt });
+      goal: getEnemyGoalPos(self.team), weaponState: frame.weaponState, canStartWeaponAction, settings: state.settings, dt,
+      clashThreats, runnerRadiusBonus: getModelTargetRadiusBonus(self.modelType), runnerBodyHeight: self.isCrouching ? .52 : .825 });
     if (!decision) return false;
+    if (assignment) {
+      if (decision.clash) assignment.runnerClash = decision.clash; else delete assignment.runnerClash;
+      if (decision.clash && ['track', 'punch'].includes(decision.clash.action) && assignment.pass) {
+        assignment.pass.selected = null; state.aiMatchContext.grifballTeamPlan.passCharge = null;
+      }
+    }
     if (decision.kind === 'move' && frame.weaponState === 'ready' && canStartWeaponAction &&
       resolveRunnerThrustAllowed(state.settings) && tryRunnerEvasion?.(decision.velocity)) return false;
     frame.vel.set(decision.velocity.x, 0, decision.velocity.z);

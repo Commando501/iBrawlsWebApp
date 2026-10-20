@@ -9,6 +9,7 @@ import type { TeamId } from './teamScoring';
 import { createGrifballSpaceEvaluator, estimateSpaceAttackTime, type GrifballSpaceDecision, type SpaceObservation } from './aiGrifballSpace';
 import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
 import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './aiGrifballAgency';
+import type { RunnerClashDecision } from './aiGrifballRunnerClash';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -61,6 +62,7 @@ export interface GrifballAssignment {
   space?: GrifballSpaceDecision;
   geometry?: GrifballSpaceGeometry;
   agency?: SupportAgencyDecision;
+  runnerClash?: RunnerClashDecision;
 }
 export interface GrifballTeamPlanState {
   assignments: Map<string, GrifballAssignment>;
