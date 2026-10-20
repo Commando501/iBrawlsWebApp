@@ -13,15 +13,29 @@ import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 
 test('individual Grifball styles are copied equally by live and simulation observations', () => {
   const { sim, live, scriptedBots, goals } = fixture();
-  const tactics = defaultGrifballTactics(); tactics.defaults.agencyStrength = .8;
+  sim.combatExecution = 'live-roster-v2';
+  for (const actor of sim.combatants) {
+    if (actor.id === 'player') live.yaw = actor.yaw + Math.PI;
+    else live.otherPlayers.get(actor.id)!.yaw = actor.yaw + Math.PI;
+  }
+  const tactics = defaultGrifballTactics(); tactics.defaults.agencyStrength = .8; tactics.defaults.runnerAgencyStrength = .7;
   for (const id of Object.keys(scriptedBots)) tactics.botStyles[id] = 'enforcer';
+  const carrier = sim.combatants.find(c => c.controller === 'ai')!;
+  carrier.weapon = 'ball'; live.otherPlayers.get(carrier.id)!.activeWeapon = 'ball';
+  Object.assign(sim.match.ball, { state: 'held', holderId: carrier.id });
+  Object.assign(live.grifball.ball, { state: 'held', holderId: carrier.id });
   live.grifballTactics = tactics;
   const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics });
   const b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
-  assert.deepEqual(a, b);
+  const normalize = (value: unknown) => JSON.parse(JSON.stringify(value, (_key, item) =>
+    typeof item === 'number' ? Math.round(item * 1e9) / 1e9 : item));
+  assert.deepEqual(normalize(a), normalize(b), 'live yaw convention differs by pi; allow trigonometric roundoff');
   const first = createGrifballTeamPlanState(), second = createGrifballTeamPlanState();
   updateGrifballTeamPlan(first, a, .2); updateGrifballTeamPlan(second, b, .2);
   assert.deepEqual(first.assignments, second.assignments);
+  assert.deepEqual(first.runnerPlans, second.runnerPlans);
+  assert.equal(first.runnerPlans[carrier.team].individuality?.style, 'enforcer');
+  assert.equal(first.runnerPlans[carrier.team].individuality?.strength, .7);
   const id = Object.keys(scriptedBots)[0]; tactics.botStyles[id] = 'guardian';
   assert.equal(a.tactics!.botStyles[id], 'enforcer'); assert.equal(b.tactics!.botStyles[id], 'enforcer');
 });

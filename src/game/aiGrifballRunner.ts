@@ -2,22 +2,26 @@ import { chooseTacticalAlternative, type TacticalChoice } from './aiGrifballStyl
 import type { FieldPoint, GrifballTacticalPlayer, GrifballTacticalSnapshot, GrifballTeamRole } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
+import { GRIFBALL_PLAYER_STYLES, GRIFBALL_RUNNER_PREFERENCES, grifballRunnerStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 import { createSpaceRouter, createSpaceRouterFactory, fieldDistance, isSpaceSegmentOpen, type SpaceRoute } from './grifballSpaceGeometry';
 
 export type RunnerAction = 'advance' | 'cut-left' | 'cut-right' | 'wait' | 'retreat' | 'finish' | 'observed';
 export interface RunnerCandidate {
   action: RunnerAction; destination: FieldPoint; route: SpaceRoute;
   score: number; risk: number; supportETA: number; progress: number;
+  individuality?: { baseScore: number; bonus: number; recoveryOpening: number };
 }
 export interface RunnerPlan {
   carrierId: string; origin: FieldPoint; heading: FieldPoint;
   selected: RunnerCandidate; candidates: RunnerCandidate[];
   reason: string; forcedProgress: boolean; waitUsed: number; stalledSeconds: number;
+  individuality?: { style: GrifballPlayerStyle; strength: number; reason: string };
 }
 export interface RunnerMemory {
   carrierId: string; bestGoalDistance: number; stalledSeconds: number;
   waitUsed: number; retreatUsed: number; commitRemaining: number;
   previous: RunnerCandidate | null;
+  individualityKey?: string;
 }
 export interface EscortOrder {
   kind: 'screen' | 'intercept' | 'rear-guard'; targetId: string | null;
@@ -65,6 +69,15 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const goalHeading = direction(carrier.pos, goal), speed = Math.max(0.1, carrier.space!.speed);
   const allies = snapshot.players.filter(p => p.team === carrier.team && p.id !== carrier.id);
   const enemies = snapshot.players.filter(p => p.team !== carrier.team);
+  const individuality = carrier.scripted && tuning.enabled && tuning.spaceEnabled && tuning.runnerEnabled && tuning.runnerAgencyStrength > 0
+    ? { style: resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, carrier.id), strength: tuning.runnerAgencyStrength } : undefined;
+  const individualityKey = individuality ? `${individuality.style}:${individuality.strength}` : undefined;
+  if (memory.individualityKey !== individualityKey) {
+    // Live preference changes release the old route without replenishing patience.
+    memory.previous = null; memory.commitRemaining = 0;
+    if (individualityKey) memory.individualityKey = individualityKey;
+    else delete memory.individualityKey;
+  }
   // Reaching the runner's route is not enough to cover it: the escort must
   // be able to pressure the opponent threatening that route in time.
   // The team planner supplies rechecked published intent. Standalone space
@@ -75,7 +88,7 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const forcedProgress = memory.stalledSeconds >= tuning.runnerProgressTimeout;
   const evaluate = (action: RunnerAction, destination: FieldPoint, stationarySeconds = 0): RunnerCandidate => {
     const route = router(destination), progress = goalDistance - fieldDistance(destination, goal);
-    let risk = 0, supportETA = Infinity;
+    let risk = 0, supportETA = Infinity, recoveryOpening = 0;
     if (route.status === 'blocked') return { action, destination, route, progress, risk: 1, supportETA, score: -Infinity };
     for (const fraction of [0.25, 0.6, 1]) {
       const point = pointAlongRunnerRoute(carrier.pos, route, route.length * fraction);
@@ -85,6 +98,12 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
       supportETA = Math.min(supportETA, allyETA);
       for (const enemy of enemies) {
         const enemyETA = estimateSpaceAttackTime(enemy, point, routers.get(enemy.id)!(point, true).length);
+        if (individuality && progress > 0 && Number.isFinite(enemyETA) && enemy.space?.phase.includes('recover') &&
+          fieldDistance(enemy.pos, point) <= enemy.space.reach + .5 && isSpaceSegmentOpen(geometry, enemy.pos, point)) {
+          // Only nearby visible recovery counts. Risk across the whole route still
+          // discounts this opening, including other defenders and later samples.
+          recoveryOpening = Math.max(recoveryOpening, Math.max(0, Math.min(1, enemyETA - arrival - tuning.runnerDangerMargin)));
+        }
         const exposure = Math.max(0, Math.min(1, (arrival + tuning.runnerDangerMargin - enemyETA) / Math.max(0.25, tuning.runnerDangerMargin)));
         // Contact requires both the runner and the threat to reach this point.
         // Support arriving after that contact cannot protect the runner's approach.
@@ -96,7 +115,18 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
       }
     }
     const score = route.length > tuning.runnerLookahead * 1.75 ? -Infinity : progress * tuning.runnerProgressWeight - risk * tuning.runnerRiskWeight - route.length * 0.08;
-    return { action, destination: { ...destination }, route, progress, risk, supportETA, score };
+    return { action, destination: { ...destination }, route, progress, risk, supportETA, score,
+      ...(individuality ? { individuality: { baseScore: score, bonus: 0, recoveryOpening } } : {}) };
+  };
+  let forwardRisk = 0;
+  const applyIndividuality = (candidate: RunnerCandidate) => {
+    if (!individuality || !candidate.individuality) return;
+    candidate.individuality.baseScore = candidate.score;
+    // Apply after wait/retreat/route eligibility: no preference revives a rejected route.
+    if (!Number.isFinite(candidate.score)) return;
+    const bonus = grifballRunnerStyleBonus(individuality.style, individuality.strength,
+      { ...candidate, recoveryOpening: forwardRisk > .1 ? candidate.individuality.recoveryOpening : 0 });
+    candidate.individuality.bonus = bonus; candidate.score += bonus;
   };
 
   // A human/neural carrier supplies observed motion, never receives movement orders.
@@ -126,6 +156,7 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
     evaluate('retreat', offset(carrier.pos, goalHeading, -Math.min(3, tuning.runnerLookahead * 0.5))),
   ];
   if (goalDistance <= tuning.runnerFinishDistance) candidates.push(evaluate('finish', goal));
+  forwardRisk = candidates[0].risk;
   const moving = candidates.filter(c => !['wait', 'retreat'].includes(c.action) && Number.isFinite(c.score));
   const lowestRisk = Math.min(...moving.map(c => c.risk));
   for (const c of candidates) {
@@ -138,6 +169,7 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
     }
     if (c.action === 'retreat' && (forcedProgress || memory.retreatUsed >= tuning.runnerMaxWait || lowestRisk < tuning.runnerRetreatRisk)) c.score = -Infinity;
     if (c.action === 'finish' && c.route.status !== 'blocked') c.score += 3;
+    applyIndividuality(c);
   }
   let selected = candidates.reduce((best, c) => c.score > best.score ? c : best);
   const optimum = selected;
@@ -149,6 +181,7 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   const previous = memory.previous;
   if (!forcedProgress && previous && previous.action !== 'observed' && fieldDistance(carrier.pos, previous.destination) > 0.7 && !['wait', 'retreat'].includes(previous.action)) {
     const incumbent = evaluate(previous.action, previous.destination);
+    applyIndividuality(incumbent);
     const urgent = selected.action === 'finish' || incumbent.risk >= tuning.runnerRetreatRisk && selected.risk + 0.25 < incumbent.risk;
     if (!urgent && Number.isFinite(incumbent.score) && (memory.commitRemaining > 0 || selected.score < incumbent.score + tuning.runnerSwitchAdvantage)) {
       selected = incumbent; candidates.push(incumbent); reason = 'Keep the committed route';
@@ -156,10 +189,12 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   }
   if (selected !== optimum && selected !== memory.previous && reason.startsWith('Choose')) reason += ' (seeded near-equal alternative)';
   if (selected.route.status === 'blocked') reason = 'No reachable runner route; keep explicit blocked status';
+  if (individuality) reason = `${GRIFBALL_PLAYER_STYLES[individuality.style].label}: ${reason}`;
   if (!previous || selected.action !== previous.action || fieldDistance(selected.destination, previous.destination) > 0.1) memory.commitRemaining = tuning.runnerCommitSeconds;
   memory.previous = selected;
   const heading = selected.route.points.length && selected.route.length > 0.1 ? direction(carrier.pos, selected.route.points[0]) : goalHeading;
-  return { carrierId: carrier.id, origin: { ...carrier.pos }, heading, selected, candidates, reason, forcedProgress, waitUsed: memory.waitUsed, stalledSeconds: memory.stalledSeconds };
+  return { carrierId: carrier.id, origin: { ...carrier.pos }, heading, selected, candidates, reason, forcedProgress, waitUsed: memory.waitUsed, stalledSeconds: memory.stalledSeconds,
+    ...(individuality ? { individuality: { ...individuality, reason: GRIFBALL_RUNNER_PREFERENCES[individuality.style] } } : {}) };
 }
 
 /** Allocate distinct threats to escorts; combat execution still owns how to attack. */

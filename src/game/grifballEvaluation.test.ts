@@ -9,7 +9,7 @@ const request = (): EvaluationRequest => ({ scenario: 'escort', seed: 10, seeds:
 const report = (r = request()): EvaluationReport => ({ schemaVersion: 1, contractVersion: 1, status: 'complete', request: r, map: null, mapName: 'Test', arenaRadius: 60,
   mechanics: DEFAULT_ADMIN_SETTINGS, input: 'scripted-observer', totalRuns: createEvaluationJobs(r).length, runs: [] });
 test('paired evaluation freezes individual styles by bot identity across mirrors', () => {
-  const r = request(); r.candidate.defaults.agencyStrength = .8;
+  const r = request(); r.candidate.defaults.agencyStrength = .8; r.candidate.defaults.runnerAgencyStrength = .6;
   r.candidate.botStyles = { main_ai: 'enforcer', blue2: 'guardian' };
   const jobs = createEvaluationJobs(r);
   r.candidate.botStyles.main_ai = 'opportunist';
@@ -17,6 +17,8 @@ test('paired evaluation freezes individual styles by bot identity across mirrors
     assert.deepEqual(job.config.botStyles, job.variant === 'candidate' ? { main_ai: 'enforcer', blue2: 'guardian' } : {});
     assert.equal(resolveTeamTactics(job.config, job.focalTeam).agencyStrength, job.variant === 'candidate' ? .8 : 0);
     assert.equal(resolveTeamTactics(job.config, job.focalTeam === 'blue' ? 'red' : 'blue').agencyStrength, 0);
+    assert.equal(resolveTeamTactics(job.config, job.focalTeam).runnerAgencyStrength, job.variant === 'candidate' ? .6 : 0);
+    assert.equal(resolveTeamTactics(job.config, job.focalTeam === 'blue' ? 'red' : 'blue').runnerAgencyStrength, 0);
   }
 });
 for (const focalTeam of ['blue', 'red'] as const) test(`metric inputs retain rate definitions and denominator ownership for ${focalTeam}`, () => {

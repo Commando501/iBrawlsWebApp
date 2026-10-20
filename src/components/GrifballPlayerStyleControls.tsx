@@ -1,4 +1,4 @@
-import { GRIFBALL_PLAYER_STYLES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from '../game/grifballPlayerStyles';
+import { GRIFBALL_PLAYER_STYLES, GRIFBALL_RUNNER_PREFERENCES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from '../game/grifballPlayerStyles';
 
 export function GrifballPlayerStyleControls({ bots, styles, onChange }: {
   bots: { id: string; team: string }[];
@@ -6,7 +6,7 @@ export function GrifballPlayerStyleControls({ bots, styles, onChange }: {
   onChange: (id: string, style: GrifballPlayerStyle) => void;
 }) {
   return <section aria-label="Grifball player styles" className="space-y-3">
-    <p className="text-xs text-slate-400">Player styles belong to individual roster bots and follow them across teams. They are separate from combat personalities and difficulty. This first version affects support engagements while your team has the ball.</p>
+    <p className="text-xs text-slate-400">Player styles belong to individual roster bots and follow them across teams. They affect support engagements and carrier route preferences while your team has the ball. Combat personalities and difficulty are separate.</p>
     {!bots.length && <p className="text-xs text-cyan-200">Start an offline Grifball match to assign player styles to active scripted bots.</p>}
     {bots.map(bot => {
       const style = resolveGrifballPlayerStyle(styles, bot.id);
@@ -17,7 +17,8 @@ export function GrifballPlayerStyleControls({ bots, styles, onChange }: {
             {Object.entries(GRIFBALL_PLAYER_STYLES).map(([id, profile]) => <option key={id} value={id}>{profile.label}</option>)}
           </select>
         </span>
-        <span className="block text-xs text-slate-400">{GRIFBALL_PLAYER_STYLES[style].description}</span>
+        <span className="block text-xs text-slate-400">Support: {GRIFBALL_PLAYER_STYLES[style].description}</span>
+        <span className="block text-xs text-slate-400">Runner: {GRIFBALL_RUNNER_PREFERENCES[style]}</span>
       </label>;
     })}
   </section>;

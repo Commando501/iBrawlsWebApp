@@ -17,3 +17,20 @@ export function grifballPlayerStyleBonus(style: GrifballPlayerStyle, strength: n
   return strength * (score.protection * weights.protection + score.opening * weights.opening +
     score.trade * weights.trade - score.coverageLost * weights.coverage);
 }
+
+export const GRIFBALL_RUNNER_PREFERENCES = {
+  balanced: 'Balance progress and coverage using the team route scores.',
+  enforcer: 'Favor forward progress and accept more exposure to keep the push moving.',
+  opportunist: 'Under forward pressure, favor routes through visible recovery openings before they close.',
+  guardian: 'Favor lower exposure and a useful coverage rendezvous.',
+} satisfies Record<GrifballPlayerStyle, string>;
+
+/** At most three score points of preference; route eligibility remains authoritative. */
+export function grifballRunnerStyleBonus(style: GrifballPlayerStyle, strength: number,
+  candidate: { action: string; progress: number; risk: number; recoveryOpening: number }): number {
+  const { action, progress, risk, recoveryOpening } = candidate;
+  const bonus = style === 'enforcer' ? .3 * progress + 1.5 * risk
+    : style === 'opportunist' ? 2.5 * recoveryOpening * (1 - risk) - .5 * risk
+    : style === 'guardian' ? -3 * risk + (action === 'wait' ? .5 : 0) : 0;
+  return strength * Math.max(-3, Math.min(3, bonus));
+}
