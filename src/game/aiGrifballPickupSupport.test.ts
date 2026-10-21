@@ -338,7 +338,7 @@ test('possession and round changes clear old support decisions', () => {
 });
 test('schema 1–26 imports default support individuality off while preserving styles and earlier strengths', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 30);
+  assert.equal(config.schemaVersion, 31);
   assert.equal(config.defaults.pickupSupportAgencyStrength, 0);
   for (let version = 1; version <= 26; version++) {
     const old = JSON.parse(JSON.stringify(config));

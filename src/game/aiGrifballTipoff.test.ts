@@ -14,6 +14,8 @@ import {
 import { buildGrifballSpaceGeometry, fieldDistance } from './grifballSpaceGeometry';
 import { resolveGrifballSupportSteering } from './aiGrifballObjectiveSteering';
 import type { GrifballPlayerStyle } from './grifballPlayerStyles';
+import { createSnapshotRouters } from './aiGrifballRunner';
+import { applyGrifballTipoffPosition } from './aiGrifballTipoffPosition';
 
 const actor = (id: string, team: string, x: number, z = 0): GrifballTacticalPlayer => ({
   id,
@@ -539,7 +541,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 30);
+  assert.equal(config.schemaVersion, 31);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -560,4 +562,292 @@ test('schema migration defaults tip-off off and preserves other styles and team 
   assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
   for (const bad of [{ tipoffEnabled: 1 }, { tipoffSeconds: 0 }, { tipoffSpacing: 13 }, { tipoffPickupMargin: NaN }])
     assert.throws(() => validateGrifballTactics({ ...config, teams: { red: bad } }));
+});
+
+function openingLanes(style: GrifballPlayerStyle, strength = 1) {
+  const f = fixture();
+  f.tactics.defaults.tipoffPositionAgencyStrength = strength;
+  f.tactics.botStyles = { collector: style, screen: style, support: style, reserve: style };
+  f.snapshot.players.filter((p) => p.team === 'red').forEach((p) => (p.pos.x = 40));
+  return f;
+}
+
+for (const [style, x, z] of [
+  ['enforcer', -3.75, 6],
+  ['opportunist', -4.5, 7.25],
+  ['guardian', -5.75, 6],
+] as const)
+  test(`${style} moves a passive opening support without changing collector or reserve`, () => {
+    const f = openingLanes(style),
+      orders = f.run(),
+      a = f.state.assignments.get('support')!;
+    const baseline = openingLanes(style, 0);
+    baseline.run();
+    assert.equal(a.tipoff!.positioning!.applied, true, a.tipoff!.positioning!.reason);
+    assert.deepEqual(a.destination, { x, z });
+    assert.equal(a.tipoff!.positioning!.collectorId, 'collector');
+    for (const id of ['collector', 'reserve']) {
+      assert.deepEqual(f.state.assignments.get(id)!.destination, baseline.state.assignments.get(id)!.destination);
+      assert.equal(f.state.assignments.get(id)!.tipoff!.positioning, undefined);
+    }
+    assert.ok(orders.every((a) => !a.tipoff!.attack));
+    assert.equal(steer(f, 'support')!.pickupRequested, false);
+    assert.equal(steer(f, 'collector')!.pickupRequested, true);
+  });
+
+test('passive screen lanes vary independently of decision timing and team styles', () => {
+  const f = openingLanes('opportunist');
+  f.run();
+  const a = f.state.assignments.get('screen')!;
+  assert.equal(a.tipoff!.job, 'screen');
+  assert.equal(a.tipoff!.positioning!.applied, true, a.tipoff!.positioning!.reason);
+  assert.deepEqual(a.destination, { x: -2, z: -7.25 });
+  assert.equal(a.tipoff!.agency, undefined);
+  f.tactics.defaults.tipoffAgencyStrength = 1;
+  f.tactics.botStyles.collector = 'guardian';
+  f.run(0);
+  assert.equal(f.state.assignments.get('collector')!.tipoff!.agency!.style, 'guardian');
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.positioning!.style, 'opportunist');
+});
+
+test('personal opening lanes blend, reset immediately and keep neutral styles neutral', () => {
+  const f = openingLanes('guardian', 0.5);
+  f.run();
+  assert.deepEqual(f.state.assignments.get('support')!.destination, { x: -5.125, z: 6 });
+  f.tactics.defaults.tipoffPositionAgencyStrength = 0;
+  f.run(0);
+  const baseline = openingLanes('guardian', 0);
+  baseline.run();
+  const shape = (x: ReturnType<typeof fixture>) =>
+    [...x.state.assignments.values()].map((a) => ({
+      id: a.botId,
+      role: a.role,
+      destination: a.destination,
+      order: a.tipoff,
+    }));
+  assert.deepEqual(shape(f), shape(baseline));
+  f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+  f.tactics.botStyles = {};
+  f.run(0);
+  assert.equal(f.state.assignments.get('support')!.tipoff!.positioning!.style, 'balanced');
+  assert.equal(f.state.assignments.get('support')!.tipoff!.positioning!.applied, false);
+  assert.deepEqual(
+    f.state.assignments.get('support')!.destination,
+    baseline.state.assignments.get('support')!.destination,
+  );
+});
+
+test('earned opening challenges retain their exact point and single attacker', () => {
+  const f = fixture();
+  f.run();
+  const screen = structuredClone(f.state.assignments.get('screen')!);
+  assert.equal(screen.tipoff!.attack, true);
+  f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+  f.tactics.botStyles.screen = 'opportunist';
+  const orders = f.run(0),
+    a = f.state.assignments.get('screen')!;
+  assert.equal(a.tipoff!.attack, true);
+  assert.deepEqual(a.destination, screen.destination);
+  assert.match(a.tipoff!.positioning!.reason, /earned screen challenge/);
+  assert.equal(orders.filter((a) => a.tipoff!.attack).length, 1);
+});
+
+for (const mode of ['outnumbered', 'airborne', 'lunging', 'recovering', 'immobile'] as const)
+  test(`${mode} keeps the team opening lane`, () => {
+    const f = openingLanes('guardian');
+    if (mode === 'outnumbered')
+      f.snapshot.players.filter((p) => p.team === 'blue' && p.id !== 'collector').forEach((p) => (p.pos.x = -30));
+    if (mode === 'outnumbered') f.snapshot.players.filter((p) => p.team === 'red').forEach((p) => (p.pos.x = 16));
+    if (mode === 'airborne') f.player('support').height = 2;
+    if (mode === 'lunging') f.player('support').space!.phase = 'lunging';
+    if (mode === 'recovering') f.player('support').space!.phase = 'hammer_recover';
+    if (mode === 'immobile') f.player('support').space!.mobileIn = 0.5;
+    const orders = f.run();
+    assert.ok(orders.some((a) => a.tipoff!.positioning));
+    const a = f.state.assignments.get('support')!;
+    assert.equal(a.tipoff!.positioning!.applied, false);
+    assert.deepEqual(a.destination, a.tipoff!.positioning!.teamPoint);
+  });
+
+test('visible threat exposure can reject a forward opening preference', () => {
+  const f = fixture();
+  f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+  f.tactics.botStyles.support = 'enforcer';
+  f.run();
+  const p = f.state.assignments.get('support')!.tipoff!.positioning!;
+  assert.equal(p.applied, false);
+  assert.match(p.reason, /attack margin/);
+  assert.ok(p.preferredAttackMargin < p.teamAttackMargin);
+});
+
+test('slow support cannot take a wider lane that arrives too late', () => {
+  const f = openingLanes('opportunist');
+  f.player('support').pos = { x: -4.5, z: 6 };
+  f.player('support').space!.speed = 1;
+  f.run();
+  const p = f.state.assignments.get('support')!.tipoff!.positioning!;
+  assert.equal(p.applied, false);
+  assert.match(p.reason, /0.35 s later/);
+});
+
+test('unreachable personal lane stays at the reachable team position', () => {
+  const f = openingLanes('opportunist');
+  f.snapshot.geometry!.blockers.push({ kind: 'box', x: -4.5, z: 7.25, hx: 0.3, hz: 0.3 });
+  f.run();
+  const p = f.state.assignments.get('support')!.tipoff!.positioning!;
+  assert.equal(p.applied, false);
+  assert.match(p.reason, /blocked ground route/);
+});
+
+test('large hammer spacing and observed teammates constrain personal lanes', () => {
+  const f = openingLanes('guardian', 0);
+  f.run();
+  const orders = [...f.state.assignments.values()].filter((a) => a.team === 'blue');
+  const a = f.state.assignments.get('support')!;
+  a.tipoff!.spacing = 9;
+  // The future cover is still more than ordinary separation (4m) from the
+  // observed teammate, but it would worsen the 9m opening reservation.
+  f.snapshot.players.push({ ...actor('human', 'blue', -12, 6), scripted: false });
+  f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+  applyGrifballTipoffPosition(f.snapshot, orders, f.tactics.defaults, createSnapshotRouters(f.snapshot), false);
+  assert.equal(a.tipoff!.positioning!.applied, false);
+  assert.match(a.tipoff!.positioning!.reason, /reserved teammate/);
+});
+
+test('collector detour clearance uses every route segment, not the direct chord', () => {
+  const f = openingLanes('opportunist', 0);
+  f.run();
+  const orders = [...f.state.assignments.values()].filter((a) => a.team === 'blue');
+  const routers = createSnapshotRouters(f.snapshot),
+    route = routers.get('collector')!;
+  // A waypoint path bends beside the proposed wider lane. Both destinations
+  // have ample clearance to the straight collector-to-ball chord.
+  routers.set('collector', ((point, lengthOnly) => {
+    const original = route(point, lengthOnly);
+    return {
+      ...original,
+      points: [
+        { x: -8, z: 10 },
+        { x: 0, z: 10 },
+        { x: 0, z: 0 },
+      ],
+      length: 28,
+    };
+  }) as typeof route);
+  f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+  applyGrifballTipoffPosition(f.snapshot, orders, f.tactics.defaults, routers, false);
+  const p = f.state.assignments.get('support')!.tipoff!.positioning!;
+  assert.equal(p.applied, false);
+  assert.match(p.reason, /collector route/);
+  assert.ok(p.preferredClearance < p.teamClearance);
+});
+
+test('missing reserve or collector route rejects personal lanes', () => {
+  for (const missing of ['reserve', 'route'] as const) {
+    const f = openingLanes('guardian', 0);
+    f.run();
+    const orders = [...f.state.assignments.values()].filter((a) => a.team === 'blue');
+    if (missing === 'reserve') f.snapshot.players = f.snapshot.players.filter((p) => p.id !== 'reserve');
+    const routers = createSnapshotRouters(f.snapshot);
+    if (missing === 'route') routers.delete('collector');
+    f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+    applyGrifballTipoffPosition(f.snapshot, orders, f.tactics.defaults, routers, false);
+    const p = f.state.assignments.get('support')!.tipoff!.positioning!;
+    assert.equal(p.applied, false);
+    assert.match(p.reason, missing === 'reserve' ? /rear reserve/ : /collector route/);
+  }
+});
+
+test('observed collector receives no order while personal covers preserve its route', () => {
+  const f = openingLanes('opportunist');
+  f.player('collector').scripted = false;
+  f.player('collector').vel.x = 1;
+  const orders = f.run();
+  assert.equal(f.state.assignments.has('collector'), false);
+  assert.ok(orders.some((a) => a.tipoff!.positioning?.applied));
+  for (const a of orders.filter((a) => a.tipoff!.positioning?.applied)) {
+    const p = a.tipoff!.positioning!;
+    assert.equal(p.collectorId, 'collector');
+    assert.ok(p.preferredClearance >= Math.min(a.tipoff!.spacing, p.teamClearance));
+  }
+});
+
+test('lane styles follow main_ai through mirror, roster reorder, team override and checkpoint', () => {
+  for (const mirror of [false, true])
+    for (const reverse of [false, true]) {
+      const f = openingLanes('guardian', 0);
+      f.player('support').id = 'main_ai';
+      f.tactics.botStyles.main_ai = 'guardian';
+      const team = mirror ? 'red' : 'blue';
+      f.tactics.teams[team] = { tipoffPositionAgencyStrength: 1 };
+      if (mirror)
+        for (const p of f.snapshot.players) {
+          p.team = p.team === 'blue' ? 'red' : 'blue';
+          p.pos.x *= -1;
+          p.pos.z *= -1;
+        }
+      if (reverse) f.snapshot.players.reverse();
+      f.run();
+      const a = f.state.assignments.get('main_ai')!;
+      assert.equal(a.tipoff!.positioning!.applied, true, a.tipoff!.positioning!.reason);
+      assert.equal(a.tipoff!.positioning!.style, 'guardian');
+      assert.ok([...f.state.assignments.values()].filter((a) => a.team !== team).every((a) => !a.tipoff?.positioning));
+      const restored = structuredClone(f.state);
+      f.run();
+      updateGrifballTeamPlan(restored, structuredClone(f.snapshot), 0.2);
+      assert.deepEqual(restored, f.state);
+    }
+});
+
+test('first possession, module off and round timeout clear personal opening lanes', () => {
+  for (const mode of ['possession', 'disabled', 'timeout'] as const) {
+    const f = openingLanes('guardian');
+    f.run();
+    if (mode === 'possession') {
+      f.snapshot.holderId = 'collector';
+      f.snapshot.ballPhysics!.holderId = 'collector';
+      f.snapshot.ballPhysics!.state = 'held';
+    }
+    if (mode === 'disabled') f.tactics.defaults.tipoffEnabled = false;
+    f.run(mode === 'timeout' ? 9 : 0);
+    assert.ok([...f.state.assignments.values()].every((a) => !a.tipoff?.positioning));
+  }
+});
+
+test('opening lane preferences require coordination and space awareness', () => {
+  for (const key of ['enabled', 'spaceEnabled'] as const) {
+    const f = openingLanes('opportunist');
+    f.tactics.defaults[key] = false;
+    assert.ok(f.run().every((a) => !a.tipoff?.positioning));
+  }
+});
+
+test('position individuality migrates old presets at zero while preserving opening decisions', () => {
+  const current = defaultGrifballTactics();
+  assert.equal(current.defaults.tipoffPositionAgencyStrength, 0);
+  for (let version = 1; version <= 30; version++) {
+    const old = JSON.parse(JSON.stringify(current));
+    old.schemaVersion = version;
+    delete old.defaults.tipoffPositionAgencyStrength;
+    old.defaults.tipoffEnabled = true;
+    old.defaults.tipoffAgencyStrength = 0.7;
+    old.botStyles.main_ai = 'guardian';
+    old.teams.red = { tipoffAgencyStrength: 0.4 };
+    const next = validateGrifballTactics(old);
+    assert.equal(next.defaults.tipoffPositionAgencyStrength, 0);
+    assert.equal(next.defaults.tipoffEnabled, true);
+    assert.equal(next.defaults.tipoffAgencyStrength, 0.7);
+    assert.equal(next.botStyles.main_ai, 'guardian');
+    assert.equal(next.teams.red!.tipoffAgencyStrength, 0.4);
+  }
+  current.defaults.tipoffPositionAgencyStrength = 0.6;
+  current.teams.red = { tipoffPositionAgencyStrength: 1 };
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(current))), current);
+  for (const value of [-0.1, 1.1, NaN, Infinity, '1', true])
+    assert.throws(() =>
+      validateGrifballTactics({ ...current, teams: { red: { tipoffPositionAgencyStrength: value } } }),
+    );
+  const incomplete = JSON.parse(JSON.stringify(current));
+  delete incomplete.defaults.tipoffPositionAgencyStrength;
+  assert.throws(() => validateGrifballTactics(incomplete));
 });

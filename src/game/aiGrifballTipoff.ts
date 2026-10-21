@@ -10,6 +10,7 @@ import { BALL_REST_Y } from './grifballBall';
 import { fieldDistance as distance, isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
+import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
 
 export interface TipoffMemory {
   round: number;
@@ -30,6 +31,7 @@ export interface TipoffOrder {
   elapsed: number;
   reason: string;
   agency?: TipoffAgencyDecision;
+  positioning?: TipoffPositionDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -316,6 +318,7 @@ export function applyGrifballTipoff(
     };
     a.reason = `tip-off ${job}: ${reason}`;
   }
+  applyGrifballTipoffPosition(snapshot, assignments, tuning, routers, contain);
   return true;
 }
 

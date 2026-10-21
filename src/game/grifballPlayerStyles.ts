@@ -159,6 +159,15 @@ export const GRIFBALL_TIPOFF_PREFERENCES = {
   guardian: { pickup: .25, challenge: .3, reason: 'Require more time to spare before collecting or challenging, giving up opening pressure.' },
 } satisfies Record<GrifballPlayerStyle, { pickup: number; challenge: number; reason: string }>;
 
+/** Metres relative to a passive opening lane. These preferences cannot move the
+ * collector, the rear reserve or a screen already committed to a challenge. */
+export const GRIFBALL_TIPOFF_POSITION_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team opening lane.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Cover slightly farther forward, giving up some recovery depth.' },
+  opportunist: { depth: 0, width: 1.25, reason: 'Offer a wider opening lane, accepting a longer return to the ball.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold a deeper opening lane, giving up some forward support.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

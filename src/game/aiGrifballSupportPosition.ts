@@ -10,6 +10,17 @@ export interface SupportPositionAssessment {
   rejection?: string;
 }
 
+/** Clearance to every segment, including detours around arena obstacles. */
+export function supportRouteClearance(point: FieldPoint, path: FieldPoint[]): number {
+  let clearance = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i], dx = b.x - a.x, dz = b.z - a.z;
+    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
+    clearance = Math.min(clearance, distance(point, { x: a.x + dx * t, z: a.z + dz * t }));
+  }
+  return clearance;
+}
+
 /** Shared ground-cover safeguards. Arrival comparisons may include a known wait
  * for a loose ball to settle, but never assume future moving contacts. */
 export function assessGrifballSupportPosition(input: {

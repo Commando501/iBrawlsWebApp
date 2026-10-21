@@ -41,11 +41,18 @@ const rounded = (value: unknown) =>
         JSON.stringify(value, (_k, v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 1e8) / 1e8 : v)),
       );
 const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) < 1e-7, `${label}: ${a} != ${b}`);
-function trace(main: boolean, mirror: boolean, reverse: boolean, style?: GrifballPlayerStyle) {
-  const id = main ? 'main_ai' : 'collector',
+function trace(
+  main: boolean,
+  mirror: boolean,
+  reverse: boolean,
+  style?: GrifballPlayerStyle,
+  laneStyle?: GrifballPlayerStyle,
+) {
+  const id = main && !laneStyle ? 'main_ai' : 'collector',
+    screenId = main && laneStyle ? 'main_ai' : 'screen',
     team = mirror ? 'red' : 'blue',
     sign = mirror ? -1 : 1;
-  const f = createBotParityFixture(id, true, { aiDifficulty: 'normal' }, 'screen');
+  const f = createBotParityFixture(id, true, { aiDifficulty: 'normal' }, screenId);
   const { state, sim, bot, target } = f,
     [self, other] = sim.combatants;
   sim.combatExecution = 'live-roster-v2';
@@ -66,9 +73,18 @@ function trace(main: boolean, mirror: boolean, reverse: boolean, style?: Grifbal
       tipoffAgencyStrength: 1,
     };
   }
+  if (laneStyle) {
+    Object.assign(state.grifballTactics.botStyles, {
+      [screenId]: laneStyle,
+      other: laneStyle,
+      back: laneStyle,
+      [id]: laneStyle,
+    });
+    state.grifballTactics.teams[team] = { ...state.grifballTactics.teams[team], tipoffPositionAgencyStrength: 1 };
+  }
 
   self.id = id;
-  other.id = 'screen';
+  other.id = screenId;
   for (const [c, live, x, z] of [
     [self, bot, -5, 0],
     [other, target, -8, -9],
@@ -133,10 +149,13 @@ function trace(main: boolean, mirror: boolean, reverse: boolean, style?: Grifbal
   }
   const goal = (t: string | undefined) => sim.goalPlates.find((p) => p.team !== t)!.position;
   const frames: unknown[] = [];
+  const lanePositions: { x: number; y: number; z: number }[] = [];
   let receipt = 0,
     applied = 0,
     moved = 0,
-    waited = 0;
+    waited = 0,
+    positioned = 0,
+    screenPositioned = 0;
   // Opponents remain stationary. Both engines independently plan and execute
   // every friendly ground order through actual pickup and the next possession.
   for (let tick = 1; tick <= 180; tick++) {
@@ -147,6 +166,12 @@ function trace(main: boolean, mirror: boolean, reverse: boolean, style?: Grifbal
     updateGrifballTeamPlanForState(state, dt, goal, f.map);
     updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics }), dt);
     const orders = [...plan.assignments.values()].filter((a) => a.team === team);
+    if (laneStyle) {
+      assert.ok(!plan.assignments.get(id)!.tipoff!.positioning);
+      assert.ok(!plan.assignments.get('back')!.tipoff!.positioning);
+      positioned += orders.filter((a) => a.tipoff!.positioning?.applied).length;
+      if (plan.assignments.get(screenId)!.tipoff!.positioning?.applied) screenPositioned++;
+    }
     const claiming = plan.assignments.get(id)!.tipoff!.phase === 'claim';
     assert.deepEqual(
       orders.filter((a) => a.role === 'retriever').map((a) => a.botId),
@@ -255,6 +280,7 @@ function trace(main: boolean, mirror: boolean, reverse: boolean, style?: Grifbal
     }
     assert.equal(sim.match.ball.state, state.grifball.ball.state);
     assert.equal(sim.match.ball.holderId, state.grifball.ball.holderId);
+    lanePositions.push({ ...sim.combatants.find((c) => c.id === 'other')!.pos });
     if (Math.hypot(self.vel.x, self.vel.z) > 0.01) moved++;
     frames.push({
       tick,
@@ -274,7 +300,7 @@ function trace(main: boolean, mirror: boolean, reverse: boolean, style?: Grifbal
   updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics }), dt);
   assert.ok([...plan.assignments.values()].every((a) => !a.tipoff));
   assert.ok([...state.aiMatchContext.grifballTeamPlan.assignments.values()].every((a) => !a.tipoff));
-  return { receipt, holder: sim.match.ball.holderId, frames, waited };
+  return { receipt, holder: sim.match.ball.holderId, frames, waited, positioned, screenPositioned, lanePositions };
 }
 
 for (const main of [false, true])
@@ -294,6 +320,24 @@ for (const main of [false, true])
         assert.ok(cautious.receipt > fast.receipt, 'personal caution must change actual collection time');
       }
       assert.equal(fast.waited, 0);
+    });
+
+for (const main of [false, true])
+  for (const mirror of [false, true])
+    test(`live/sim personal opening lanes move through first possession ${main}/${mirror}`, () => {
+      const baseline = trace(main, mirror, false, undefined, 'balanced');
+      assert.equal(baseline.positioned, 0);
+      for (const style of ['enforcer', 'opportunist', 'guardian'] as const) {
+        const personal = trace(main, mirror, true, undefined, style);
+        assert.ok(personal.positioned > 0, `${style} needs accepted lane decisions`);
+        assert.ok(personal.screenPositioned > 0, `${style} must move the ${main ? 'main_ai' : 'ordinary'} screen`);
+        assert.notDeepEqual(
+          personal.lanePositions[10],
+          baseline.lanePositions[10],
+          `${style} must change executed movement`,
+        );
+        assert.equal(personal.holder, baseline.holder);
+      }
     });
 
 const unexpected = () => {
@@ -370,6 +414,7 @@ for (const assigned of [true])
             f.state.grifballTactics = openingTactics();
             f.state.grifballTactics.defaults.tipoffEnabled = true;
             f.state.grifballTactics.defaults.tipoffAgencyStrength = 1;
+            f.state.grifballTactics.defaults.tipoffPositionAgencyStrength = 1;
             f.state.grifballTactics.botStyles[id] = 'guardian';
             f.state.grifballTactics.defaults.stylesEnabled = false;
           }

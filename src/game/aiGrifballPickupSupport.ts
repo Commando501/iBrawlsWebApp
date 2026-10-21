@@ -4,7 +4,7 @@ import type { TeamTactics } from './grifballTacticsConfig';
 import { BALL_REST_Y } from './grifballBall';
 import { fieldDistance as distance } from './grifballSpaceGeometry';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
-import { assessGrifballSupportPosition, type SupportPositionAssessment } from './aiGrifballSupportPosition';
+import { assessGrifballSupportPosition, supportRouteClearance, type SupportPositionAssessment } from './aiGrifballSupportPosition';
 import {
   GRIFBALL_PICKUP_SUPPORT_PREFERENCES,
   resolveGrifballPlayerStyle,
@@ -21,21 +21,6 @@ export interface PickupSupportDecision extends Omit<SupportPositionAssessment, '
   preferredPoint: FieldPoint;
   teamClearance: number;
   preferredClearance: number;
-}
-
-/** Distance from a cover destination to every segment of the retriever's actual
- * ground route. A straight chord would miss detours around arena obstacles. */
-function routeClearance(point: FieldPoint, path: FieldPoint[]): number {
-  let clearance = Infinity;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1],
-      b = path[i],
-      dx = b.x - a.x,
-      dz = b.z - a.z;
-    const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
-    clearance = Math.min(clearance, distance(point, { x: a.x + dx * t, z: a.z + dz * t }));
-  }
-  return clearance;
 }
 
 /** Vary lateral recovery covers only after the team has reserved its retriever,
@@ -110,8 +95,8 @@ export function applyGrifballPickupSupport(
         ...snapshot.players.filter((p) => p.team === team && !p.scripted).map((p) => p.pos),
       ],
     });
-    const teamClearance = routeClearance(teamPoint, path),
-      preferredClearance = routeClearance(preferredPoint, path);
+    const teamClearance = supportRouteClearance(teamPoint, path),
+      preferredClearance = supportRouteClearance(preferredPoint, path);
     const contain =
       order.transitioning ||
       order.advantage < 0 ||
