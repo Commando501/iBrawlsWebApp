@@ -92,6 +92,14 @@ export const GRIFBALL_ESCORT_POSITION_PREFERENCES = {
   guardian: { forward: -.75, width: 0, reason: 'Trail the team screen more closely, giving up some forward coverage.' },
 } satisfies Record<GrifballPlayerStyle, { forward: number; width: number; reason: string }>;
 
+/** The runner's cumulative wait and retreat budgets; progress timeouts stay shared. */
+export const GRIFBALL_RUNNER_PATIENCE_PREFERENCES = {
+  balanced: { budget: 1, reason: 'Use the team allowance for waiting and brief retreats.' },
+  enforcer: { budget: .65, reason: 'Spend less time waiting or retreating, risking a push before escorts arrive.' },
+  opportunist: { budget: .85, reason: 'Allow shorter support windows, passing up slower rendezvous.' },
+  guardian: { budget: 1.25, reason: 'Allow more time for coverage, giving defenders more time to regroup.' },
+} satisfies Record<GrifballPlayerStyle, { budget: number; reason: string }>;
+
 /** Multipliers for tactical assignment clocks; weapon timing is unchanged. */
 export const GRIFBALL_ENGAGEMENT_PREFERENCES = {
   balanced: { commit: 1, release: 1, reason: 'Use team commitment and coverage time.' },

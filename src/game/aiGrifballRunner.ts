@@ -2,7 +2,7 @@ import { chooseTacticalAlternative, type TacticalChoice } from './aiGrifballStyl
 import type { FieldPoint, GrifballTacticalPlayer, GrifballTacticalSnapshot, GrifballTeamRole } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
-import { GRIFBALL_PLAYER_STYLES, GRIFBALL_RUNNER_PREFERENCES, grifballRunnerStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
+import { GRIFBALL_PLAYER_STYLES, GRIFBALL_RUNNER_PREFERENCES, GRIFBALL_RUNNER_PATIENCE_PREFERENCES, grifballRunnerStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 import { createSpaceRouter, createSpaceRouterFactory, fieldDistance, isSpaceSegmentOpen, type SpaceRoute } from './grifballSpaceGeometry';
 
 export type RunnerAction = 'advance' | 'cut-left' | 'cut-right' | 'wait' | 'retreat' | 'finish' | 'observed';
@@ -16,6 +16,12 @@ export interface RunnerPlan {
   selected: RunnerCandidate; candidates: RunnerCandidate[];
   reason: string; forcedProgress: boolean; waitUsed: number; stalledSeconds: number;
   individuality?: { style: GrifballPlayerStyle; strength: number; reason: string };
+  patience?: RunnerPatienceDecision;
+}
+export interface RunnerPatienceDecision {
+  style: GrifballPlayerStyle; strength: number; preference: string;
+  teamMaxWait: number; maxWait: number; remainingWait: number; remainingRetreat: number;
+  rendezvousETA: number; progressRemaining: number;
 }
 export interface RunnerMemory {
   carrierId: string; bestGoalDistance: number; stalledSeconds: number;
@@ -141,7 +147,15 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
 
   const goalRoute = router(goal);
   const advance = goalRoute.status === 'blocked' ? offset(carrier.pos, goalHeading, Math.min(goalDistance, tuning.runnerLookahead)) : pointAlongRunnerRoute(carrier.pos, goalRoute, tuning.runnerLookahead);
-  const remainingWait = Math.max(0, tuning.runnerMaxWait - memory.waitUsed);
+  const patienceStrength = tuning.enabled && tuning.spaceEnabled && tuning.runnerEnabled ? tuning.runnerPatienceAgencyStrength : 0;
+  const patienceStyle = resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, carrier.id);
+  const patiencePreference = GRIFBALL_RUNNER_PATIENCE_PREFERENCES[patienceStyle];
+  // Use cumulative public action time. Editing a style never replenishes time
+  // spent waiting/retreating and never moves the global progress deadline.
+  const maxWait = patienceStrength > 0
+    ? Math.max(0, Math.min(4, tuning.runnerMaxWait * (1 + (patiencePreference.budget - 1) * patienceStrength)))
+    : tuning.runnerMaxWait;
+  const remainingWait = Math.max(0, maxWait - memory.waitUsed);
   // Evaluate the time spent waiting for a ready escort, not only the instant
   // the zero-length route starts. An unreachable rendezvous stays ineligible.
   const rendezvousETA = Math.min(Infinity, ...allies.filter(p => p.scripted && fieldDistance(p.pos, carrier.pos) > 2).map(p => {
@@ -165,9 +179,9 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
       // patience runs out; a nearby body behind a wall or in recovery cannot help.
       const coverageComing = rendezvousETA <= remainingWait;
       // Waiting is a short coverage rendezvous, never the default when alone or fully covered.
-      c.score = !forcedProgress && memory.waitUsed < tuning.runnerMaxWait && coverageComing && lowestRisk >= 0.75 && c.risk < 1 ? 1 - c.risk * tuning.runnerRiskWeight : -Infinity;
+      c.score = !forcedProgress && memory.waitUsed < maxWait && coverageComing && lowestRisk >= 0.75 && c.risk < 1 ? 1 - c.risk * tuning.runnerRiskWeight : -Infinity;
     }
-    if (c.action === 'retreat' && (forcedProgress || memory.retreatUsed >= tuning.runnerMaxWait || lowestRisk < tuning.runnerRetreatRisk)) c.score = -Infinity;
+    if (c.action === 'retreat' && (forcedProgress || memory.retreatUsed >= maxWait || lowestRisk < tuning.runnerRetreatRisk)) c.score = -Infinity;
     if (c.action === 'finish' && c.route.status !== 'blocked') c.score += 3;
     applyIndividuality(c);
   }
@@ -194,6 +208,9 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
   memory.previous = selected;
   const heading = selected.route.points.length && selected.route.length > 0.1 ? direction(carrier.pos, selected.route.points[0]) : goalHeading;
   return { carrierId: carrier.id, origin: { ...carrier.pos }, heading, selected, candidates, reason, forcedProgress, waitUsed: memory.waitUsed, stalledSeconds: memory.stalledSeconds,
+    ...(patienceStrength > 0 ? { patience: { style: patienceStyle, strength: patienceStrength, preference: patiencePreference.reason,
+      teamMaxWait: tuning.runnerMaxWait, maxWait, remainingWait, remainingRetreat: Math.max(0, maxWait - memory.retreatUsed),
+      rendezvousETA, progressRemaining: Math.max(0, tuning.runnerProgressTimeout - memory.stalledSeconds) } } : {}),
     ...(individuality ? { individuality: { ...individuality, reason: GRIFBALL_RUNNER_PREFERENCES[individuality.style] } } : {}) };
 }
 
