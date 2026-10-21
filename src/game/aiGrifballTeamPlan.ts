@@ -14,6 +14,7 @@ import type { SwordGuardDecision } from './aiGrifballSwordGuard';
 import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballHammerDefense';
 import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
 import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
+import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGrifballEscortPosition';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -64,6 +65,7 @@ export interface GrifballAssignment {
   receive?: ReceiveOrder;
   passRecovery?: PassRecoveryDecision;
   escort?: EscortOrder;
+  escortPosition?: EscortPositionDecision;
   space?: GrifballSpaceDecision;
   geometry?: GrifballSpaceGeometry;
   agency?: SupportAgencyDecision;
@@ -369,6 +371,7 @@ export function updateGrifballTeamPlan(
     }
     if (friendly && state.tankingMemory[team] && routers)
       applyGrifballSupportInitiative(snapshot, teamAssignments, tuning, state.tankingMemory[team], routers, previous);
+    if (friendly && runnerPlay && routers) applyGrifballEscortPosition(snapshot, teamAssignments, runnerPlay, tuning, routers);
     if (tuning.spaceEnabled && evaluateSpace) for (const assignment of teamAssignments) {
       assignment.geometry = snapshot.geometry;
       evaluateSpace(assignment, players.find(p => p.id === assignment.botId)!, previous.get(assignment.botId), !!assignment.escort || !!assignment.tanking || !!assignment.defense || !!assignment.receive);

@@ -84,6 +84,14 @@ export const GRIFBALL_PASS_SUPPORT_PREFERENCES = {
   guardian: { depth: 1.5, width: 0, reason: 'Hold deeper recovery cover, giving up some forward support.' },
 } satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
 
+/** Metres relative to a passive escort's team slot, in the carrier route frame. */
+export const GRIFBALL_ESCORT_POSITION_PREFERENCES = {
+  balanced: { forward: 0, width: 0, reason: 'Use the team escort position.' },
+  enforcer: { forward: 1, width: 0, reason: 'Screen farther along the runner route, giving up some rear support.' },
+  opportunist: { forward: 0, width: 1.5, reason: 'Offer a wider escort outlet, accepting a longer return to the runner.' },
+  guardian: { forward: -.75, width: 0, reason: 'Trail the team screen more closely, giving up some forward coverage.' },
+} satisfies Record<GrifballPlayerStyle, { forward: number; width: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

@@ -71,7 +71,7 @@ test('schema 9 preserves the other strengths and migrates passing off', () => {
   Object.assign(old.defaults, { agencyStrength: .8, runnerAgencyStrength: .7, defenseAgencyStrength: .6 });
   old.botStyles.runner = 'guardian'; old.teams.red = { defenseAgencyStrength: .3 };
   const migrated = validateGrifballTactics(old);
-  assert.equal(migrated.schemaVersion, 20); assert.equal(migrated.defaults.passAgencyStrength, 0);
+  assert.equal(migrated.schemaVersion, 21); assert.equal(migrated.defaults.passAgencyStrength, 0);
   assert.equal(migrated.defaults.agencyStrength, .8); assert.equal(migrated.defaults.runnerAgencyStrength, .7);
   assert.equal(migrated.defaults.defenseAgencyStrength, .6); assert.equal(migrated.botStyles.runner, 'guardian');
   assert.equal(resolveTeamTactics(migrated, 'red').defenseAgencyStrength, .3);
