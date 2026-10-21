@@ -6,6 +6,7 @@ import { pointAlongRunnerRoute, type SpaceRouters } from './aiGrifballRunner';
 import { grifballDefenseStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 import { chooseGrifballPassSupportPosition, type PassLandingSupport } from './aiGrifballPassSupport';
 import { applyGrifballMarkPosition, type MarkPositionDecision } from './aiGrifballMarkPosition';
+import type { PickupSupportDecision } from './aiGrifballPickupSupport';
 
 export interface DefensePressureCandidate {
   botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
@@ -18,6 +19,7 @@ export interface DefenseOrder {
   advantage: number; reinforcementIn: number; emergency: boolean; transitioning: boolean;
   passSupport?: PassLandingSupport;
   positioning?: MarkPositionDecision;
+  pickupSupport?: PickupSupportDecision;
   individuality?: {
     style: GrifballPlayerStyle; strength: number; reason: string;
     pressureCandidates?: DefensePressureCandidate[];

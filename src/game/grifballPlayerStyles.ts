@@ -55,6 +55,14 @@ export const GRIFBALL_PICKUP_PREFERENCES = {
   guardian: { bonus: -.15, needsOpening: false, reason: 'Yield marginal pickups to a similarly useful teammate and keep coverage.' },
 } satisfies Record<GrifballPlayerStyle, { bonus: number; needsOpening: boolean; reason: string }>;
 
+/** Metres relative to an ordinary loose-ball lateral cover slot. */
+export const GRIFBALL_PICKUP_SUPPORT_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team pickup-support position.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Support closer to the pickup, giving up some goal-side depth.' },
+  opportunist: { depth: 0, width: 1.25, reason: 'Support from a wider position, accepting a longer return to the pickup.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold deeper pickup coverage, giving up some immediate pressure.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 /** Small execution preferences in seconds, independent of combat difficulty.
  * Earlier commitment can be wasted; later commitment leaves less timing margin. */
 export const GRIFBALL_CLASH_PREFERENCES = {

@@ -16,6 +16,7 @@ import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifb
 import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
 import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGrifballEscortPosition';
 import { chooseGrifballPickupAgency, type PickupAgencyDecision } from './aiGrifballPickupAgency';
+import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -365,6 +366,7 @@ export function updateGrifballTeamPlan(
         flight: state.passFlight, tuning, routers, recovery });
       applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0,
         state.carrierMotion?.stationarySeconds ?? 0, passSupport);
+      applyGrifballPickupSupport(snapshot, teamAssignments, tuning, routers, state.passFlight?.team === team);
     }
     delete state.passPlans[team];
     if (friendly && holder && routers && tuning.spaceEnabled && tuning.passingEnabled) {
