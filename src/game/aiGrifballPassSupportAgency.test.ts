@@ -144,7 +144,7 @@ test('team overrides isolate strength while each cover retains its own player st
   assert.equal(decision.strength, .5); assert.equal(decision.style, 'guardian');
 });
 test('v1–19 presets migrate with support individuality off and preserve existing settings', () => {
-  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 29); assert.equal(current.defaults.passSupportAgencyStrength, 0);
+  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 30); assert.equal(current.defaults.passSupportAgencyStrength, 0);
   for (let version = 1; version <= 19; version++) {
     const old = JSON.parse(JSON.stringify(current)); old.schemaVersion = version; delete old.defaults.passSupportAgencyStrength;
     old.defaults.passSupportEnabled = true; old.defaults.passSupportDepth = 6; old.botStyles.cover = 'guardian';

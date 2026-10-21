@@ -150,6 +150,15 @@ export const GRIFBALL_SAFETY_POSITION_PREFERENCES = {
   guardian: { depth: 1.25, width: 0, reason: 'Hold deeper goal-side coverage, giving up some forward pressure.' },
 } satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
 
+/** Seconds of pickup caution and extra combat timing cushion. Challenge caution
+ * can only restrict the team's existing permission; it cannot earn another tank. */
+export const GRIFBALL_TIPOFF_PREFERENCES = {
+  balanced: { pickup: 0, challenge: 0, reason: 'Use team opening pickup and challenge timing.' },
+  enforcer: { pickup: -.1, challenge: 0, reason: 'Take tighter opening pickups, accepting less time before an enemy attack.' },
+  opportunist: { pickup: .1, challenge: .15, reason: 'Wait for a clearer pickup or combat window, passing up brief opportunities.' },
+  guardian: { pickup: .25, challenge: .3, reason: 'Require more time to spare before collecting or challenging, giving up opening pressure.' },
+} satisfies Record<GrifballPlayerStyle, { pickup: number; challenge: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

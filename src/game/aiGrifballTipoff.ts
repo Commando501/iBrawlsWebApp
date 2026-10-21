@@ -1,9 +1,15 @@
-import type { FieldPoint, GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
+import type {
+  FieldPoint,
+  GrifballAssignment,
+  GrifballTacticalPlayer,
+  GrifballTacticalSnapshot,
+} from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import type { SpaceRouters } from './aiGrifballRunner';
 import { BALL_REST_Y } from './grifballBall';
 import { fieldDistance as distance, isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
+import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
 
 export interface TipoffMemory {
   round: number;
@@ -23,6 +29,7 @@ export interface TipoffOrder {
   spacing: number;
   elapsed: number;
   reason: string;
+  agency?: TipoffAgencyDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -32,7 +39,8 @@ export function observeGrifballTipoff(
   snapshot: GrifballTacticalSnapshot,
   dt: number,
 ): TipoffMemory {
-  const next = memory?.round === snapshot.round ? memory : { round: snapshot.round, started: false, closed: false, elapsed: 0 };
+  const next =
+    memory?.round === snapshot.round ? memory : { round: snapshot.round, started: false, closed: false, elapsed: 0 };
   const ball = snapshot.ballPhysics;
   if (next.closed) return next;
   if (!snapshot.playing) {
@@ -71,7 +79,7 @@ export function tipoffPickupAllowed(
   ball: FieldPoint,
 ): boolean {
   const self = players.find((p) => p.id === a.botId),
-    margin = a.tuning?.tipoffPickupMargin ?? 0.35;
+    margin = a.tipoff?.agency?.pickupMargin ?? a.tuning?.tipoffPickupMargin ?? 0.35;
   if (!self || !grounded(self)) return false;
   const arrival = distance(pos, ball) / Math.max(0.1, self.space!.speed);
   return players
@@ -133,12 +141,22 @@ export function applyGrifballTipoff(
     Infinity,
     ...enemies.map((p) => estimateSpaceAttackTime(p, snapshot.ball, routers.get(p.id)!(snapshot.ball, true).length)),
   );
-  const claim = Number.isFinite(pickupETA) && enemyAttackETA >= pickupETA + tuning.tipoffPickupMargin;
+  const collectorAgency = collection
+    ? resolveGrifballTipoffAgency(tuning, snapshot.tactics?.botStyles, collector.id)
+    : undefined;
+  const teamClaim = Number.isFinite(pickupETA) && enemyAttackETA >= pickupETA + tuning.tipoffPickupMargin;
+  const claim =
+    Number.isFinite(pickupETA) &&
+    enemyAttackETA >= pickupETA + (collectorAgency?.pickupMargin ?? tuning.tipoffPickupMargin);
   const goalDistance = distance(snapshot.ball, goal),
     dx = (goal.x - snapshot.ball.x) / Math.max(0.001, goalDistance),
     dz = (goal.z - snapshot.ball.z) / Math.max(0.001, goalDistance);
   const nearby = enemies.filter((p) => distance(p.pos, snapshot.ball) <= 18);
-  const spacing = Math.max(tuning.tipoffSpacing, tuning.separation, ...nearby.map((p) => (p.space?.blastRadius ?? 0) * 2 + 0.75));
+  const spacing = Math.max(
+    tuning.tipoffSpacing,
+    tuning.separation,
+    ...nearby.map((p) => (p.space?.blastRadius ?? 0) * 2 + 0.75),
+  );
   const reach = Math.max(3, ...nearby.map((p) => Math.max(p.space?.reach ?? 3, p.space?.lungeReach ?? 0)));
   const point = (depth: number, side: number): FieldPoint => ({
     x: snapshot.ball.x + dx * Math.min(depth, goalDistance * 0.85) - dz * side,
@@ -150,7 +168,8 @@ export function applyGrifballTipoff(
     .filter((a) => grounded(bot(a)) && Number.isFinite(travel(bot(a), reservePoint)))
     .sort(
       (a, b) =>
-        Number(previous.get(b.botId)?.tipoff?.job === 'reserve') - Number(previous.get(a.botId)?.tipoff?.job === 'reserve') ||
+        Number(previous.get(b.botId)?.tipoff?.job === 'reserve') -
+          Number(previous.get(a.botId)?.tipoff?.job === 'reserve') ||
         (bot(b).pos.x - bot(a).pos.x) * dx + (bot(b).pos.z - bot(a).pos.z) * dz ||
         travel(bot(a), reservePoint) - travel(bot(b), reservePoint) ||
         a.botId.localeCompare(b.botId),
@@ -167,11 +186,15 @@ export function applyGrifballTipoff(
     .filter((a) => a !== reserve)
     .sort(
       (a, b) =>
-        Number(previous.get(b.botId)?.tipoff?.job === 'screen') - Number(previous.get(a.botId)?.tipoff?.job === 'screen') ||
+        Number(previous.get(b.botId)?.tipoff?.job === 'screen') -
+          Number(previous.get(a.botId)?.tipoff?.job === 'screen') ||
         travel(bot(a), snapshot.ball) - travel(bot(b), snapshot.ball) ||
         a.botId.localeCompare(b.botId),
     );
   const screen = reserve && !contain ? remaining[0] : undefined;
+  const screenAgency = screen
+    ? resolveGrifballTipoffAgency(tuning, snapshot.tactics?.botStyles, screen.botId)
+    : undefined;
   const sideOf = (p: FieldPoint) => Math.sign(-dz * (p.x - snapshot.ball.x) + dx * (p.z - snapshot.ball.z)) || 1;
   const firstSide = remaining[0] ? sideOf(bot(remaining[0]).pos) : 1;
   remaining.forEach((a, i) =>
@@ -185,14 +208,19 @@ export function applyGrifballTipoff(
   );
   // A small roster may consist only of the collector; no fictitious reserve.
   // Keep all destinations reachable or keep that bot at its current position.
-  for (const [a, destination] of slots) if (!Number.isFinite(travel(bot(a), destination))) slots.set(a, { ...bot(a).pos });
+  for (const [a, destination] of slots)
+    if (!Number.isFinite(travel(bot(a), destination))) slots.set(a, { ...bot(a).pos });
   let target: GrifballTacticalPlayer | undefined,
-    attack = false;
+    attack = false,
+    teamAttack = false;
   if (screen && !claim) {
     const self = bot(screen);
     const candidates = nearby
       .filter((p) => distance(p.pos, snapshot.ball) <= spacing + tuning.engagementDistance)
-      .map((p) => ({ p, eta: estimateSpaceAttackTime(self, p.pos, routers.get(self.id)!(p.pos, true).length) }))
+      .map((p) => ({
+        p,
+        eta: estimateSpaceAttackTime(self, p.pos, routers.get(self.id)!(p.pos, true).length),
+      }))
       .filter((c) => Number.isFinite(c.eta))
       .sort((a, b) => a.eta - b.eta || a.p.id.localeCompare(b.p.id));
     target = candidates[0]?.p;
@@ -221,17 +249,19 @@ export function applyGrifballTipoff(
               ),
           );
       const response = estimateSpaceAttackTime(target, self.pos, routers.get(target.id)!(self.pos, true).length);
-      attack =
+      teamAttack =
         separate &&
         Number.isFinite(travel(self, engage)) &&
         candidates[0].eta <= tuning.threatHorizon + 1 &&
         candidates[0].eta <= response + 0.1;
+      attack = teamAttack && candidates[0].eta + (screenAgency?.challengeCushion ?? 0) <= response + 0.1;
       if (attack) slots.set(screen, engage);
     }
   }
   for (const a of assignments) {
     const job: TipoffOrder['job'] =
       a === collection ? 'collector' : a === reserve ? 'reserve' : a === screen ? 'screen' : 'support';
+    const agency = a === collection ? collectorAgency : a === screen ? screenAgency : undefined;
     const reason =
       job === 'collector'
         ? claim
@@ -251,7 +281,8 @@ export function applyGrifballTipoff(
     delete a.receive;
     delete a.pickupAgency;
     a.destination = { ...slots.get(a)! };
-    a.role = job === 'collector' && claim ? 'retriever' : job === 'reserve' ? 'safety' : job === 'screen' ? 'lead' : 'cover';
+    a.role =
+      job === 'collector' && claim ? 'retriever' : job === 'reserve' ? 'safety' : job === 'screen' ? 'lead' : 'cover';
     a.tipoff = {
       job,
       phase,
@@ -264,6 +295,14 @@ export function applyGrifballTipoff(
       spacing,
       elapsed: memory.elapsed,
       reason,
+      ...(agency
+        ? {
+            agency: {
+              ...agency,
+              changedDecision: a === collection ? claim !== teamClaim : attack !== teamAttack,
+            },
+          }
+        : {}),
     };
     a.tanking = {
       mode: a.tipoff.attack ? 'engage' : contain ? 'delay' : 'cover',
@@ -287,12 +326,15 @@ export function selectGrifballTipoffThreat(
   self: FieldPoint,
   players: GrifballTacticalPlayer[],
 ): string | null {
-  const visible = players.filter((p) => p.team !== a.team && (!a.geometry || isSpaceSegmentOpen(a.geometry, self, p.pos)));
+  const visible = players.filter(
+    (p) => p.team !== a.team && (!a.geometry || isSpaceSegmentOpen(a.geometry, self, p.pos)),
+  );
   const immediate = visible
     .filter(
       (p) =>
         distance(self, p.pos) <= 2.5 ||
-        (['swing_up', 'swing_down', 'slashing'].includes(p.space?.phase ?? '') && distance(self, p.pos) <= (p.space?.reach ?? 3)),
+        (['swing_up', 'swing_down', 'slashing'].includes(p.space?.phase ?? '') &&
+          distance(self, p.pos) <= (p.space?.reach ?? 3)),
     )
     .sort((a, b) => distance(self, a.pos) - distance(self, b.pos) || a.id.localeCompare(b.id))[0];
   if (immediate) return immediate.id;
@@ -309,6 +351,11 @@ export function selectGrifballTipoffThreat(
     !grounded(attacker) ||
     !reserve ||
     !grounded(reserve) ||
+    // A clearer timing window must still exist when the combat adapter consumes
+    // the order. Immediate self-defense above never waits for a style preference.
+    ((order.agency?.challengeCushion ?? 0) > 0 &&
+      estimateSpaceAttackTime(attacker, target.pos, distance(self, target.pos)) + order.agency!.challengeCushion >
+        estimateSpaceAttackTime(target, self, distance(self, target.pos)) + 0.1) ||
     allies.filter(grounded).length < 3 ||
     nearby.length > allies.filter((p) => grounded(p) && distance(p.pos, a.anchor) <= 18).length ||
     nearby.some(
