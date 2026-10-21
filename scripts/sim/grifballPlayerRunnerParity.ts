@@ -24,8 +24,9 @@ export function runPlayerRunnerTrace(spec: PlayerRunnerCase, snapshotAt?: number
     hp, reverse: spec.reverse, mirror: spec.mirror }, snapshotAt, undefined, undefined, r);
   const record = parityRecorder();
   const hitTick = r.attack === 'none' ? 0 : r.attack === 'lunge' && r.motion === 'retreat' && r.speed === 130 ? 5 : 4;
-  const dead = hp === 1 && hitTick > 0;
-  const impactTick = r.punchSpeed === .04 ? 8 : 26;
+  const clash = hitTick > 0 && r.counter && !r.shield;
+  const dead = hitTick > 0 && !clash;
+  const impactTick = clash ? hitTick : r.punchSpeed === .04 ? 8 : 26;
   const step = 5.8 * r.speed / 100 / 60;
   const motion = r.motion === 'cross' ? [1, 0] : [0, r.motion === 'approach' ? -1 : 1];
   // Independent standing-body sphere: local eye 1.65, body center .825,
@@ -35,9 +36,9 @@ export function runPlayerRunnerTrace(spec: PlayerRunnerCase, snapshotAt?: number
     .825, motion[1] * step * impactTick - 1.8 - enemyZ) <= 1.5;
   record.compare(120, 'expected.counterRequests', 'counters' in trace ? trace.counters : undefined, Number(r.counter));
   for (const frame of trace.frames) for (const side of ['live', 'headless'] as const) {
-    const f = frame[side], hit = hitTick > 0 && frame.tick >= hitTick;
+    const f = frame[side], hit = dead && frame.tick >= hitTick;
     const punched = punchHits && frame.tick >= impactTick;
-    record.compare(frame.tick, `expected.${side}.health`, f.hp, hp - Number(hit));
+    record.compare(frame.tick, `expected.${side}.health`, f.hp, hit ? 0 : hp);
     record.compare(frame.tick, `expected.${side}.enemyHealth`, f.attackerHp, r.enemyHp - Number(punched));
     record.compare(frame.tick, `expected.${side}.holder`, f.ball.holderId, dead && hit ? null : 'player');
     record.compare(frame.tick, `expected.${side}.deaths`, f.runnerDeaths, Number(dead && hit));

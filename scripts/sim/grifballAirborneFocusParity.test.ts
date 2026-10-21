@@ -24,23 +24,23 @@ for (const pose of ['rising-runner', 'both-airborne', 'overhead-miss'] as const)
     assert.deepEqual(runAirborneFocusTrace(spec), runAirborneFocusTrace(spec));
   });
 }
-test('rising carrier receives late flight damage after the earlier slash', () => {
+test('the earlier slash kills a rising carrier before the later flight arrives', () => {
   const spec = AIRBORNE_FOCUS_CASES.find(s => s.pose === 'rising-runner' && s.hp === 2 && s.secondAttack === 'slash' && !s.reverse)!;
   const trace = runAirborneFocusTrace(spec);
   assert.equal(trace.differenceCount, 0);
-  assert.deepEqual(trace.expectedContacts, [{ tick: 4, id: 'support', lethal: false }, { tick: 6, id: 'attacker', lethal: true }]);
+  assert.deepEqual(trace.expectedContacts, [{ tick: 4, id: 'support', lethal: true }]);
   for (const side of ['live', 'headless'] as const) {
-    assert.equal(trace.frames[4][side].hp, 1);
+    assert.equal(trace.frames[4][side].hp, 0);
     assert.equal(trace.frames[5][side].hp, 0);
     assert.equal(trace.frames[5][side].ball.holderId, null);
   }
 });
-test('overhead flight misses while the grounded support damages the moving carrier', () => {
+test('grounded support kills the moving carrier while the overhead flight cannot reach it', () => {
   const spec = AIRBORNE_FOCUS_CASES.find(s => s.pose === 'overhead-miss' && s.hp === 3 && s.secondAttack === 'lunge' && !s.reverse)!;
   const trace = runAirborneFocusTrace(spec);
   assert.equal(trace.differenceCount, 0);
-  assert.deepEqual(trace.expectedContacts, [{ tick: 5, id: 'support', lethal: false }]);
-  assert.equal(trace.frames[119].live.hp, 2);
+  assert.deepEqual(trace.expectedContacts, [{ tick: 5, id: 'support', lethal: true }]);
+  assert.equal(trace.frames[119].live.hp, 0);
 });
 test('simultaneous flights award only the lethal attacker across roster orders', () => {
   for (const reverse of [false, true]) {
@@ -66,7 +66,7 @@ for (const field of ['health', 'holder', 'ball-state', 'height', 'attacker-heigh
       if (field === 'ball-state') frame[side].ball.state = 'held';
       if (field === 'height') frame[side].runnerPos[1] += .1;
       if (field === 'attacker-height') attacker.pos[1] += .1;
-      if (field === 'credit') attacker.kills = 0;
+      if (field === 'credit') attacker.kills = 1;
       if (field === 'flight') attacker.lunging = true;
       if (field === 'missing-actor') crowd.splice(crowd.indexOf(attacker), 1);
     }

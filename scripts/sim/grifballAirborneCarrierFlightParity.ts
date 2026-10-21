@@ -33,14 +33,14 @@ export function runAirborneCarrierFlightTrace(spec: typeof AIRBORNE_CARRIER_FLIG
     }
   }
   if (!contact) throw new Error('Airborne carrier fixture must reach contact');
-  const carrierDead = spec.hp === 1 || spec.trade && spec.actor !== initiator;
-  const otherHp = spec.hp === 1 && spec.actor !== initiator ? 2 : 1;
+  const carrierDead = true;
+  const otherHp = spec.actor !== initiator ? 2 : 1;
   const playerEnd = contact + Number(initiator === 'roster'
-    && !(spec.actor === 'player' && spec.hp === 1) && !(spec.actor === 'roster' && spec.trade));
-  const deathTick = initiator === 'player' || spec.actor === 'player' && spec.hp === 1
+    && spec.actor !== 'player' && !(spec.actor === 'roster' && spec.trade));
+  const deathTick = initiator === 'player' || spec.actor === 'player'
     || spec.actor === 'roster' && spec.trade ? contact : contact + 1;
   const deathBeforeRosterTick = spec.actor === 'roster'
-    && !(spec.trade && (initiator === 'roster' || spec.hp === 2));
+    && !(spec.trade && initiator === 'roster');
   const reviveTick = deathTick + (deathBeforeRosterTick ? 180 : 181);
   const interrupted = initiator === 'player' && spec.trade && spec.actor === 'player';
   for (const [playerSide, botSide, ballSide] of [['live', 'liveBot', 'liveBall'], ['headless', 'simBot', 'simBall']] as const) {

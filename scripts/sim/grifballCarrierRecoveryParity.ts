@@ -14,25 +14,24 @@ export function runCarrierRecoveryTrace(spec: CarrierRecoverySpec, snapshotAt?: 
   const trace = runFrameObjectiveTrace(spec.frame, snapshotAt, undefined, spec.crowd);
   const record = parityRecorder(), { frame, crowd } = spec, { motion, escortHp, attackAt } = crowd.recovery!;
   const distant = motion === 'retreat' && attackAt === 12;
-  const damage = distant ? frame.lunge ? 1 : 0 : 2;
+  const damage = distant && !frame.lunge ? 0 : frame.hp;
   const lethal = frame.hp <= damage;
   // With pinned 7.54-unit/s runner motion and 24-unit/s lunge motion, separation is
   // 1.511 units on tick 16 and 1.237 on tick 17, crossing the 1.5 contact radius.
   // The slash at tick 12 is already out of reach; both collectors remain behind.
   const deathTick = distant ? 17 : attackAt;
   const runnerId = frame.player ? 'player' : 'target';
-  const earlyEscortPickup = !distant && frame.lunge && frame.hp === 1 && frame.reverse;
+  const earlyEscortPickup = !distant && frame.lunge && frame.reverse;
   // Early possession applies runner HP before the later slash. A three-HP escort
-  // becomes a one-HP carrier here and can die from that same frame's second attack.
+  // becomes a carrier here and dies from that same frame's second sword attack.
   const escortDead = escortHp === 1 || earlyEscortPickup;
   const finalHolder = !lethal ? runnerId : distant ? null : escortDead || !frame.reverse ? 'interceptor' : 'escort';
-  const firstHolder = distant || !lethal ? runnerId : frame.lunge && frame.hp === 1 && !frame.reverse ? 'interceptor' : null;
+  const firstHolder = distant || !lethal ? runnerId : frame.lunge && !frame.reverse ? 'interceptor' : null;
   const firstSlash = frame.lunge || frame.reverse ? 'support' : 'attacker';
-  const runnerKiller = !lethal ? null : frame.lunge ? frame.hp === 1 ? 'attacker' : 'support'
-    : frame.hp === 1 ? firstSlash : firstSlash === 'attacker' ? 'support' : 'attacker';
+  const runnerKiller = !lethal ? null : frame.lunge ? 'attacker' : firstSlash;
   for (const side of ['live', 'headless'] as const) {
     const first = trace.frames[attackAt - 1][side], last = trace.frames.at(-1)![side];
-    record.compare(attackAt, `expected.${side}.attackHealth`, first.hp, distant ? frame.hp : Math.max(0, frame.hp - 2));
+    record.compare(attackAt, `expected.${side}.attackHealth`, first.hp, distant ? frame.hp : 0);
     record.compare(attackAt, `expected.${side}.firstPossession`, first.ball.holderId, firstHolder);
     record.compare(120, `expected.${side}.finalHealth`, last.hp, Math.max(0, frame.hp - damage));
     record.compare(120, `expected.${side}.finalPossession`, last.ball.holderId, finalHolder);
@@ -41,7 +40,7 @@ export function runCarrierRecoveryTrace(spec: CarrierRecoverySpec, snapshotAt?: 
     if (!distant) record.compare(attackAt + 1, `expected.${side}.nextPickup`, trace.frames[attackAt][side].ball.holderId, finalHolder);
     if (distant && frame.lunge) {
       record.compare(16, `expected.${side}.beforeLungeContact`, trace.frames[15][side].hp, frame.hp);
-      record.compare(17, `expected.${side}.lungeContact`, trace.frames[16][side].hp, frame.hp - 1);
+      record.compare(17, `expected.${side}.lungeContact`, trace.frames[16][side].hp, 0);
     }
     for (const f of trace.frames) {
       const movingTicks = lethal ? Math.min(f.tick, deathTick) : f.tick;

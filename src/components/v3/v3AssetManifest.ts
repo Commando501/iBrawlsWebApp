@@ -49,11 +49,13 @@ export interface V3BudgetSummary {
 
 export const V3_DEFAULT_CHARACTER_BUDGET_LIMITS: V3BudgetSummary = {
   partCount: V3_CHARACTER_SLOT_IDS.length,
-  sourceVoxelCount: 122000,
-  mergedBoxCount: 60000,
+  // Source authoring ceilings for the expanded Blender/OBJ armor manifest.
+  // Runtime LOD/render budgets are measured separately by v3PerformanceBudget.
+  sourceVoxelCount: 150000,
+  mergedBoxCount: 80000,
   materialGroupCount: 95,
   drawCallEstimate: 95,
-  memoryEstimateKb: 32000,
+  memoryEstimateKb: 36000,
 };
 
 export const V3_DEFAULT_WEAPON_BUDGET_LIMITS: V3BudgetSummary = {

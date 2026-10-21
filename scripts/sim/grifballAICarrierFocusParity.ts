@@ -26,10 +26,16 @@ export function validateAICarrierFocus(trace: ReturnType<typeof runFrameObjectiv
     { id: 'support', attack: r.secondAttack, z: -1.5, hit: false, hp: r.enemyHp, kills: 0, deaths: 0 }];
   const order = spec.reverse ? [attackers[1], null, attackers[0]] : [attackers[0], null, attackers[1]];
   const step = 5.8 * r.speed / 100 / 60, impact = r.punchSpeed === .04 ? 8 : 26;
-  let hp: number = spec.hp, z = 0, counter = false, kills = 0;
+  let hp: number = spec.hp, z = 0, counter = false, consumed = false, kills = 0;
   const damage = (a: typeof attackers[number]) => {
     if (hp <= 0) return;
-    hp--;
+    if (counter && !consumed && !r.shield && Math.hypot(z - 1.8 - a.z, 1.2 - .825) <= 1.5) {
+      consumed = true;
+      a.hp--;
+      if (a.hp === 0) { a.deaths++; kills++; }
+      return;
+    }
+    hp = 0;
     if (hp === 0) a.kills++;
   };
   record.compare(0, 'expected.frameCount', trace.frames.length, 120);
@@ -41,14 +47,14 @@ export function validateAICarrierFocus(trace: ReturnType<typeof runFrameObjectiv
       if (!a) {
         if (hp <= 0) continue;
         if (tick === 4 && r.counter && !r.shield) counter = true;
-        if (!counter || tick < 4 || tick > impact) z += step;
+        if (!counter || consumed || tick < 4 || tick > impact) z += step;
       } else if (tick >= 4 && a.attack === 'lunge' && !a.hit && a.hp > 0 && hp > 0) {
         a.z += .4;
         if (Math.abs(z - a.z) <= 1.5) { a.hit = true; damage(a); }
       }
     }
     if (tick === 4) for (const a of order) if (a && a.attack === 'slash') damage(a);
-    if (tick === impact && counter && hp > 0) for (const a of attackers) {
+    if (tick === impact && counter && !consumed && hp > 0) for (const a of attackers) {
       // A grounded roster punch projects 1.8 units backward at height 1.2;
       // the standing target center is 0.825 and the sphere radius is 1.5.
       if (!r.shield && Math.hypot(z - 1.8 - a.z, 1.2 - .825) <= 1.5) {

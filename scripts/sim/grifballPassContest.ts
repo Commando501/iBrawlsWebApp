@@ -72,7 +72,8 @@ export function validatePassContestTrace(trace: Omit<ReturnType<typeof runOppose
     check('pass received by intended teammate', reception?.id, 'escort');
     if (spec.opening === 'clear') {
       check('unpressured release timing', first?.tick, 36);
-      check('unpressured settled reception timing', reception?.tick, 131);
+      // The receiver's collider redirects the ball before it settles.
+      check('unpressured settled reception timing', reception?.tick, 132);
     } else {
       check('nearby threat dies before release', trace.deaths.some(d => d.id === 'defender' && d.tick < (first?.tick ?? 0)), true);
       check('immediate pressure prevents opening charge', trace.frames[0].pass?.charge, null);

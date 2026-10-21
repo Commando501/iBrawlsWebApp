@@ -42,6 +42,7 @@ export interface GrifballRuntimeState {
   pWeaponReady: boolean;
 
   activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
+  playerWeaponBeforeBall: 'hammer' | 'sword' | 'pistol';
   crosshairColor: 'white' | 'red';
   isLunging: boolean;
   swordLungeHit?: boolean;
@@ -190,6 +191,7 @@ export function createInitialGrifballRuntimeState({
     pWeaponReady: true,
 
     activeWeapon: 'hammer',
+    playerWeaponBeforeBall: 'hammer',
     crosshairColor: 'white',
     isLunging: false,
     lungeTimer: 0,

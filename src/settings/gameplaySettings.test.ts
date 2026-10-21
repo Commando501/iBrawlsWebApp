@@ -18,6 +18,15 @@ test('default rollout preserves supported visual model policy choices', () => {
   assert.equal(withDefaultGameplaySettings({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v3');
 });
 
+test('saved settings backfill hammer deflection and preserve explicit opt-out and strength', () => {
+  const defaults = withDefaultGameplaySettings({});
+  assert.equal(defaults.hammerBallDeflectionEnabled, true);
+  assert.equal(defaults.hammerBallDeflectionStrength, 1);
+  const saved = withDefaultGameplaySettings({ hammerBallDeflectionEnabled: false, hammerBallDeflectionStrength: 2.5 });
+  assert.equal(saved.hammerBallDeflectionEnabled, false);
+  assert.equal(saved.hammerBallDeflectionStrength, 2.5);
+});
+
 test('default gameplay settings include Runner / Ball mechanics controls', () => {
   const defaults = DEFAULT_ADMIN_SETTINGS as any;
 

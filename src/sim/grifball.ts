@@ -43,6 +43,8 @@ import { inwardSpawnYaw } from './factory';
 import type { ScriptedObjectivePlanner } from './scriptedObjectivePlanner';
 import { resolveSimScriptedGrifballPass, type ScriptedPassFrame } from './grifballScriptedPass';
 import { getYawForHeading } from '../game/yaw';
+import { createBallCombatantColliders } from '../game/grifballBallColliders';
+import { observeSimTacticalWeaponTarget } from './grifballTacticalWeaponChoice';
 
 /** Height of the held ball above the carrier's feet (matches live runtime). */
 const CARRY_HEIGHT = 1.1;
@@ -78,10 +80,10 @@ export function setSimCarrier(
   state?: SimState
 ): void {
   const mixed = state?.combatExecution === 'live-mixed-v1';
+  const localPlayer = mixed && isMixedPlayer(state, c);
   const baseMaxHp = settings.maxHP ?? 1;
-  // The live hammer has its own clock; switching away does not spend the sword recovery.
-  if (!carrying && mixed && isMixedPlayer(state, c) && c.weapon === 'sword' && c.playerSwordLungeRecovery) c.weaponPhaseElapsed = 0;
   if (carrying) {
+    if (localPlayer && c.weapon !== 'ball') c.weaponBeforeBall = c.weapon;
     c.weapon = 'ball';
     c.maxHp = resolveRunnerMaxHp(settings);
     c.hp = c.maxHp;
@@ -94,18 +96,22 @@ export function setSimCarrier(
     c.runnerHealDelayTimer = 0;
     c.runnerLastHp = c.hp;
   } else {
-    c.weapon = 'hammer';
+    c.weapon = localPlayer
+      ? c.weapon === 'ball' ? c.weaponBeforeBall ?? 'hammer' : c.weapon
+      : 'hammer';
     c.maxHp = baseMaxHp;
     c.hp = Math.min(c.hp, c.maxHp);
     c.hasBall = false;
     c.passChargeTimer = 0;
     c.runnerHealDelayTimer = 0;
     c.runnerLastHp = c.hp;
-    // Live player release readies the hammer without erasing its animation clock.
+    // Live player release restores its prior weapon and clears its action clocks.
     // Roster release preserves its current weapon phase.
-    if (mixed && isMixedPlayer(state, c)) {
+    if (localPlayer) {
       c.passCharging = false;
       c.weaponState = 'idle'; c.weaponTimer = 0; c.attackKind = 'none'; c.attackCooldown = 0;
+      c.weaponPhaseElapsed = 0;
+      delete c.playerSwordLungeRecovery;
     }
   }
 }
@@ -122,7 +128,12 @@ function mixedObjectiveActors(state: SimState): SimCombatant[] {
 function placeMixedObjectiveActors(state: SimState, settings: UniversalSettings): void {
   const used: SimCombatant['pos'][] = [];
   for (const c of mixedObjectiveActors(state)) {
-    const cluster = state.map.teamSpawns?.[c.team]?.length ? state.map.teamSpawns[c.team] : state.map.spawnPoints;
+    const teamCluster = state.map.teamSpawns?.[c.team];
+    const points = teamCluster?.length ? teamCluster : state.map.spawnPoints;
+    // Live slot zero starts at index 2 for eight-point clusters. Bots without
+    // team spawns use the ordinary fallback order; the local player uses slot 0.
+    const preferred = points.length >= 8 && (teamCluster?.length || isMixedPlayer(state, c)) ? 2 : 0;
+    const cluster = [...points.slice(preferred), ...points.slice(0, preferred)];
     let spawn: { x: number; y: number; z: number; yaw?: number } = cluster[0] ?? { x: 0, y: 0, z: 0 };
     let best = -1;
     for (const point of cluster) {
@@ -320,7 +331,17 @@ export function tickGrifballObjective(
       g.ball.pos.z = holder.pos.z;
     }
   } else {
-    tickBallPhysics(g.ball, dt, settings.grifballBallReturnTimeout ?? 8, state.map);
+    const colliders = isGrifballLive(g) ? createBallCombatantColliders(
+      state.combatants
+        .filter(c => available(c) && !(mixed && isMixedPlayer(state, c) && state.localPlayerIsObserver) &&
+          !(isBallGrabbable(g.ball) && actionsById[c.id]?.pickup && (!mixed || isMixedPlayer(state, c) || c.controller === 'ai')))
+        .map(c => ({
+          id: c.id, pos: c.pos, vel: c.vel, yaw: c.yaw + Math.PI,
+          isCrouching: c.isCrouching, modelType: c.modelType, activeWeapon: c.weapon,
+          weaponState: observeSimTacticalWeaponTarget(state, c).weaponState,
+          weaponTimer: c.weaponPhaseElapsed ?? 0, isLunging: c.isLunging,
+        })), dt, settings) : [];
+    tickBallPhysics(g.ball, dt, settings.grifballBallReturnTimeout ?? 8, state.map, colliders);
   }
 
   if (isGrifballLive(g)) {

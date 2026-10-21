@@ -124,7 +124,7 @@ interface RightPadProps {
   mobileRightJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
   mobileRightJoystickActiveRef: React.MutableRefObject<boolean>;
   isAdjustmentMode: boolean;
-  activeWeapon: 'hammer' | 'sword';
+  activeWeapon: GameStats['activeWeapon'];
   stats: GameStats;
   keybindings?: Keybindings;
 }
@@ -340,6 +340,12 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
       {/* SWAP WEAPON SELECTION WHEEL BUTTONS */}
       <div className="mobile-weapon-switcher absolute flex gap-1.5 pointer-events-auto">
+        {activeWeapon === 'ball' && (
+          <span className="mobile-weapon-button rounded-lg flex flex-col items-center justify-center border border-orange-400 bg-orange-500/25 text-orange-300">
+            <span aria-hidden="true">🏉</span>
+            <span className="text-[7px] font-bold font-mono">BALL</span>
+          </span>
+        )}
         {/* Hammer Swapper */}
         <button
           type="button"
@@ -409,10 +415,10 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
         }}
       >
         <div className="mobile-primary-attack-icon font-bold leading-none mb-0.5">
-          {activeWeapon === 'sword' ? '⚡' : '🔨'}
+          {activeWeapon === 'ball' ? '🏉' : activeWeapon === 'sword' ? '⚡' : '🔨'}
         </div>
         <span className="text-[9px] font-black font-sans tracking-widest uppercase">
-          {activeWeapon === 'sword' ? 'LUNGE' : 'SLAM'}
+          {activeWeapon === 'ball' ? 'PUNCH' : activeWeapon === 'sword' ? 'LUNGE' : 'SLAM'}
         </span>
       </button>
 

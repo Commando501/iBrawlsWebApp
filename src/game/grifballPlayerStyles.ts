@@ -32,6 +32,14 @@ export const GRIFBALL_DEFENSE_PREFERENCES = {
   guardian: 'Favor nearby escort marking while a teammate contests the carrier.',
 } satisfies Record<GrifballPlayerStyle, string>;
 
+/** Metres relative to a reserved escort mark, in the target-to-own-goal frame. */
+export const GRIFBALL_MARK_POSITION_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team marking position.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Mark more tightly, giving up some goal-side depth.' },
+  opportunist: { depth: 0, width: 1.25, reason: 'Mark from a wider angle, accepting a longer response to the opponent.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold a deeper goal-side mark, giving up some immediate pressure.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 export const GRIFBALL_PASS_PREFERENCES = {
   balanced: 'Use team pass scores.',
   enforcer: 'Favor passes that gain more ground.',

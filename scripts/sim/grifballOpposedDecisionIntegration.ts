@@ -1,5 +1,6 @@
 import { resolveRunnerMaxHp } from '../../src/game/runnerBallSettings';
-import { throwBall, GRIFBALL_BALL_GRAVITY, GRIFBALL_THROW_ARC } from '../../src/game/grifballBall';
+import { throwBall, tickBallPhysics } from '../../src/game/grifballBall';
+import { getLiveBallContactColliders } from '../../src/components/grifball/grifballBallCollisionRuntime';
 import { isMapBodyClear } from './grifballMapCollisionOracle';
 import { createArenaCollisionCallbacksForState } from '../../src/components/grifball/arenaCollisionCallbacks';
 import { getGoalPlates } from '../../src/game/grifballGoals';
@@ -65,8 +66,7 @@ export interface OpposedDecisionCase {
 }
 export type TankContestOpening = 'opening' | 'ready' | 'late-cover' | 'shared-blast' | 'disabled' | 'short-window' | 'threshold' | 'no-reserve';
 export type EarnedTankOpening = 'opening' | 'durable-opponent' | 'default-roles' | 'late-arrival' | 'shared-blast';
-export interface RosterContestOptions { teamSize: 3 | 4; tactics: Partial<TeamTactics>;
-  botStyles?: ReturnType<typeof defaultGrifballTactics>['botStyles']; tankOpening?: TankContestOpening; earnedTankOpening?: EarnedTankOpening }
+export interface RosterContestOptions { teamSize: 3 | 4; tactics: Partial<TeamTactics>; botStyles?: ReturnType<typeof defaultGrifballTactics>['botStyles']; tankOpening?: TankContestOpening; earnedTankOpening?: EarnedTankOpening }
 export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
   (['punch-first', 'hammer-first', 'contested'] as const).flatMap(mode =>
     (['blue', 'red'] as const).flatMap(team => [false, true].flatMap(reverse =>
@@ -318,6 +318,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const random = seededRandom(spec.seed ?? 17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
+  let redirectedPass = false;
   const dashState = (id: string) => {
     const c = state.otherPlayers.get(id)!;
     return { pos: c.pos.toArray(), vel: c.vel.toArray(), hp: c.hp, weapon: c.activeWeapon,
@@ -448,6 +449,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         const chargeBefore = passing && plan.passCharge ? { ...plan.passCharge } : null;
         const selected = passing && oldHolder ? plan.assignments.get(oldHolder)?.pass?.selected : null;
         const choice = selected ? { receiverId: selected.receiverId, speed: selected.speed, chargeSeconds: selected.chargeSeconds } : null;
+        const ballBeforeObjective = structuredClone(state.grifball.ball);
         updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: delta,
           isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => {
             check('round continuation enabled', match, true);
@@ -485,14 +487,35 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
             check('release receiver alive and allied', !!choice && state.otherPlayers.get(choice.receiverId)!.hp > 0 && state.otherPlayers.get(choice.receiverId)!.team === scorer?.team, true);
             if (choice) {
               passes.push({ tick, carrierId: oldHolder!, ...choice });
-              check('released horizontal speed', Math.abs(Math.hypot(state.grifball.ball.vel.x, state.grifball.ball.vel.z) - choice.speed) < 1e-9, true);
-              check('released vertical speed', Math.abs(state.grifball.ball.vel.y - (choice.speed * GRIFBALL_THROW_ARC - GRIFBALL_BALL_GRAVITY * delta)) < 1e-9, true);
-              check('release advances ball once', Math.abs(Math.hypot(state.grifball.ball.pos.x - scorer!.pos.x, state.grifball.ball.pos.z - scorer!.pos.z) - choice.speed * delta) < 1e-9, true);
+              // A nearby actor can deflect the ball on the release frame itself.
+              // Verify exactly one physics step, including its contacts, rather
+              // than assuming velocity and displacement remain ballistic.
+              throwBall(ballBeforeObjective, { x: scorer!.pos.x, y: scorer!.pos.y + 1.1, z: scorer!.pos.z },
+                { ...selected!.direction, y: 0 }, choice.speed);
+              const expected = structuredClone(ballBeforeObjective);
+              tickBallPhysics(expected, delta, state.settings.grifballBallReturnTimeout ?? 8, map,
+                getLiveBallContactColliders(state, delta));
+              for (const axis of ['x', 'y', 'z'] as const) {
+                check(`release contact physics position.${axis}`, Math.abs(state.grifball.ball.pos[axis] - expected.pos[axis]) < 1e-9, true);
+                check(`release contact physics velocity.${axis}`, Math.abs(state.grifball.ball.vel[axis] - expected.vel[axis]) < 1e-9, true);
+              }
+              redirectedPass = false;
             }
           }
           if (chargeBefore && !plan.passCharge && !released) cancellations.push({ tick, carrierId: chargeBefore.carrierId, receiverId: chargeBefore.receiverId,
             elapsed: chargeBefore.elapsed, reason: oldHolder ? plan.assignments.get(oldHolder)?.pass?.reason ?? 'unavailable' : 'no holder' });
           if (ballState() === 'thrown') check('no airborne possession', state.grifball.ball.holderId, null);
+          if (mapPassMatch && ballState() === 'thrown') {
+            const unobstructed = structuredClone(ballBeforeObjective);
+            tickBallPhysics(unobstructed, delta, state.settings.grifballBallReturnTimeout ?? 8, map);
+            redirectedPass ||= (['x', 'y', 'z'] as const).some(axis =>
+              Math.abs(unobstructed.pos[axis] - state.grifball.ball.pos[axis]) > 1e-8 ||
+              Math.abs(unobstructed.vel[axis] - state.grifball.ball.vel[axis]) > 1e-8);
+            // Lane selection promises a clear unopposed trajectory. A later
+            // player/weapon deflection is no longer that selected trajectory.
+            if (!redirectedPass) check('unobstructed pass stays clear of ground obstacles',
+              isMapBodyClear(map, { ...state.grifball.ball.pos, y: 0 }), true);
+          }
         }
         for (const team of ['blue', 'red'] as const) if (state.teamScores[team].goals !== priorGoals[team]) {
           goals.push({ tick, id: oldHolder!, team, round: state.grifball.roundNumber });
@@ -574,7 +597,6 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       cancellations.push({ tick, carrierId: chargeAtFrameStart.carrierId, receiverId: chargeAtFrameStart.receiverId, elapsed: chargeAtFrameStart.elapsed,
         reason: plan.assignments.get(chargeAtFrameStart.carrierId)?.pass?.reason ?? 'Ownership or combat availability changed' });
     }
-    if (mapPassMatch && ballState() === 'thrown') check('released pass stays clear of ground obstacles', isMapBodyClear(map, { ...state.grifball.ball.pos, y: 0 }), true);
     if (passing) {
       if (plan.passCharge) check('frame-end charge belongs to holder', plan.passCharge.carrierId, state.grifball.ball.holderId);
       for (const c of state.otherPlayers.values()) if (plan.passCharge?.carrierId !== c.id) check('no stale charge display: ' + c.id, c.grifballPassCharge ?? 0, 0);

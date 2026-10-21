@@ -9,6 +9,9 @@ import { updateGrifballObjectiveForState, throwPlayerGrifballPassForState, recon
 import { onlineGrifball, receiveOnlineGrifballMessage, publishOnlineGrifball, applyPendingOnlineGrifball, isOnlineGrifballAuthority } from './onlineGrifballRuntime';
 import { allowGrifballMessage } from '../../network/grifballSync';
 import type { CustomMapData } from '../../types';
+import { attachBallTo, throwBall } from '../../game/grifballBall';
+import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
+import { swapPlayerWeaponForState } from './playerWeaponActions';
 const noop = () => {};
 function fixture(role: 'host' | 'client' | 'observer', id: string) {
   const state = createInitialGrifballRuntimeState({ debugMode: false, isMultiplayer: true, multiplayerRole: role === 'observer' ? null : role,
@@ -40,6 +43,99 @@ function deliver(host: ReturnType<typeof fixture>, follower: ReturnType<typeof f
   follower.tick(0);
   return data;
 }
+
+test('runner swap requests a host-authorized drop and restores the pre-pickup sword on all peers', () => {
+  const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
+  h.peer('c').activeWeapon = 'sword';
+  o.peer('c').activeWeapon = 'sword';
+  c.state.activeWeapon = 'sword';
+  h.input('c', 1, { pickup: true });
+  h.tick();
+  deliver(h, c); deliver(h, o);
+  h.state.settings.grifballAllowThrowing = false;
+  // Input sequence 1 was used for the pickup sent above.
+  onlineGrifball(c.state).inputSequence = 1;
+  swapPlayerWeaponForState({
+    state: c.state, refs: c.refs, type: 'hammer', isPaused: false, isPlaying: true,
+    recordWeaponSwap: noop, pushStatsUpdate: noop, multiplayerSocket: c.socket,
+  });
+  const packet = c.messages.at(-1);
+  assert.equal(packet.objectiveInput.drop, true);
+  assert.equal(allowGrifballMessage(packet, 'client', 'grifball', true), true);
+  assert.equal(c.state.activeWeapon, 'ball', 'client waits for the authoritative release');
+  assert.equal(c.state.grifball.ball.holderId, 'player');
+  receiveOnlineGrifballMessage(h.state, h.refs, { ...packet, senderId: 'c', senderRole: 'client' });
+  assert.equal(h.state.grifball.ball.state, 'loose');
+  assert.equal(h.state.otherPlayers.get('c')!.activeWeapon, 'sword');
+  h.tick();
+  deliver(h, c); deliver(h, o);
+  assert.equal(c.state.activeWeapon, 'sword');
+  assert.equal(c.state.grifball.ball.holderId, null);
+  assert.equal(o.state.otherPlayers.get('c')!.activeWeapon, 'sword');
+  assert.equal(onlineGrifball(h.state).peers.get('c')!.elapsed, 0);
+});
+
+test('stale and non-holder drop requests cannot release someone else’s ball', () => {
+  const h = fixture('host', 'h');
+  h.peer('c'); h.peer('d');
+  h.input('c', 1, { pickup: true }); h.tick();
+  h.input('d', 1, { drop: true });
+  h.input('c', 2, { drop: true, possession: onlineGrifball(h.state).possession - 1 });
+  h.input('c', 3, { drop: true, round: h.state.grifball.roundNumber + 1 });
+  assert.equal(h.state.grifball.ball.holderId, 'c');
+  assert.equal(allowGrifballMessage({
+    action: 'grifball_input', objectiveInput: {
+      sequence: 4, round: 1, possession: 1, pickup: false, charging: false, drop: 'yes',
+    },
+  }, 'client', 'grifball', true), false);
+});
+
+test('hammer deflection flight and mechanics settings reach clients and observers', () => {
+  const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
+  h.state.settings.hammerBallDeflectionStrength = 2.25;
+  throwBall(h.state.grifball.ball, { x: 0, y: 1, z: 3 }, { x: 0, y: 0, z: -1 }, 20, 0);
+  assert.equal(deflectBallWithHammerForState(h.state, h.state.playerPos, h.state.grifball.ball.pos, 4.5), true);
+  publishOnlineGrifball(h.state, h.socket, 1);
+  for (const follower of [c, o]) {
+    deliver(h, follower);
+    assert.deepEqual(follower.state.grifball.ball.vel, h.state.grifball.ball.vel);
+    assert.equal(follower.state.settings.hammerBallDeflectionStrength, 2.25);
+    assert.equal(follower.state.settings.hammerBallDeflectionEnabled, true);
+  }
+  h.state.settings.hammerBallDeflectionEnabled = false;
+  publishOnlineGrifball(h.state, h.socket, 1);
+  deliver(h, c);
+  assert.equal(c.state.settings.hammerBallDeflectionEnabled, false);
+});
+
+test('host-authored ball deflection is identical on clients and observers', () => {
+  const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
+  h.state.playerPos.set(20, 0, 20);
+  h.peer('c'); c.peer('h'); o.peer('c');
+  throwBall(h.state.grifball.ball, { x: 0, y: 1, z: 4 }, { x: 0, y: 0, z: -1 }, 30, 0);
+  h.tick(.15);
+  assert.ok(h.state.grifball.ball.vel.z > 0, 'host resolves the body impact');
+  deliver(h, c); deliver(h, o);
+  assert.deepEqual(c.state.grifball.ball.pos, h.state.grifball.ball.pos);
+  assert.deepEqual(o.state.grifball.ball.vel, h.state.grifball.ball.vel);
+  const before = structuredClone(c.state.grifball.ball);
+  c.tick(.2);
+  assert.deepEqual(c.state.grifball.ball, before, 'followers do not simulate another collision');
+});
+
+test('thrower clearance uses socket identities and maps the local thrower on receipt', () => {
+  const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
+  for (const holder of ['player', 'c']) {
+    attachBallTo(h.state.grifball.ball, holder);
+    throwBall(h.state.grifball.ball, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }, 10);
+    publishOnlineGrifball(h.state, h.socket, .1);
+    const packet = deliver(h, c); deliver(h, o);
+    const wireId = holder === 'player' ? 'h' : 'c';
+    assert.equal(packet.objective.match.ball.releaseOwnerId, wireId);
+    assert.equal(c.state.grifball.ball.releaseOwnerId, wireId === 'c' ? 'player' : wireId);
+    assert.equal(o.state.grifball.ball.releaseOwnerId, wireId);
+  }
+});
 test('host resolves competing pickups once; clients and spectators map the same holder', () => {
   const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
   h.peer('c'); h.peer('d', 0.2); c.peer('h'); o.peer('c');

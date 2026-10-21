@@ -1,4 +1,6 @@
 import { simulationTimestamp } from '../../game/simulationRandom';
+import { resolveCombatHitDamageForState } from './combatDamage';
+import { tryRunnerSwordClash } from './runnerSwordClash';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent } from '../../types';
@@ -73,6 +75,9 @@ export function applyMainAISwordSlashImpactForState({
     const dist = aiEyePos.distanceTo(targetBodyCenter);
 
     if (dist <= adjustRangeForTargetModel(MELEE_SWORD_SLASH_REACH, target.modelType)) {
+      if (tryRunnerSwordClash(state, mainAI.id, target.id, {
+        playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotPsychKill,
+      })) { pushStatsUpdate(); return; }
       const swordThreshold = state.settings.swordTradeWindow ?? 350;
       const isPlayerSwordActiveAttack = state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
         state.isLunging ||
@@ -88,7 +93,7 @@ export function applyMainAISwordSlashImpactForState({
       if (target.id === 'player') {
         recordPlayerDamageTaken();
         tryRecordCalibrationCounterSuccess(MAIN_AI_ID);
-        state.playerHP -= 1;
+        state.playerHP -= resolveCombatHitDamageForState(state, 'player', state.playerHP, 'sword');
         if (state.playerHP <= 0) {
           state.playerHP = 0;
           state.playerRespawnTimer = 3.0;
@@ -133,7 +138,7 @@ export function applyMainAISwordSlashImpactForState({
       } else {
         const other = state.otherPlayers?.get(target.id);
         if (other && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
-          other.hp -= 1;
+          other.hp -= resolveCombatHitDamageForState(state, other.id, other.hp, 'sword');
           if (other.hp <= 0) {
             other.hp = 0;
             other.respawnTimer = 3.0;

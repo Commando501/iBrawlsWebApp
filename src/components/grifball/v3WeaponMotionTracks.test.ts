@@ -9,6 +9,7 @@ import {
 } from './v3WeaponMotionTracks';
 import { buildV3WeaponModel } from '../v3/VoxelModelsV3';
 import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
+import { fitV3RetargetedWeaponPoseFromReferenceSample } from './v3MixamoRetarget';
 
 const finiteTuple = (values: readonly number[]): boolean => values.every(Number.isFinite);
 
@@ -89,7 +90,12 @@ describe('V3 weapon motion tracks', () => {
       assert.ok(Math.abs(sample.weaponPose.position[2]) < 0.8, `${sample.weapon} carry z readable`);
     }
 
-    assert.ok(semanticForward(hammer.weaponPose.rotation).z < -0.9);
+    // The imported two-hand idle carries the current straight shaft across the
+    // body. Its forward axis must follow the hand grips, not world -Z.
+    const grips = fitV3RetargetedWeaponPoseFromReferenceSample('hammer_2hand_idle', { normalizedTime: 0, weapon: 'hammer' });
+    const gripDirection = new THREE.Vector3(...grips.offhandPosition!)
+      .sub(new THREE.Vector3(...grips.primaryHandPosition)).normalize();
+    assert.ok(semanticForward(hammer.weaponPose.rotation).dot(gripDirection) > 0.999);
     assert.ok(semanticForward(sword.weaponPose.rotation).z < -0.5);
     assert.ok(semanticForward(pistol.weaponPose.rotation).z < -0.94);
   });
@@ -155,17 +161,16 @@ describe('V3 weapon motion tracks', () => {
     const swordCarry = sampleV3WeaponMotionCarry('sword');
     const swordMidSlash = sampleV3WeaponMotionTrack('sword_slash', 0.5);
     const swordSlash = sampleV3WeaponMotionTrack('sword_slash', 1);
-    const carryHammerBounds = weaponBounds('hammer', hammerCarry.weaponPose);
-    const windupHammerBounds = weaponBounds('hammer', hammerWindup.weaponPose);
-    const strikeHammerBounds = weaponBounds('hammer', hammerStrike.weaponPose);
     const carrySwordBounds = weaponBounds('sword', swordCarry.weaponPose);
     const midSwordBounds = weaponBounds('sword', swordMidSlash.weaponPose);
 
     assert.ok(poseDistance(hammerWindup.weaponPose, hammerCarry.weaponPose) > 0.3);
     assert.ok(Math.abs(hammerWindup.weaponPose.position[1] - hammerCarry.weaponPose.position[1]) > 0.12);
-    assert.ok(windupHammerBounds.max.y > carryHammerBounds.max.y + 0.5, 'hammer windup should load high above carry');
-    assert.ok(strikeHammerBounds.max.y < windupHammerBounds.max.y - 0.8, 'hammer strike should land well below windup');
-    assert.ok(strikeHammerBounds.min.y < carryHammerBounds.min.y - 0.1, 'hammer strike should reach a low contact pose');
+    // Measure the reference hand/grip motion independently of hammer mesh size
+    // and shaft orientation, which changed with the Blender weapon import.
+    assert.ok(hammerWindup.weaponPose.position[1] > hammerCarry.weaponPose.position[1] + 0.25, 'hammer grip loads above carry');
+    assert.ok(hammerStrike.weaponPose.position[1] < hammerWindup.weaponPose.position[1] - 0.35, 'hammer grip drops through the strike');
+    assert.ok(hammerStrike.weaponPose.position[1] < hammerCarry.weaponPose.position[1] - 0.1, 'hammer grip reaches below carry');
     assert.ok(poseDistance(hammerStrike.weaponPose, hammerWindup.weaponPose) > 0.5);
     assert.ok(Math.abs(hammerMelee.weaponPose.position[0] - hammerCarry.weaponPose.position[0]) > 0.12);
     assert.ok(swordMidSlash.weaponPose.position[0] < swordCarry.weaponPose.position[0] - 0.5);

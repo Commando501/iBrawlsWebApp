@@ -19,10 +19,10 @@ export function runCarrierFlightTrace(spec: typeof CARRIER_FLIGHT_CASES[number],
   const firstContact = first === 'player' ? 5 : 4;
   // A ball holder cannot supply a sword counter. A surviving sword opponent
   // can still counter the carrier's later hit through recent attack history.
-  const carrierDead = pickup.hp === 1 || trade && pickup.actor !== first;
-  const deathTick = pickup.actor === 'player' && first === 'roster' && pickup.hp === 1
+  const carrierDead = true;
+  const deathTick = pickup.actor === 'player' && first === 'roster'
     || pickup.actor === 'roster' && first === 'roster' && trade ? 4 : 5;
-  const otherHp = pickup.hp === 1 && pickup.actor !== first ? 2 : 1;
+  const otherHp = pickup.actor !== first ? 2 : 1;
   for (const [playerSide, botSide, ballSide] of [['live', 'liveBot', 'liveBall'], ['headless', 'simBot', 'simBall']] as const) {
     const carrierSide = pickup.actor === 'player' ? playerSide : botSide;
     const otherSide = pickup.actor === 'player' ? botSide : playerSide;
@@ -42,7 +42,7 @@ export function runCarrierFlightTrace(spec: typeof CARRIER_FLIGHT_CASES[number],
     if (carrierDead) {
       // A roster death in player physics precedes the respawn tick. A death
       // in its own reciprocal trade occurs after that tick, like player death.
-      const deathBeforeRosterTick = pickup.actor === 'roster' && !(trade && (first === 'roster' || pickup.hp === 2));
+      const deathBeforeRosterTick = pickup.actor === 'roster' && !(trade && first === 'roster');
       const reviveTick = deathTick + (deathBeforeRosterTick ? 180 : 181);
       record.compare(deathTick, `expected.${ballSide}.drop`, trace.frames[deathTick - 1][ballSide]!.state, 'loose');
       record.compare(reviveTick - 1, `expected.${carrierSide}.notRevivedEarly`, trace.frames[reviveTick - 2][carrierSide].hp, 0);

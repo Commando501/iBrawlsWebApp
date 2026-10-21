@@ -129,13 +129,14 @@ export async function runAutonomousMobilityTrace(spec: AutonomousMobilityCase) {
       differences.push(...compareCompleteMatchFrame(frame)); recorder.add({ ...frame, mobility });
       if (differences.length || tick === 900) break;
       const before = new Map(state.combatants.map(a => [a.id, structuredClone(a)]));
+      // Lethal sword damage releases possession during this step.
+      const priorHolder = before.get(state.match.ball.holderId ?? '');
       const event = step()!; host.runtime.step();
       for (const kill of event.kills) { credits[kill.attackerId].kills++; credits[kill.victimId].deaths++; }
       if (!isDeepStrictEqual(replay(), event) || !isDeepStrictEqual(restored, checkpoint))
         differences.push({ tick: state.tick, field: 'checkpoint', live: 'uninterrupted', headless: 'different' });
       else restoredFrames++;
       const held = state.combatants.find(a => a.id === state.match.ball.holderId);
-      const priorHolder = before.get(state.match.ball.holderId ?? '');
       const airborneCarrier = !!held && held.alive && held.pos.y > .01;
       for (const actor of state.combatants) {
         const prior = before.get(actor.id)!;

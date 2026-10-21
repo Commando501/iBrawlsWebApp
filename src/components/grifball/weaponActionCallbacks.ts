@@ -46,6 +46,7 @@ export function createWeaponActionCallbacksForState({
   playDash,
   playImpact,
   playDeath,
+  cancelBallCharge,
 }: {
   getState: () => GrifballRuntimeState;
   getRefs: () => GrifballThreeRefs;
@@ -65,6 +66,7 @@ export function createWeaponActionCallbacksForState({
   playDash: () => void;
   playImpact: () => void;
   playDeath: () => void;
+  cancelBallCharge?: () => void;
 }) {
   const getPlayerSwordLockTarget = () =>
     getPlayerSwordLockTargetForState(getState(), getMainAI(), isMultiplayer);
@@ -111,6 +113,8 @@ export function createWeaponActionCallbacksForState({
       state: getState(),
       refs: getRefs(),
       type,
+      multiplayerSocket,
+      cancelBallCharge,
       isPaused: getIsPaused(),
       isPlaying: getIsPlaying(),
       recordWeaponSwap: (weapon) =>

@@ -1,4 +1,8 @@
 import { receiveOnlineGrifballMessage } from './onlineGrifballRuntime';
+import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
+import { resolveCombatHitDamageForState } from './combatDamage';
+import { cancelSwordForRunnerPunch, tryRunnerSwordClash } from './runnerSwordClash';
+import { rejectRunnerSwordPrediction } from './runnerSwordPrediction';
 import * as THREE from 'three';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import type { MatchLobbyConfig } from '../../network/protocol';
@@ -192,6 +196,12 @@ export function createMultiplayerSyncMessageHandler({
             );
             const radius = typeof data.radius === 'number' ? data.radius : (state.settings.attackRadius ?? 4.5);
             renderHammerSplashVfx(impactPos, '#f97316', radius);
+            const attacker = state.otherPlayers.get(data.senderId);
+            if (data.weapon === 'hammer' && attacker && attacker.activeWeapon === 'hammer' &&
+                !attacker.isObserver && attacker.hp > 0 && (attacker.respawnTimer ?? 0) <= 0 &&
+                [data.pos.x, data.pos.y, data.pos.z].every(Number.isFinite)) {
+              deflectBallWithHammerForState(state, attacker.pos, impactPos, state.settings.attackRadius ?? 4.5);
+            }
           }
         } else if (data.action === 'slash_sword') {
           if (data.senderId) {
@@ -230,10 +240,19 @@ export function createMultiplayerSyncMessageHandler({
             triggerEnemySwordLunge(lungeDir);
           }
         } else if (data.action === 'hit_taken') {
+          if (data.senderId) {
+            rejectRunnerSwordPrediction(state, data.senderId, data.negatedSwordHitId, data.runnerHp);
+            if (data.weapon === 'ball') {
+              cancelSwordForRunnerPunch(state, data.senderId,
+                data.targetId && state.otherPlayers.has(data.targetId) ? data.targetId : 'player');
+            }
+          }
           if (data.targetId && state.otherPlayers.has(data.targetId)) {
             const targetPlayer = state.otherPlayers.get(data.targetId);
             if (targetPlayer) {
-              targetPlayer.hp = Math.max(0, targetPlayer.hp - (data.damage || 1));
+              targetPlayer.hp = Math.max(0, targetPlayer.hp - resolveCombatHitDamageForState(
+                state, data.targetId, targetPlayer.hp, data.weapon, data.damage || 1
+              ));
               if (targetPlayer.hp <= 0) {
                 targetPlayer.hp = 0;
                 targetPlayer.respawnTimer = 3.0;
@@ -283,8 +302,16 @@ export function createMultiplayerSyncMessageHandler({
               }
             }
           } else if (state.playerHP > 0 && state.playerInvulnerabilityTimer <= 0) {
+            if (data.weapon === 'sword' && data.senderId && tryRunnerSwordClash(state, data.senderId, 'player', {
+              playSwing, playDeath, spawnVoxelShockwaveParticles,
+              sendPunchHit: targetId => {
+                const socket = event.currentTarget as WebSocket | null;
+                if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'sync', action: 'hit_taken',
+                  targetId, weapon: 'ball', damage: 1, negatedSwordHitId: data.hitId, runnerHp: state.playerHP }));
+              },
+            })) { pushStatsUpdate(); return; }
             recordPlayerDamageTaken();
-            state.playerHP -= data.damage || 1;
+            state.playerHP -= resolveCombatHitDamageForState(state, 'player', state.playerHP, data.weapon, data.damage || 1);
             if (state.playerHP <= 0) {
               state.playerHP = 0;
               state.playerRespawnTimer = 3.0;

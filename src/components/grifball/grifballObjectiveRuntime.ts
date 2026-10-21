@@ -41,6 +41,7 @@ import {
 } from './grifballThrowTrajectoryRuntime';
 import { resolveHeldGrifballBallVisualPosition } from './grifballBallCarryVisuals';
 import { updateV3GameplayBall } from './v3GameplayBall';
+import { getLiveBallContactColliders } from './grifballBallCollisionRuntime';
 
 type MutableRef<T> = { current: T };
 
@@ -174,7 +175,11 @@ export function setGrifballCarrierForState({
   const runnerMaxHp = resolveRunnerMaxHp(state.settings);
 
   if (id === 'player') {
-    state.activeWeapon = weapon;
+    if (carrying && state.activeWeapon !== 'ball') {
+      state.playerWeaponBeforeBall = state.activeWeapon;
+    }
+    state.activeWeapon = carrying ? 'ball' : state.activeWeapon === 'ball'
+      ? (state.playerWeaponBeforeBall ?? 'hammer') : state.activeWeapon;
     if (carrying) {
       state.playerMaxHP = runnerMaxHp;
       state.playerHP = state.playerMaxHP;
@@ -186,14 +191,25 @@ export function setGrifballCarrierForState({
       state.playerRunnerHealDelayTimer = 0;
       state.playerRunnerLastHp = state.playerHP;
       state.pWeaponState = 'ready';
-      state.pWeaponReady = true;
+      state.pWeaponTimer = 0;
+      state.pWeaponReady = state.swapCooldownTimer <= 0;
+      state.pSwordState = 'ready';
+      state.pSwordTimer = 0;
+      state.pSwordReady = state.swapCooldownTimer <= 0;
+      state.pPistolState = 'ready';
+      state.pPistolTimer = 0;
+      state.pPistolReady = state.swapCooldownTimer <= 0;
     }
-    if (refs?.playerHammer) refs.playerHammer.visible = !carrying;
-    if (refs?.playerSword) refs.playerSword.visible = false;
+    if (refs?.playerHammer) refs.playerHammer.visible = state.activeWeapon === 'hammer';
+    if (refs?.playerSword) refs.playerSword.visible = state.activeWeapon === 'sword';
+    if (refs?.playerPistol) refs.playerPistol.visible = state.activeWeapon === 'pistol';
   } else {
     const bot = state.otherPlayers.get(id);
     if (bot) {
-      bot.activeWeapon = weapon;
+      if (bot.controller === 'remote' && carrying && bot.activeWeapon !== 'ball') {
+        bot.weaponBeforeBall = bot.activeWeapon;
+      }
+      bot.activeWeapon = !carrying && bot.controller === 'remote' ? (bot.weaponBeforeBall ?? 'hammer') : weapon;
       if (carrying) {
         bot.maxHp = runnerMaxHp;
         bot.hp = bot.maxHp;
@@ -207,6 +223,23 @@ export function setGrifballCarrierForState({
       }
     }
   }
+}
+
+/** A weapon swap drops possession without throwing or leaving a queued pickup. */
+export function dropGrifballForWeaponSwap(state: GrifballRuntimeState, refs: GrifballThreeRefs, id: string): void {
+  const holder = getGrifballCombatantRefForState(state, id);
+  if (!holder || state.grifball.ball.holderId !== id) return;
+  dropBall(state.grifball.ball, holder.pos);
+  setGrifballCarrierForState({ state, refs, id, carrying: false });
+  if (id === 'player') {
+    state.playerPickupRequested = false;
+    state.grifballPassCharge = 0;
+  } else {
+    const actor = state.otherPlayers.get(id)!;
+    actor.pickupRequested = false;
+    actor.grifballPassCharge = 0;
+  }
+  hideGrifballThrowTrajectoryVisualForRefs(refs);
 }
 
 /** Release invalid possession without advancing objectives, physics, healing or scoring. */
@@ -525,7 +558,8 @@ export function updateGrifballObjectiveForState({
       g.ball,
       dt,
       state.settings.grifballBallReturnTimeout ?? 8,
-      activeCustomMap ?? { arenaRadius: state.arenaRadius }
+      activeCustomMap ?? { arenaRadius: state.arenaRadius },
+      isGrifballLive(g) ? getLiveBallContactColliders(state, dt) : [],
     );
   }
 

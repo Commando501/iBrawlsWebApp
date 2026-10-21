@@ -152,7 +152,8 @@ test('real live/headless evidence retains health/credit results and can be repro
   assert.equal(compact.differenceCount, 0);
   assert.equal(compact.frameCount, 120);
   assert.equal(compact.frames.length, 8);
-  assert.equal((compact.frames.at(-1) as any).liveRunner.kills, 2);
+  // The active punch defeats the first sword; the second sword kills the runner.
+  assert.equal((compact.frames.at(-1) as any).liveRunner.kills, 1);
   assert.deepEqual(compactExecutionTrace(runFocusFireTrace(spec)), compact);
 });
 

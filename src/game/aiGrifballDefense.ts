@@ -5,6 +5,7 @@ import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter, type 
 import { pointAlongRunnerRoute, type SpaceRouters } from './aiGrifballRunner';
 import { grifballDefenseStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 import { chooseGrifballPassSupportPosition, type PassLandingSupport } from './aiGrifballPassSupport';
+import { applyGrifballMarkPosition, type MarkPositionDecision } from './aiGrifballMarkPosition';
 
 export interface DefensePressureCandidate {
   botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
@@ -16,6 +17,7 @@ export interface DefenseOrder {
   targetId: string | null; intercept: FieldPoint; arrivalETA: number; carrierETA: number;
   advantage: number; reinforcementIn: number; emergency: boolean; transitioning: boolean;
   passSupport?: PassLandingSupport;
+  positioning?: MarkPositionDecision;
   individuality?: {
     style: GrifballPlayerStyle; strength: number; reason: string;
     pressureCandidates?: DefensePressureCandidate[];
@@ -331,6 +333,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const d = Math.max(0.001, distance(anchor, goal)), side = (i % 2 ? -1 : 1) * tuning.lateralSpacing;
     assign(a, 'recover', { x: safetyPoint.x - (goal.z - anchor.z) / d * side, z: safetyPoint.z + (goal.x - anchor.x) / d * side }, carrier);
   });
+  applyGrifballMarkPosition(snapshot, assignments, tuning, routers, contain);
 }
 
 export function selectDefenseThreat(a: GrifballAssignment, self: FieldPoint, players: GrifballTacticalPlayer[]): string | null {

@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
+import { resolveCombatHitDamageForState } from './combatDamage';
+import { cancelSwordForRunnerPunch, tryRunnerSwordClash } from './runnerSwordClash';
 import { applyAIHammerJumpAtImpact } from './aiHammerJumpImpact';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
 import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from '../../game/runnerBallSettings';
@@ -77,6 +80,7 @@ export function applyBotMeleeImpactForState({
   }
 
   if (isHammer) {
+    deflectBallWithHammerForState(state, bot.pos, impactPos, radius);
     renderHammerSplashVfx(impactPos, '#f97316', radius);
   } else if (isBall) {
     spawnVoxelShockwaveParticles(impactPos, '#7dd3fc'); // cyan shockwave for punch!
@@ -113,9 +117,13 @@ export function applyBotMeleeImpactForState({
     impactPos.distanceTo(getCombatBodyCenter(state.playerPos, state.isCrouching)) <=
       adjustRangeForTargetModel(radius, state.playerModelType)
   ) {
+    if (weapon === 'sword' && tryRunnerSwordClash(state, botId, 'player', {
+      playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath, recordBotPsychKill,
+    })) return;
+    if (isBall) cancelSwordForRunnerPunch(state, botId, 'player');
     recordLocalPlayerDamageTakenObservation(state);
     recordCombatantModelObservation(state, botId, (model) => observePlayerDamageDealt(model));
-    state.playerHP -= 1;
+    state.playerHP -= resolveCombatHitDamageForState(state, 'player', state.playerHP, weapon);
     spawnVoxelShockwaveParticles(state.playerPos, '#ef4444');
     if (state.playerHP <= 0) {
       state.playerHP = 0;
@@ -135,7 +143,9 @@ export function applyBotMeleeImpactForState({
     }
   }
 
+  let cancelled = false;
   state.otherPlayers.forEach((other, otherId) => {
+    if (cancelled || bot.hp <= 0) return;
     if (otherId === botId) return;
     if (other.controller !== 'ai') return;
     if (!isAICombatReady(other)) return;
@@ -145,7 +155,11 @@ export function applyBotMeleeImpactForState({
       impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) >
       adjustRangeForTargetModel(radius, other.modelType)
     ) return;
-    other.hp -= 1;
+    if (weapon === 'sword' && tryRunnerSwordClash(state, botId, otherId, {
+      playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath, recordBotPsychKill,
+    })) { cancelled = true; return; }
+    if (isBall) cancelSwordForRunnerPunch(state, botId, otherId);
+    other.hp -= resolveCombatHitDamageForState(state, otherId, other.hp, weapon);
     recordCombatantModelObservation(state, botId, (model) => observePlayerDamageDealt(model));
     recordCombatantModelObservation(state, otherId, (model) => observePlayerDamageReceived(model));
     spawnVoxelShockwaveParticles(otherPos, '#ef4444');

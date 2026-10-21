@@ -67,6 +67,30 @@ test('dropping the ball reverts the loadout and clamps HP', () => {
   assert.equal(c.hasBall, false);
 });
 
+for (const weapon of ['hammer', 'sword'] as const)
+  test(`mixed local carrier restores ${weapon} after a serialized pickup`, () => {
+    const state = createMatch({ seed: 2, combatExecution: 'live-mixed-v1' });
+    const actor = state.combatants[0];
+    state.localPlayerId = actor.id;
+    actor.weapon = weapon;
+    setSimCarrier(actor, true, state.settings, state);
+    setSimCarrier(actor, true, state.settings, state);
+    const restored = JSON.parse(JSON.stringify(state));
+    const restoredActor = restored.combatants[0];
+    restoredActor.weaponPhaseElapsed = 0.2;
+    restoredActor.playerSwordLungeRecovery = { elapsed: 0.1, duration: 0.6 };
+    setSimCarrier(restoredActor, false, restored.settings, restored);
+    assert.equal(restoredActor.weapon, weapon);
+    assert.equal(restoredActor.weaponPhaseElapsed, 0);
+    assert.equal(restoredActor.playerSwordLungeRecovery, undefined);
+    assert.equal(restoredActor.hasBall, false);
+    assert.equal(restoredActor.maxHp, restored.settings.maxHP);
+    // A later round cleanup must not replace a weapon the player selected.
+    restoredActor.weapon = 'sword';
+    setSimCarrier(restoredActor, false, restored.settings, restored);
+    assert.equal(restoredActor.weapon, 'sword');
+  });
+
 test('a goal credits the carrier team and triggers the scored phase', () => {
   const state = playingMatch(3);
   const carrier = state.combatants.find((c) => c.team === 'blue')!;

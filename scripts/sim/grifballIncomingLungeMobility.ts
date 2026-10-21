@@ -1,4 +1,5 @@
 import type { Combatant } from '../../src/types';
+import { withChampionshipStadiumLayout } from '../../src/game/championshipStadiumLayout';
 import { validateDashDecisionTrace, dashDecisionCoverage } from './grifballDashDecisionValidation';
 import { isDeepStrictEqual } from 'node:util';
 import type { TrialResult } from '../../src/game/grifballValidation/runner';
@@ -49,6 +50,9 @@ export async function recordIncomingLungeMobility(spec: IncomingLungeMobilityCas
     fixedHz: 60, simulationSeconds: 60, watchdogSeconds: 120 }];
   const plan = await createSuitePlan(manifest, { commit: null, dirty: null, workingTreeHash: null, scope: [] });
   const fixture = structuredClone(plan.cases[0]);
+  // This authored encounter and its independent wall oracle use the original
+  // 104 x 46 court. Playable stadium resizing must not change its opportunities.
+  fixture.map = withChampionshipStadiumLayout(fixture.map, 1);
   const job = plan.jobs.find(j => j.variant === 'candidate' && j.seed === spec.seed && j.mirrored === spec.mirrored)!;
   fixture.mechanics.maxHP = 3;
   fixture.roster.find(a => a.slot.team === 'blue')!.id = 'main_ai';

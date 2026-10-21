@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { resolveCombatHitDamageForState } from './combatDamage';
+import { tryRunnerSwordClash } from './runnerSwordClash';
 import { type DeathEvent, type Combatant } from '../../types';
 import { MAIN_AI_ID } from '../../game/roster';
 import {
@@ -47,9 +49,12 @@ export function applyAISwordLungeHitForState({
   recordBotPsychKill: (botId: string, victimId: string, wasLungeKill: boolean) => void;
   recordBotCalibrationDeath: (botId: string) => void;
 }): void {
+  if (tryRunnerSwordClash(state, attackerBot.id, target.id, {
+    playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath, recordBotPsychKill,
+  })) return;
   if (target.id === 'player') {
     recordPlayerDamageTaken();
-    state.playerHP -= 1;
+    state.playerHP -= resolveCombatHitDamageForState(state, 'player', state.playerHP, 'sword');
     finishSwordLunge(cooldownMult, 'hit', target.id);
     playExplosion();
     spawnVoxelShockwaveParticles(state.playerPos, '#ef4444');
@@ -86,7 +91,7 @@ export function applyAISwordLungeHitForState({
 
   if (target.id === MAIN_AI_ID) {
     if (!mainAi) return;
-    mainAi.hp -= 1;
+    mainAi.hp -= resolveCombatHitDamageForState(state, mainAi.id, mainAi.hp, 'sword');
     recordCombatantDamageReceivedObservation(state, target.id);
     finishSwordLunge(cooldownMult, 'hit', target.id);
     playExplosion();
@@ -119,7 +124,7 @@ export function applyAISwordLungeHitForState({
 
   const targetBot = state.otherPlayers.get(target.id);
   if (!targetBot) return;
-  targetBot.hp -= 1;
+  targetBot.hp -= resolveCombatHitDamageForState(state, targetBot.id, targetBot.hp, 'sword');
   recordCombatantDamageReceivedObservation(state, target.id);
   finishSwordLunge(cooldownMult, 'hit', target.id);
   playExplosion();

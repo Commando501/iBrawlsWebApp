@@ -138,6 +138,11 @@ export interface GameplaySyncMessage {
   senderRole?: GameRole;
   targetId?: string;
   damage?: number;
+  weapon?: RemotePlayerState['activeWeapon'];
+  /** Correlates a predicted sword hit with the runner's winning punch reply. */
+  hitId?: string;
+  negatedSwordHitId?: string;
+  runnerHp?: number;
   id?: string;
   sender?: string;
   text?: string;

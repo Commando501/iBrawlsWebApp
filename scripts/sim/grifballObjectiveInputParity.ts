@@ -16,7 +16,8 @@ export function validateObjectiveInput(trace: Pick<ReturnType<typeof runBotExecu
       const actual = f?.[side], motion = actual?.motion?.[0];
       record.compare(tick, `expected.${side}.health`, actual?.hp, 1);
       record.compare(tick, `expected.${side}.targetHealth`, actual?.targetHp, 20);
-      for (const [axis, index, limit] of [['x', 0, 51.4], ['z', 2, 22.4]] as const) {
+      // Championship Stadium half-extents (61.5, 33.08), less the .6 body margin.
+      for (const [axis, index, limit] of [['x', 0, 60.9], ['z', 2, 32.48]] as const) {
         const travel = spec.direction[axis] * speed * tick / 60;
         const position = Math.max(-limit, Math.min(limit, travel));
         const velocity = Math.abs(travel) > limit ? 0 : spec.direction[axis] * speed;

@@ -35,7 +35,7 @@ export function updateRosterCombatantVisualsForState({
 
     let weaponState = player.weaponState || 'ready';
     let weaponTimer = player.weaponTimer || 0;
-    const alive = player.hp > 0 && (player.respawnTimer ?? 0) <= 0;
+    let alive = player.hp > 0 && (player.respawnTimer ?? 0) <= 0;
     if (!alive) {
       weaponState = 'ready'; weaponTimer = 0;
       player.isLunging = false;
@@ -65,7 +65,17 @@ export function updateRosterCombatantVisualsForState({
       if (weaponTimer >= windup) {
         weaponState = 'swing_down';
         weaponTimer = 0;
-        if (swingIsSword) applyBotMeleeImpact(clientId);
+        if (swingIsSword) {
+          applyBotMeleeImpact(clientId);
+          // A runner's reciprocal punch can cancel or kill this sword user
+          // inside the impact callback. Do not restore the pending slash.
+          if (player.hp <= 0 || (player.respawnTimer ?? 0) > 0) {
+            alive = false;
+            weaponState = 'ready'; weaponTimer = 0;
+          } else if (player.weaponState === 'recovering') {
+            weaponState = player.weaponState; weaponTimer = player.weaponTimer ?? 0;
+          }
+        }
       }
     } else if (weaponState === 'swing_down') {
       weaponTimer += dt;
@@ -191,6 +201,7 @@ export function updateRosterCombatantVisualsForState({
       group: meshes.group,
       carrying: state.grifball.ball.state === 'held' && state.grifball.ball.holderId === clientId,
       hp: player.hp,
+      maxHp: player.maxHp,
       alive,
     });
   });

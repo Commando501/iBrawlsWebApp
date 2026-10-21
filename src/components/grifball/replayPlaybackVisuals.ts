@@ -8,6 +8,7 @@ import { syncCombatantTeamArmor } from './combatantTeamArmor';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
 import { updateRunnerVisualStateForGroup } from './runnerVisualState';
+import { resolveRunnerMaxHp } from '../../game/runnerBallSettings';
 import { resolveReplayCombatantVisualLoadout } from './replayVisualMetadata';
 import { type GrifballThreeRefs } from './threeRefs';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
@@ -142,6 +143,7 @@ export function updateReplayCombatantVisualsForFrame({
       carrying: player.activeWeapon === 'ball',
       hp: player.hp,
       alive: alive && !isSpectatedInFirstPerson,
+      maxHp: player.maxHp ?? resolveRunnerMaxHp(settings ?? {}),
     });
 
     if (settings || group.userData.modelSystem === 'v3') {

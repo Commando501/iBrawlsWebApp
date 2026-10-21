@@ -416,9 +416,9 @@ test('bounded scripted execution passes every required family while legacy diffe
   assert.ok(details.airborneViewTraces.every((t: any) => t.differenceCount === 0 && t.frameCount === 60));
   assert.deepEqual(details.airborneViewWitnesses, {required:3840,completed:3840,errors:[]});
   assert.equal(details.plannedMatchTraces.length, 8);
-  assert.equal(details.plannedMatchTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 18144);
+  assert.equal(details.plannedMatchTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 20320);
   assert.deepEqual(details.plannedMatchWitnesses, { required: 8, completed: 8, errors: [] });
-  assert.ok(details.plannedMatchTraces.every((t: any) => t.failureCount === 0 && t.finalTick === 2263));
+  assert.ok(details.plannedMatchTraces.every((t: any) => t.failureCount === 0 && t.finalTick === 2535));
   assert.deepEqual(details.dashWitnesses.missing, []);
   assert.ok(details.dashWitnesses.airborneSteps > 0);
   assert.ok(details.dashWitnesses.airborneLandings > 0);

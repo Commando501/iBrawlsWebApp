@@ -1,4 +1,7 @@
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
+import { resolveCombatHitDamageForState } from './combatDamage';
+import { tryRunnerSwordClash } from './runnerSwordClash';
+import { prepareRunnerSwordPrediction, recordRunnerSwordPrediction } from './runnerSwordPrediction';
 import { executePlayerCombatantTradeForState, resolveSwordLungeTradeReasonForState } from './tradeRuntime';
 import * as THREE from 'three';
 import { recordCalibrationDodgeFailed } from '../../game/aiSkillCalibration';
@@ -106,6 +109,13 @@ export function updatePlayerSwordLungeForState({
     });
     return;
   } else if (dist <= adjustRangeForTargetModel(1.5, closestTarget.modelType)) {
+    if (tryRunnerSwordClash(state, 'player', closestTarget.id, {
+      playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath,
+    })) {
+      recordPlayerLungeEnd(false);
+      pushStatsUpdate();
+      return;
+    }
     const finishHit = () => finishPlayerSwordLungeRecoveryForState({ state, hit: true, recordLungeEnd: recordPlayerLungeEnd });
     playExplosion();
     spawnVoxelShockwaveParticles(closestTarget.pos, '#22d3ee');
@@ -114,13 +124,17 @@ export function updatePlayerSwordLungeForState({
 
     if (state.isMultiplayer) {
       const other = state.otherPlayers.get(closestTarget.id);
+      const damage = resolveCombatHitDamageForState(state, closestTarget.id, closestTarget.hp, 'sword');
+      const hitId = prepareRunnerSwordPrediction(state, closestTarget.id);
       const reason = state.playerInvulnerabilityTimer > 0 ? null
         : resolveSwordLungeTradeReasonForState({ state, target: closestTarget, mainAi: other });
       const isOtherSwordActiveAttack = reason === 'sword_vs_sword';
       const isOtherHammerActiveAttack = reason === 'sword_lunge_vs_hammer';
 
       if (isOtherSwordActiveAttack || isOtherHammerActiveAttack) {
-        state.playerHP = Math.max(0, state.playerHP - 1);
+        state.playerHP = Math.max(0, state.playerHP - resolveCombatHitDamageForState(
+          state, 'player', state.playerHP, isOtherSwordActiveAttack ? 'sword' : 'hammer'
+        ));
         playExplosion();
         playDeath();
         spawnVoxelShockwaveParticles(state.playerPos, '#3b82f6');
@@ -163,11 +177,13 @@ export function updatePlayerSwordLungeForState({
           multiplayerSocket.send(JSON.stringify({
             type: 'sync',
             action: 'hit_taken',
-            damage: 1,
+            damage,
             targetId: closestTarget.id,
-            weapon: state.activeWeapon,
+            weapon: 'sword',
+            ...(hitId ? { hitId } : {}),
           }));
-          applyOutgoingMultiplayerHitLocally(closestTarget.id, 1);
+          applyOutgoingMultiplayerHitLocally(closestTarget.id, damage);
+          recordRunnerSwordPrediction(state, hitId);
         }
 
         finishHit();
@@ -176,8 +192,9 @@ export function updatePlayerSwordLungeForState({
       }
 
       if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
-        multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage: 1, targetId: closestTarget.id }));
-        applyOutgoingMultiplayerHitLocally(closestTarget.id, 1);
+        multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage, weapon: 'sword', targetId: closestTarget.id, ...(hitId ? { hitId } : {}) }));
+        applyOutgoingMultiplayerHitLocally(closestTarget.id, damage);
+        recordRunnerSwordPrediction(state, hitId);
       }
     } else {
       const mainAi = getMainAi();
@@ -199,7 +216,7 @@ export function updatePlayerSwordLungeForState({
         if (other.id === MAIN_AI_ID) recordCalibrationDodgeFailed(
           state.aiMatchContext, MAIN_AI_ID, resolveBehaviorTuning(state.settings).calibrationWindowSize
         );
-        other.hp -= 1;
+        other.hp -= resolveCombatHitDamageForState(state, other.id, other.hp, 'sword');
         if (other.hp <= 0) {
           recordPlayerMeleeKillForState(state, other, recordBotCalibrationDeath);
           playDeath();

@@ -8,6 +8,7 @@ import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { type SpectateTargetData, type SpectateTargetRole } from './spectateTargets';
 import { type GrifballThreeRefs } from './threeRefs';
 import { syncV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
+import { resolveRunnerMaxHp } from '../../game/runnerBallSettings';
 
 export function updateObserverCombatantVisualsForState({
   refs,
@@ -113,6 +114,7 @@ export function updateObserverCombatantVisualsForState({
       carrying: state.grifball.ball.state === 'held' && state.grifball.ball.holderId === hostHolderId,
       hp: hostData.hp,
       alive: hostData.hp > 0,
+      maxHp: resolveRunnerMaxHp(state.settings),
     });
     syncV3DeathVoxelBurstForCombatant({
       refs,
@@ -208,6 +210,7 @@ export function updateObserverCombatantVisualsForState({
         carrying: state.grifball.ball.state === 'held' && !!enemyHolderId && state.grifball.ball.holderId === enemyHolderId,
         hp: clientData.hp,
         alive: clientData.hp > 0,
+        maxHp: resolveRunnerMaxHp(state.settings),
       });
       syncV3DeathVoxelBurstForCombatant({
         refs,

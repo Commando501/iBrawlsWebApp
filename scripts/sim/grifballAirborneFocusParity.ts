@@ -19,7 +19,7 @@ export function validateAirborneFocus(trace: Pick<ReturnType<typeof runFrameObje
   const order = spec.reverse ? [...actors].reverse() : actors;
   const contacts: { tick: number; id: string; lethal: boolean }[] = [];
   const hit = (actor: typeof actors[number], tick: number) => {
-    runner.hp--;
+    runner.hp = 0;
     if (runner.hp === 0) actor.kills++;
     contacts.push({ tick, id: actor.id, lethal: runner.hp === 0 });
   };

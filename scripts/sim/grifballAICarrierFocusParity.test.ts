@@ -22,14 +22,14 @@ for (const reverse of [false, true]) test(`AI carrier focus repeat ${reverse}`, 
   const spec = AI_CARRIER_FOCUS_CASES.find(s => s.hp === 3 && s.reverse === reverse && !s.mirror)!;
   assert.deepEqual(runAICarrierFocusTrace(spec), runAICarrierFocusTrace(spec));
 });
-test('moving before a lunge delays its damage one tick while a committed counter prevents that escape', () => {
+test('the first sword contact kills the moving runner before a second attack can damage it', () => {
   for (const reverse of [false, true]) {
     const spec = AI_CARRIER_FOCUS_CASES.find(s => !s.runner.counter && s.reverse === reverse)!;
     const trace = runAICarrierFocusTrace(spec);
     assert.equal(trace.differenceCount, 0);
     for (const side of ['live', 'headless'] as const) {
-      assert.equal(trace.frames[3][side].hp, reverse ? 2 : 1);
-      assert.equal(trace.frames[4][side].hp, 1);
+      assert.equal(trace.frames[3][side].hp, 0);
+      assert.equal(trace.frames[4][side].hp, 0);
     }
     for (const snapshotAt of [3, 4]) assert.equal(runAICarrierFocusTrace(spec, snapshotAt).differenceCount, 0);
   }
@@ -65,10 +65,10 @@ for (const field of ['health', 'holder', 'ball-state', 'position', 'credit', 'co
     else if (field === 'order') trace.frames[5].tick = 5;
     else for (const side of ['live', 'headless'] as const) {
       if (field === 'health') frame[side].hp = 3;
-      if (field === 'holder') frame[side].ball.holderId = null;
+      if (field === 'holder') frame[side].ball.holderId = 'target';
       if (field === 'ball-state') frame[side].ball.state = 'idle';
       if (field === 'position') frame[side].runnerPos[2] += .1;
-      if (field === 'credit') (side === 'live' ? frame.liveRunner! : frame.simRunner!).kills = 0;
+      if (field === 'credit') (side === 'live' ? frame.liveRunner! : frame.simRunner!).kills += 1;
     }
     assert.ok(validateAICarrierFocus(trace, spec).differenceCount > 0);
   });
