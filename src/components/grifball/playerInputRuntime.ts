@@ -368,7 +368,7 @@ export function triggerMobilePrimaryPlayerActionForState({
 }): void {
   if (state.playerHP <= 0) return;
 
-  if (state.activeWeapon === 'hammer') {
+  if (state.activeWeapon === 'ball' || state.activeWeapon === 'hammer') {
     if (state.pWeaponReady && state.pWeaponState === 'ready' && state.playerDashRemaining <= 0) {
       callbacks.triggerPlayerHammerSwing();
     }

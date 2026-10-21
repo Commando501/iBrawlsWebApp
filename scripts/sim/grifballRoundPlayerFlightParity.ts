@@ -23,17 +23,16 @@ export function runRoundPlayerFlightTrace(spec: typeof ROUND_PLAYER_FLIGHT_CASES
     for (const [axis, value] of [0, 0, round.mirror ? -1 : 1].entries())
       record.compare(120, `expected.${side}.direction.${axis}`, at(120).playerFlight!.direction[axis], value, 1e-6);
     if (!round.winner) {
-      record.compare(16, `expected.${side}.resetHammer`, at(16).actors.find(a => a.id === 'player')!.weapon, 'hammer');
-      record.compare(44, `expected.${side}.hammerReady`, at(44).playerFlight!.phase, 'idle');
-      record.compare(45, `expected.${side}.swordRestored`, at(45).actors.find(a => a.id === 'player')!.weapon, 'sword');
+      // Round cleanup now keeps a non-carrier's selected weapon and clears its
+      // old action clocks. There is no forced hammer or hidden sword recovery.
+      record.compare(16, `expected.${side}.selectedSwordRetained`, at(16).actors.find(a => a.id === 'player')!.weapon, 'sword');
+      record.compare(16, `expected.${side}.resetClearsSwordClock`, at(16).playerFlight!.swordElapsed, 0);
+      record.compare(45, `expected.${side}.swordStillEquipped`, at(45).actors.find(a => a.id === 'player')!.weapon, 'sword');
     }
-    const readyAt = round.winner ? flight.impactTick + 23 : flight.impactTick === 3 ? 54 : flight.impactTick === 16 ? 67 : 68;
-    record.compare(readyAt - 1, `expected.${side}.stillRecovering`, at(readyAt - 1).playerFlight!.swordPhase, 'recovering');
+    const readyAt = !round.winner && flight.impactTick <= 16 ? 16 : flight.impactTick + 23;
+    if (round.winner || flight.impactTick !== 16)
+      record.compare(readyAt - 1, `expected.${side}.stillRecovering`, at(readyAt - 1).playerFlight!.swordPhase, 'recovering');
     record.compare(readyAt, `expected.${side}.readyOnTime`, at(readyAt).playerFlight!.swordPhase, 'idle');
-    if (!round.winner) {
-      const heldElapsed = flight.impactTick === 3 ? 14 / 60 : flight.impactTick === 16 ? 1 / 60 : 0;
-      for (let tick = 17; tick <= 44; tick++) record.compare(tick, `expected.${side}.hiddenRecoveryFrozen`, at(tick).playerFlight!.swordElapsed, heldElapsed, 1e-6);
-    }
     record.compare(120, `expected.${side}.recoveryComplete`, at(120).playerFlight!.swordPhase, 'idle');
   }
   const extra = record.result();

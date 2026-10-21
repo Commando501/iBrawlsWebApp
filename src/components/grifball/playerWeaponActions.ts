@@ -5,6 +5,8 @@ import { type CharacterModelType, type Combatant } from '../../types';
 import { getCombatBodyCenter } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
+import { dropGrifballForWeaponSwap } from './grifballObjectiveRuntime';
+import { isOnlineGrifballAuthority, sendGrifballInput } from './onlineGrifballRuntime';
 
 export type PlayerSwappableWeapon = 'hammer' | 'sword' | 'pistol';
 
@@ -200,6 +202,8 @@ export function swapPlayerWeaponForState({
   isPlaying,
   recordWeaponSwap,
   pushStatsUpdate,
+  multiplayerSocket,
+  cancelBallCharge,
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
@@ -208,13 +212,29 @@ export function swapPlayerWeaponForState({
   isPlaying: boolean;
   recordWeaponSwap: (type: Exclude<PlayerSwappableWeapon, 'pistol'>) => void;
   pushStatsUpdate: () => void;
+  multiplayerSocket?: WebSocket | null;
+  cancelBallCharge?: () => void;
 }): void {
   if (state.playerHP <= 0 || isPaused || !isPlaying) return;
   if (state.isLunging) return;
   if (state.swapLockoutTimer > 0) return;
 
-  if (state.activeWeapon !== type) {
-    state.activeWeapon = type;
+  const wasCarrying = state.grifball?.ball.holderId === 'player';
+  const awaitingDrop = wasCarrying && state.isMultiplayer && !isOnlineGrifballAuthority(state);
+  if (wasCarrying) {
+    cancelBallCharge?.();
+    state.grifballPassCharge = 0;
+    state.playerPickupRequested = false;
+    type = state.playerWeaponBeforeBall ?? 'hammer';
+    if (awaitingDrop) {
+      sendGrifballInput(state, multiplayerSocket, false, false, true);
+    } else {
+      dropGrifballForWeaponSwap(state, refs, 'player');
+    }
+  }
+
+  if (wasCarrying || state.activeWeapon !== type) {
+    if (!awaitingDrop) state.activeWeapon = type;
     if (type !== 'pistol') {
       recordWeaponSwap(type);
     }
@@ -229,6 +249,11 @@ export function swapPlayerWeaponForState({
     if (state.settings.weaponSwapLockout > 0) {
       state.swapLockoutTimer = state.settings.weaponSwapLockout;
     }
+  }
+
+  if (awaitingDrop) {
+    pushStatsUpdate();
+    return;
   }
 
   const hammer = refs.playerHammer;

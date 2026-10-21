@@ -36,10 +36,10 @@ export function runAirborneRunnerTrace(spec: typeof AIRBORNE_RUNNER_CASES[number
     }
   }
   for (const frame of trace.frames) for (const side of ['live', 'headless'] as const) {
-    const hit = hitTick > 0 && frame.tick >= hitTick, dead = hit && spec.hp === 1;
+    const hit = hitTick > 0 && frame.tick >= hitTick, dead = hit;
     const movementTicks = dead ? hitTick : frame.tick;
     const f = frame[side];
-    record.compare(frame.tick, `expected.${side}.health`, f.hp, spec.hp - Number(hit));
+    record.compare(frame.tick, `expected.${side}.health`, f.hp, hit ? 0 : spec.hp);
     record.compare(frame.tick, `expected.${side}.attackerHealth`, f.attackerHp, 1);
     record.compare(frame.tick, `expected.${side}.holder`, f.ball.holderId, dead ? null : 'player');
     record.compare(frame.tick, `expected.${side}.weapon`, f.weapon, dead ? 'hammer' : 'ball');

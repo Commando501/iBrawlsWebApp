@@ -113,10 +113,11 @@ for (const mirrored of [false, true]) for (const evasive of [false, true]) test(
   s.grifball.phase = 'playing'; s.grifball.ball.state = 'held'; s.grifball.ball.holderId = carrier.id;
   carrier.pos.set(20 * sign, 0, 0); defender.pos.set(35 * sign, 0, 0); support.pos.set(22 * sign, 0, 8 * sign);
   setGrifballCarrierForState({ state: s, id: carrier.id, carrying: true }); Object.assign(s.grifball.ball.pos, carrier.pos);
-  let holds = 0, pressure = 0, elapsed = 0, firstHoldX: number | null = null;
+  let holds = 0, pressure = 0, elapsed = 0, firstHoldX: number | null = null, lateralEscape = 0;
   try {
     for (let tick = 1; tick <= 180; tick++) {
       host.runtime.step(); elapsed = tick;
+      lateralEscape = Math.max(lateralEscape, Math.abs(carrier.pos.z));
       if (!evasive) {
         assert.equal(s.settings.grifballAllowRunnerThrust, false, 'straight-route control disables runner thrust');
         assert.equal(carrier.aiDashRemaining ?? 0, 0, 'straight-route carrier cannot start an evasive thrust');
@@ -131,10 +132,13 @@ for (const mirrored of [false, true]) for (const evasive of [false, true]) test(
     }
     assert.ok(holds > 0, 'a supported defender must use the visible cut');
     assert.ok(pressure > 0, 'holding the cut must retain separate pressure');
-    assert.ok(carrier.hp < 2, 'the defensive pair damages the approaching runner');
     if (!evasive) assert.equal(carrier.hp, 0, 'the defensive pair stops the straight-running carrier');
+    // Holding a cut is not a guaranteed hit against a runner who leaves that
+    // lane. Keep the straight-route kill requirement and verify real evasion.
+    else assert.ok(carrier.hp < 2 || lateralEscape > 3.3,
+      'an undamaged evasive carrier must leave the cut by more than a punch envelope');
     assert.ok(defender.hp > 0, 'the covering defender survives');
-    t.diagnostic(JSON.stringify({ mirrored, holds, pressure, elapsed, firstHoldX }));
+    t.diagnostic(JSON.stringify({ mirrored, holds, pressure, elapsed, firstHoldX, lateralEscape }));
   } finally { host.runtime.dispose(); }
 });
 

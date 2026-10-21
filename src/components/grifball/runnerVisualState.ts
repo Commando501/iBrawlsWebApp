@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { RUNNER_ARMOR_COLOR, syncCombatantRunnerArmor } from './combatantTeamArmor';
+import { getCombatantTeamArmorState, RUNNER_ARMOR_COLOR, syncCombatantRunnerArmor } from './combatantTeamArmor';
+import { syncRunnerShieldRipple } from './runnerShieldRipple';
 
 export const RUNNER_ARMOR_ORANGE = new THREE.Color(RUNNER_ARMOR_COLOR);
-export const RUNNER_DAMAGE_RED = new THREE.Color('#ef4444');
-export const RUNNER_HEAL_BLUE = new THREE.Color('#38bdf8');
+export const RUNNER_DAMAGE_RED = new THREE.Color('#ff2448');
+export const RUNNER_HEAL_BLUE = new THREE.Color('#259dff');
 
-const DAMAGE_FLASH_DURATION_MS = 850;
-const HEAL_WAVE_DURATION_MS = 900;
-const RUNNER_HEAL_WAVE_NAME = 'runner-heal-wave';
+// Bridge the gaps between network snapshots without restarting the recharge sweep.
+const HEAL_SAMPLE_GRACE_MS = 500;
 
 type MaterialSnapshot = {
   material: THREE.Material;
@@ -28,16 +28,16 @@ type RunnerVisualState = {
   vertexColors: VertexColorSnapshot[];
   materials: MaterialSnapshot[];
   lastHp?: number;
-  damageStartMs?: number;
-  damageUntilMs?: number;
+  lastHealMs?: number;
   healWaveStartMs?: number;
-  wave?: THREE.Mesh;
+  worldPosition: THREE.Vector3;
 };
 
 export type RunnerVisualUpdateInput = {
   group: THREE.Group | null | undefined;
   carrying: boolean;
   hp: number;
+  maxHp?: number;
   alive: boolean;
   nowMs?: number;
 };
@@ -51,6 +51,7 @@ const getRunnerVisualState = (group: THREE.Group): RunnerVisualState => {
   const state: RunnerVisualState = {
     vertexColors: [],
     materials: [],
+    worldPosition: new THREE.Vector3(),
   };
   group.userData.runnerVisualState = state;
   return state;
@@ -87,7 +88,7 @@ const findMaterialSnapshot = (
 
 const captureVisualState = (group: THREE.Group, state: RunnerVisualState): void => {
   group.traverse((child) => {
-    if (!(child instanceof THREE.Mesh) || child.userData.teamArmorMesh === true || child === state.wave) return;
+    if (!(child instanceof THREE.Mesh) || child.userData.teamArmorMesh === true) return;
 
     const colorAttribute = child.geometry.getAttribute('color');
     if (
@@ -170,68 +171,6 @@ const restoreMaterials = (state: RunnerVisualState): void => {
   });
 };
 
-const createHealWave = (): THREE.Mesh => {
-  const geometry = new THREE.TorusGeometry(0.78, 0.035, 8, 48);
-  const material = new THREE.MeshBasicMaterial({
-    color: RUNNER_HEAL_BLUE,
-    transparent: true,
-    opacity: 0.78,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
-  const wave = new THREE.Mesh(geometry, material);
-  wave.name = RUNNER_HEAL_WAVE_NAME;
-  wave.rotation.x = Math.PI / 2;
-  wave.renderOrder = 6;
-  return wave;
-};
-
-const syncHealWave = (
-  group: THREE.Group,
-  state: RunnerVisualState,
-  nowMs: number
-): void => {
-  if (state.healWaveStartMs === undefined) {
-    if (state.wave) state.wave.visible = false;
-    return;
-  }
-
-  const elapsed = nowMs - state.healWaveStartMs;
-  if (elapsed >= HEAL_WAVE_DURATION_MS) {
-    state.healWaveStartMs = undefined;
-    if (state.wave) state.wave.visible = false;
-    return;
-  }
-
-  if (!state.wave) {
-    state.wave = createHealWave();
-    group.add(state.wave);
-  } else if (state.wave.parent !== group) {
-    group.add(state.wave);
-  }
-
-  const progress = THREE.MathUtils.clamp(elapsed / HEAL_WAVE_DURATION_MS, 0, 1);
-  state.wave.visible = true;
-  state.wave.position.set(0, THREE.MathUtils.lerp(-0.75, 1.25, progress), 0);
-  state.wave.scale.setScalar(THREE.MathUtils.lerp(0.75, 1.12, Math.sin(progress * Math.PI)));
-  const material = state.wave.material as THREE.MeshBasicMaterial;
-  material.opacity = 0.78 * (1 - progress);
-};
-
-const clearHealWave = (group: THREE.Group, state: RunnerVisualState): void => {
-  const wave = state.wave ?? group.children.find((child) => child.name === RUNNER_HEAL_WAVE_NAME);
-  if (wave) {
-    group.remove(wave);
-    if (wave instanceof THREE.Mesh) {
-      wave.geometry.dispose();
-      materialList(wave.material).forEach((material) => material.dispose());
-    }
-  }
-  state.wave = undefined;
-  state.healWaveStartMs = undefined;
-};
-
 export const clearRunnerVisualStateForGroup = (group: THREE.Group | null | undefined): void => {
   if (!group) return;
   syncCombatantRunnerArmor(group, false);
@@ -239,7 +178,9 @@ export const clearRunnerVisualStateForGroup = (group: THREE.Group | null | undef
   if (!state || typeof state !== 'object') return;
   restoreVertexColors(state);
   restoreMaterials(state);
-  clearHealWave(group, state);
+  state.materials.forEach(({ material }) => syncRunnerShieldRipple(material, null, 0, 0));
+  const armor = getCombatantTeamArmorState(group);
+  if (armor) syncRunnerShieldRipple(armor.material, null, 0, 0);
   // Release the old buffers and capture current customization on the next pickup.
   delete group.userData.runnerVisualState;
 };
@@ -248,6 +189,7 @@ export const updateRunnerVisualStateForGroup = ({
   group,
   carrying,
   hp,
+  maxHp = 2,
   alive,
   nowMs = typeof performance !== 'undefined' ? performance.now() : Date.now(),
 }: RunnerVisualUpdateInput): void => {
@@ -260,28 +202,34 @@ export const updateRunnerVisualStateForGroup = ({
   const state = getRunnerVisualState(group);
   captureVisualState(group, state);
 
+  // Reset the sweep if the caller's visual clock moves backwards.
+  if (state.lastHealMs !== undefined && nowMs < state.lastHealMs) {
+    state.lastHealMs = undefined;
+    state.healWaveStartMs = undefined;
+  }
   if (state.lastHp !== undefined) {
     if (hp < state.lastHp) {
-      state.damageStartMs = nowMs;
-      state.damageUntilMs = nowMs + DAMAGE_FLASH_DURATION_MS;
+      state.lastHealMs = undefined;
+      state.healWaveStartMs = undefined;
     } else if (hp > state.lastHp) {
-      state.healWaveStartMs = nowMs;
+      state.lastHealMs = nowMs;
+      state.healWaveStartMs ??= nowMs;
     }
   }
   state.lastHp = hp;
 
   setVertexColors(state, RUNNER_ARMOR_ORANGE);
 
-  const damageActive = state.damageUntilMs !== undefined && nowMs < state.damageUntilMs;
-  if (damageActive) {
-    const damageElapsed = nowMs - (state.damageStartMs ?? nowMs);
-    const pulse = 0.45 + Math.max(0, Math.sin(damageElapsed * 0.035)) * 1.55;
-    applyMaterialGlow(state, RUNNER_DAMAGE_RED, pulse);
-  } else {
-    state.damageStartMs = undefined;
-    state.damageUntilMs = undefined;
-    applyMaterialGlow(state, null, 0);
-  }
-
-  syncHealWave(group, state, nowMs);
+  const damaged = hp < maxHp - 0.0001;
+  const healing = damaged && state.lastHealMs !== undefined && nowMs - state.lastHealMs <= HEAL_SAMPLE_GRACE_MS;
+  const rippleColor = healing ? RUNNER_HEAL_BLUE : damaged ? RUNNER_DAMAGE_RED : null;
+  if (!healing) state.healWaveStartMs = undefined;
+  const pulse = 0.12 + (0.5 + 0.5 * Math.sin(nowMs * 0.007)) * 0.18;
+  applyMaterialGlow(state, rippleColor, pulse);
+  group.getWorldPosition(state.worldPosition);
+  const elapsedSeconds = (nowMs - (state.healWaveStartMs ?? 0)) / 1000;
+  state.materials.forEach(({ material }) =>
+    syncRunnerShieldRipple(material, rippleColor, elapsedSeconds, state.worldPosition.y));
+  const armor = getCombatantTeamArmorState(group);
+  if (armor) syncRunnerShieldRipple(armor.material, rippleColor, elapsedSeconds, state.worldPosition.y);
 };

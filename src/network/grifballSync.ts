@@ -7,6 +7,7 @@ interface GrifballWireMatch {
     state: 'idle' | 'held' | 'loose' | 'thrown'; holderId: string | null;
     pos: { x: number; y: number; z: number }; vel: { x: number; y: number; z: number };
     home: { x: number; y: number; z: number }; looseTimer: number;
+    releaseOwnerId?: string;
   };
 }
 
@@ -17,6 +18,7 @@ export interface GrifballInput {
   possession: number;
   pickup: boolean;
   charging: boolean;
+  drop?: boolean;
   release?: { yaw: number };
 }
 export const GRIFBALL_RULE_KEYS = [
@@ -25,8 +27,9 @@ export const GRIFBALL_RULE_KEYS = [
   'grifballCountdownDuration', 'grifballRoundResetDelay',
   'grifballRunnerHealth', 'grifballRunnerHealDelay', 'grifballRunnerHealRate',
   'grifballRunnerSpeedForward', 'grifballRunnerSpeedBackward', 'grifballRunnerSpeedSide',
+  'hammerBallDeflectionStrength',
 ] as const;
-export const GRIFBALL_BOOLEAN_RULE_KEYS = ['grifballAllowThrowing', 'grifballAllowRunnerThrust'] as const;
+export const GRIFBALL_BOOLEAN_RULE_KEYS = ['grifballAllowThrowing', 'grifballAllowRunnerThrust', 'hammerBallDeflectionEnabled'] as const;
 export interface GrifballSnapshot {
   sequence: number;
   possession: number;
@@ -42,6 +45,7 @@ const vec = (v: any) => v && finite(v.x) && finite(v.y) && finite(v.z);
 export function isGrifballInput(v: any): v is GrifballInput {
   return !!v && uint(v.sequence) && uint(v.round) && uint(v.possession) &&
     typeof v.pickup === 'boolean' && typeof v.charging === 'boolean' &&
+    (v.drop === undefined || typeof v.drop === 'boolean') &&
     (!v.release || finite(v.release.yaw));
 }
 export function isGrifballSnapshot(v: any): v is GrifballSnapshot {
@@ -53,6 +57,7 @@ export function isGrifballSnapshot(v: any): v is GrifballSnapshot {
     ['idle', 'held', 'loose', 'thrown'].includes(b?.state) &&
     (b.state === 'held' ? typeof b.holderId === 'string' : b.holderId === null) &&
     vec(b.pos) && vec(b.vel) && vec(b.home) && finite(b.looseTimer) &&
+    (b.releaseOwnerId === undefined || typeof b.releaseOwnerId === 'string') &&
     uint(v.goals?.blue) && uint(v.goals?.red) && finite(v.charge) && v.charge >= 0 && v.charge <= 1 &&
     (!v.release || (uint(v.release.sequence) && typeof v.release.actorId === 'string' &&
       finite(v.release.charge) && v.release.charge >= 0 && v.release.charge <= 1 && finite(v.release.age) && v.release.age >= 0)) &&

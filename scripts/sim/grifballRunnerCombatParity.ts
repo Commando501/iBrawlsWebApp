@@ -11,10 +11,12 @@ for (const attack of ['none', 'slash', 'lunge'] as const) for (const counter of 
 export function runRunnerCombatTrace(spec: RunnerCombatSpec, snapshotAt?: number) {
   const trace = runFrameObjectiveTrace(spec.frame, snapshotAt, undefined, undefined, spec.runner);
   const record = parityRecorder(), { frame, runner } = spec;
-  const incoming = runner.attack !== 'none', dead = incoming && frame.hp === 1;
-  const counterStarted = runner.counter && !runner.shield && !(dead && runner.attack === 'lunge' && !frame.reverse);
+  const incoming = runner.attack !== 'none';
+  const counterStarted = runner.counter && !runner.shield && !(incoming && runner.attack === 'lunge' && !frame.reverse);
+  const clash = incoming && counterStarted;
+  const dead = incoming && !clash;
   const punchHit = counterStarted && !dead && !runner.shield;
-  const impactTick = runner.punchSpeed === .04 ? 8 : 26;
+  const impactTick = clash ? 4 : runner.punchSpeed === .04 ? 8 : 26;
   const enemyDead = punchHit && runner.enemyHp === 1;
   // A 130%-speed carrier moving first escapes the initial lunge contact by one tick;
   // pausing for the counter removes that extra movement. Slashes land after both moves.
@@ -22,9 +24,9 @@ export function runRunnerCombatTrace(spec: RunnerCombatSpec, snapshotAt?: number
   record.compare(120, 'expected.counterRequests', 'counters' in trace ? trace.counters : undefined, counterStarted ? 1 : 0);
   for (const side of ['live', 'headless'] as const) {
     for (const f of trace.frames) {
-      const received = incoming && f.tick >= contactTick;
+      const received = dead && f.tick >= contactTick;
       const dealt = punchHit && f.tick >= impactTick;
-      record.compare(f.tick, `expected.${side}.health`, f[side].hp, frame.hp - Number(received));
+      record.compare(f.tick, `expected.${side}.health`, f[side].hp, received ? 0 : frame.hp);
       record.compare(f.tick, `expected.${side}.enemyHealth`, f[side].attackerHp, runner.enemyHp - Number(dealt));
       record.compare(f.tick, `expected.${side}.possession`, f[side].ball.holderId, dead && received ? null : 'target');
       record.compare(f.tick, `expected.${side}.deaths`, f[side].runnerDeaths, dead && received ? 1 : 0);

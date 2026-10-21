@@ -1,4 +1,7 @@
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
+import { resolveCombatHitDamageForState } from './combatDamage';
+import { tryRunnerSwordClash } from './runnerSwordClash';
+import { prepareRunnerSwordPrediction, recordRunnerSwordPrediction } from './runnerSwordPrediction';
 import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -11,7 +14,9 @@ import { type GrifballRuntimeState } from './runtimeState';
 type PlayerSwordSlashHitSyncPayload = {
   type: 'sync';
   action: 'hit_taken';
-  damage: 1;
+  damage: number;
+  weapon: 'sword';
+  hitId?: string;
   targetId: string;
 };
 
@@ -73,6 +78,9 @@ export function applyPlayerSwordSlashImpactForState({
       const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
 
       if (angle <= 1.0) {
+        if (tryRunnerSwordClash(state, 'player', mainAI.id, {
+          playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath,
+        })) return true;
         const swordThreshold = state.settings.swordTradeWindow ?? 350;
         const isAISwordActiveAttack = state.settings.enableSwordTrade && mainAI.activeWeapon === 'sword' && (
           mainAI.aiState === 'LUNGING' ||
@@ -85,7 +93,7 @@ export function applyPlayerSwordSlashImpactForState({
           return true;
         }
 
-        mainAI.hp -= 1;
+        mainAI.hp -= resolveCombatHitDamageForState(state, mainAI.id, mainAI.hp, 'sword');
         playSwing();
         spawnVoxelShockwaveParticles(mainAI.pos, '#22d3ee');
         state.lastStrikePos = mainAI.pos.clone();
@@ -119,7 +127,9 @@ export function applyPlayerSwordSlashImpactForState({
   }
 
   if (state.otherPlayers) {
+    let cancelled = false;
     state.otherPlayers.forEach((other) => {
+      if (cancelled || state.playerHP <= 0) return;
       // The legacy main-AI branch owns this actor, including sword trades.
       if (!isMultiplayer && mainAI && other.id === mainAI.id) return;
       if (
@@ -140,17 +150,23 @@ export function applyPlayerSwordSlashImpactForState({
           const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
 
           if (angle <= 1.0) {
+            if (tryRunnerSwordClash(state, 'player', other.id, {
+              playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath,
+            })) { cancelled = true; return; }
             if (isMultiplayer) {
               playSwing();
               spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#22d3ee');
               state.lastStrikePos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
               state.lastStrikeTick = 1.0;
 
-              if (sendSync({ type: 'sync', action: 'hit_taken', damage: 1, targetId: other.id })) {
-                applyOutgoingMultiplayerHitLocally(other.id, 1);
+              const damage = resolveCombatHitDamageForState(state, other.id, other.hp, 'sword');
+              const hitId = prepareRunnerSwordPrediction(state, other.id);
+              if (sendSync({ type: 'sync', action: 'hit_taken', damage, weapon: 'sword', targetId: other.id, ...(hitId ? { hitId } : {}) })) {
+                applyOutgoingMultiplayerHitLocally(other.id, damage);
+                recordRunnerSwordPrediction(state, hitId);
               }
             } else {
-              other.hp -= 1;
+              other.hp -= resolveCombatHitDamageForState(state, other.id, other.hp, 'sword');
               playSwing();
               spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#22d3ee');
               state.lastStrikePos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
@@ -185,6 +201,7 @@ export function applyPlayerSwordSlashImpactForState({
         }
       }
     });
+    if (cancelled) return true;
   }
 
   return false;

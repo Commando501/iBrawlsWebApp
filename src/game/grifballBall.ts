@@ -4,6 +4,7 @@
  */
 
 import { getRectHalfExtents, type ArenaHalfExtents } from './arenaDimensions';
+import { moveBallWithContacts, overlapsBallCollider, type BallContactCollider } from './grifballBallContacts';
 
 export type GrifballBallState = 'idle' | 'held' | 'loose' | 'thrown';
 
@@ -23,6 +24,8 @@ export interface GrifballBall {
   looseTimer: number;
   /** Center / neutral home the ball returns to between rounds. */
   home: Vec3;
+  /** Release clearance: ignore the thrower until the ball clears their body/weapon. */
+  releaseOwnerId?: string;
 }
 
 /** Resting height of the ball center above the floor. */
@@ -67,6 +70,7 @@ export function createInitialBall(home: Vec3): GrifballBall {
 
 /** Reset the ball to its neutral home (round start / auto-return). */
 export function returnBallHome(ball: GrifballBall): void {
+  delete ball.releaseOwnerId;
   ball.state = 'idle';
   ball.holderId = null;
   ball.pos = { x: ball.home.x, y: BALL_REST_Y, z: ball.home.z };
@@ -76,6 +80,7 @@ export function returnBallHome(ball: GrifballBall): void {
 
 /** A combatant grabs the ball. */
 export function attachBallTo(ball: GrifballBall, holderId: string): void {
+  delete ball.releaseOwnerId;
   ball.state = 'held';
   ball.holderId = holderId;
   ball.vel = { x: 0, y: 0, z: 0 };
@@ -84,6 +89,7 @@ export function attachBallTo(ball: GrifballBall, holderId: string): void {
 
 /** Ball drops loose at a position (carrier death / fumble). */
 export function dropBall(ball: GrifballBall, at: Vec3): void {
+  delete ball.releaseOwnerId;
   ball.state = 'loose';
   ball.holderId = null;
   ball.pos = { x: at.x, y: BALL_REST_Y, z: at.z };
@@ -93,6 +99,8 @@ export function dropBall(ball: GrifballBall, at: Vec3): void {
 
 /** Throw the ball along a (normalized) direction at a given speed. */
 export function throwBall(ball: GrifballBall, from: Vec3, dir: Vec3, speed: number, arc = GRIFBALL_THROW_ARC): void {
+  if (ball.holderId) ball.releaseOwnerId = ball.holderId;
+  else delete ball.releaseOwnerId;
   ball.state = 'thrown';
   ball.holderId = null;
   ball.pos = { x: from.x, y: Math.max(BALL_REST_Y, from.y), z: from.z };
@@ -212,17 +220,21 @@ export function tickBallPhysics(
   ball: GrifballBall,
   dt: number,
   returnTimeout: number,
-  arenaBounds?: BallArenaBounds | null
+  arenaBounds?: BallArenaBounds | null,
+  colliders: readonly BallContactCollider[] = [],
 ): boolean {
   if (ball.state === 'held') return false;
 
   constrainBallToArenaBounds(ball, arenaBounds);
 
-  if (ball.state === 'thrown') {
+  const inFlight = ball.state === 'thrown';
+  if (inFlight || colliders.length > 0 || Math.hypot(ball.vel.x, ball.vel.y, ball.vel.z) > 0) {
     ball.vel.y -= GRIFBALL_BALL_GRAVITY * dt;
-    ball.pos.x += ball.vel.x * dt;
-    ball.pos.y += ball.vel.y * dt;
-    ball.pos.z += ball.vel.z * dt;
+    const contacted = moveBallWithContacts(ball, GRIFBALL_BALL_RADIUS, dt, colliders, ball.releaseOwnerId);
+    if (ball.releaseOwnerId && !colliders.some(c => c.ownerId === ball.releaseOwnerId && overlapsBallCollider(ball.pos, GRIFBALL_BALL_RADIUS, c))) {
+      delete ball.releaseOwnerId;
+    }
+    if (contacted && ball.state === 'idle' && Math.hypot(ball.vel.x, ball.vel.z) > SETTLE_SPEED) ball.state = 'loose';
 
     if (ball.pos.y <= BALL_REST_Y) {
       ball.pos.y = BALL_REST_Y;
@@ -232,13 +244,13 @@ export function tickBallPhysics(
       const horiz = Math.hypot(ball.vel.x, ball.vel.z);
       if (ball.vel.y < SETTLE_SPEED && horiz < SETTLE_SPEED) {
         // Came to rest — becomes a loose ball anyone can grab.
-        ball.state = 'loose';
+        if (inFlight) ball.state = 'loose';
         ball.vel = { x: 0, y: 0, z: 0 };
-        ball.looseTimer = 0;
+        if (inFlight) ball.looseTimer = 0;
       }
     }
     constrainBallToArenaBounds(ball, arenaBounds);
-    return false;
+    if (inFlight) return false;
   }
 
   // idle / loose: count down toward auto-return.

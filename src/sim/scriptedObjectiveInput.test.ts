@@ -48,14 +48,15 @@ test('mixed execution keeps the local player outside the scripted movement contr
 });
 test('scripted steering is constrained by the arena and retains independent JSON continuation', () => {
   const { state, actor, actions, input } = fixture();
-  actor.pos.z = 22.34; input.movement = { walker: { x: 0, z: 1 } };
+  const boundaryZ = state.map.arenaHalfExtents!.z - 0.6;
+  actor.pos.z = boundaryZ - 0.06; input.movement = { walker: { x: 0, z: 1 } };
   const restored = structuredClone(state), restoredInput = structuredClone(input);
   for (let tick = 0; tick < 60; tick++) {
     assert.deepEqual(stepSimulation(state, actions, { settings: state.settings, scriptedObjective: input }),
       stepSimulation(restored, actions, { settings: restored.settings, scriptedObjective: restoredInput }));
     assert.deepEqual(state, restored);
   }
-  assert.ok(actor.pos.z <= 22.4 + 1e-9);
+  assert.ok(Math.abs(actor.pos.z - boundaryZ) < 1e-9);
   assert.equal(actor.vel.z, 0);
 });
 test('inherited movement cannot bypass input validation or issue a command', () => {

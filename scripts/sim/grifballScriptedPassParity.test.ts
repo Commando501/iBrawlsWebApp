@@ -11,6 +11,8 @@ import { updateGrifballTeamPlanForState } from '../../src/components/grifball/gr
 import { resolvePrimaryGrifballAIObjectiveMovementForCombatant } from '../../src/components/grifball/grifballAIObjectiveMovement';
 import { setGrifballCarrierForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
+import { createOfflineBotCombatant } from '../../src/game/roster';
+import { resolveSimScriptedGrifballPass } from '../../src/sim/grifballScriptedPass';
 
 const dt = 1 / 60;
 const near = (a: number, b: number, label: string) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a} != ${b}`);
@@ -21,6 +23,8 @@ for (const main of [false, true]) for (const mirror of [false, true]) for (const
     const { sim, state, bot, target } = f, [actor, receiver] = sim.combatants;
     sim.combatExecution = 'live-roster-v2'; sim.match.phase = 'playing'; state.grifball = structuredClone(sim.match);
     state.grifballTactics = defaultGrifballTactics();
+    state.grifballTactics.defaults.passAgencyStrength = 1;
+    state.grifballTactics.botStyles[id] = main ? 'opportunist' : mirror ? 'guardian' : 'enforcer';
     actor.id = id; receiver.id = target.id;
     for (const [i, [c, live]] of ([[actor, bot], [receiver, target]] as const).entries()) {
       c.controller = live.controller = 'ai'; c.team = live.team = mirror ? 'red' : 'blue';
@@ -34,13 +38,14 @@ for (const main of [false, true]) for (const mirror of [false, true]) for (const
     if (reverse) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
     const planner: ScriptedObjectivePlanner = { version: SCRIPTED_OBJECTIVE_PLANNER_VERSION,
       scriptedBots: { [id]: 'normal', receiver: 'normal' }, plan: createGrifballTeamPlanState(),
+      tactics: structuredClone(state.grifballTactics),
       punchControl: { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { [id]: 0, receiver: 0 } }, passControl: SCRIPTED_PASS_VERSION };
     const goal = (team: string | undefined) => sim.goalPlates.find(p => p.team !== team)!.position;
     // Charged cases start from an independently earned nonzero-charge candidate.
     // Ordinary cases let the policy choose its preferred pass with no intervention.
     if (charged) {
       updateGrifballTeamPlanForState(state, dt, goal, f.map);
-      updateGrifballTeamPlan(planner.plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots: planner.scriptedBots }), dt);
+      updateGrifballTeamPlan(planner.plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots: planner.scriptedBots, tactics: planner.tactics }), dt);
       for (const plan of [planner.plan, state.aiMatchContext.grifballTeamPlan]) {
         const pass = plan.assignments.get(id)!.pass!;
         pass.selected = pass.candidates.find(c => c.viable && c.chargeSeconds > 0)!;
@@ -88,3 +93,51 @@ for (const main of [false, true]) for (const mirror of [false, true]) for (const
     if (charged) assert.ok(chargingFrames > 0 && releaseTick >= 18, `charge=${chargingFrames}, release=${releaseTick}`);
     assert.equal(receiver.hasBall, true); assert.equal(actor.hasBall, false);
   });
+
+for (const enabled of [false, true]) test(`both runtimes recheck hammer deflection at release: ${enabled}`, () => {
+  const f = createBotParityFixture('carrier', true, { aiDifficulty: 'normal' }, 'receiver');
+  const { sim, state, bot, target } = f, [actor, receiver] = sim.combatants;
+  actor.id = 'carrier'; receiver.id = 'receiver';
+  sim.combatExecution = 'live-roster-v2'; sim.match.phase = 'playing'; state.grifball = structuredClone(sim.match);
+  for (const [i, [c, live]] of ([[actor, bot], [receiver, target]] as const).entries()) {
+    c.controller = live.controller = 'ai'; c.team = live.team = 'blue';
+    c.pos = { x: i ? -8 : -20, y: 0, z: 0 }; live.pos.set(c.pos.x, 0, 0);
+    c.vel = { x: 0, y: 0, z: 0 }; live.vel.set(0, 0, 0);
+    c.yaw = 0; live.yaw = Math.PI; c.weaponReadyTimer = c.invulnerabilityTimer = 0;
+  }
+  const enemy = structuredClone(receiver); enemy.id = 'enemy'; enemy.team = 'red'; enemy.pos = { x: -20, y: 0, z: 8 };
+  sim.combatants.push(enemy);
+  state.otherPlayers.set('enemy', createOfflineBotCombatant({ id: 'enemy', playerName: 'enemy', team: 'red',
+    spawnPos: target.pos.clone().set(-20, 0, 8), yaw: Math.PI, hue: 0, difficulty: 'normal', settings: state.settings }));
+  for (const settings of [sim.settings, state.settings]) settings.hammerBallDeflectionEnabled = false;
+  state.grifballTactics = defaultGrifballTactics();
+  state.grifballTactics.defaults.passAgencyStrength = 1; state.grifballTactics.botStyles.carrier = 'enforcer';
+  sim.match.ball.state = state.grifball.ball.state = 'held';
+  sim.match.ball.holderId = state.grifball.ball.holderId = 'carrier';
+  setSimCarrier(actor, true, sim.settings); setGrifballCarrierForState({ state, id: 'carrier', carrying: true });
+  const planner: ScriptedObjectivePlanner = { version: SCRIPTED_OBJECTIVE_PLANNER_VERSION,
+    scriptedBots: { carrier: 'normal', receiver: 'normal', enemy: 'normal' }, plan: createGrifballTeamPlanState(),
+    tactics: structuredClone(state.grifballTactics),
+    punchControl: { version: SCRIPTED_CARRIER_PUNCH_VERSION, cooldowns: { carrier: 0, receiver: 0, enemy: 0 } },
+    passControl: SCRIPTED_PASS_VERSION };
+  const goal = (team: string | undefined) => sim.goalPlates.find(p => p.team !== team)!.position;
+  updateGrifballTeamPlanForState(state, dt, goal, f.map);
+  updateGrifballTeamPlan(planner.plan, createSimGrifballTacticalSnapshot(sim,
+    { scriptedBots: planner.scriptedBots, tactics: planner.tactics }), dt);
+  for (const plan of [planner.plan, state.aiMatchContext.grifballTeamPlan]) {
+    const pass = plan.assignments.get('carrier')!.pass!;
+    pass.selected = pass.candidates.find(c => c.viable && c.speed === 13.25)!;
+    assert.ok(pass.selected, 'both adapters must independently earn the pass');
+    plan.passCharge = { carrierId: 'carrier', receiverId: 'receiver', speed: 13.25, elapsed: .15 };
+  }
+  // No planner refresh: the release boundary itself must observe the new rule.
+  for (const settings of [sim.settings, state.settings]) settings.hammerBallDeflectionEnabled = enabled;
+  const outcome = resolveSimScriptedGrifballPass(sim, planner, .2);
+  updateGrifballObjectiveForState({ state, refs: f.refs, ballMeshRef: { current: null }, ballChargingRef: { current: false },
+    ballChargeTimerRef: { current: 0 }, dt: .2, isMultiplayer: false, activeCustomMap: f.map,
+    placeCombatantsAtGrifballSpawns: () => assert.fail('unexpected reset'), pushStatsUpdate: () => {} });
+  assert.equal(outcome.kind, enabled ? 'cancelled' : 'release');
+  assert.equal(state.grifball.ball.state, enabled ? 'held' : 'thrown');
+  assert.equal(planner.plan.passCharge, null); assert.equal(state.aiMatchContext.grifballTeamPlan.passCharge, null);
+  if (enabled) assert.equal(state.aiMatchContext.grifballTeamPlan.passFlight, null);
+});

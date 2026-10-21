@@ -63,17 +63,17 @@ export const buildGrifballHudStats = ({
       return `${assignment.team} / ${bot?.playerName ?? assignment.botId}: ${assignment.role} -> (${assignment.destination.x.toFixed(1)}, ${assignment.destination.z.toFixed(1)}) / ${target} / ${assignment.reason}`;
     })
     : undefined,
-  weaponReady: s.activeWeapon === 'hammer'
+  weaponReady: s.activeWeapon === 'hammer' || s.activeWeapon === 'ball'
     ? s.pWeaponReady
     : s.activeWeapon === 'pistol'
       ? s.pPistolReady
       : s.pSwordReady,
-  weaponCooldown: s.activeWeapon === 'hammer'
+  weaponCooldown: s.activeWeapon === 'hammer' || s.activeWeapon === 'ball'
     ? (s.pWeaponCooldown ?? 1.0)
     : s.activeWeapon === 'pistol'
       ? s.pPistolCooldown
       : s.pSwordCooldown,
-  activeWeapon: ballAsHammer(s.activeWeapon),
+  activeWeapon: s.activeWeapon,
   crosshairColor: s.crosshairColor,
   lastStrikePos: s.lastStrikePos ? [s.lastStrikePos.x, s.lastStrikePos.y, s.lastStrikePos.z] : null,
   lastStrikeTick: s.lastStrikeTick,

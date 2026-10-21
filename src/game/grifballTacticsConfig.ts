@@ -1,5 +1,27 @@
+import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from './grifballPlayerStyles';
+
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  markAgencyStrength: { label: 'Defensive marking individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let assigned escort markers prefer tighter Enforcer, wider Opportunist or deeper Guardian positions. Zero keeps team positions. Requires coordination, space awareness and coordinated defense. Interception, last-defender coverage, containment and emergencies stay authoritative; timing, threats and teammate spacing can reject a preference.' },
+  runnerPatienceAgencyStrength: { label: 'Runner patience individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply the carrier’s own style to cumulative wait and retreat time: Enforcers push sooner, Opportunists use shorter support windows, and Guardians allow more time for coverage. Zero keeps team timing. Requires coordination, space awareness and runner planning. Timely scripted support, route safety and the shared progress timeout remain authoritative; live edits never reset time already spent.' },
+  engagementAgencyStrength: { label: 'Engagement persistence individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply the bot’s style to useful tank commitment and return-to-coverage time: Enforcers hold longer and rejoin sooner, Opportunists reconsider sooner, and Guardians take longer coverage breaks. Zero keeps team timing. Requires coordination, space awareness and tanking while our team holds the ball. Lost purpose, weapon recovery and immediate defense retain priority.' },
+  doubleTeamAgencyStrength: { label: 'Double-team individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let the supporting tank decide when to join a teammate: Enforcers accept lower-value openings; Opportunists wait for longer recovery; Guardians require more value and time. Zero keeps team decisions. Requires coordination, space awareness and tanking while our team holds the ball. Recovery cover, routes and shared hammer exposure retain priority.' },
+  escortAgencyStrength: { label: 'Escort positioning individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let passive escorts prefer forward Enforcer, wider Opportunist or trailing Guardian positions. Zero keeps team positions. Requires coordination, space awareness and runner planning. Receivers, rear coverage and engagement jobs retain priority; route timing, visible threats, spacing and the runner corridor can reject a preference.' },
+  passSupportAgencyStrength: { label: 'Pass landing support individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let lateral covers prefer closer Enforcer, wider Opportunist or deeper Guardian positions. Zero keeps team positions. Requires Pass landing support, coordination, space awareness, coordinated defense and passing. Route timing, visible attack margin and teammate separation can reject a preference; receiver and last defender keep their jobs.' },
+  passSupportDepth: { label: 'Pass landing cover depth', min: 2, max: 10, step: .5, value: 4, unit: 'm', module: 'defense', description: 'Place lateral cover this far goal-side of our released pass’s predicted landing area. Last-defender depth remains separate. Requires Pass landing support, coordination, space awareness, coordinated defense and passing.' },
+  passRecoveryAgencyStrength: { label: 'Pass recovery individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply the current receiver’s Grifball style to the handoff margin: Enforcers hold marginal assignments longer; Opportunists and Guardians yield sooner. Zero keeps team behavior. Requires Adaptive pass recovery, coordination, space awareness and Pass and receive decisions. Unavailable receivers still yield immediately at a tactical refresh.' },
+  passRecoveryAdvantage: { label: 'Pass recovery handoff advantage', min: 0, max: 3, step: .1, value: .5, unit: 's', module: 'defense', description: 'With Adaptive pass recovery enabled, another scripted teammate must be able to collect the ball this much sooner to replace the current receiver. Accounts for routing, movement readiness and ball settling. Unavailable receivers can be replaced immediately at a tactical refresh.' },
+  hammerDefenseAgencyStrength: { label: 'Hammer defense individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply each hammer defender’s Grifball style: earlier, tighter Enforcer attempts; later, cleaner Opportunist windows; and early Guardian recognition with more contact margin. Zero keeps team behavior. Requires Hammer pass defense, coordination, space awareness, coordinated defense and hammer ball deflection in match rules.' },
+  hammerDefenseReaction: { label: 'Hammer pass reaction delay', min: 0, max: .3, step: .01, value: .08, unit: 's', module: 'defense', description: 'Minimum observed enemy throw age before a stationary hammer interception. Requires Hammer pass defense and hammer ball deflection in match rules.' },
+  swordGuardAgencyStrength: { label: 'Sword defense individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply each sword defender’s Grifball style: Enforcers keep pressure longer, Opportunists leave less extra room for recovery, and Guardians respond sooner with more clearance. Zero keeps team behavior. Requires Sword punch awareness, coordination, space awareness and coordinated defense.' },
+  swordGuardReaction: { label: 'Sword guard reaction delay', min: 0, max: .3, step: .01, value: .06, unit: 's', module: 'defense', description: 'Minimum visible runner punch age before a ready sword defender gives it room. Requires Sword punch awareness, coordination, space awareness and coordinated defense.' },
+  runnerClashAgencyStrength: { label: 'Counter individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Apply each runner’s Grifball style to counter timing: earlier Enforcer commitment, later Opportunist counters, and quicker Guardian recognition. Zero keeps team timing. Requires Runner punch-clash timing, coordination, space awareness and runner planning.' },
+  runnerClashReaction: { label: 'Clash reaction delay', min: 0, max: .3, step: .01, value: .06, unit: 's', module: 'runner', description: 'Minimum visible sword attack age before a timed counter. A slower reaction can miss short slashes; cooldowns still apply.' },
+  runnerClashLead: { label: 'Clash counter window', min: .02, max: .3, step: .01, value: .08, unit: 's', module: 'runner', description: 'Punch when estimated sword contact is this close. Clamped to the actual punch active duration. Requires Runner punch-clash timing.' },
+  passAgencyStrength: { label: 'Passing individuality', min: 0, max: 1, step: 0.1, value: 0, unit: '', module: 'agency', description: 'Apply each carrier’s Grifball style to eligible passes. Zero preserves team pass scoring. Requires coordination, space awareness and passing; safety margins and hammer-deflection checks remain authoritative.' },
+  defenseAgencyStrength: { label: 'Defensive individuality', min: 0, max: 1, step: 0.1, value: 0, unit: '', module: 'agency', description: 'Use player styles to choose between timely interceptors and nearby escort markers. Last-defender coverage, containment and emergencies retain priority. Requires coordination, space awareness and coordinated defense.' },
+  runnerAgencyStrength: { label: 'Runner individuality', min: 0, max: 1, step: 0.1, value: 0, unit: '', module: 'agency', description: 'Apply each carrier’s Grifball style to eligible route scores. Zero preserves team route scoring. Requires coordination, space awareness and runner planning; independent of support initiative.' },
+  agencyStrength: { label: 'Individual initiative', min: 0, max: 1, step: 0.1, value: 0, unit: '', module: 'agency', description: 'Allow support bots to choose separate useful engagements using their Grifball player styles. Zero preserves the established team orders. Requires coordination, space awareness and tanking.' },
   styleAggression: { label: 'Aggression', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Initiate useful engagements sooner at high values; keep more coverage at low values.' },
   stylePatience: { label: 'Patience', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Allow longer coverage rendezvous and tank commitments. Progress timeouts still apply.' },
   styleWidth: { label: 'Formation width', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Widen support lanes and runner cuts. The center value preserves module tuning.' },
@@ -68,25 +90,31 @@ export const TACTICS_FIELDS = {
 } as const;
 export type TacticalNumber = keyof typeof TACTICS_FIELDS;
 export type TeamTactics = Record<TacticalNumber, number> & {
-  stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
+  passSupportEnabled: boolean; passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 6;
+  schemaVersion: 25;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
+  /** Stable roster IDs: styles follow bots when teams are mirrored. */
+  botStyles: Record<string, GrifballPlayerStyle>;
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 6, defaults: {
+  return { schemaVersion: 25, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
-    stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
-  }, teams: {} };
+    passSupportEnabled: false, passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
+  }, teams: {}, botStyles: {} };
 }
-const booleanKeys = ['stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
+const booleanKeys = ['passSupportEnabled', 'passRecoveryEnabled', 'hammerDefenseEnabled', 'swordGuardEnabled', 'runnerClashEnabled', 'stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4, 5, 6].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2, 3, 4, 5 or 6, defaults and teams.');
-  if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams'].includes(key))) throw new Error('Unknown configuration field.');
+  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–25, defaults and teams.');
+  if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams', 'botStyles'].includes(key))) throw new Error('Unknown configuration field.');
+  const styles = value.botStyles === undefined && (value.schemaVersion as number) < 7 ? {} : value.botStyles;
+  if (!object(styles) || Object.keys(styles).length > 128 || Object.entries(styles).some(([id, style]) =>
+    !id.trim() || id.length > 128 || typeof style !== 'string' || !Object.hasOwn(GRIFBALL_PLAYER_STYLES, style)))
+    throw new Error('Expected at most 128 bot IDs with supported Grifball player styles.');
   const validateTeam = (team: unknown, partial: boolean): Partial<TeamTactics> => {
     if (!object(team)) throw new Error('Team settings must be an object.');
     for (const [key, setting] of Object.entries(team)) {
@@ -97,6 +125,25 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 25 ? { markAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 24 ? { runnerPatienceAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 23 ? { engagementAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 22 ? { doubleTeamAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 21 ? { escortAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 20 ? { passSupportAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 19 ? { passSupportEnabled: false, passSupportDepth: 4 } : {}),
+      ...((value.schemaVersion as number) < 18 ? { passRecoveryAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 17 ? { passRecoveryEnabled: false, passRecoveryAdvantage: .5 } : {}),
+      ...((value.schemaVersion as number) < 16 ? { hammerDefenseAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 15 ? { hammerDefenseEnabled: false, hammerDefenseReaction: .08 } : {}),
+      ...((value.schemaVersion as number) < 14 ? { swordGuardAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 13 ? { swordGuardEnabled: false, swordGuardReaction: .06 } : {}),
+      ...((value.schemaVersion as number) < 12 ? { runnerClashAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 11 ? { runnerClashEnabled: false, runnerClashReaction: .06, runnerClashLead: .08 } : {}),
+      ...((value.schemaVersion as number) < 10 ? { passAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 9 ? { defenseAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 8 ? { runnerAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 7 ? { agencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 6 ? { stylesEnabled: true, adaptationEnabled: true } : {}),
       ...((value.schemaVersion as number) < 5 ? { defenseEnabled: true, passingEnabled: true } : {}),
       ...(value.schemaVersion === 1 ? { spaceEnabled: true } : {}),
@@ -116,7 +163,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 6, defaults, teams };
+  return { schemaVersion: 25, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };

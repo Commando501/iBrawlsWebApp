@@ -17,6 +17,8 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   speedBackward: 100,
   attackRange: 3.2,
   attackRadius: 4.5,
+  hammerBallDeflectionEnabled: true,
+  hammerBallDeflectionStrength: 1,
   dashDistance: 6.0,
   dashDuration: 0.25,
   dashCooldown: 2.0,

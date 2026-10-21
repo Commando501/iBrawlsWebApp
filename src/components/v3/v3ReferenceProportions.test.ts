@@ -217,14 +217,23 @@ describe('V3 OBJ reference proportion targets', () => {
     assert.equal(targets.bands.shin.widthRatio, V3_OBJ_REFERENCE_PROPORTION_TARGETS.bands.shin.widthRatio);
   });
 
-  it('passes the built-in Aegis model through Phase 32 proportion gates', () => {
+  it('reports legacy OBJ envelope gaps for the authored Mesh2Motion T-pose without declaring it ready', () => {
     const report = analyzeV3AegisReferenceProportions();
 
-    assert.equal(report.ready, true, formatV3ReferenceProportionGapSummary(report));
+    // Phase 57 made authored T-pose placement authoritative. The old OBJ stance
+    // remains a diagnostic target; changing its tolerances to pass would hide
+    // actual proportion gaps and falsely declare the legacy asset ready.
+    assert.equal(report.ready, false, formatV3ReferenceProportionGapSummary(report));
     assert.equal(report.placementMode, 'mesh2MotionNative');
     assert.equal(report.targets.sourceKind, 'obj');
     assert.ok(report.summary.globalFrontWidthDelta <= 0.405);
-    assert.ok(report.summary.maxBandWidthDelta <= 0.57);
-    assert.ok(report.summary.maxBandDepthDelta <= 0.096);
+    assert.deepEqual(report.issues.map(issue => [issue.code, issue.band ?? null]), [
+      ['global-side-depth-low', null],
+      ['band-depth-low', 'pelvis'],
+      ['band-depth-low', 'waist'],
+      ['band-width-high', 'neck'],
+    ]);
+    assert.equal(report.summary.issueCount, 4);
+    for (const issue of report.issues) assert.ok(issue.value > issue.threshold);
   });
 });

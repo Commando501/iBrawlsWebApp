@@ -31,6 +31,10 @@ for (const mirrored of [false, true])
     state.grifball.phase = 'playing'; state.grifball.ball.state = 'held'; state.grifball.ball.holderId = carrier.id;
     carrier.pos.set(30 * sign, 0, 0); defender.pos.set(32 * sign, 0, 0);
     carrier.vel.set(0, 0, 0); defender.vel.set(0, 0, 0); defender.activeWeapon = 'sword';
+    // Exercise slash aim directly. A preceding lunge now kills the runner and
+    // cannot be used to set up a later slash in this regression fixture.
+    defender.weaponState = 'swing_up'; defender.weaponTimer = 0;
+    defender.aiState = 'COOLDOWN'; defender.aiTimer = state.settings.swordSlashReload;
     setGrifballCarrierForState({ state, id: carrier.id, carrying: true });
     carrier.weaponState = 'recovering'; carrier.weaponTimer = 0;
     Object.assign(state.grifball.ball.pos, carrier.pos);
@@ -53,7 +57,7 @@ for (const mirrored of [false, true])
         if (defender.hp <= 0 || carrier.hp <= 0 || state.grifball.phase !== 'playing') break;
       }
       t.diagnostic(JSON.stringify({ mirrored, firstHit, committedFrames, awayFrames }));
-      assert.ok(committedFrames > 0, 'exercise a real autonomous sword commitment');
+      assert.ok(committedFrames > 0, 'exercise a committed sword slash through production AI updates');
       assert.ok(firstHit > 0, 'the in-range approaching carrier must take the sword impact');
       assert.ok(swordImpacts > 0, 'require committed sword damage independently of an earlier lunge');
       assert.deepEqual(awayFrames, [], 'movement prediction must not turn a committed strike away from its target');

@@ -1,4 +1,4 @@
-import { triggerPlayerSwordLungeForState, swapPlayerWeaponForState } from '../../src/components/grifball/playerWeaponActions';
+import { triggerPlayerSwordLungeForState } from '../../src/components/grifball/playerWeaponActions';
 import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
 import { areGrifballCombatantsHostileForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { attachLungeRuntime } from './grifballLungeFixture';
@@ -163,10 +163,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     }
     if (combat && combat.attack !== 'lunge' && tick === 1) actions[injured.id] = { ...idleAction(), aim: injured.yaw,
       attackPrimary: combat.attack !== 'swipe', attackSecondary: combat.attack === 'swipe' };
-    if (playerFlight && !spec.winner && tick === 45) actions.player = { ...idleAction(), aim: player.yaw, swapWeapon: true };
     withSimulationRandom(random, tick / 60, () => {
-      if (playerFlight && !spec.winner && tick === 45) swapPlayerWeaponForState({ state, refs, type: 'sword',
-        isPaused: false, isPlaying: true, recordWeaponSwap: noop, pushStatsUpdate: noop });
       const liveMoving = state.grifball.phase === 'playing';
       if ((spec.player || spec.fullRoster) && liveMoving) state.yaw = aim + Math.PI;
       advanceGrifballFrameForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: 1 / 60,

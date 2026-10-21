@@ -87,6 +87,8 @@ export interface SimCombatant {
 
   // Weapon
   weapon: SimWeapon;
+  /** Mixed local player's pre-pickup weapon; optional for older snapshots. */
+  weaponBeforeBall?: Exclude<SimWeapon, 'ball'>;
   weaponState: SimWeaponState;
   /** Seconds remaining in the current weaponState phase. */
   weaponTimer: number;

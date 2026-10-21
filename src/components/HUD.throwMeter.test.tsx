@@ -16,6 +16,7 @@ const desktopDevice: DeviceInfo = {
 const renderLocalCarrierHud = (passCharge: number) => {
   const stats: GameStats = {
     ...createInitialGameStats(90, 0),
+    activeWeapon: 'ball',
     grifball: {
       phase: 'playing',
       blueGoals: 0,
@@ -57,4 +58,14 @@ test('local Grifball throw charge meter defaults below center with a larger rail
   assert.ok(markup.includes('w-96'));
   assert.ok(markup.includes('h-5'));
   assert.ok(markup.includes('width:63%'));
+});
+
+test('runner weapon panel identifies the ball and explains dropping to restore a weapon', () => {
+  const markup = renderLocalCarrierHud(0);
+  assert.ok(markup.includes('Runner · Ball Equipped'));
+  assert.ok(markup.includes('PUNCH:'));
+  assert.ok(markup.includes('DROP &amp; RESTORE WEAPON:'));
+  assert.ok(markup.includes('PUNCH RECOVERY'));
+  assert.ok(!markup.includes('Gravity Hammer'));
+  assert.ok(!markup.includes('VERTICAL CRUSH:'));
 });

@@ -4,7 +4,7 @@ import { isGrifballInput, isGrifballSnapshot, GRIFBALL_RULE_KEYS, GRIFBALL_BOOLE
 import { throwBall } from '../../game/grifballBall';
 import { getForwardHeadingForYaw } from '../../game/yaw';
 import { resolveRunnerThrowAllowed } from '../../game/runnerBallSettings';
-import { setGrifballCarrierForState } from './grifballObjectiveRuntime';
+import { dropGrifballForWeaponSwap, setGrifballCarrierForState } from './grifballObjectiveRuntime';
 
 type PeerInput = { sequence: number; charging: boolean; elapsed: number; age: number };
 export interface OnlineGrifballState {
@@ -31,10 +31,11 @@ export function isOnlineGrifballAuthority(state: GrifballRuntimeState): boolean 
 const send = (socket: WebSocket | null | undefined, value: unknown) => {
   if (socket?.readyState === 1) socket.send(JSON.stringify(value));
 };
-export function sendGrifballInput(state: GrifballRuntimeState, socket: WebSocket | null | undefined, charging: boolean, release = false) {
+export function sendGrifballInput(state: GrifballRuntimeState, socket: WebSocket | null | undefined, charging: boolean, release = false, drop = false) {
   const net = onlineGrifball(state);
   const input: GrifballInput = { sequence: ++net.inputSequence, round: state.grifball.roundNumber,
     possession: net.possession, pickup: state.playerPickupRequested, charging,
+    ...(drop ? { drop: true } : {}),
     ...(release ? { release: { yaw: state.yaw } } : {}) };
   send(socket, { type: 'sync', action: 'grifball_input', objectiveInput: input });
   state.playerPickupRequested = false;
@@ -69,7 +70,13 @@ export function receiveOnlineGrifballMessage(state: GrifballRuntimeState, refs: 
   net.peers.set(actor.id, peer);
   if (actor.hp <= 0 || actor.respawnTimer > 0 || input.round !== state.grifball.roundNumber || state.grifball.phase !== 'playing') return true;
   if (input.pickup && input.possession === net.possession) actor.pickupRequested = true;
-  if (state.grifball.ball.holderId !== actor.id || input.possession !== net.possession || !resolveRunnerThrowAllowed(state.settings)) return true;
+  if (state.grifball.ball.holderId !== actor.id || input.possession !== net.possession) return true;
+  if (input.drop) {
+    dropGrifballForWeaponSwap(state, refs, actor.id);
+    peer.elapsed = 0;
+    return true;
+  }
+  if (!resolveRunnerThrowAllowed(state.settings)) return true;
   peer.charging = input.charging;
   if (input.release) {
     const charge = Math.min(1, peer.elapsed / Math.max(0.001, state.settings.grifballChargeMax ?? 1.2));
@@ -106,7 +113,8 @@ export function publishOnlineGrifball(state: GrifballRuntimeState, socket: WebSo
   net.sendTimer = 0;
   const snapshot: GrifballSnapshot = {
     sequence: ++net.sequence, possession: net.possession,
-    match: { ...state.grifball, ball: { ...ball, holderId: ball.holderId === 'player' ? net.localId : ball.holderId } },
+    match: { ...state.grifball, ball: { ...ball, holderId: ball.holderId === 'player' ? net.localId : ball.holderId,
+      ...(ball.releaseOwnerId ? { releaseOwnerId: ball.releaseOwnerId === 'player' ? net.localId : ball.releaseOwnerId } : {}) } },
     goals: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals },
     charge: ball.holderId === 'player' ? state.grifballPassCharge : state.otherPlayers.get(ball.holderId ?? '')?.grifballPassCharge ?? 0,
     release: net.release,
@@ -124,6 +132,7 @@ export function applyPendingOnlineGrifball(state: GrifballRuntimeState, refs: Gr
   // Copy only objective rules; the host cannot overwrite unrelated local preferences.
   for (const k of [...GRIFBALL_RULE_KEYS, ...GRIFBALL_BOOLEAN_RULE_KEYS]) if (snapshot.rules[k] !== undefined) (state.settings as any)[k] = snapshot.rules[k];
   state.grifball = { ...snapshot.match, ball: { ...snapshot.match.ball, holderId: holder,
+    ...(snapshot.match.ball.releaseOwnerId ? { releaseOwnerId: local(snapshot.match.ball.releaseOwnerId)! } : {}),
     pos: { ...snapshot.match.ball.pos }, vel: { ...snapshot.match.ball.vel }, home: { ...snapshot.match.ball.home } } };
   state.teamScores.blue.goals = snapshot.goals.blue;
   state.teamScores.red.goals = snapshot.goals.red;

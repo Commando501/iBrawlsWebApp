@@ -768,18 +768,31 @@ export const HUD: React.FC<HUDProps> = ({
                 </span>
               </div>
               <h2 className="text-2xl font-black uppercase tracking-tight font-display text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-300">
-                {stats.activeWeapon === 'sword' ? 'Katar Sword' : 'Gravity Hammer'}
+                {stats.activeWeapon === 'ball' ? 'Grifball' : stats.activeWeapon === 'sword' ? 'Katar Sword' : 'Gravity Hammer'}
               </h2>
               <p className="text-[9.5px] font-mono tracking-widest text-[#94a3b8] uppercase mt-0.5">
                 {stats.playerHP <= 0 
                   ? 'SYSTEM SHUT DOWN' 
+                  : stats.activeWeapon === 'ball'
+                    ? 'Runner · Ball Equipped'
                   : stats.activeWeapon === 'sword' 
                     ? 'Katar Indian Push Dagger' 
                     : 'Overhand Impact Wave Detector'}
               </p>
               {/* Visual keybindings overlay */}
               <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[8.5px] font-mono text-slate-400">
-                {stats.activeWeapon === 'sword' ? (
+                {stats.activeWeapon === 'ball' ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span>PUNCH:</span>
+                      <span className="text-orange-300 font-extrabold">[LEFT CLICK]</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>CHARGE PASS:</span>
+                      <span className="text-orange-300 font-extrabold">[HOLD RIGHT CLICK]</span>
+                    </div>
+                  </>
+                ) : stats.activeWeapon === 'sword' ? (
                   <>
                     <div className="flex justify-between">
                       <span>LUNGING ATTACK:</span>
@@ -805,7 +818,7 @@ export const HUD: React.FC<HUDProps> = ({
                   </>
                 )}
                 <div className="flex justify-between border-t border-white/5 pt-1 mt-0.5 text-[8s] text-indigo-300">
-                  <span>SWAP WEAPONS:</span>
+                  <span>{stats.activeWeapon === 'ball' ? 'DROP & RESTORE WEAPON:' : 'SWAP WEAPONS:'}</span>
                   <span>[1] or [2] / [SCROLL]</span>
                 </div>
                 <div className="flex justify-between text-[8s] text-emerald-300">
@@ -820,7 +833,7 @@ export const HUD: React.FC<HUDProps> = ({
               {/* Weapon Energy cooling */}
               <div className="flex flex-col">
                 <span className="text-[9px] font-mono text-white/40 uppercase mb-1">
-                  {stats.activeWeapon === 'sword' ? 'SWORD CAPACITOR' : 'COOLING SYSTEM'} ({cooldownPct}%)
+                  {stats.activeWeapon === 'ball' ? 'PUNCH RECOVERY' : stats.activeWeapon === 'sword' ? 'SWORD CAPACITOR' : 'COOLING SYSTEM'} ({cooldownPct}%)
                 </span>
                 <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner">
                   <div 

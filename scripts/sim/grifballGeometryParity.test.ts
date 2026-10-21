@@ -59,7 +59,11 @@ test('older v2 snapshots without a model use medium hit geometry', () => {
 for (const execution of ['legacy-v1', 'live-player-v1', 'live-roster-v1'] as const) {
   test(`${execution} retains its previous geometry even if model metadata is supplied`, () => {
     for (const lunge of [false, true]) {
-      const baseline = geometryMatch(execution), tagged = structuredClone(baseline);
+      const baseline = geometryMatch(execution);
+      // Combat execution versions preserve melee geometry. Loose-ball body
+      // collisions independently use model dimensions, so keep the ball clear.
+      baseline.match.ball.pos = { x: -15, y: .35, z: -15 };
+      const tagged = structuredClone(baseline);
       for (const c of tagged.combatants) c.modelType = 'large';
       for (let tick = 0; tick < 120; tick++) {
         for (const s of [baseline, tagged]) stepSimulation(s, { [s.combatants[0].id]: {

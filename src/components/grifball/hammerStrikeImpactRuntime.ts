@@ -1,4 +1,6 @@
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
+import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
+import { cancelSwordForRunnerPunch } from './runnerSwordClash';
 import * as THREE from 'three';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -17,12 +19,14 @@ type HammerStrikeSyncPayload =
       action: 'hammer_impact';
       pos: { x: number; y: number; z: number };
       radius: number;
+      weapon: 'hammer' | 'ball';
     }
   | {
       type: 'sync';
       action: 'hit_taken';
       damage: 1;
       targetId: string;
+      weapon?: 'ball';
     };
 
 export function applyHammerStrikeImpactForState({
@@ -110,6 +114,7 @@ export function applyHammerStrikeImpactForState({
     }
 
     const impactRadius = isBall ? GRIFBALL_PUNCH_RADIUS : (state.settings.attackRadius ?? 4.5);
+    if (state.activeWeapon === 'hammer') deflectBallWithHammerForState(state, state.playerPos, impactPos, impactRadius);
     if (isBall) {
       spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
     } else {
@@ -122,6 +127,7 @@ export function applyHammerStrikeImpactForState({
         action: 'hammer_impact',
         pos: { x: impactPos.x, y: impactPos.y, z: impactPos.z },
         radius: impactRadius,
+        weapon: isBall ? 'ball' : 'hammer',
       });
     }
 
@@ -139,6 +145,7 @@ export function applyHammerStrikeImpactForState({
       const dist = impactPos.distanceTo(enemyBodyCenter);
 
       if (dist <= adjustRangeForTargetModel(impactRadius, mainAI.modelType)) {
+        if (isBall) cancelSwordForRunnerPunch(state, 'player', mainAI.id);
         mainAI.hp -= 1;
         playSwing();
         spawnVoxelShockwaveParticles(mainAI.pos, '#22d3ee');
@@ -187,13 +194,14 @@ export function applyHammerStrikeImpactForState({
         const dist = impactPos.distanceTo(otherBodyCenter);
 
         if (dist <= adjustRangeForTargetModel(impactRadius, other.modelType)) {
+          if (isBall) cancelSwordForRunnerPunch(state, 'player', other.id);
           if (isMultiplayer) {
             playSwing();
             spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
             state.lastStrikePos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
             state.lastStrikeTick = 1.0;
 
-            const sent = sendSync({ type: 'sync', action: 'hit_taken', damage: 1, targetId: other.id });
+            const sent = sendSync({ type: 'sync', action: 'hit_taken', damage: 1, targetId: other.id, ...(isBall ? { weapon: 'ball' as const } : {}) });
             if (sent) {
               applyOutgoingMultiplayerHitLocally(other.id, 1);
             }
@@ -262,6 +270,7 @@ export function applyHammerStrikeImpactForState({
   }
 
   const impactRadius = isBall ? GRIFBALL_PUNCH_RADIUS : (state.settings.attackRadius ?? 4.5);
+  if (mainAI.activeWeapon === 'hammer') deflectBallWithHammerForState(state, mainAI.pos, impactPos, impactRadius);
   if (isBall) {
     spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
   } else {
@@ -272,6 +281,7 @@ export function applyHammerStrikeImpactForState({
     const dist = impactPos.distanceTo(targetBodyCenter);
 
     if (dist <= adjustRangeForTargetModel(impactRadius, target.modelType)) {
+      if (isBall) cancelSwordForRunnerPunch(state, MAIN_AI_ID, target.id);
       if (target.id === 'player') {
         recordPlayerDamageTaken();
         tryRecordCalibrationCounterSuccess(MAIN_AI_ID);

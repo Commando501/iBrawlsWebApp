@@ -8,6 +8,13 @@ import { TACTICS_FIELDS, type TacticalNumber, defaultGrifballTactics, resolveTea
 import type { TeamId } from './teamScoring';
 import { createGrifballSpaceEvaluator, estimateSpaceAttackTime, type GrifballSpaceDecision, type SpaceObservation } from './aiGrifballSpace';
 import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
+import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './aiGrifballAgency';
+import type { RunnerClashDecision } from './aiGrifballRunnerClash';
+import type { SwordGuardDecision } from './aiGrifballSwordGuard';
+import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballHammerDefense';
+import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
+import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
+import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGrifballEscortPosition';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -56,11 +63,19 @@ export interface GrifballAssignment {
   defense?: DefenseOrder;
   pass?: PassPlan;
   receive?: ReceiveOrder;
+  passRecovery?: PassRecoveryDecision;
   escort?: EscortOrder;
+  escortPosition?: EscortPositionDecision;
   space?: GrifballSpaceDecision;
   geometry?: GrifballSpaceGeometry;
+  agency?: SupportAgencyDecision;
+  runnerClash?: RunnerClashDecision;
+  swordGuard?: SwordGuardDecision;
+  hammerDefense?: HammerDefenseDecision;
 }
 export interface GrifballTeamPlanState {
+  observedThrow?: ObservedGrifballThrow;
+  hammerDefenseCommitments?: Record<string, HammerDefenseDecision>;
   assignments: Map<string, GrifballAssignment>;
   snapshot: GrifballTacticalSnapshot | null;
   signature: string;
@@ -86,6 +101,7 @@ export const createGrifballTeamPlanState = (): GrifballTeamPlanState => ({
 });
 
 export function resetGrifballTeamPlan(state: GrifballTeamPlanState): void {
+  delete state.observedThrow; delete state.hammerDefenseCommitments;
   state.assignments.clear();
   state.styleSeed = 1; state.stylePlay = 0; state.styleMemory = {}; state.stylePlans = {};
   state.snapshot = null;
@@ -136,6 +152,14 @@ export function updateGrifballTeamPlan(
     state.transition = {}; state.passFlight = null; state.passCharge = null;
   }
   const oldHolder = state.snapshot?.players.find(p => p.id === state.snapshot?.holderId);
+  // Public possession history survives the ball's short release-clearance ID.
+  // Unknown mid-flight imports stay unknown; never infer intent from pass orders.
+  if (!snapshot.playing || state.snapshot?.round !== snapshot.round || snapshot.ballPhysics?.state !== 'thrown') {
+    delete state.observedThrow;
+  } else if (oldHolder && state.snapshot?.ballPhysics?.state === 'held') {
+    state.observedThrow = { team: oldHolder.team, carrierId: oldHolder.id, age: 0 };
+  } else if (state.observedThrow) state.observedThrow.age += Math.max(0, dt);
+  if (!snapshot.playing || state.snapshot?.round !== snapshot.round) delete state.hammerDefenseCommitments;
   for (const team of ['blue', 'red']) {
     state.transition[team] = Math.max(0, (state.transition[team] ?? 0) - Math.max(0, dt));
     if (snapshot.playing && state.snapshot?.playing && state.snapshot.round === snapshot.round && oldHolder?.team === team && oldHolder.id !== snapshot.holderId) {
@@ -257,6 +281,7 @@ export function updateGrifballTeamPlan(
     }
 
 
+    let passRecovery: PassRecoveryDecision | null = null;
     if (!holder && bots.length) {
       // Compare arrival estimates, including the visible wait for ground steering.
       // A nearby airborne bot must not monopolize recovery over an available ally.
@@ -273,6 +298,11 @@ export function updateGrifballTeamPlan(
       if (incumbent && Number.isFinite(recoveryTime(incumbent)) && recoveryTime(incumbent) <= recoveryTime(retriever) + tuning.reassignmentAdvantage / recoverySpeed(incumbent)) retriever = incumbent;
       const intended = tuning.passingEnabled && state.passFlight?.team === team ? ranked.find(p => p.id === state.passFlight!.receiverId) : undefined;
       if (intended && routers?.get(intended.id)?.(recoveryPoint, true).status !== 'blocked') retriever = intended;
+      if (state.passFlight?.team === team && routers) {
+        passRecovery = chooseGrifballPassRecovery({ snapshot, team, receiverId: state.passFlight.receiverId, tuning, routers, recovery });
+        if (passRecovery?.receiverId) retriever = ranked.find(p => p.id === passRecovery!.receiverId)!;
+        else if (passRecovery) retriever = ranked[0];
+      }
       const externalRetriever = teammates.find(p => {
         if (p.scripted || !Number.isFinite(recoveryDistance(p))) return false;
         const d = distance(p.pos, snapshot.ball);
@@ -282,8 +312,13 @@ export function updateGrifballTeamPlan(
       if (!externalRetriever) {
         add(retriever, 'retriever', -1, { ...recoveryPoint }, incumbent?.id === retriever.id ? 'Keep the ball recovery assignment' : 'Earliest available reachable ball retriever');
         if (tuning.passingEnabled && recovery?.settled) next.get(retriever.id)!.receive = { carrierId: state.passFlight?.carrierId ?? null, point: { ...recoveryPoint }, seconds: recovery.seconds };
+        if (passRecovery?.receiverId && state.passFlight) {
+          state.passFlight.receiverId = passRecovery.receiverId;
+          next.get(retriever.id)!.receive = { carrierId: state.passFlight.carrierId, point: { ...passRecovery.point }, seconds: passRecovery.settleIn };
+          next.get(retriever.id)!.reason = passRecovery.reason;
+        }
         bots.splice(bots.indexOf(retriever), 1);
-      }
+      } else passRecovery = null; // Observed human/neural pursuit keeps its existing priority.
     }
 
     const defending = !!holder && !friendly;
@@ -311,8 +346,14 @@ export function updateGrifballTeamPlan(
       add(bot, role, slot, destination, defending ? 'Pressure with goal-side coverage' : holder ? 'Protect the carrier and preserve recovery coverage' : 'Screen the pickup and cover a turnover');
     }
     const teamAssignments = [...next.values()].filter(a => a.team === team);
+    if (passRecovery) for (const assignment of teamAssignments) assignment.passRecovery = passRecovery;
     if (state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
-    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0, state.carrierMotion?.stationarySeconds ?? 0);
+    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) {
+      const passSupport = resolveGrifballPassSupport({ snapshot, assignments: teamAssignments, team,
+        flight: state.passFlight, tuning, routers, recovery });
+      applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0,
+        state.carrierMotion?.stationarySeconds ?? 0, passSupport);
+    }
     delete state.passPlans[team];
     if (friendly && holder && routers && tuning.spaceEnabled && tuning.passingEnabled) {
       const pass = planGrifballPass(snapshot, holder, tuning, routers);
@@ -328,6 +369,9 @@ export function updateGrifballTeamPlan(
         receiver.reason = `Receive from ${holder.id} after the ball settles`;
       }
     }
+    if (friendly && state.tankingMemory[team] && routers)
+      applyGrifballSupportInitiative(snapshot, teamAssignments, tuning, state.tankingMemory[team], routers, previous);
+    if (friendly && runnerPlay && routers) applyGrifballEscortPosition(snapshot, teamAssignments, runnerPlay, tuning, routers);
     if (tuning.spaceEnabled && evaluateSpace) for (const assignment of teamAssignments) {
       assignment.geometry = snapshot.geometry;
       evaluateSpace(assignment, players.find(p => p.id === assignment.botId)!, previous.get(assignment.botId), !!assignment.escort || !!assignment.tanking || !!assignment.defense || !!assignment.receive);

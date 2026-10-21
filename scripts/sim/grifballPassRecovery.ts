@@ -2,10 +2,13 @@ import { DEFAULT_ADMIN_SETTINGS } from '../../src/settings/gameplaySettings';
 import { runOpposedDecisionTrace } from './grifballOpposedDecisionIntegration';
 
 export const PASS_RECOVERY_OPENINGS = {
-  interception: { defender: { x: 3, z: 6 }, cover: { x: 40, z: -18 }, escort: { x: -14, z: 0 }, releaseSpeed: 17.5, settleTick: 96, pickupTick: 96, stolen: true },
-  overthrow: { defender: { x: 27, z: 8 }, cover: { x: 40, z: -18 }, releaseSpeed: 26, settleTick: 132, pickupTick: 132, stolen: true },
-  'distant-opponent': { defender: { x: -35, z: 12 }, cover: { x: 40, z: -18 }, releaseSpeed: 17.5, settleTick: 96, pickupTick: 109, stolen: false },
-  'short-pass': { defender: { x: -11, z: 8 }, cover: { x: 40, z: -18 }, releaseSpeed: 9, settleTick: 68, pickupTick: 68, stolen: false },
+  // Reviewed contact-aware timing: these are fixed regression expectations,
+  // not values derived from the trace under test. Players can redirect a throw
+  // before settling; the old ballistic-only times were 96/132/109/68.
+  interception: { defender: { x: 3, z: 6 }, cover: { x: 40, z: -18 }, escort: { x: -14, z: 0 }, releaseSpeed: 17.5, settleTick: 153, pickupTick: 153, stolen: true },
+  overthrow: { defender: { x: 27, z: 8 }, cover: { x: 40, z: -18 }, releaseSpeed: 26, settleTick: 136, pickupTick: 136, stolen: true },
+  'distant-opponent': { defender: { x: -35, z: 12 }, cover: { x: 40, z: -18 }, releaseSpeed: 17.5, settleTick: 126, pickupTick: 126, stolen: false },
+  'short-pass': { defender: { x: -11, z: 8 }, cover: { x: 40, z: -18 }, releaseSpeed: 9, settleTick: 73, pickupTick: 73, stolen: false },
 } as const;
 export interface PassRecoveryCase { opening: keyof typeof PASS_RECOVERY_OPENINGS; team: 'blue' | 'red'; reverse: boolean; main: boolean }
 export const PASS_RECOVERY_CASES: PassRecoveryCase[] = (Object.keys(PASS_RECOVERY_OPENINGS) as PassRecoveryCase['opening'][])

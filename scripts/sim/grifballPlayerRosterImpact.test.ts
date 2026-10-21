@@ -139,7 +139,8 @@ for (const attack of attacks) for (const identity of ['registered-main', 'regula
     const f = fixture(attack, identity, true);
     f.impact();
     assert.deepEqual(f.events.sent.filter(p => 'action' in p && p.action === 'hit_taken'),
-      [{ type: 'sync', action: 'hit_taken', damage: 1, targetId: f.target.id }]);
+      [{ type: 'sync', action: 'hit_taken', damage: 1, targetId: f.target.id,
+        ...(attack === 'slash' ? { weapon: 'sword' } : attack === 'punch' ? { weapon: 'ball' } : {}) }]);
     assert.equal(f.target.hp, 2); assert.equal(f.target.deaths, 0); assert.equal(f.state.playerKills, 0);
     assert.deepEqual(f.events.outgoing, attack === 'swipe' ? [] : [f.target.id]);
   });

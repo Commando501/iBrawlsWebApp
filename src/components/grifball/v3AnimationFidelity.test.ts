@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
+import { fitV3RetargetedWeaponPoseFromReferenceSample } from './v3MixamoRetarget';
 import {
   V3_ANIMATION_PROFILE_VERSION,
   getV3AnimationTrackDefinition,
@@ -290,7 +291,10 @@ describe('V3 animation fidelity profiles', () => {
     assertReadableWeaponPose(strike.weaponPose, 'hammer ground strike');
     assertReadableWeaponPose(melee.weaponPose, 'hammer melee swing');
     assertReadableUpperBodyPose(runtimeCarry, 'hammer two-hand carry');
-    assert.ok(carryForward.z < -0.9);
+    const grips = fitV3RetargetedWeaponPoseFromReferenceSample('hammer_2hand_idle', { normalizedTime: 0, weapon: 'hammer' });
+    const gripDirection = new THREE.Vector3(...grips.offhandPosition!)
+      .sub(new THREE.Vector3(...grips.primaryHandPosition)).normalize();
+    assert.ok(carryForward.dot(gripDirection) > 0.999, 'hammer shaft follows the two-hand reference grip');
     assert.equal(sampleV3WeaponCarryMotion('hammer').gripConstraints.length, 2);
     assert.ok(poseDistance(windup.weaponPose, carry.weaponPose) > 0.3);
     assert.ok(Math.abs(windup.weaponPose.position[1] - carry.weaponPose.position[1]) > 0.12);

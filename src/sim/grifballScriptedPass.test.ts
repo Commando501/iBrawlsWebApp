@@ -84,6 +84,25 @@ test('changing the selected throw speed restarts charge instead of borrowing a p
   assert.equal(f.planner.plan.passCharge!.speed, selected.speed);
 });
 
+for (const enabled of [false, true]) test(`release rechecks a changed hammer-deflection rule: ${enabled}`, () => {
+  const f = fixture();
+  f.state.settings.hammerBallDeflectionEnabled = false;
+  f.enemy.pos = { x: -20, y: 0, z: 8 };
+  f.planner.tactics!.defaults.passAgencyStrength = 1;
+  f.planner.tactics!.botStyles.carrier = 'enforcer';
+  updateGrifballTeamPlan(f.planner.plan, createSimGrifballTacticalSnapshot(f.state,
+    { scriptedBots: f.planner.scriptedBots, tactics: f.planner.tactics }), 1);
+  const pass = f.planner.plan.assignments.get('carrier')!.pass!;
+  pass.selected = pass.candidates.find(c => c.viable && c.speed === 13.25)!;
+  assert.ok(pass.selected, 'the pass must be independently eligible before deflection is enabled');
+  f.planner.plan.passCharge = { carrierId: 'carrier', receiverId: 'receiver', speed: 13.25, elapsed: .15 };
+  f.state.settings.hammerBallDeflectionEnabled = enabled;
+  const outcome = resolveSimScriptedGrifballPass(f.state, f.planner, .2);
+  assert.equal(outcome.kind, enabled ? 'cancelled' : 'release');
+  assert.equal(f.planner.plan.passCharge, null);
+  if (enabled) assert.deepEqual(outcome, { kind: 'cancelled', reason: 'release-no-longer-safe' });
+});
+
 for (const reason of ['version', 'reload-owner'] as const) test(`pass opt-in rejects ${reason} before mutation`, () => {
   const f = fixture();
   if (reason === 'version') (f.planner as { passControl: string }).passControl = 'unknown';

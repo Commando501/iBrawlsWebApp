@@ -306,12 +306,12 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   if (runnerCombat) return { name: JSON.stringify({ ...spec, runnerCombat }), ticks, counters, ...record.result(), frames };
   if (crowd?.recovery) return { name: JSON.stringify({ ...spec, crowd }), ticks, ...record.result(), frames };
   if (crowd) {
-    const lethal = !crowd.shield && spec.hp <= 2;
+    const lethal = !crowd.shield;
     const winner = crowd.pickup === 'nearer-escort' || spec.reverse ? 'escort' : 'interceptor';
     const earlyHits = attackers.filter(a => a.lunge).length;
-    const earlyDeath = lethal && earlyHits >= spec.hp;
+    const earlyDeath = lethal && earlyHits > 0;
     for (const side of ['live', 'headless'] as const) {
-      record.compare(1, `expected.${side}.focusHealth`, frames[0][side].hp, crowd.shield ? spec.hp : Math.max(0, spec.hp - 2));
+      record.compare(1, `expected.${side}.focusHealth`, frames[0][side].hp, crowd.shield ? spec.hp : 0);
       record.compare(1, `expected.${side}.firstPossession`, frames[0][side].ball.holderId, lethal ? earlyDeath ? winner : null : runner.id);
       record.compare(2, `expected.${side}.contestedPickup`, frames[1][side].ball.holderId, lethal ? winner : runner.id);
       record.compare(ticks, `expected.${side}.retainedPossession`, frames.at(-1)![side].ball.holderId, lethal ? winner : runner.id);
@@ -321,7 +321,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     // phase the roster order selects which hit earns the sole kill credit.
     const attackOrder = spec.reverse ? [...attackers].reverse() : [...attackers];
     const contactOrder = [...attackOrder.filter(a => a.lunge), ...attackOrder.filter(a => !a.lunge)];
-    const killer = lethal ? contactOrder[spec.hp - 1].headless.id : null;
+    const killer = lethal ? contactOrder[0].headless.id : null;
     for (const a of attackers) {
       record.compare(ticks, `expected.live.${a.live.id}.kills`, a.live.kills ?? 0, a.live.id === killer ? 1 : 0);
       record.compare(ticks, `expected.headless.${a.headless.id}.kills`, kills.get(a.headless.id) ?? 0, a.headless.id === killer ? 1 : 0);
@@ -334,7 +334,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   }
   if (charge) {
     const releasedBeforeHit = charge.releaseAt === 1;
-    const firstHp = charge.shield ? (releasedBeforeHit ? 1 : spec.hp) : releasedBeforeHit ? 0 : spec.hp - 1;
+    const firstHp = charge.shield ? (releasedBeforeHit ? 1 : spec.hp) : 0;
     record.compare(ticks, 'expected.releases', releases, charge.recovery === 'repress' || charge.releaseAt !== null && (releasedBeforeHit || firstHp > 0) ? 1 : 0);
     for (const side of ['live', 'headless'] as const) {
       record.compare(1, `expected.${side}.contactHealth`, frames[0][side].hp, firstHp);
@@ -352,14 +352,14 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     return { name: JSON.stringify({ ...spec, charge }), ticks, ...record.result(), frames };
   }
   for (const side of ['live', 'headless'] as const) {
-    record.compare(1, `expected.${side}.goal`, frames[0][side].goals, spec.goal && (!spec.lunge || spec.hp > 1) ? 1 : 0);
-    record.compare(1, `expected.${side}.health`, frames[0][side].hp, spec.goal && !spec.lunge ? 0 : spec.hp - 1);
-    if (!spec.goal && spec.hp === 1) {
+    record.compare(1, `expected.${side}.goal`, frames[0][side].goals, spec.goal && !spec.lunge ? 1 : 0);
+    record.compare(1, `expected.${side}.health`, frames[0][side].hp, 0);
+    if (!spec.goal) {
       record.compare(1, `expected.${side}.firstPickup`, frames[0][side].ball.holderId, spec.lunge ? attacker.id : null);
       record.compare(2, `expected.${side}.nextPickup`, frames[1][side].ball.holderId, attacker.id);
     }
   }
-  record.compare(120, 'expected.notifications', notifications, spec.goal && (!spec.lunge || spec.hp > 1) ? 1 : 0);
+  record.compare(120, 'expected.notifications', notifications, spec.goal && !spec.lunge ? 1 : 0);
   return { name: JSON.stringify(spec), ticks, ...record.result(), frames };
 }
 export const runFrameObjectiveParity = () => FRAME_OBJECTIVE_CASES.map(c => runFrameObjectiveTrace(c));

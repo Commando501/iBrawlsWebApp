@@ -13,6 +13,8 @@ export interface UniversalSettings {
   speedBackward: number;// Backward movement speed percentage adjustment (e.g. 20% to 300%)
   attackRange: number;  // Attack range distance (controls forward offset of sphere, e.g. 1.0m to 10.0m)
   attackRadius: number; // Attack sphere size (controls size of damage sphere, e.g. 1.0m to 10.0m)
+  hammerBallDeflectionEnabled?: boolean;
+  hammerBallDeflectionStrength?: number; // Outgoing ball speed / incoming speed (0–3).
   dashDistance: number; // Dash distance in meters (e.g. 2.0m to 15.0m)
   dashDuration: number; // Dash duration / speed (e.g. 0.1s to 1.0s)
   dashCooldown: number; // Dash cooldown in seconds (e.g. 0.5s to 10.0s)
@@ -432,6 +434,7 @@ export interface Combatant {
 
   // Weapon
   activeWeapon: 'hammer' | 'sword' | 'ball';
+  weaponBeforeBall?: 'hammer' | 'sword';
   weaponState?: WeaponState | 'slashing' | 'recovering';
   weaponTimer?: number;
   lastSwordAttackTime?: number;

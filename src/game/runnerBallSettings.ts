@@ -66,7 +66,7 @@ export function resolvePunchCooldown(settings: UniversalSettings): number {
   return clamp(finiteNumber(settings.grifballPunchCooldown, 0.5), 0.1, 3.0);
 }
 
-export function resolveRunnerMaxHp(settings: UniversalSettings): number {
+export function resolveRunnerMaxHp(settings: Pick<UniversalSettings, 'grifballRunnerHealth'>): number {
   return clamp(Math.round(finiteNumber(settings.grifballRunnerHealth, 2)), 1, 100);
 }
 

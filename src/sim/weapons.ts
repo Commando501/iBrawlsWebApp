@@ -1,13 +1,15 @@
 import type { RosterCombatLearning } from './scriptedCombatLearning';
+import { resolveCombatHitDamage } from '../game/combatDamage';
 /**
  * Headless weapon / combat step — the default legacy-v1 training model is a distilled port of the hammer/sword/punch
  * resolution from `GrifballGame.updatePhysics`. Each combatant runs a small FSM:
  *   idle --attack--> windup --(timer)--> active(one hit frame) --> recovering --> idle
  *
  * On the single `active` frame the strike resolves against hostile, living, non-invuln
- * enemies inside the weapon's forward reach and deals 1 damage. With the default
- * `maxHP = 1` that is lethal; the ball carrier's +1 HP means they survive one hit, as
- * in the live game. The sword's secondary is a lunge (a short forward flight that kills
+ * enemies inside the weapon's forward reach and deals 1 damage, except sword hits
+ * instantly kill the ball carrier regardless of runner HP, unless a reciprocal
+ * active punch wins the clash, as in the live game.
+ * The sword's secondary is a lunge (a short forward flight that kills
  * on contact); the ball carrier's secondary is the pass (handled in `grifball.ts`).
  *
  * Fidelity notes / divergences (see README):
@@ -31,6 +33,7 @@ import type { ScriptedCombatCommand } from './scriptedCombatInput';
 import type { RosterMeleeHitFeedback } from './scriptedMeleeFeedback';
 import type { RosterLungeFeedback } from './scriptedLungeFeedback';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
+import { deflectBallWithHammer } from '../game/hammerBallDeflection';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
 import { GRIFBALL_PUNCH_RADIUS, resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
@@ -97,7 +100,7 @@ function strikeRadius(settings: UniversalSettings): number {
   return settings.attackRadius ?? 4.5;
 }
 
-/** Apply 1 lethal-by-default damage to a victim; records death + drops ball + respawn. */
+/** Apply weapon damage to a victim; records death + drops ball + respawn. */
 function strike(
   state: SimState,
   attacker: SimCombatant,
@@ -105,9 +108,19 @@ function strike(
   settings: UniversalSettings,
   events: KillEvent[],
   weapon = attacker.weapon
-): void {
-  victim.hp -= 1;
-  if (victim.hp > 0) return;
+): boolean {
+  if (weapon === 'sword' && canRunnerPunchClash(state, victim, attacker, settings)) {
+    cancelSwordForRunnerPunch(state, victim, attacker, settings, true);
+    victim.weaponState = 'recovering'; victim.weaponPhaseElapsed = 0;
+    victim.weaponTimer = victim.attackCooldown = resolvePunchCooldown(settings);
+    strike(state, victim, attacker, settings, events, 'ball');
+    return false;
+  }
+  if (weapon === 'ball') cancelSwordForRunnerPunch(state, attacker, victim, settings);
+  victim.hp -= resolveCombatHitDamage(
+    weapon, state.match.ball.state === 'held' && state.match.ball.holderId === victim.id, victim.hp
+  );
+  if (victim.hp > 0) return true;
   victim.hp = 0;
   victim.alive = false;
   victim.respawnTimer = RESPAWN_TIME;
@@ -130,6 +143,31 @@ function strike(
     victim.runnerLastHp = victim.hp;
   }
   events.push({ attackerId: attacker.id, victimId: victim.id, weapon });
+  return true;
+}
+
+function cancelSwordForRunnerPunch(state: SimState, runner: SimCombatant, sword: SimCombatant, settings: UniversalSettings, swordContact = false): void {
+  if (state.match.ball.state !== 'held' || state.match.ball.holderId !== runner.id
+    || sword.weapon !== 'sword' && !sword.isLunging) return;
+  if (!swordContact && !sword.isLunging && sword.weaponState !== 'windup' && sword.weaponState !== 'active') return;
+  const duration = sword.isLunging ? settings.swordLungeReload : settings.swordSlashReload;
+  if (isMixedPlayer(state, sword) && sword.isLunging) sword.playerSwordLungeRecovery = { elapsed: 0, duration };
+  sword.isLunging = false; sword.lungeTimer = 0; sword.weaponState = 'recovering';
+  sword.weaponPhaseElapsed = 0; sword.weaponTimer = sword.attackCooldown = duration;
+  sword.vel.x = sword.vel.z = 0;
+}
+
+function canRunnerPunchClash(state: SimState, runner: SimCombatant, sword: SimCombatant, settings: UniversalSettings): boolean {
+  if (state.match.ball.state !== 'held' || state.match.ball.holderId !== runner.id
+    || !runner.alive || runner.hp <= 0 || runner.weapon !== 'ball' || sword.invulnerabilityTimer > 0
+    || (runner.weaponState !== 'windup' && runner.weaponState !== 'active')) return false;
+  const execution = combatExecutionForActor(state, runner);
+  if (isMixedPlayer(state, runner) || execution === 'live-player-v1') return inPlayerPunchVolume(runner, sword, settings);
+  if (!isRosterExecution(execution)) return inMeleeHitVolume(runner, sword, settings);
+  const fwd = forwardDir(runner.yaw), reach = resolvePunchLungeDistance(settings);
+  return Math.hypot(sword.pos.x - runner.pos.x - fwd.x * reach,
+    sword.pos.y + (sword.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT) - runner.pos.y - 1.2,
+    sword.pos.z - runner.pos.z - fwd.z * reach) <= adjustRangeForTargetModel(GRIFBALL_PUNCH_RADIUS, sword.modelType);
 }
 
 const SIM_FPS = 60;
@@ -166,7 +204,10 @@ function applyHit(
 ): boolean {
   const tradeBack = initiatesTrade && isTradeEligible(victim, settings, state.tick);
   const targetWasLunging = victim.isLunging;
-  strike(state, attacker, victim, settings, events);
+  if (!strike(state, attacker, victim, settings, events)) {
+    learning?.lifecycle?.impact(victim, attacker, 'melee');
+    return false;
+  }
   if (tradeBack) strike(state, victim, attacker, settings, events); // victim's team credits the trade kill
   learning?.lifecycle?.impact(attacker, victim, 'melee', tradeBack, targetWasLunging);
   return attacker.alive;
@@ -248,6 +289,13 @@ function resolveHammerStrike(
   events: KillEvent[],
   learning?: RosterCombatLearning
 ): void {
+  const playerView = combatExecutionForActor(state, attacker) === 'live-player-v1';
+  const fwd = playerView ? playerLookDirection(attacker) : forwardDir(attacker.yaw);
+  const reach = strikeRange(settings);
+  const impact = { x: attacker.pos.x + fwd.x * reach,
+    y: attacker.pos.y + MELEE_EYE_HEIGHT - (playerView ? attacker.crouchAmount ?? 0 : 0) + fwd.y * reach,
+    z: attacker.pos.z + fwd.z * reach };
+  if (state.match.phase === 'playing') deflectBallWithHammer(state.match.ball, attacker.pos, impact, strikeRadius(settings), settings);
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
@@ -275,7 +323,10 @@ function playerLookDirection(c: SimCombatant) {
 function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], learning?: RosterCombatLearning): void {
   for (const victim of state.combatants) {
     if (victim.alive && areHostile(c, victim) && victim.invulnerabilityTimer <= 0 && inPlayerPunchVolume(c, victim, settings)) {
-      strike(state, c, victim, settings, events);
+      if (!strike(state, c, victim, settings, events)) {
+        learning?.lifecycle?.impact(victim, c, 'melee');
+        return;
+      }
       learning?.lifecycle?.impact(c, victim, 'melee');
     }
   }
@@ -290,6 +341,8 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
   const impact = c.weapon === 'hammer' && c.hammerJumpPlanned
     ? { x: c.pos.x, y: c.pos.y + 1.2 - reach, z: c.pos.z }
     : { x: c.pos.x + fwd.x * reach, y: c.pos.y + 1.2, z: c.pos.z + fwd.z * reach };
+  if (c.weapon === 'hammer' && state.match.phase === 'playing')
+    deflectBallWithHammer(state.match.ball, c.pos, impact, radius, settings);
   if (c.hammerJumpPlanned) {
     const jump = { ...c, activeWeapon: c.weapon, aiHammerJumpsInAir: c.hammerJumpsInAir };
     if (applyAIHammerJumpAtImpact(jump, settings, impact)) c.grounded = false;
@@ -306,7 +359,10 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
     const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
     const targetRadius = usesRosterLifecycle(state) ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
     if (Math.hypot(victim.pos.x - impact.x, cy - impact.y, victim.pos.z - impact.z) <= targetRadius) {
-      strike(state, c, victim, settings, events);
+      if (!strike(state, c, victim, settings, events)) {
+        learning?.lifecycle?.impact(victim, c, 'melee');
+        return;
+      }
       learning?.meleeHit(c, victim);
       learning?.lifecycle?.impact(c, victim, 'melee');
       if (victim.hp > 0) feedback?.(c, victim);
@@ -474,9 +530,12 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     const trade = c.invulnerabilityTimer <= 0 && (target.weapon === 'sword'
       ? settings.enableSwordTrade && (targetWasLunging || primaryActive || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
       : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primaryActive || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350)));
-    // A live decision can equip the hammer during flight. Non-trade contact
+    // A live decision can equip the hammer during flight. Contact
     // still credits the committed sword lunge, not the newly equipped weapon.
-    strike(state, c, target, settings, events, trade ? c.weapon : 'sword');
+    if (!strike(state, c, target, settings, events, 'sword')) {
+      learning?.lifecycle?.impact(target, c, 'melee');
+      return 'trade_return';
+    }
     if (trade) {
       strike(state, target, c, settings, events);
       feedback?.impact(c, target, true);
@@ -544,7 +603,11 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
       : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primary || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350)));
     const targetWasLunging = target.isLunging;
     if (!trade) learning?.localLungeImpact?.(c, target, false);
-    strike(state, c, target, settings, events);
+    if (!strike(state, c, target, settings, events, 'sword')) {
+      learning?.localLungeEnd?.(c, false);
+      learning?.lifecycle?.impact(target, c, 'melee');
+      return;
+    }
     if (trade) {
       strike(state, target, c, settings, events);
       if (target.alive && target.isLunging) {

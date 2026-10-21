@@ -4,6 +4,9 @@ import type { RunnerPlan, SpaceRouters } from './aiGrifballRunner';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance, isSpaceSegmentOpen } from './grifballSpaceGeometry';
+import { GRIFBALL_DOUBLE_TEAM_PREFERENCES, grifballPlayerStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
+import { supportInitiativeStillUseful } from './aiGrifballAgency';
+import { grifballEngagementTiming, syncGrifballEngagementTiming, startGrifballTankCommitment, startGrifballTankRelease, type EngagementPersistenceDecision } from './aiGrifballEngagement';
 
 export type TankingMode = 'engage' | 'punish' | 'cover' | 'delay' | 'release';
 export interface EngagementScore {
@@ -13,10 +16,18 @@ export interface EngagementScore {
 export interface TankingOrder {
   mode: TankingMode; targetId: string | null; partnerId: string | null; recoveryId: string | null;
   attack: boolean; doubleCommit: boolean; reason: string; candidates: EngagementScore[];
+  doubleTeam?: DoubleTeamDecision;
+  persistence?: EngagementPersistenceDecision;
+}
+export interface DoubleTeamDecision {
+  style: GrifballPlayerStyle; strength: number; preference: string;
+  teamThreshold: number; threshold: number; teamRecoveryMargin: number; recoveryMargin: number;
+  score: number; attackETA: number; opponentAttackETA: number;
 }
 export interface TankingMemory {
   targetId: string | null; primaryId: string | null; commitment: number;
   releaseRemaining: Record<string, number>;
+  individualDurations?: { commit?: number; releases: Record<string, number> };
 }
 export function tickTankingMemory(memory: TankingMemory | undefined, dt: number): TankingMemory {
   const next = memory ?? { targetId: null, primaryId: null, commitment: 0, releaseRemaining: {} };
@@ -50,6 +61,7 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
   const friendly = carrier?.team === team;
   const anchor = carrier?.pos ?? snapshot.ball;
   const support = assignments.filter(a => a.role !== 'runner' && a.role !== 'retriever');
+  syncGrifballEngagementTiming(snapshot, tuning, memory);
   const actor = (a: GrifballAssignment) => teammates.find(p => p.id === a.botId)!;
   const eta = (p: GrifballTacticalPlayer, point: FieldPoint) => estimateSpaceAttackTime(p, point, routers.get(p.id)!(point, true).length);
   const emergency = !!carrier && !friendly && fieldDistance(carrier.pos, ownGoal) <= tuning.tankEmergencyDistance;
@@ -82,8 +94,10 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
         ? Math.min(fieldDistance(a.destination, enemy.pos), fieldDistance(anchor, enemy.pos))
         : fieldDistance(a.destination, enemy.pos);
       const coverageLost = Math.min(2, coverageDistance / Math.max(1, tuning.coverageBoundary)) + (a.role === 'safety' ? 0.5 : 0);
-      const score = !Number.isFinite(attackETA) || purpose <= 0 || obsolete || attackETA > tuning.threatHorizon + 1 ? -Infinity
+      let score = !Number.isFinite(attackETA) || purpose <= 0 || obsolete || attackETA > tuning.threatHorizon + 1 ? -Infinity
         : purpose + trade * tuning.tankTradeWeight - coverageLost * tuning.tankCoverageWeight - attackETA * 0.25;
+      if (friendly && tuning.agencyStrength > 0 && Number.isFinite(score))
+        score += grifballPlayerStyleBonus(resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, bot.id), tuning.agencyStrength, { protection, opening, trade, coverageLost });
       return { targetId: enemy.id, score, protection, opening, delay, trade, coverageLost, attackETA, opponentETA, purpose };
     }).sort((a, b) => b.score - a.score || a.targetId.localeCompare(b.targetId)));
   }
@@ -152,7 +166,8 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
       if (recovering(primary.bot) && ready && ready.score.attackETA + 0.1 < primary.score.attackETA) primary = ready;
       const oldTarget = memory.targetId, oldPrimary = memory.primaryId;
       memory.targetId = target.id; memory.primaryId = primary.a.botId;
-      if (oldTarget !== target.id || oldPrimary !== primary.a.botId) memory.commitment = tuning.tankCommitSeconds;
+      if (oldTarget !== target.id || oldPrimary !== primary.a.botId)
+        startGrifballTankCommitment(memory, grifballEngagementTiming(snapshot, primary.a.botId, tuning));
       primary.a.tanking = { ...primary.a.tanking!, mode: 'engage', targetId: target.id, attack: true,
         reason: emergency ? 'Contest the carrier before the goal' : oldPrimary && oldPrimary !== primary.a.botId && oldTarget === target.id ? 'Rotate a ready tank into the engagement' : `Commit to a useful engagement${primary !== options[0] && primary !== incumbent ? ' (seeded near-equal alternative)' : ''}` };
       place(primary.a, toward(target.pos, primary.bot.pos, Math.max(1, Math.min(3, (primary.bot.space?.reach ?? 2.5) * 0.7))));
@@ -169,11 +184,20 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
             eta(e, primary.bot.pos) < tuning.threatHorizon && eta(e, second.bot.pos) < tuning.threatHorizon) ||
            (fieldDistance(primaryAttackPoint, attackPoint) <= e.space!.blastRadius * 2 + 0.5 &&
             eta(e, primaryAttackPoint) < tuning.threatHorizon && eta(e, attackPoint) < tuning.threatHorizon)));
-        const opening = recovering(target) && (target.space?.attackIn ?? 0) > second.score.attackETA + 0.1;
+        // Only the second tank's style decides whether it joins. Primary selection,
+        // recovery ownership and physical estimates are unchanged.
+        const strength = friendly && tuning.enabled && tuning.spaceEnabled && tuning.tankingEnabled ? tuning.doubleTeamAgencyStrength : 0;
+        const style = resolveGrifballPlayerStyle(snapshot.tactics?.botStyles, second.bot.id), preference = GRIFBALL_DOUBLE_TEAM_PREFERENCES[style];
+        const threshold = Math.max(0, Math.min(15, tuning.tankDoubleThreshold + preference.threshold * strength));
+        const recoveryMargin = .1 + preference.recovery * strength;
+        const opening = recovering(target) && (target.space?.attackIn ?? 0) > second.score.attackETA + recoveryMargin;
         const doubleCommit = opening && coverageReady && routers.get(primary.bot.id)!(primaryAttackPoint, true).status !== 'blocked' &&
-          routers.get(second.bot.id)!(attackPoint, true).status !== 'blocked' && !sharedBlast && second.score.score >= tuning.tankDoubleThreshold && !recovering(second.bot);
+          routers.get(second.bot.id)!(attackPoint, true).status !== 'blocked' && !sharedBlast && second.score.score >= threshold && !recovering(second.bot);
         second.a.tanking = { ...second.a.tanking!, mode: 'punish', targetId: target.id, partnerId: primary.a.botId,
-          attack: doubleCommit, doubleCommit, reason: doubleCommit ? 'Two-player commit: opening and recovery coverage available' : !coverageReady ? 'Wait for recovery coverage to arrive' : sharedBlast ? 'Cover the tank; avoid shared hammer exposure' : second.score.score < tuning.tankDoubleThreshold ? 'Second attacker is below the double-team value threshold' : 'Cover the tank and wait for a recovery opening' };
+          attack: doubleCommit, doubleCommit, reason: doubleCommit ? 'Two-player commit: opening and recovery coverage available' : !coverageReady ? 'Wait for recovery coverage to arrive' : sharedBlast ? 'Cover the tank; avoid shared hammer exposure' : second.score.score < threshold ? 'Second attacker is below the double-team value threshold' : 'Cover the tank and wait for a recovery opening' };
+        if (strength > 0) second.a.tanking.doubleTeam = { style, strength, preference: preference.reason,
+          teamThreshold: tuning.tankDoubleThreshold, threshold, teamRecoveryMargin: .1, recoveryMargin,
+          score: second.score.score, attackETA: second.score.attackETA, opponentAttackETA: target.space?.attackIn ?? 0 };
         primary.a.tanking.partnerId = second.a.botId; primary.a.tanking.doubleCommit = doubleCommit;
         if (doubleCommit) place(primary.a, primaryAttackPoint);
         const reach = Math.max(target.space?.reach ?? 2.5, target.space?.lungeReach ?? 0);
@@ -183,17 +207,24 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
   }
   for (const a of support) {
     const old = previous.get(a.botId)?.tanking, order = a.tanking!;
-    if (old?.attack && !order.attack && order.mode === 'cover') {
-      memory.releaseRemaining[a.botId] = tuning.tankReleaseSeconds;
+    if (old?.attack && !order.attack && order.mode === 'cover' &&
+      !(friendly && tuning.agencyStrength > 0 && previous.get(a.botId)?.agency?.choice === 'initiative')) {
+      startGrifballTankRelease(memory, a.botId, grifballEngagementTiming(snapshot, a.botId, tuning));
       order.mode = 'release'; order.reason = 'Release the duel and restore coverage';
     } else if (order.mode === 'cover' && memory.releaseRemaining[a.botId]) {
       order.mode = 'release'; order.reason = 'Return to coverage before recommitting';
     }
     // The engagement order now owns the target; do not expose a conflicting escort target.
     delete a.escort;
+    const timing = grifballEngagementTiming(snapshot, a.botId, tuning);
+    if (timing.strength > 0) order.persistence = { ...timing,
+      commitRemaining: memory.primaryId === a.botId ? memory.commitment : 0,
+      releaseRemaining: memory.releaseRemaining[a.botId] ?? 0 };
     a.reason = `${a.role}: ${order.reason}`;
   }
   for (const id of Object.keys(memory.releaseRemaining)) if (!support.some(a => a.botId === id)) delete memory.releaseRemaining[id];
+  // Prune records after rotation, death or expiration without extending any clock.
+  syncGrifballEngagementTiming(snapshot, tuning, memory);
 }
 
 /** Recheck short-lived punish openings and immediate defense against the latest public snapshot. */
@@ -204,8 +235,8 @@ export function selectTankingThreat(assignment: GrifballAssignment, self: FieldP
   const target = players.find(p => p.id === order.targetId && visible(p));
   const attacker = players.find(p => p.id === assignment.botId);
   const punishOpen = target && attacker && recovering(target) && (target.space?.attackIn ?? 0) >
-    estimateSpaceAttackTime({ ...attacker, pos: self }, target.pos, fieldDistance(self, target.pos)) + 0.1;
-  if (order.attack && target && (order.mode !== 'punish' || punishOpen) &&
+    estimateSpaceAttackTime({ ...attacker, pos: self }, target.pos, fieldDistance(self, target.pos)) + (order.doubleTeam?.recoveryMargin ?? .1);
+  if (order.attack && target && (assignment.agency?.choice !== 'initiative' || supportInitiativeStillUseful(assignment, self, players)) && (order.mode !== 'punish' || punishOpen) &&
     fieldDistance(self, target.pos) <= (assignment.tuning?.engagementDistance ?? 6) &&
     fieldDistance(self, assignment.destination) <= (assignment.tuning?.coverageBoundary ?? 9)) return target.id;
   return players.filter(p => visible(p) && (fieldDistance(self, p.pos) <= 2.5 ||

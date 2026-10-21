@@ -4,6 +4,8 @@ import { selectGrifballAssignmentThreat, type FieldPoint, type GrifballAssignmen
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { resolveDirectionalSpeedMultiplier } from './runnerBallSettings';
 import type { UniversalSettings } from '../types';
+import { chooseRunnerPunchClash, type RunnerSwordThreat, type RunnerClashDecision } from './aiGrifballRunnerClash';
+import type { GrifballPlayerStyle } from './grifballPlayerStyles';
 
 export interface GrifballGroundMovement {
   velocity: FieldPoint;
@@ -59,44 +61,59 @@ export function resolveGrifballSupportSteering({ assignment, pos, allies, player
 
 export interface GrifballCarrierDecision extends GrifballGroundMovement {
   kind: 'move' | 'blocked' | 'committed-punch' | 'punch' | 'pass' | 'wait';
+  clash?: RunnerClashDecision;
 }
 
 /** Decide carrier intent from public observations. Punch/pass commitment and all
  * state integration remain owned by the host. Threat order breaks equal ranges. */
 export function resolveGrifballCarrierDecision({ assignment, pos, players, threats, avoidanceEnemies, goal,
-  weaponState, canStartWeaponAction, settings, dt }: {
+  weaponState, canStartWeaponAction, settings, dt, clashThreats, runnerRadiusBonus, runnerBodyHeight, playerStyle }: {
   assignment: GrifballAssignment | undefined; pos: FieldPoint & { y: number };
   players: GrifballTacticalPlayer[];
-  threats: { pos: FieldPoint & { y: number }; invulnerabilityTimer?: number }[];
+  threats: { id?: string; pos: FieldPoint & { y: number }; invulnerabilityTimer?: number }[];
   avoidanceEnemies: FieldPoint[]; goal: FieldPoint | null; weaponState: string;
   canStartWeaponAction: boolean; settings: UniversalSettings; dt: number;
+  clashThreats?: readonly RunnerSwordThreat[]; runnerRadiusBonus?: number; runnerBodyHeight?: number;
+  playerStyle?: GrifballPlayerStyle;
 }): GrifballCarrierDecision | null {
   const { geometry, space } = assignment ?? {};
   const waypoint = geometry && space ? getGrifballSpaceWaypoint(geometry, pos, space) : null;
+  let clash: RunnerClashDecision | undefined;
   const stopped = (kind: GrifballCarrierDecision['kind'], heading?: FieldPoint): GrifballCarrierDecision =>
-    ({ kind, velocity: { x: 0, z: 0 }, ...(heading ? { heading } : {}) });
+    ({ kind, velocity: { x: 0, z: 0 }, ...(heading ? { heading } : {}), ...(clash ? { clash } : {}) });
   if (space && !waypoint) {
     if (assignment && selectGrifballAssignmentThreat(assignment, pos, players)) return null;
     return stopped('blocked');
   }
   if (!goal) return null;
-  if (weaponState === 'swing_up' || weaponState === 'swing_down') return stopped('committed-punch');
+  if (weaponState === 'swing_up' || weaponState === 'swing_down') {
+    clash = assignment?.runnerClash;
+    return stopped('committed-punch');
+  }
   const routeDistance = waypoint ? Math.hypot(waypoint.x - pos.x, waypoint.z - pos.z) : 0;
   const speed = 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true);
   const finishBeforePunch = assignment?.runner?.selected.action === 'finish' && geometry && waypoint &&
     waypoint.x === goal.x && waypoint.z === goal.z && isSpaceSegmentOpen(geometry, pos, goal) &&
     routeDistance / speed < (settings.hammerMeleeSpeed ?? .24);
+  const tuning = assignment?.tuning;
+  if (geometry && clashThreats && tuning?.enabled && tuning.spaceEnabled && tuning.runnerEnabled && tuning.runnerClashEnabled) {
+    clash = chooseRunnerPunchClash({ pos, threats: clashThreats, geometry, tuning, settings, dt, runnerRadiusBonus, runnerBodyHeight, playerStyle,
+      canPunch: canStartWeaponAction && weaponState === 'ready',
+      finishIn: finishBeforePunch ? routeDistance / speed : undefined });
+    if (clash.action === 'punch') return stopped('punch', clash.heading);
+  }
   const escaping = assignment?.runner && assignment.runner.selected.action !== 'wait' && waypoint && routeDistance > .1;
   let closest: FieldPoint | undefined, distance = Infinity;
   for (const enemy of threats) {
     if ((enemy.invulnerabilityTimer ?? 0) > 0) continue;
+    if (clash?.action === 'track' && enemy.id === clash.targetId) continue;
     const dx = enemy.pos.x - pos.x, dy = enemy.pos.y - pos.y, dz = enemy.pos.z - pos.z;
     if (escaping && dx * (waypoint.x - pos.x) + dz * (waypoint.z - pos.z) < 0) continue;
     const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (range < distance) { distance = range; closest = { x: dx, z: dz }; }
   }
   if (!finishBeforePunch && closest && distance <= 2.2 && canStartWeaponAction && weaponState === 'ready') return stopped('punch', closest);
-  if (assignment?.pass?.selected && canStartWeaponAction && weaponState === 'ready') return stopped('pass', assignment.pass.selected.direction);
+  if (clash?.action !== 'track' && assignment?.pass?.selected && canStartWeaponAction && weaponState === 'ready') return stopped('pass', assignment.pass.selected.direction);
   if (assignment?.runner?.selected.action === 'wait') return stopped('wait');
   // Refresh local avoidance between team-plan updates without replacing a routed
   // waypoint, an intentional zero-risk route, or an immediately reachable finish.
@@ -120,5 +137,5 @@ export function resolveGrifballCarrierDecision({ assignment, pos, players, threa
     }
     if (!open()) movement = { ...movement, velocity: { x: 0, z: 0 } };
   }
-  return { kind: 'move', ...movement };
+  return { kind: 'move', ...movement, ...(clash ? { clash } : {}) };
 }

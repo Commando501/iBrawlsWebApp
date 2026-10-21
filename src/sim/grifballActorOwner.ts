@@ -1,4 +1,5 @@
 import { hasCoherentSimCarrierState } from './grifballCarrierState';
+import { observeSimGrifballSwordGuard } from './grifballSwordGuard';
 import { recordCalibrationCounterAttempt } from '../game/aiSkillCalibration';
 import { getEffectivePressureAggression } from '../components/grifball/matchPressure';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
@@ -112,6 +113,13 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
         ...(actor.isLunging ? { committedFlight: true as const } : {}),
       }, dt);
       if (!engagement) throw new Error(`Composed observation lost its selected target: ${actorId}`);
+      const swordGuard = observeSimGrifballSwordGuard(view, ai.grifballTeamPlan, actorId, turn.targetId, scriptedBots, memory, dt);
+      if (swordGuard?.action === 'space') {
+        memory.timer = (memory.timer ?? 0) - dt; memory.swayTimer += dt;
+        const speed = 5.2 * view.settings.speedForward / 100;
+        return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw, crouch: actor.isCrouching },
+          movement: speed > 0 ? { x: swordGuard.velocity!.x / speed, z: swordGuard.velocity!.z / speed } : { x: 0, z: 0 } };
+      }
       const playerModel = getPlayerModelSnapshot(ai, turn.targetId);
       const priorities = resolveSimGrifballCombatPriorities(view, actorId, scriptedBots, {
         ...a, spacingFactor: engagement.spacingFactor, pressureAggression: a.derivedParams.pressureAggression,
@@ -147,8 +155,9 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
       const memory = memories[actorId];
       if (record.kind === 'objective') {
         if (!planner || !record.objective) throw new Error('Composed objective completion requires its planner');
-        if (record.objective.reason === 'punch') memory.aiState = 'COOLDOWN';
-        if (memory.aiState === 'COOLDOWN' && ((memory.timer ?? 0) > 0 || record.objective.reason === 'punch'))
+        const beganStrike = record.objective.reason === 'punch' || record.objective.reason === 'hammer-deflection';
+        if (beganStrike) memory.aiState = 'COOLDOWN';
+        if (memory.aiState === 'COOLDOWN' && ((memory.timer ?? 0) > 0 || beganStrike))
           memory.timer = planner.punchControl!.cooldowns[actorId];
         else { memory.aiState = 'APPROACHING'; memory.timer = 0; }
       }

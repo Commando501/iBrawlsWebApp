@@ -1111,6 +1111,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     triggerEnemySwordSlash,
     triggerEnemySwordLunge,
   } = createWeaponActionCallbacksForState({
+    cancelBallCharge: () => {
+      ballChargingRef.current = false;
+      ballChargeTimerRef.current = 0;
+    },
     getState: () => stateRef.current,
     getRefs: () => threeRef.current,
     getMainAI: mai,

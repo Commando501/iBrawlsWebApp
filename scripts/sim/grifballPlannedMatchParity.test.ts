@@ -5,8 +5,10 @@ import { PLANNED_MATCH_CASES, plannedMatchCaseKey, runPlannedMatchParityTrace, p
 for (const scenario of PLANNED_MATCH_CASES) test(plannedMatchCaseKey(scenario), t => {
   const trace = runPlannedMatchParityTrace(scenario);
   assert.equal(trace.failureCount, 0, JSON.stringify(trace.failures));
-  assert.equal(trace.finalTick, 2263);
-  assert.deepEqual(trace.goals, [684, 2022]);
+  // Current Championship Stadium: half extents 61.5 x 33.08, goals at +/-56.5.
+  // The old 52 x 23 court ended at 2263 with goals at 684 and 2022.
+  assert.equal(trace.finalTick, 2535);
+  assert.deepEqual(trace.goals, [760, 2294]);
   assert.equal(trace.frames.length, trace.finalTick + 5);
   assert.equal(trace.resets, 1); assert.equal(trace.countdowns, 2);
   assert.ok(trace.postResetPickups > 0); assert.equal(trace.passes, 0);

@@ -92,10 +92,12 @@ describe('V3 character manifest', () => {
     }
   });
 
-  it('summarizes the default character budget under Phase 3 limits', () => {
+  it('summarizes the expanded source armor under its authoring limits', () => {
     const summary = getDefaultV3CharacterBudgetSummary();
 
-    assert.equal(summary.partCount, V3_CHARACTER_SLOT_IDS.length);
+    assert.deepEqual(summary, { partCount: V3_CHARACTER_SLOT_IDS.length,
+      sourceVoxelCount: 148500, mergedBoxCount: 77400, materialGroupCount: 67,
+      drawCallEstimate: 67, memoryEstimateKb: 35660 });
     assert.equal(summary.sourceVoxelCount <= V3_DEFAULT_CHARACTER_BUDGET_LIMITS.sourceVoxelCount, true);
     assert.equal(summary.mergedBoxCount <= V3_DEFAULT_CHARACTER_BUDGET_LIMITS.mergedBoxCount, true);
     assert.equal(summary.materialGroupCount <= V3_DEFAULT_CHARACTER_BUDGET_LIMITS.materialGroupCount, true);

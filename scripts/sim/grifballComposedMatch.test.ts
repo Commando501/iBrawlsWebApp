@@ -62,14 +62,16 @@ for (const seed of [101, 102]) for (const mirrored of [false, true])
     const { checkpoint } = createComposedValidationMatch(fixture, job);
     let restored = structuredClone(checkpoint), replay = createComposedMatchStepper(fixture, job, restored);
     const step = createComposedMatchStepper(fixture, job, checkpoint);
-    let kills = 0, revivals = 0, resets = 0;
+    let kills = 0, revivals = 0, liveRevivals = 0, resets = 0;
     try {
       while (checkpoint.state.tick < job.simulationTicks && checkpoint.state.match.phase !== 'matchEnd') {
         const dead = new Set(checkpoint.state.combatants.filter(c => !c.alive).map(c => c.id));
+        const liveDead = new Set([...live.state.otherPlayers.values()].filter(c => c.hp <= 0).map(c => c.id));
         const event = step()!, repeated = replay(); live.runtime.step();
         assert.deepEqual(repeated, event); assert.deepEqual(restored, checkpoint, 'complete restored continuation');
         kills += event.kills.length; resets += Number(event.roundReset);
         revivals += checkpoint.state.combatants.filter(c => c.alive && dead.has(c.id)).length;
+        liveRevivals += [...live.state.otherPlayers.values()].filter(c => c.hp > 0 && liveDead.has(c.id)).length;
         const tick = checkpoint.state.tick;
         assert.equal(checkpoint.state.match.phase, live.state.grifball.phase, `phase at ${tick}`);
         assert.equal(checkpoint.state.match.ball.holderId, live.state.grifball.ball.holderId, `holder at ${tick}`);
@@ -77,6 +79,8 @@ for (const seed of [101, 102]) for (const mirrored of [false, true])
           const sim = checkpoint.state.combatants.find(c => c.id === actor.id)!;
           assertCommittedAim(sim, actor, tick);
           assert.equal(sim.hp, actor.hp, `hp at ${tick}`); assert.equal(sim.weapon, actor.activeWeapon, `weapon at ${tick}`);
+          assert.equal(sim.alive, actor.hp > 0, `alive at ${tick}`);
+          near(Math.max(0, sim.respawnTimer), Math.max(0, actor.respawnTimer), `respawn at ${tick}`);
           for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], actor.pos[axis], `${tick}/${actor.id}/${axis}`);
         }
         if ([1, 180, 900, 1800].includes(tick) || event.roundReset) {
@@ -90,7 +94,12 @@ for (const seed of [101, 102]) for (const mirrored of [false, true])
       // Every non-winning goal resets the round; a 2–1 match has two resets.
       const goals = Object.values(checkpoint.state.scores).reduce((sum, score) => sum + score.goals, 0);
       assert.ok(resets > 0); assert.equal(resets, goals - 1);
-      assert.ok(kills > 0 && revivals > 0, 'the complete match must include combat and revival');
+      // Scoring without a kill is valid. Compare actual lifecycle accounting;
+      // the authored respawn tests below guarantee positive revival coverage.
+      const actors = [...live.state.otherPlayers.values()];
+      assert.equal(kills, actors.reduce((sum, actor) => sum + actor.kills, 0), 'kill events match production credit');
+      assert.equal(kills, actors.reduce((sum, actor) => sum + actor.deaths, 0), 'kill events match production deaths');
+      assert.equal(revivals, liveRevivals, 'every production revival matches the simulation');
       const before = structuredClone(checkpoint); assert.equal(step(), null); assert.deepEqual(checkpoint, before);
       t.diagnostic(JSON.stringify({ seed, mirrored, ticks: checkpoint.state.tick, kills, revivals, resets }));
     } finally { live.runtime.dispose(); }
@@ -130,14 +139,33 @@ for (const multiplayer of [false, true]) for (const controller of ['ai', 'remote
     assert.equal(bot.invulnerabilityTimer, !multiplayer && controller === 'ai' ? 1 : .9);
   });
 
-test('production full frame spends an AI respawn delay only once', async () => {
-  const { fixture, job } = await inputs(), live = createAutonomousValidationRuntime(fixture, job);
+for (const mirrored of [false, true]) test(`1v1 respawn delay, shield and restored continuation match production ${mirrored}`, async () => {
+  const { fixture, job } = await inputs('scripted-1v1', 101, mirrored), live = createAutonomousValidationRuntime(fixture, job);
+  const { checkpoint } = createComposedValidationMatch(fixture, job);
+  const step = createComposedMatchStepper(fixture, job, checkpoint);
   try {
     const bot = [...live.state.otherPlayers.values()][0]; bot.hp = 0; bot.respawnTimer = 3;
-    for (let tick = 0; tick < 120; tick++) live.runtime.step();
-    assert.equal(bot.hp, 0, 'three-second respawn must still be pending after two seconds');
-    near(bot.respawnTimer, 1, 'remaining respawn delay');
-    for (let tick = 0; tick < 61; tick++) live.runtime.step();
+    const sim = checkpoint.state.combatants.find(c => c.id === bot.id)!;
+    sim.hp = 0; sim.alive = false; sim.respawnTimer = 3;
+    let restored = structuredClone(checkpoint), replay = createComposedMatchStepper(fixture, job, restored);
+    let revivals = 0;
+    for (let tick = 1; tick <= 181; tick++) {
+      const wasAlive = sim.alive, event = step()!;
+      live.runtime.step();
+      assert.deepEqual(replay(), event); assert.deepEqual(restored, checkpoint, `restored lifecycle at ${tick}`);
+      assert.equal(sim.hp, bot.hp, `hp at ${tick}`);
+      assert.equal(sim.alive, bot.hp > 0, `alive at ${tick}`);
+      near(sim.respawnTimer, bot.respawnTimer, `respawn at ${tick}`);
+      near(sim.invulnerabilityTimer, bot.invulnerabilityTimer!, `shield at ${tick}`);
+      for (const axis of ['x', 'y', 'z'] as const) near(sim.pos[axis], bot.pos[axis], `${tick}/${axis}`);
+      revivals += Number(!wasAlive && sim.alive);
+      if (tick === 120) {
+        assert.equal(bot.hp, 0, 'three-second respawn must still be pending after two seconds');
+        near(bot.respawnTimer, 1, 'remaining respawn delay');
+        restored = structuredClone(checkpoint); replay = createComposedMatchStepper(fixture, job, restored);
+      }
+    }
+    assert.equal(revivals, 1, 'authored death must produce exactly one revival');
     assert.ok(bot.hp > 0, 'actor must revive when the full delay elapses');
     near(bot.invulnerabilityTimer, fixture.mechanics.respawnInvulnerabilityDuration - 1 / 60, 'new shield ticks once');
   } finally { live.runtime.dispose(); }

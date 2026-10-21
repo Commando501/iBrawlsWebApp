@@ -1,4 +1,5 @@
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
+import { resolveCombatHitDamageForState } from './combatDamage';
 import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -113,12 +114,14 @@ export function executeCustomBotTradeForState({
 }): void {
   const { text: tradeText, weapon: tradeWeapon } = getTradePresentation(reason);
 
-  attackerBot.hp = Math.max(0, attackerBot.hp - 1);
+  attackerBot.hp = Math.max(0, attackerBot.hp - resolveCombatHitDamageForState(
+    state, attackerBot.id, attackerBot.hp, reason === 'sword_vs_sword' ? 'sword' : 'hammer'
+  ));
   const targetCombatant = target.id === 'player' ? undefined : rosterCombatant(target.id);
   if (target.id === 'player') {
-    state.playerHP = Math.max(0, state.playerHP - 1);
+    state.playerHP = Math.max(0, state.playerHP - resolveCombatHitDamageForState(state, 'player', state.playerHP, 'sword'));
   } else if (targetCombatant) {
-    targetCombatant.hp = Math.max(0, targetCombatant.hp - 1);
+    targetCombatant.hp = Math.max(0, targetCombatant.hp - resolveCombatHitDamageForState(state, targetCombatant.id, targetCombatant.hp, 'sword'));
     recordCombatantDamageDealtObservation(state, attackerBot.id);
     recordCombatantDamageReceivedObservation(state, attackerBot.id);
     recordCombatantDamageDealtObservation(state, targetCombatant.id);
@@ -300,8 +303,14 @@ export function executePlayerCombatantTradeForState({
 }): void {
   if (!combatant || combatant.hp <= 0 || state.playerHP <= 0) return;
 
-  state.playerHP = Math.max(0, state.playerHP - 1);
-  combatant.hp = Math.max(0, combatant.hp - 1);
+  // A committed sword lunge can finish after picking up the ball.
+  const playerUsesSword = reason === 'sword_vs_sword' || state.isLunging || state.activeWeapon === 'sword';
+  state.playerHP = Math.max(0, state.playerHP - resolveCombatHitDamageForState(
+    state, 'player', state.playerHP, reason === 'sword_vs_sword' || !playerUsesSword ? 'sword' : 'hammer'
+  ));
+  combatant.hp = Math.max(0, combatant.hp - resolveCombatHitDamageForState(
+    state, combatant.id, combatant.hp, playerUsesSword ? 'sword' : 'hammer'
+  ));
 
   playExplosion();
   playDeath();
