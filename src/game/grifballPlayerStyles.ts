@@ -141,6 +141,15 @@ export const GRIFBALL_DOUBLE_TEAM_PREFERENCES = {
   guardian: { threshold: .75, recovery: .1, reason: 'Require more value and recovery time before leaving coverage.' },
 } satisfies Record<GrifballPlayerStyle, { threshold: number; recovery: number; reason: string }>;
 
+/** Metres relative to the reserved last-defender position, while retaining the
+ * same timely ground-route cut. Width shades the nearest goal-threatening escort. */
+export const GRIFBALL_SAFETY_POSITION_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team last-defender position.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Hold a tighter last-defender line, giving up some recovery depth.' },
+  opportunist: { depth: 0, width: .75, reason: 'Shade toward a nearby escort flank while retaining the runner cut.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold deeper goal-side coverage, giving up some forward pressure.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

@@ -7,6 +7,7 @@ import { grifballDefenseStyleBonus, resolveGrifballPlayerStyle, type GrifballPla
 import { chooseGrifballPassSupportPosition, type PassLandingSupport } from './aiGrifballPassSupport';
 import { applyGrifballMarkPosition, type MarkPositionDecision } from './aiGrifballMarkPosition';
 import type { PickupSupportDecision } from './aiGrifballPickupSupport';
+import { applyGrifballSafetyPosition, type SafetyPositionDecision } from './aiGrifballSafetyPosition';
 
 export interface DefensePressureCandidate {
   botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
@@ -20,6 +21,7 @@ export interface DefenseOrder {
   passSupport?: PassLandingSupport;
   positioning?: MarkPositionDecision;
   pickupSupport?: PickupSupportDecision;
+  safetyPosition?: SafetyPositionDecision;
   individuality?: {
     style: GrifballPlayerStyle; strength: number; reason: string;
     pressureCandidates?: DefensePressureCandidate[];
@@ -236,7 +238,10 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     return;
   }
   // A lone defender keeps its goal-side line; no secondary pressure or marks.
-  if (!rest.length) return;
+  if (!rest.length) {
+    applyGrifballSafetyPosition(snapshot, assignments, tuning, routers, contain, safetyDestination !== safetyPoint || !!carrierSafety);
+    return;
+  }
   rest.sort((a, b) => {
     const aReachable = reachable.includes(a), bReachable = reachable.includes(b);
     // Contest the earliest feasible cut. Distance to the horizon's endpoint can
@@ -336,6 +341,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     assign(a, 'recover', { x: safetyPoint.x - (goal.z - anchor.z) / d * side, z: safetyPoint.z + (goal.x - anchor.x) / d * side }, carrier);
   });
   applyGrifballMarkPosition(snapshot, assignments, tuning, routers, contain);
+  applyGrifballSafetyPosition(snapshot, assignments, tuning, routers, contain, safetyDestination !== safetyPoint || !!carrierSafety);
 }
 
 export function selectDefenseThreat(a: GrifballAssignment, self: FieldPoint, players: GrifballTacticalPlayer[]): string | null {
