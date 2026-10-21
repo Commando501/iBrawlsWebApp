@@ -15,6 +15,7 @@ import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballH
 import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
 import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
 import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGrifballEscortPosition';
+import { chooseGrifballPickupAgency, type PickupAgencyDecision } from './aiGrifballPickupAgency';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -64,6 +65,7 @@ export interface GrifballAssignment {
   pass?: PassPlan;
   receive?: ReceiveOrder;
   passRecovery?: PassRecoveryDecision;
+  pickupAgency?: PickupAgencyDecision;
   escort?: EscortOrder;
   escortPosition?: EscortPositionDecision;
   space?: GrifballSpaceDecision;
@@ -282,12 +284,15 @@ export function updateGrifballTeamPlan(
 
 
     let passRecovery: PassRecoveryDecision | null = null;
+    let pickupAgency: PickupAgencyDecision | undefined;
     if (!holder && bots.length) {
       // Compare arrival estimates, including the visible wait for ground steering.
       // A nearby airborne bot must not monopolize recovery over an available ally.
       const recoveryDistances = new Map(teammates.map(p => [p.id, tuning.spaceEnabled && routers
         ? routers.get(p.id)!(recoveryPoint, true).length : distance(p.pos, recoveryPoint)]));
-      const recoveryDistance = (p: GrifballTacticalPlayer) => recoveryDistances.get(p.id)!;
+      // Enemy arrivals are queried only by the optional ordinary-pickup bids.
+      const recoveryDistance = (p: GrifballTacticalPlayer) => recoveryDistances.get(p.id) ??
+        (tuning.spaceEnabled && routers ? routers.get(p.id)!(recoveryPoint, true).length : distance(p.pos, recoveryPoint));
       const recoverySpeed = (p: GrifballTacticalPlayer) => Math.max(0.1, tuning.spaceEnabled ? (p.space?.speed ?? 5.2) : 5.2);
       const recoveryTime = (p: GrifballTacticalPlayer) => Math.max(recoveryDistance(p) / recoverySpeed(p),
         tuning.spaceEnabled ? (p.space?.mobileIn ?? 0) : 0);
@@ -303,14 +308,20 @@ export function updateGrifballTeamPlan(
         if (passRecovery?.receiverId) retriever = ranked.find(p => p.id === passRecovery!.receiverId)!;
         else if (passRecovery) retriever = ranked[0];
       }
-      const externalRetriever = teammates.find(p => {
+      const observedHasPriority = (candidate: GrifballTacticalPlayer) => teammates.some(p => {
         if (p.scripted || !Number.isFinite(recoveryDistance(p))) return false;
         const d = distance(p.pos, snapshot.ball);
         const closingSpeed = ((snapshot.ball.x - p.pos.x) * p.vel.x + (snapshot.ball.z - p.pos.z) * p.vel.z) / Math.max(d, 0.001);
-        return (d <= 1.5 && p.pickupRequested === true) || (d <= 10 && closingSpeed > 0.5 && d <= distance(retriever.pos, snapshot.ball) + 1);
+        return (d <= 1.5 && p.pickupRequested === true) || (d <= 10 && closingSpeed > 0.5 && d <= distance(candidate.pos, snapshot.ball) + 1);
       });
+      const externalRetriever = observedHasPriority(retriever);
       if (!externalRetriever) {
+        if (routers) pickupAgency = chooseGrifballPickupAgency({ snapshot, team, tuning, routers,
+          teamRetrieverId: retriever.id, incumbentId: incumbent?.id, reservedPass: state.passFlight?.team === team,
+          arrival: recoveryTime, observedHasPriority });
+        if (pickupAgency) retriever = ranked.find(p => p.id === pickupAgency!.retrieverId)!;
         add(retriever, 'retriever', -1, { ...recoveryPoint }, incumbent?.id === retriever.id ? 'Keep the ball recovery assignment' : 'Earliest available reachable ball retriever');
+        if (pickupAgency) next.get(retriever.id)!.reason = pickupAgency.reason;
         if (tuning.passingEnabled && recovery?.settled) next.get(retriever.id)!.receive = { carrierId: state.passFlight?.carrierId ?? null, point: { ...recoveryPoint }, seconds: recovery.seconds };
         if (passRecovery?.receiverId && state.passFlight) {
           state.passFlight.receiverId = passRecovery.receiverId;
@@ -346,6 +357,7 @@ export function updateGrifballTeamPlan(
       add(bot, role, slot, destination, defending ? 'Pressure with goal-side coverage' : holder ? 'Protect the carrier and preserve recovery coverage' : 'Screen the pickup and cover a turnover');
     }
     const teamAssignments = [...next.values()].filter(a => a.team === team);
+    if (pickupAgency) for (const assignment of teamAssignments) assignment.pickupAgency = pickupAgency;
     if (passRecovery) for (const assignment of teamAssignments) assignment.passRecovery = passRecovery;
     if (state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
     if (tuning.spaceEnabled && routers && tuning.defenseEnabled) {

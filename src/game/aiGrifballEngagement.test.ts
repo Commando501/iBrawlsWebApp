@@ -259,7 +259,7 @@ test('scope, own bot identity, mirrored teams, main_ai, roster ordering and rest
 });
 test('v1–22 imports preserve older settings and migrate persistence off; current imports require valid strength', () => {
   const current = defaultGrifballTactics();
-  assert.equal(current.schemaVersion, 25);
+  assert.equal(current.schemaVersion, 26);
   assert.equal(current.defaults.engagementAgencyStrength, 0);
   for (let version = 1; version <= 22; version++) {
     const old = JSON.parse(JSON.stringify(current));

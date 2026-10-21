@@ -47,6 +47,14 @@ export const GRIFBALL_PASS_PREFERENCES = {
   guardian: 'Favor larger pickup and attack margins for the receiver.',
 } satisfies Record<GrifballPlayerStyle, string>;
 
+/** Seconds of preference in a closely matched ordinary ground-ball assignment. */
+export const GRIFBALL_PICKUP_PREFERENCES = {
+  balanced: { bonus: 0, needsOpening: false, reason: 'Use team arrival and recovery commitment.' },
+  enforcer: { bonus: .15, needsOpening: false, reason: 'Claim closely matched pickups, giving up some screening time.' },
+  opportunist: { bonus: .25, needsOpening: true, reason: 'Claim pickups with a clear attack window, giving up another support job.' },
+  guardian: { bonus: -.15, needsOpening: false, reason: 'Yield marginal pickups to a similarly useful teammate and keep coverage.' },
+} satisfies Record<GrifballPlayerStyle, { bonus: number; needsOpening: boolean; reason: string }>;
+
 /** Small execution preferences in seconds, independent of combat difficulty.
  * Earlier commitment can be wasted; later commitment leaves less timing margin. */
 export const GRIFBALL_CLASH_PREFERENCES = {
