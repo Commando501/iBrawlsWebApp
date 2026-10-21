@@ -65,7 +65,8 @@ export interface OpposedDecisionCase {
 }
 export type TankContestOpening = 'opening' | 'ready' | 'late-cover' | 'shared-blast' | 'disabled' | 'short-window' | 'threshold' | 'no-reserve';
 export type EarnedTankOpening = 'opening' | 'durable-opponent' | 'default-roles' | 'late-arrival' | 'shared-blast';
-export interface RosterContestOptions { teamSize: 3 | 4; tactics: Partial<TeamTactics>; tankOpening?: TankContestOpening; earnedTankOpening?: EarnedTankOpening }
+export interface RosterContestOptions { teamSize: 3 | 4; tactics: Partial<TeamTactics>;
+  botStyles?: ReturnType<typeof defaultGrifballTactics>['botStyles']; tankOpening?: TankContestOpening; earnedTankOpening?: EarnedTankOpening }
 export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
   (['punch-first', 'hammer-first', 'contested'] as const).flatMap(mode =>
     (['blue', 'red'] as const).flatMap(team => [false, true].flatMap(reverse =>
@@ -122,6 +123,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = passing && passOpening?.passingEnabled !== false; state.otherPlayers.clear();
   if (rosterContest) {
     Object.assign(state.grifballTactics.defaults, rosterOptions!.tactics);
+    if (rosterOptions!.botStyles) state.grifballTactics.botStyles = { ...rosterOptions!.botStyles };
     state.grifballTactics = validateGrifballTactics(state.grifballTactics);
   }
   const tacticsBefore = JSON.stringify(state.grifballTactics);

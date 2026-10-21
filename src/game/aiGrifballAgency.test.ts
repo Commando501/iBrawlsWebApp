@@ -41,7 +41,7 @@ function setup(style: GrifballPlayerStyle = 'enforcer') {
 
 test('styles migrate independently of combat settings; invalid styles and strength fail atomically', () => {
   const old: any = defaultGrifballTactics(); old.schemaVersion = 6; delete old.botStyles; delete old.defaults.agencyStrength;
-  const migrated = validateGrifballTactics(old); assert.equal(migrated.schemaVersion, 21);
+  const migrated = validateGrifballTactics(old); assert.equal(migrated.schemaVersion, 22);
   assert.equal(migrated.defaults.agencyStrength, 0); assert.deepEqual(migrated.botStyles, {});
   const config = defaultGrifballTactics(); config.botStyles = { main_ai: 'enforcer', blue2: 'guardian' };
   assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
@@ -59,6 +59,16 @@ test('an enforcer engages a separate defender while the primary and recovery kee
   assert.equal(s.assignments[0].tanking!.targetId, 'enemy-a'); assert.equal(s.assignments[2].tanking!.attack, false);
   assert.equal(selectGrifballAssignmentThreat(s.b, s.snapshot.players[2].pos, s.snapshot.players), 'enemy-b');
   assert.equal(s.b.agency!.alternatives[0].reason, 'Selected');
+});
+
+test('a separate initiative removes the superseded double-team preference', () => {
+  const s = setup();
+  s.b.tanking!.mode = 'punish'; s.b.tanking!.targetId = 'enemy-a';
+  s.b.tanking!.doubleTeam = { style: 'guardian', strength: 1, preference: 'Wait for more value',
+    teamThreshold: 4.5, threshold: 5.25, teamRecoveryMargin: .1, recoveryMargin: .2,
+    score: 3.5, attackETA: .4, opponentAttackETA: 1 };
+  s.run(); assert.equal(s.b.agency?.choice, 'initiative'); assert.equal(s.b.tanking!.doubleTeam, undefined);
+  assert.equal(s.b.tanking!.targetId, 'enemy-b');
 });
 
 test('the same opportunity produces distinct Grifball style choices', () => {

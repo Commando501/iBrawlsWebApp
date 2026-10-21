@@ -83,6 +83,7 @@ export function applyGrifballSupportInitiative(snapshot: GrifballTacticalSnapsho
     if (oldPartner?.tanking?.partnerId === a.botId) oldPartner.tanking.partnerId = null;
     a.tanking = { ...a.tanking!, mode: 'engage', targetId: score.targetId, attack: true, partnerId: null, doubleCommit: false,
       reason: `${GRIFBALL_PLAYER_STYLES[a.agency!.style].label}: take a separate useful engagement` };
+    delete a.tanking.doubleTeam;
     a.destination = point;
     a.agency!.choice = 'initiative'; a.agency!.reason = a.tanking.reason;
     claimed.add(score.targetId);

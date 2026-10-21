@@ -1,4 +1,4 @@
-import { GRIFBALL_PLAYER_STYLES, GRIFBALL_RUNNER_PREFERENCES, GRIFBALL_DEFENSE_PREFERENCES, GRIFBALL_PASS_PREFERENCES, GRIFBALL_CLASH_PREFERENCES, GRIFBALL_SWORD_GUARD_PREFERENCES, GRIFBALL_HAMMER_DEFENSE_PREFERENCES, GRIFBALL_PASS_RECOVERY_PREFERENCES, GRIFBALL_PASS_SUPPORT_PREFERENCES, GRIFBALL_ESCORT_POSITION_PREFERENCES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from '../game/grifballPlayerStyles';
+import { GRIFBALL_PLAYER_STYLES, GRIFBALL_RUNNER_PREFERENCES, GRIFBALL_DEFENSE_PREFERENCES, GRIFBALL_PASS_PREFERENCES, GRIFBALL_CLASH_PREFERENCES, GRIFBALL_SWORD_GUARD_PREFERENCES, GRIFBALL_HAMMER_DEFENSE_PREFERENCES, GRIFBALL_PASS_RECOVERY_PREFERENCES, GRIFBALL_PASS_SUPPORT_PREFERENCES, GRIFBALL_ESCORT_POSITION_PREFERENCES, GRIFBALL_DOUBLE_TEAM_PREFERENCES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from '../game/grifballPlayerStyles';
 
 export function GrifballPlayerStyleControls({ bots, styles, onChange }: {
   bots: { id: string; team: string }[];
@@ -6,7 +6,7 @@ export function GrifballPlayerStyleControls({ bots, styles, onChange }: {
   onChange: (id: string, style: GrifballPlayerStyle) => void;
 }) {
   return <section aria-label="Grifball player styles" className="space-y-3">
-    <p className="text-xs text-slate-400">Player styles belong to individual roster bots and follow them across teams. Separate strengths control support engagements, carrier routes, defensive jobs, passing, punch-clash timing, sword defense, hammer pass defense, pass recovery, landing support and escort positions. Combat personalities and difficulty are separate.</p>
+    <p className="text-xs text-slate-400">Player styles belong to individual roster bots and follow them across teams. Separate strengths control support engagements, carrier routes, defensive jobs, passing, punch-clash timing, sword defense, hammer pass defense, pass recovery, landing support, escort positions and double-team decisions. Combat personalities and difficulty are separate.</p>
     {!bots.length && <p className="text-xs text-cyan-200">Start an offline Grifball match to assign player styles to active scripted bots.</p>}
     {bots.map(bot => {
       const style = resolveGrifballPlayerStyle(styles, bot.id);
@@ -24,6 +24,7 @@ export function GrifballPlayerStyleControls({ bots, styles, onChange }: {
         <span className="block text-xs text-slate-400">Counter: {GRIFBALL_CLASH_PREFERENCES[style].reason}</span>
         <span className="block text-xs text-slate-400">Sword defense: {GRIFBALL_SWORD_GUARD_PREFERENCES[style].reason}</span>
         <span className="block text-xs text-slate-400">Hammer defense: {GRIFBALL_HAMMER_DEFENSE_PREFERENCES[style].reason}</span>
+        <span className="block text-xs text-slate-400">Double team: {GRIFBALL_DOUBLE_TEAM_PREFERENCES[style].reason}</span>
         <span className="block text-xs text-slate-400">Escort position: {GRIFBALL_ESCORT_POSITION_PREFERENCES[style].reason}</span>
         <span className="block text-xs text-slate-400">Pass landing support: {GRIFBALL_PASS_SUPPORT_PREFERENCES[style].reason}</span>
         <span className="block text-xs text-slate-400">Pass recovery: {GRIFBALL_PASS_RECOVERY_PREFERENCES[style].reason}</span>

@@ -92,6 +92,15 @@ export const GRIFBALL_ESCORT_POSITION_PREFERENCES = {
   guardian: { forward: -.75, width: 0, reason: 'Trail the team screen more closely, giving up some forward coverage.' },
 } satisfies Record<GrifballPlayerStyle, { forward: number; width: number; reason: string }>;
 
+/** Score offsets and extra recovery time for the supporting tank. The original
+ * 0.1 s recovery cushion and physical eligibility remain minimum requirements. */
+export const GRIFBALL_DOUBLE_TEAM_PREFERENCES = {
+  balanced: { threshold: 0, recovery: 0, reason: 'Use the team double-team threshold and recovery window.' },
+  enforcer: { threshold: -.75, recovery: 0, reason: 'Join lower-value openings, accepting more time away from coverage.' },
+  opportunist: { threshold: 0, recovery: .15, reason: 'Wait for a longer punish window, passing up brief openings.' },
+  guardian: { threshold: .75, recovery: .1, reason: 'Require more value and recovery time before leaving coverage.' },
+} satisfies Record<GrifballPlayerStyle, { threshold: number; recovery: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

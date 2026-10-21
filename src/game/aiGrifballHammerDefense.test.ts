@@ -87,7 +87,7 @@ test('v14 migration preserves sword styles and overrides, with hammer pass defen
   const old = JSON.parse(JSON.stringify(defaultGrifballTactics())); old.schemaVersion = 14;
   delete old.defaults.hammerDefenseEnabled; delete old.defaults.hammerDefenseReaction;
   old.defaults.swordGuardAgencyStrength = .8; old.botStyles.hammer = 'guardian'; old.teams.red = { swordGuardAgencyStrength: .5 };
-  const config = validateGrifballTactics(old); assert.equal(config.schemaVersion, 21);
+  const config = validateGrifballTactics(old); assert.equal(config.schemaVersion, 22);
   assert.equal(config.defaults.hammerDefenseEnabled, false); assert.equal(config.defaults.hammerDefenseReaction, .08);
   assert.equal(config.defaults.swordGuardAgencyStrength, .8); assert.equal(config.botStyles.hammer, 'guardian');
   config.teams.red!.hammerDefenseEnabled = true; config.teams.red!.hammerDefenseReaction = .12;
@@ -179,7 +179,7 @@ test('v15 imports preserve enabled hammer defense and styles, with independent i
   old.defaults.hammerDefenseReaction = .12; old.defaults.swordGuardAgencyStrength = .8;
   old.botStyles.hammer = 'enforcer'; old.teams.red = { hammerDefenseReaction: .2 };
   const config = validateGrifballTactics(old);
-  assert.equal(config.schemaVersion, 21); assert.equal(config.defaults.hammerDefenseAgencyStrength, 0);
+  assert.equal(config.schemaVersion, 22); assert.equal(config.defaults.hammerDefenseAgencyStrength, 0);
   assert.equal(config.defaults.hammerDefenseEnabled, true); assert.equal(config.defaults.hammerDefenseReaction, .12);
   assert.equal(config.botStyles.hammer, 'enforcer'); assert.equal(config.defaults.swordGuardAgencyStrength, .8);
   config.teams.red!.hammerDefenseAgencyStrength = .7;

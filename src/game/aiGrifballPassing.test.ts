@@ -62,7 +62,7 @@ test('in-flight receivers target the predicted settled ball and replace a dead r
   assert.ok([...state.assignments.values()].some(a => a.team === 'blue' && a.role === 'retriever' && a.receive));
 });
 test('schema v5 migrates older presets and validates new fields and partial overrides', () => {
-  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 21);
+  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 22);
   const old = JSON.parse(JSON.stringify(current)); old.schemaVersion = 4;
   delete old.defaults.defenseEnabled; delete old.defaults.passingEnabled;
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'defense') delete old.defaults[key];

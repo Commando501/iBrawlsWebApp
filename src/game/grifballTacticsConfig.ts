@@ -2,6 +2,7 @@ import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from './grifballPlay
 
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  doubleTeamAgencyStrength: { label: 'Double-team individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let the supporting tank decide when to join a teammate: Enforcers accept lower-value openings; Opportunists wait for longer recovery; Guardians require more value and time. Zero keeps team decisions. Requires coordination, space awareness and tanking while our team holds the ball. Recovery cover, routes and shared hammer exposure retain priority.' },
   escortAgencyStrength: { label: 'Escort positioning individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let passive escorts prefer forward Enforcer, wider Opportunist or trailing Guardian positions. Zero keeps team positions. Requires coordination, space awareness and runner planning. Receivers, rear coverage and engagement jobs retain priority; route timing, visible threats, spacing and the runner corridor can reject a preference.' },
   passSupportAgencyStrength: { label: 'Pass landing support individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'agency', description: 'Let lateral covers prefer closer Enforcer, wider Opportunist or deeper Guardian positions. Zero keeps team positions. Requires Pass landing support, coordination, space awareness, coordinated defense and passing. Route timing, visible attack margin and teammate separation can reject a preference; receiver and last defender keep their jobs.' },
   passSupportDepth: { label: 'Pass landing cover depth', min: 2, max: 10, step: .5, value: 4, unit: 'm', module: 'defense', description: 'Place lateral cover this far goal-side of our released pass’s predicted landing area. Last-defender depth remains separate. Requires Pass landing support, coordination, space awareness, coordinated defense and passing.' },
@@ -89,14 +90,14 @@ export type TeamTactics = Record<TacticalNumber, number> & {
   passSupportEnabled: boolean; passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 21;
+  schemaVersion: 22;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
   /** Stable roster IDs: styles follow bots when teams are mirrored. */
   botStyles: Record<string, GrifballPlayerStyle>;
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 21, defaults: {
+  return { schemaVersion: 22, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
     passSupportEnabled: false, passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {}, botStyles: {} };
@@ -105,7 +106,7 @@ const booleanKeys = ['passSupportEnabled', 'passRecoveryEnabled', 'hammerDefense
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–21, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–22, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams', 'botStyles'].includes(key))) throw new Error('Unknown configuration field.');
   const styles = value.botStyles === undefined && (value.schemaVersion as number) < 7 ? {} : value.botStyles;
   if (!object(styles) || Object.keys(styles).length > 128 || Object.entries(styles).some(([id, style]) =>
@@ -121,6 +122,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 22 ? { doubleTeamAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 21 ? { escortAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 20 ? { passSupportAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 19 ? { passSupportEnabled: false, passSupportDepth: 4 } : {}),
@@ -155,7 +157,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 21, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
+  return { schemaVersion: 22, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };
