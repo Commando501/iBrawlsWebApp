@@ -17,6 +17,7 @@ import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
 import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGrifballEscortPosition';
 import { chooseGrifballPickupAgency, type PickupAgencyDecision } from './aiGrifballPickupAgency';
 import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
+import { observeGrifballTipoff, applyGrifballTipoff, selectGrifballTipoffThreat, type TipoffMemory, type TipoffOrder } from './aiGrifballTipoff';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -75,8 +76,10 @@ export interface GrifballAssignment {
   runnerClash?: RunnerClashDecision;
   swordGuard?: SwordGuardDecision;
   hammerDefense?: HammerDefenseDecision;
+  tipoff?: TipoffOrder;
 }
 export interface GrifballTeamPlanState {
+  tipoff?: TipoffMemory;
   observedThrow?: ObservedGrifballThrow;
   hammerDefenseCommitments?: Record<string, HammerDefenseDecision>;
   assignments: Map<string, GrifballAssignment>;
@@ -104,6 +107,7 @@ export const createGrifballTeamPlanState = (): GrifballTeamPlanState => ({
 });
 
 export function resetGrifballTeamPlan(state: GrifballTeamPlanState): void {
+  delete state.tipoff;
   delete state.observedThrow; delete state.hammerDefenseCommitments;
   state.assignments.clear();
   state.styleSeed = 1; state.stylePlay = 0; state.styleMemory = {}; state.stylePlans = {};
@@ -136,7 +140,9 @@ export function updateGrifballTeamPlan(
 ): void {
   const players = [...snapshot.players].sort(byId);
   const config = snapshot.tactics ?? defaultGrifballTactics();
+  state.tipoff = observeGrifballTipoff(state.tipoff, snapshot, dt);
   const signature = JSON.stringify([
+    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team); return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds] : null; }),
     snapshot.round, snapshot.playing, snapshot.holderId, snapshot.rosterKey, snapshot.teamDifficulty, state.styleSeed, snapshot.goals, snapshot.spacing, snapshot.tactics, snapshot.geometry?.key, snapshot.passing, snapshot.ballPhysics?.state,
     snapshot.respawns?.map(p => [p.id, p.team, p.pos]),
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),
@@ -299,7 +305,7 @@ export function updateGrifballTeamPlan(
         tuning.spaceEnabled ? (p.space?.mobileIn ?? 0) : 0);
       const ranked = [...bots].sort((a, b) => recoveryTime(a) - recoveryTime(b) || byId(a, b));
       let retriever = ranked[0];
-      const incumbent = ranked.find(p => previous.get(p.id)?.role === 'retriever');
+      const incumbent = ranked.find(p => previous.get(p.id)?.role === 'retriever' || previous.get(p.id)?.tipoff?.job === 'collector');
       // Keep the configured distance advantage, expressed in the incumbent's travel time.
       if (incumbent && Number.isFinite(recoveryTime(incumbent)) && recoveryTime(incumbent) <= recoveryTime(retriever) + tuning.reassignmentAdvantage / recoverySpeed(incumbent)) retriever = incumbent;
       const intended = tuning.passingEnabled && state.passFlight?.team === team ? ranked.find(p => p.id === state.passFlight!.receiverId) : undefined;
@@ -360,8 +366,10 @@ export function updateGrifballTeamPlan(
     const teamAssignments = [...next.values()].filter(a => a.team === team);
     if (pickupAgency) for (const assignment of teamAssignments) assignment.pickupAgency = pickupAgency;
     if (passRecovery) for (const assignment of teamAssignments) assignment.passRecovery = passRecovery;
-    if (state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
-    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) {
+    const tipoff = routers && applyGrifballTipoff(snapshot, teamAssignments, tuning, routers, state.tipoff, previous);
+    if (tipoff) delete state.tankingMemory[team];
+    if (!tipoff && state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
+    if (!tipoff && tuning.spaceEnabled && routers && tuning.defenseEnabled) {
       const passSupport = resolveGrifballPassSupport({ snapshot, assignments: teamAssignments, team,
         flight: state.passFlight, tuning, routers, recovery });
       applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0,
@@ -397,6 +405,7 @@ export function updateGrifballTeamPlan(
 export function selectGrifballAssignmentThreat(
   assignment: GrifballAssignment, self: FieldPoint, players: GrifballTacticalPlayer[],
 ): string | null {
+  if (assignment.tipoff) return selectGrifballTipoffThreat(assignment, self, players);
   if (assignment.receive) return null;
   if (assignment.defense) return selectDefenseThreat(assignment, self, players);
   if (assignment.role === 'runner' || assignment.role === 'retriever') return null;

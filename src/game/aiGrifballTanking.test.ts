@@ -245,7 +245,7 @@ test('schema v3 migrates tanking defaults and preserves explicit existing settin
   const old: any = defaultGrifballTactics(); old.schemaVersion = 3; delete old.defaults.tankingEnabled;
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'tanking') delete old.defaults[key];
   old.teams.blue = { runnerEnabled: false, runnerCutWidth: 6 };
-  const current = validateGrifballTactics(old); assert.equal(current.schemaVersion, 28); assert.equal(current.defaults.tankingEnabled, true);
+  const current = validateGrifballTactics(old); assert.equal(current.schemaVersion, 29); assert.equal(current.defaults.tankingEnabled, true);
   assert.deepEqual(current.teams.blue, old.teams.blue);
   assert.throws(() => validateGrifballTactics({ ...current, teams: { blue: { tankCommitSeconds: -1 } } }));
 });
