@@ -5,6 +5,7 @@ import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance, isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { GRIFBALL_PLAYER_STYLES, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
+import { grifballEngagementTiming, startGrifballTankRelease } from './aiGrifballEngagement';
 
 export interface SupportAgencyDecision {
   style: GrifballPlayerStyle;
@@ -92,9 +93,10 @@ export function applyGrifballSupportInitiative(snapshot: GrifballTacticalSnapsho
     a.agency!.alternatives = proposed.get(a.botId)!.map(({ score, point }) => ({ targetId: score.targetId, score: score.score,
       reason: a.tanking!.attack && a.tanking!.targetId === score.targetId ? 'Selected' : unavailable(a, score, point) ?? 'Another opportunity has greater value' }));
     if (previous.get(a.botId)?.agency?.choice === 'initiative' && !a.tanking!.attack && a.tanking!.mode === 'cover') {
-      memory.releaseRemaining[a.botId] = tuning.tankReleaseSeconds;
+      startGrifballTankRelease(memory, a.botId, grifballEngagementTiming(snapshot, a.botId, tuning));
       a.tanking!.mode = 'release'; a.tanking!.reason = 'Opportunity ended: restore coverage before recommitting';
     }
+    if (a.tanking!.persistence) a.tanking!.persistence.releaseRemaining = memory.releaseRemaining[a.botId] ?? 0;
     a.agency!.reason = a.tanking!.reason;
     a.reason = `${a.role}: ${a.agency!.reason}`;
   }

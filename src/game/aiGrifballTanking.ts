@@ -6,6 +6,7 @@ import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { fieldDistance, isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { GRIFBALL_DOUBLE_TEAM_PREFERENCES, grifballPlayerStyleBonus, resolveGrifballPlayerStyle, type GrifballPlayerStyle } from './grifballPlayerStyles';
 import { supportInitiativeStillUseful } from './aiGrifballAgency';
+import { grifballEngagementTiming, syncGrifballEngagementTiming, startGrifballTankCommitment, startGrifballTankRelease, type EngagementPersistenceDecision } from './aiGrifballEngagement';
 
 export type TankingMode = 'engage' | 'punish' | 'cover' | 'delay' | 'release';
 export interface EngagementScore {
@@ -16,6 +17,7 @@ export interface TankingOrder {
   mode: TankingMode; targetId: string | null; partnerId: string | null; recoveryId: string | null;
   attack: boolean; doubleCommit: boolean; reason: string; candidates: EngagementScore[];
   doubleTeam?: DoubleTeamDecision;
+  persistence?: EngagementPersistenceDecision;
 }
 export interface DoubleTeamDecision {
   style: GrifballPlayerStyle; strength: number; preference: string;
@@ -25,6 +27,7 @@ export interface DoubleTeamDecision {
 export interface TankingMemory {
   targetId: string | null; primaryId: string | null; commitment: number;
   releaseRemaining: Record<string, number>;
+  individualDurations?: { commit?: number; releases: Record<string, number> };
 }
 export function tickTankingMemory(memory: TankingMemory | undefined, dt: number): TankingMemory {
   const next = memory ?? { targetId: null, primaryId: null, commitment: 0, releaseRemaining: {} };
@@ -58,6 +61,7 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
   const friendly = carrier?.team === team;
   const anchor = carrier?.pos ?? snapshot.ball;
   const support = assignments.filter(a => a.role !== 'runner' && a.role !== 'retriever');
+  syncGrifballEngagementTiming(snapshot, tuning, memory);
   const actor = (a: GrifballAssignment) => teammates.find(p => p.id === a.botId)!;
   const eta = (p: GrifballTacticalPlayer, point: FieldPoint) => estimateSpaceAttackTime(p, point, routers.get(p.id)!(point, true).length);
   const emergency = !!carrier && !friendly && fieldDistance(carrier.pos, ownGoal) <= tuning.tankEmergencyDistance;
@@ -162,7 +166,8 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
       if (recovering(primary.bot) && ready && ready.score.attackETA + 0.1 < primary.score.attackETA) primary = ready;
       const oldTarget = memory.targetId, oldPrimary = memory.primaryId;
       memory.targetId = target.id; memory.primaryId = primary.a.botId;
-      if (oldTarget !== target.id || oldPrimary !== primary.a.botId) memory.commitment = tuning.tankCommitSeconds;
+      if (oldTarget !== target.id || oldPrimary !== primary.a.botId)
+        startGrifballTankCommitment(memory, grifballEngagementTiming(snapshot, primary.a.botId, tuning));
       primary.a.tanking = { ...primary.a.tanking!, mode: 'engage', targetId: target.id, attack: true,
         reason: emergency ? 'Contest the carrier before the goal' : oldPrimary && oldPrimary !== primary.a.botId && oldTarget === target.id ? 'Rotate a ready tank into the engagement' : `Commit to a useful engagement${primary !== options[0] && primary !== incumbent ? ' (seeded near-equal alternative)' : ''}` };
       place(primary.a, toward(target.pos, primary.bot.pos, Math.max(1, Math.min(3, (primary.bot.space?.reach ?? 2.5) * 0.7))));
@@ -204,16 +209,22 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
     const old = previous.get(a.botId)?.tanking, order = a.tanking!;
     if (old?.attack && !order.attack && order.mode === 'cover' &&
       !(friendly && tuning.agencyStrength > 0 && previous.get(a.botId)?.agency?.choice === 'initiative')) {
-      memory.releaseRemaining[a.botId] = tuning.tankReleaseSeconds;
+      startGrifballTankRelease(memory, a.botId, grifballEngagementTiming(snapshot, a.botId, tuning));
       order.mode = 'release'; order.reason = 'Release the duel and restore coverage';
     } else if (order.mode === 'cover' && memory.releaseRemaining[a.botId]) {
       order.mode = 'release'; order.reason = 'Return to coverage before recommitting';
     }
     // The engagement order now owns the target; do not expose a conflicting escort target.
     delete a.escort;
+    const timing = grifballEngagementTiming(snapshot, a.botId, tuning);
+    if (timing.strength > 0) order.persistence = { ...timing,
+      commitRemaining: memory.primaryId === a.botId ? memory.commitment : 0,
+      releaseRemaining: memory.releaseRemaining[a.botId] ?? 0 };
     a.reason = `${a.role}: ${order.reason}`;
   }
   for (const id of Object.keys(memory.releaseRemaining)) if (!support.some(a => a.botId === id)) delete memory.releaseRemaining[id];
+  // Prune records after rotation, death or expiration without extending any clock.
+  syncGrifballEngagementTiming(snapshot, tuning, memory);
 }
 
 /** Recheck short-lived punish openings and immediate defense against the latest public snapshot. */

@@ -41,7 +41,7 @@ function setup(style: GrifballPlayerStyle = 'enforcer') {
 
 test('styles migrate independently of combat settings; invalid styles and strength fail atomically', () => {
   const old: any = defaultGrifballTactics(); old.schemaVersion = 6; delete old.botStyles; delete old.defaults.agencyStrength;
-  const migrated = validateGrifballTactics(old); assert.equal(migrated.schemaVersion, 22);
+  const migrated = validateGrifballTactics(old); assert.equal(migrated.schemaVersion, 23);
   assert.equal(migrated.defaults.agencyStrength, 0); assert.deepEqual(migrated.botStyles, {});
   const config = defaultGrifballTactics(); config.botStyles = { main_ai: 'enforcer', blue2: 'guardian' };
   assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
@@ -59,6 +59,23 @@ test('an enforcer engages a separate defender while the primary and recovery kee
   assert.equal(s.assignments[0].tanking!.targetId, 'enemy-a'); assert.equal(s.assignments[2].tanking!.attack, false);
   assert.equal(selectGrifballAssignmentThreat(s.b, s.snapshot.players[2].pos, s.snapshot.players), 'enemy-b');
   assert.equal(s.b.agency!.alternatives[0].reason, 'Selected');
+});
+
+test('ending a separate initiative uses the same individual coverage break as team tanking', () => {
+  for (const [style, seconds] of [['enforcer', .45], ['opportunist', .75], ['guardian', .9], ['balanced', .6]] as const) {
+    const s = setup(style); s.tactics.defaults.engagementAgencyStrength = 1;
+    // Give every style a useful, punishable runner-protection opportunity.
+    s.b.tanking!.candidates[0].score = 10; s.b.tanking!.candidates[0].protection = 1;
+    Object.assign(s.snapshot.players.find(p => p.id === 'enemy-b')!.space!, { phase: 'recovering', attackIn: 2 });
+    s.run(); assert.equal(s.b.agency?.choice, 'initiative');
+    s.previous.set(s.b.botId, structuredClone(s.b));
+    s.b.tanking!.attack = false; s.b.tanking!.mode = 'cover'; s.b.tanking!.candidates[0].score = -Infinity;
+    s.run(); assert.equal(s.b.tanking!.mode, 'release');
+    assert.ok(Math.abs(s.memory.releaseRemaining.b - seconds) < 1e-8);
+    s.previous.set(s.b.botId, structuredClone(s.b)); s.b.tanking!.mode = 'cover';
+    tickTankingMemory(s.memory, .2); s.run();
+    assert.ok(Math.abs(s.memory.releaseRemaining.b - (seconds - .2)) < 1e-8, 'the break must not restart every refresh');
+  }
 });
 
 test('a separate initiative removes the superseded double-team preference', () => {

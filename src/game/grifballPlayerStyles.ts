@@ -92,6 +92,14 @@ export const GRIFBALL_ESCORT_POSITION_PREFERENCES = {
   guardian: { forward: -.75, width: 0, reason: 'Trail the team screen more closely, giving up some forward coverage.' },
 } satisfies Record<GrifballPlayerStyle, { forward: number; width: number; reason: string }>;
 
+/** Multipliers for tactical assignment clocks; weapon timing is unchanged. */
+export const GRIFBALL_ENGAGEMENT_PREFERENCES = {
+  balanced: { commit: 1, release: 1, reason: 'Use team commitment and coverage time.' },
+  enforcer: { commit: 1.5, release: .75, reason: 'Hold useful engagements longer and rejoin sooner, risking less coverage time.' },
+  opportunist: { commit: .5, release: 1.25, reason: 'Reconsider engagements sooner and take a longer coverage break, giving up sustained pressure.' },
+  guardian: { commit: .75, release: 1.5, reason: 'Rotate sooner and spend longer restoring coverage, giving up repeat pressure.' },
+} satisfies Record<GrifballPlayerStyle, { commit: number; release: number; reason: string }>;
+
 /** Score offsets and extra recovery time for the supporting tank. The original
  * 0.1 s recovery cushion and physical eligibility remain minimum requirements. */
 export const GRIFBALL_DOUBLE_TEAM_PREFERENCES = {
