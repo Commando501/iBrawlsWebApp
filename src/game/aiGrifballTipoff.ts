@@ -11,7 +11,9 @@ import { fieldDistance as distance, isSpaceSegmentOpen } from './grifballSpaceGe
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
 import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
-import { chooseTipoffScreen, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
+import { chooseTipoffScreen, tipoffScreenReadiness, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
+import { chooseTipoffCollector, type TipoffCollectorDecision } from './aiGrifballTipoffCollector';
+import { observedGrifballPickupHasPriority } from './aiGrifballPickupAgency';
 import { chooseTipoffTarget, type TipoffTargetDecision } from './aiGrifballTipoffTarget';
 import {
   resolveGrifballTipoffRecoveryAgency,
@@ -45,6 +47,7 @@ export interface TipoffOrder {
   recoveryAgency?: TipoffRecoveryAgencyDecision;
   screenSelection?: TipoffScreenDecision;
   targetSelection?: TipoffTargetDecision;
+  collectorSelection?: TipoffCollectorDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -95,7 +98,7 @@ export function tipoffPickupAllowed(
 ): boolean {
   const self = players.find((p) => p.id === a.botId),
     margin = a.tipoff?.agency?.pickupMargin ?? a.tuning?.tipoffPickupMargin ?? 0.35;
-  if (!self || !grounded(self)) return false;
+  if (!self || !grounded(self) || (a.tipoff?.collectorSelection && tipoffScreenReadiness(self) !== 'ready')) return false;
   const arrival = distance(pos, ball) / Math.max(0.1, self.space!.speed);
   return players
     .filter((p) => p.team !== a.team)
@@ -136,22 +139,69 @@ export function applyGrifballTipoff(
       ? Infinity
       : Math.max(0, p.space?.mobileIn ?? 0) + route.length / Math.max(0.1, p.space?.speed ?? 5.2);
   };
-  const collection = assignments.find((a) => a.role === 'retriever');
+  let collection = assignments.find((a) => a.role === 'retriever');
+  const baselineCollection = collection;
+  let collectorSelection: TipoffCollectorDecision | undefined;
+  if (collection && tuning.tipoffCollectorHandoffEnabled) {
+    const previousId =
+      [...previous.values()].find((a) => a.team === team && a.tipoff?.job === 'collector')?.botId ?? null;
+    collectorSelection = chooseTipoffCollector(
+      assignments.map((a) => {
+        const p = bot(a),
+          old = previous.get(a.botId)?.tipoff;
+        const arrival = travel(p, snapshot.ball);
+        let rejection: string | null = null;
+        if (tipoffScreenReadiness(p) !== 'ready') rejection = 'Ground mobility and a ready weapon are required.';
+        else if (!Number.isFinite(arrival)) rejection = 'No reachable route to the opening ball.';
+        else if (old?.job === 'reserve') rejection = 'Keep the rear reserve in coverage.';
+        else if (old?.job === 'screen' && old.attack) rejection = 'Keep the screen on its current challenge.';
+        else if (
+          old?.job !== 'collector' &&
+          resolveGrifballTipoffRecoveryAgency(
+            memory.recovery?.[team],
+            memory.elapsed,
+            tuning,
+            snapshot.tactics?.botStyles,
+            p.id,
+          )?.holding
+        )
+          rejection = 'Finish the personal regroup interval before collecting.';
+        else if (
+          observedGrifballPickupHasPriority(allies, p, snapshot.ball, (other) =>
+            Number.isFinite(routers.get(other.id)?.(snapshot.ball, true).length),
+          )
+        )
+          rejection = 'Observed human or neural pursuit has pickup priority.';
+        return { botId: p.id, arrival, rejection };
+      }),
+      collection.botId,
+      previousId,
+      tuning.tipoffCollectorAdvantage,
+    );
+    collection = assignments.find((a) => a.botId === collectorSelection!.selectedId);
+  }
   // The ordinary retriever selection has already yielded to observed pursuit.
   const collector = collection
     ? bot(collection)
-    : allies
-        .filter(
-          (p) =>
-            !p.scripted &&
-            (p.pickupRequested ||
-              (distance(p.pos, snapshot.ball) <= 10 &&
-                (snapshot.ball.x - p.pos.x) * p.vel.x + (snapshot.ball.z - p.pos.z) * p.vel.z >
-                  0.5 * distance(p.pos, snapshot.ball))),
-        )
-        .sort((a, b) => travel(a, snapshot.ball) - travel(b, snapshot.ball) || a.id.localeCompare(b.id))[0];
+    : // A nominal reference keeps the opening geometry available while every bot
+      // holds coverage. No collector job or pickup is issued without eligibility.
+      collectorSelection
+      ? bot(baselineCollection!)
+      : allies
+          .filter(
+            (p) =>
+              !p.scripted &&
+              (p.pickupRequested ||
+                (distance(p.pos, snapshot.ball) <= 10 &&
+                  (snapshot.ball.x - p.pos.x) * p.vel.x + (snapshot.ball.z - p.pos.z) * p.vel.z >
+                    0.5 * distance(p.pos, snapshot.ball))),
+          )
+          .sort((a, b) => travel(a, snapshot.ball) - travel(b, snapshot.ball) || a.id.localeCompare(b.id))[0];
   if (!collector) return false;
-  const pickupETA = grounded(collector) ? travel(collector, snapshot.ball) : Infinity;
+  const pickupETA =
+    grounded(collector) && (!collectorSelection || collectorSelection.selectedId === collector.id)
+      ? travel(collector, snapshot.ball)
+      : Infinity;
   const enemyAttackETA = Math.min(
     Infinity,
     ...enemies.map((p) => estimateSpaceAttackTime(p, snapshot.ball, routers.get(p.id)!(snapshot.ball, true).length)),
@@ -203,7 +253,8 @@ export function applyGrifballTipoff(
           remaining: recovering.startedAt + recovering.duration - memory.elapsed,
         }
       : undefined;
-  const contain = !!recovery || available.length < 3 || nearby.length > localAllies.length;
+  const contain =
+    !!recovery || collectorSelection?.selectedId === null || available.length < 3 || nearby.length > localAllies.length;
   const phase = recovery ? 'regroup' : claim ? 'claim' : contain ? 'contain' : 'contest';
   const slots = new Map<GrifballAssignment, FieldPoint>();
   if (collection) slots.set(collection, claim ? { ...snapshot.ball } : point(reach + 1.5, 0));
@@ -356,7 +407,7 @@ export function applyGrifballTipoff(
         {
           elapsed: memory.elapsed,
           seconds: tuning.tipoffTargetCommitSeconds,
-              agencyStrength: tuning.tipoffTargetCommitAgencyStrength,
+          agencyStrength: tuning.tipoffTargetCommitAgencyStrength,
           previous:
             oldOrder?.job === 'screen' &&
             oldOrder.phase === 'contest' &&
@@ -417,6 +468,7 @@ export function applyGrifballTipoff(
       ...(recovery ? { recovery } : {}),
       ...(recoveryAgency ? { recoveryAgency } : {}),
       ...(screenSelection ? { screenSelection } : {}),
+      ...(collectorSelection ? { collectorSelection } : {}),
       ...(a === screen && targetSelection ? { targetSelection } : {}),
       ...(agency
         ? {

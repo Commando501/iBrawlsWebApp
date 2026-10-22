@@ -92,7 +92,7 @@ test('schema 10 migrates timing off while keeping player preferences and team ov
   delete old.defaults.runnerClashEnabled; delete old.defaults.runnerClashLead; delete old.defaults.runnerClashReaction;
   old.defaults.passAgencyStrength = .8; old.botStyles.runner = 'guardian';
   const result = validateGrifballTactics(old);
-  assert.equal(result.schemaVersion, 38); assert.equal(result.defaults.runnerClashEnabled, false);
+  assert.equal(result.schemaVersion, 39); assert.equal(result.defaults.runnerClashEnabled, false);
   assert.equal(result.defaults.passAgencyStrength, .8); assert.equal(result.botStyles.runner, 'guardian');
   result.teams.red = { runnerClashEnabled: true, runnerClashReaction: .12 };
   assert.equal(resolveTeamTactics(result, 'red').runnerClashReaction, .12);
