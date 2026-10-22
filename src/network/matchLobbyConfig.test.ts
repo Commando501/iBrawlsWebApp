@@ -13,8 +13,26 @@ import {
   getMatchLobbyModeLabel,
   getMatchLobbyTargetLabel,
   normalizeMatchLobbyConfig,
+  reconcileMatchLobbyConfig,
   sanitizeLobbyPassword,
 } from './matchLobbyConfig';
+import { createBalancedMapSnapshot } from '../game/mapBalancing';
+
+test('repeated map snapshots preserve scene identity while changed geometry replaces it', () => {
+  const previous = normalizeMatchLobbyConfig({
+    gameMode: 'grifball', selectedMap: 'championship_stadium',
+    customMap: createBalancedMapSnapshot('championship_stadium', { mapScaleStadiumLength: 125 }),
+  });
+  const repeated = reconcileMatchLobbyConfig(previous, JSON.parse(JSON.stringify(previous)));
+  assert.equal(repeated.customMap, previous.customMap, 'late-join broadcasts must not remount running maps');
+  const newRules = reconcileMatchLobbyConfig(previous, { ...JSON.parse(JSON.stringify(previous)), winTarget: 10 });
+  assert.equal(newRules.winTarget, 10);
+  assert.equal(newRules.customMap, previous.customMap, 'rule updates preserve unchanged scene geometry');
+  const movedGoal = JSON.parse(JSON.stringify(previous));
+  movedGoal.customMap.objects[0].position.x += 1;
+  assert.notEqual(reconcileMatchLobbyConfig(previous, movedGoal).customMap, previous.customMap);
+  assert.equal(reconcileMatchLobbyConfig(previous, { selectedMap: 'hangar' }).customMap, null);
+});
 
 test('normalizeMatchLobbyConfig clamps lobby limits and applies mode defaults', () => {
   const ibrawls = normalizeMatchLobbyConfig({

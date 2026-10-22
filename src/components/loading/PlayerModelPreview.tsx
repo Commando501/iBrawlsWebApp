@@ -6,6 +6,7 @@ import { disposePreviewObject, getPreviewLoadoutSignature } from '../previewMode
 import type { VisualModelPolicy } from '../../model/modelSystem';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import { getV3GameplayRenderOptions } from '../v3/v3QualityTiers';
+import { createPlayerPreviewPreparation } from './preparePlayerPreview';
 
 interface PlayerModelPreviewProps {
   hue: number;
@@ -46,6 +47,15 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    // The fireteam list scrolls: clipped cards must not keep issuing WebGL work.
+    // Retain their assets and clock so scrolling back preserves the same preview.
+    let visible = typeof IntersectionObserver === 'undefined';
+    const visibilityObserver = typeof IntersectionObserver === 'undefined' ? null
+      : new IntersectionObserver(entries => {
+          visible = entries.some(entry => entry.isIntersecting);
+        });
+    visibilityObserver?.observe(container);
 
     const scene = new THREE.Scene();
     const width = container.clientWidth || 96;
@@ -97,16 +107,33 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
         currentLoadout = nextLoadout;
         currentLoadoutSignature = nextLoadoutSignature;
         buildCharacter(currentHue, currentLoadout);
+        void preparation.prepare(character!);
+        return;
       }
 
       const elapsed = clock.getElapsedTime();
       if (character) {
         character.rotation.y = -0.35 + Math.sin(elapsed * 0.9) * 0.12;
       }
-      renderer.render(scene, camera);
+      if (visible) renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(animate);
     };
-    animate();
+    const preparation = createPlayerPreviewPreparation({
+      renderer, scene, camera,
+      onReady: () => { animationFrameId = requestAnimationFrame(animate); },
+      onError: error => { console.warn('Player preview preparation failed:', error); },
+      dispose: () => {
+        if (character) {
+          scene.remove(character);
+          disposePreviewObject(character);
+          character = null;
+        }
+        renderer.dispose();
+        // Each mount owns its canvas; release the context before the match.
+        renderer.forceContextLoss();
+      },
+    });
+    void preparation.prepare(character!);
 
     const handleResize = () => {
       const nextWidth = container.clientWidth || width;
@@ -119,16 +146,12 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      visibilityObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
       }
-      if (character) {
-        scene.remove(character);
-        disposePreviewObject(character);
-        character = null;
-      }
-      renderer.dispose();
+      preparation.stop();
     };
   }, []);
 

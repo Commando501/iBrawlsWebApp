@@ -24,8 +24,12 @@ function harness() {
   const dependencies: NonNullable<Parameters<typeof initializeGrifballMountSceneForState>[1]> = {
     initializeScene: () => {
       const scene = new THREE.Scene(); const camera = new THREE.PerspectiveCamera();
+      scene.add(camera);
       const record = { scene, disposals: 0 }; scenes.push(record);
-      const renderer = { dispose: () => { record.disposals++; } } as THREE.WebGLRenderer;
+      const renderer = {
+        dispose: () => { record.disposals++; },
+        compileAsync: async () => camera,
+      } as unknown as THREE.WebGLRenderer;
       refs.scene = scene; refs.camera = camera; refs.renderer = renderer;
       return { scene, camera, renderer, isHangar: false };
     },
@@ -124,6 +128,71 @@ test('an already aborted mount never reports progress or allocates a renderer', 
     ...h.options, signal: controller.signal, onLoadingStage: () => assert.fail('stale progress'),
   }, h.dependencies), { name: 'AbortError' });
   assert.equal(h.scenes.length, 0);
+});
+
+test('loading prepares the whole arena, including hidden weapons, before returning the scene', async () => {
+  const h = harness();
+  let assetReady!: () => void, programsReady!: () => void, weaponBuilt!: () => void, compiling!: () => void;
+  const built = new Promise<void>(resolve => { weaponBuilt = resolve; });
+  const started = new Promise<void>(resolve => { compiling = resolve; });
+  const sword = new THREE.Group(); sword.visible = false;
+  sword.userData.assetReady = new Promise<void>(resolve => { assetReady = resolve; });
+  let compiled = false, completed = false;
+  h.dependencies.buildLocalPlayer = ({ camera, scene }) => {
+    camera.add(sword); h.refs.playerSword = sword;
+    h.refs.renderer!.compileAsync = (object, view, lighting) => {
+      assert.equal(object, scene, 'off-camera arena surfaces are included');
+      assert.equal(view, camera);
+      assert.equal(lighting, undefined, 'the arena itself supplies the lighting');
+      const objects: THREE.Object3D[] = [];
+      object.traverse(child => { objects.push(child); });
+      assert.ok(objects.includes(sword), 'hidden camera weapons are included');
+      assert.ok(objects.some(child => child.name === 'stadium_floor'));
+      assert.equal(sword.visible, false, 'warming must not equip or reveal weapons');
+      compiled = true; compiling();
+      return new Promise(resolve => { programsReady = () => resolve(camera); });
+    };
+    weaponBuilt();
+  };
+  const mounting = initializeGrifballMountSceneForState(h.options, h.dependencies).then(scene => {
+    completed = true; return scene;
+  });
+  await built;
+  assert.equal(compiled, false);
+  assert.equal(completed, false);
+  assetReady(); await started;
+  assert.equal(completed, false, 'match readiness must wait for GPU compilation');
+  programsReady(); await mounting;
+  assert.equal(sword.visible, false);
+  assert.equal(h.scenes[0].disposals, 0);
+});
+
+test('canceling shader preparation releases only the old renderer after its program polling finishes', async () => {
+  const h = harness(), controller = new AbortController();
+  let compiling!: () => void, finish!: () => void;
+  const started = new Promise<void>(resolve => { compiling = resolve; });
+  h.dependencies.buildLocalPlayer = ({ camera }) => {
+    h.refs.renderer!.compileAsync = () => {
+      compiling(); return new Promise(resolve => { finish = () => resolve(camera); });
+    };
+  };
+  const mounting = initializeGrifballMountSceneForState({ ...h.options, signal: controller.signal }, h.dependencies);
+  await started; controller.abort();
+  assert.equal(h.scenes[0].disposals, 0, 'do not invalidate programs still polled by Three');
+  const replacement = new THREE.Scene(); h.refs.scene = replacement;
+  finish(); await assert.rejects(mounting, { name: 'AbortError' });
+  assert.equal(h.scenes[0].disposals, 1);
+  assert.equal(h.refs.scene, replacement);
+});
+
+test('shader preparation failure cleans up the unfinished scene and preserves the error', async () => {
+  const h = harness(), failure = new Error('shader preparation failed');
+  h.dependencies.buildLocalPlayer = () => {
+    h.refs.renderer!.compileAsync = async () => { throw failure; };
+  };
+  await assert.rejects(initializeGrifballMountSceneForState(h.options, h.dependencies), error => error === failure);
+  assert.equal(h.scenes[0].disposals, 1);
+  assert.equal(h.refs.renderer, null);
 });
 
 function hangarHarness() {

@@ -83,6 +83,7 @@ const TEAM_STROKES: Record<string, string> = {
 };
 
 function resolveStoredMap(mapId: string, replay: ReplayFile | null): CustomMapData | null {
+  if (replay?.balancedMap) return replay.balancedMap;
   const premade = PREMADE_MAPS.find((map) => map.id === mapId);
   if (premade) return resolveChampionshipStadiumReplayLayout(premade, replay?.stadiumLayoutRevision);
   if (typeof localStorage === 'undefined') return null;

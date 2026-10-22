@@ -13,10 +13,10 @@ const desktopDevice: DeviceInfo = {
   os: 'desktop',
 };
 
-const renderLocalCarrierHud = (passCharge: number) => {
+const renderLocalCarrierHud = (passCharge: number, prepareForPlay = false) => {
   const stats: GameStats = {
     ...createInitialGameStats(90, 0),
-    activeWeapon: 'ball',
+    activeWeapon: prepareForPlay ? 'hammer' : 'ball',
     grifball: {
       phase: 'playing',
       blueGoals: 0,
@@ -28,14 +28,16 @@ const renderLocalCarrierHud = (passCharge: number) => {
       ballCarrierTeam: 'blue',
       winningTeam: null,
       localTeam: 'blue',
-      localCarrying: true,
+      localCarrying: !prepareForPlay,
       passCharge,
     },
   };
 
-  return renderToStaticMarkup(
+  const before = JSON.stringify(stats);
+  const markup = renderToStaticMarkup(
     <HUD
       stats={stats}
+      prepareForPlay={prepareForPlay}
       onPauseClick={() => {}}
       uiPositions={DEFAULT_DESKTOP_UI_POSITIONS}
       uiDefaultPositions={DEFAULT_DESKTOP_UI_POSITIONS}
@@ -48,6 +50,8 @@ const renderLocalCarrierHud = (passCharge: number) => {
       mobileRightJoystickActiveRef={{ current: false }}
     />
   );
+  assert.equal(JSON.stringify(stats), before, 'rendering must not change gameplay stats');
+  return markup;
 };
 
 test('local Grifball throw charge meter defaults below center with a larger rail', () => {
@@ -68,4 +72,14 @@ test('runner weapon panel identifies the ball and explains dropping to restore a
   assert.ok(markup.includes('PUNCH RECOVERY'));
   assert.ok(!markup.includes('Gravity Hammer'));
   assert.ok(!markup.includes('VERTICAL CRUSH:'));
+});
+
+test('loading prepares the complete runner HUD without exposing controls or changing the equipped weapon', () => {
+  const markup = renderLocalCarrierHud(0, true);
+  assert.ok(markup.includes('inert=""'));
+  assert.ok(markup.includes('aria-hidden="true"'));
+  assert.ok(markup.includes('Runner · Ball Equipped'));
+  assert.ok(markup.includes('Hold RMB Pass'));
+  assert.ok(markup.includes('width:100%'));
+  assert.ok(!markup.includes('Gravity Hammer'));
 });

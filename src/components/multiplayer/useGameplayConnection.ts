@@ -1,3 +1,4 @@
+import { parseGameplayMessage } from '../../network/parseGameplayMessage';
 import {
   useCallback,
   useEffect,
@@ -7,7 +8,7 @@ import {
 } from 'react';
 import type { CustomMapData, UniversalSettings } from '../../types';
 import type { MatchLobbyConfig } from '../../network/protocol';
-import { normalizeMatchLobbyConfig } from '../../network/matchLobbyConfig';
+import { normalizeMatchLobbyConfig, reconcileMatchLobbyConfig } from '../../network/matchLobbyConfig';
 import {
   MAX_MULTIPLAYER_PLAYERS,
   getConnectedMatchPlayerCount,
@@ -27,6 +28,9 @@ import {
   type GameplayConnectionStatus,
   type GameplayMultiplayerRole,
 } from './multiplayerConnectionConstants';
+
+import { createBalancedMapSnapshot } from '../../game/mapBalancing';
+import { getCachedLiveConfig } from '../../services/liveConfig';
 
 interface UseGameplayConnectionOptions {
   connectionMode: GameplayConnectionMode;
@@ -128,6 +132,7 @@ export function useGameplayConnection({
   // Own the socket before its handshake completes so Cancel can also stop a
   // pending connection. Only this socket may update the current session.
   const connectionSocketRef = useRef(multiplayerSocket);
+  const appliedLobbyConfigRef = useRef(matchLobbyConfig);
 
   useEffect(() => () => {
     const socket = connectionSocketRef.current;
@@ -142,7 +147,8 @@ export function useGameplayConnection({
   }, [isMultiplayer, multiplayerRole, multiplayerSocket]);
 
   const applyLobbyConfig = useCallback((incoming: Partial<MatchLobbyConfig> | null | undefined) => {
-    const normalized = normalizeMatchLobbyConfig(incoming);
+    const normalized = reconcileMatchLobbyConfig(appliedLobbyConfigRef.current, incoming);
+    appliedLobbyConfigRef.current = normalized;
     setMatchLobbyConfig(normalized);
     setSelectedMap(normalized.selectedMap);
     setLobbyCustomMapData(normalized.customMap ?? null);
@@ -220,7 +226,7 @@ export function useGameplayConnection({
     const handleMultiplayerMessage = (event: MessageEvent) => {
       if (connectionSocketRef.current !== multiplayerSocket) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = parseGameplayMessage(event);
         if (data.type === 'sync' && data.action === 'chat') {
           setChatMessages(prev => {
             if (prev.some(m => m.id === data.id)) return prev;
@@ -317,7 +323,7 @@ export function useGameplayConnection({
           if (data.selectedMap) {
             setSelectedMap(data.selectedMap);
           }
-          if (data.customMap) {
+          if (data.customMap && !data.lobbyConfig) {
             setLobbyCustomMapData(data.customMap);
           }
           if (data.lobbyConfig) {
@@ -461,6 +467,7 @@ export function useGameplayConnection({
     if (overrideCode) {
       setHostIdCode(overrideCode);
     }
+    const outgoingMapId = lobbyConfigOverride?.selectedMap ?? selectedMap;
     const outgoingLobbyConfig = normalizeMatchLobbyConfig({
       ...matchLobbyConfig,
       gameMode: adminSettings.gameMode ?? 'sandbox',
@@ -469,9 +476,12 @@ export function useGameplayConnection({
         ? adminSettings.grifballGoalTarget
         : adminSettings.iBrawlsKillTarget,
       ...lobbyConfigOverride,
-      selectedMap: lobbyConfigOverride?.selectedMap ?? selectedMap,
-      customMap: lobbyConfigOverride?.customMap ?? lobbyCustomMapData,
+      selectedMap: outgoingMapId,
+      customMap: outgoingMapId === 'custom_file' ? (lobbyConfigOverride?.customMap ?? lobbyCustomMapData) : null,
     });
+    // Freeze published geometry in the lobby payload, including for late joiners.
+    const balancedMap = createBalancedMapSnapshot(outgoingLobbyConfig.selectedMap, getCachedLiveConfig()?.settings ?? {});
+    if (balancedMap) outgoingLobbyConfig.customMap = balancedMap;
     setMatchLobbyConfig(outgoingLobbyConfig);
 
     const activeConnectionMode = connectionModeOverride ?? connectionMode;
@@ -503,7 +513,7 @@ export function useGameplayConnection({
     const handleHostMessage = (event: MessageEvent) => {
       if (connectionSocketRef.current !== ws) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = parseGameplayMessage(event);
         if (data.type === 'hosted') {
           isMultiplayerRef.current = true;
           console.log('Successfully hosted lobby inside room of keys:', data.keys);
@@ -700,7 +710,7 @@ export function useGameplayConnection({
     const handleJoinMessage = (event: MessageEvent) => {
       if (connectionSocketRef.current !== ws) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = parseGameplayMessage(event);
         if (data.type === 'connected') {
           isMultiplayerRef.current = true;
           ws.removeEventListener('message', handleJoinMessage);
@@ -724,7 +734,9 @@ export function useGameplayConnection({
             beginMatchFromLobbyConfig(data.lobbyConfig);
           }
 
-          setTimeout(() => {
+          // Current relays include the immutable map in the handshake. Asking
+          // again broadcasts redundant snapshots to every existing participant.
+          if (!data.lobbyConfig) setTimeout(() => {
             if (connectionSocketRef.current === ws && ws.readyState === WebSocket.OPEN) {
               console.log('Sending request_map to host...');
               ws.send(JSON.stringify({

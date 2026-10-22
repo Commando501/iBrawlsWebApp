@@ -1,5 +1,6 @@
 import { allowGrifballMessage } from '../../src/network/grifballSync';
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
+import { sanitizeMapScaleSetting } from '../../shared/mapBalanceSettings';
 import {
   handleAccountRequest,
   requireSessionAccountId,
@@ -147,7 +148,7 @@ function sanitizeConfigSettings(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object") return {};
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    if (LIVE_CONFIG_KEY_SET.has(key)) out[key] = value;
+    if (LIVE_CONFIG_KEY_SET.has(key)) out[key] = sanitizeMapScaleSetting(key, value);
   }
   return out;
 }

@@ -6,6 +6,7 @@ import { resolveDirectionalSpeedMultiplier } from './runnerBallSettings';
 import type { UniversalSettings } from '../types';
 import { chooseRunnerPunchClash, type RunnerSwordThreat, type RunnerClashDecision } from './aiGrifballRunnerClash';
 import type { GrifballPlayerStyle } from './grifballPlayerStyles';
+import { tipoffPickupAllowed } from './aiGrifballTipoff';
 
 export interface GrifballGroundMovement {
   velocity: FieldPoint;
@@ -36,6 +37,8 @@ export function resolveGrifballSupportSteering({ assignment, pos, allies, player
   separation: number; speed: number; retrySpeed?: number; dt: number;
 }): (GrifballGroundMovement & { pickupRequested: boolean }) | null {
   if (!assignment || assignment.role === 'runner' || selectGrifballAssignmentThreat(assignment, pos, players)) return null;
+  if (assignment.tipoff?.job === 'collector' && assignment.role === 'retriever' && !tipoffPickupAllowed(assignment, pos, players, ball))
+    return { velocity: { x: 0, z: 0 }, pickupRequested: false };
   const { geometry, space } = assignment;
   const waypoint = geometry && space ? getGrifballSpaceWaypoint(geometry, pos, space) : null;
   if (space && !waypoint) return { velocity: { x: 0, z: 0 }, pickupRequested: !heldByAnyone && assignment.role === 'retriever' };

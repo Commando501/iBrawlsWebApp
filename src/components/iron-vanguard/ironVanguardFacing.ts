@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { worldPositionFromMatrix, worldQuaternionFromMatrix } from "./ironVanguardWorldPose";
 import {
   solveLimb,
   type VanguardMovementInput,
@@ -168,13 +169,13 @@ export function applyVanguardTurnFeet(
         bones[side + "Foot"],
         target,
         rotation,
-        bones[side + "Leg"].getWorldPosition(new THREE.Vector3()),
+        worldPositionFromMatrix(bones[side + "Leg"]),
       );
     }
   }
   state.feet = ["LeftFoot", "RightFoot"].map((name) => ({
-    position: bones[name].getWorldPosition(new THREE.Vector3()),
-    rotation: bones[name].getWorldQuaternion(new THREE.Quaternion()),
+    position: worldPositionFromMatrix(bones[name]),
+    rotation: worldQuaternionFromMatrix(bones[name]),
   }));
   if (turn && turn.time >= TURN_DURATION) state.turn = undefined;
 }
@@ -187,9 +188,7 @@ function rotateBone(
 ) {
   if (Math.abs(angle) < 1e-8) return;
   const before = bone.matrixWorld.clone().invert();
-  const parent = bone
-    .parent!.getWorldQuaternion(new THREE.Quaternion())
-    .invert();
+  const parent = worldQuaternionFromMatrix(bone.parent!).invert();
   bone.quaternion.premultiply(
     new THREE.Quaternion().setFromAxisAngle(
       axis.clone().applyQuaternion(parent),
@@ -224,7 +223,7 @@ export function applyVanguardAim(
   );
   const torsoPitch = lookPitch * 0.5;
   const right = new THREE.Vector3(1, 0, 0)
-    .applyQuaternion(frame.getWorldQuaternion(new THREE.Quaternion()))
+    .applyQuaternion(worldQuaternionFromMatrix(frame))
     .applyAxisAngle(up, twist);
   for (const [name, weight] of [
     ["Spine02", 0.35],

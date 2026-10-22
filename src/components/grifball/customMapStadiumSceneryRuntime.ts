@@ -7,6 +7,7 @@ import { applyStadiumWorldUVs, createStadiumCeramicMaterial, createStadiumMateri
 import { type GrifballThreeRefs } from './threeRefs';
 import { createStadiumSurfaceDetails } from './stadiumSurfaceDetails';
 import { createStadiumLightShaftMaterial } from './stadiumLighting';
+import { mapScaleFactors } from '../../game/mapBalancing';
 
 export function buildCustomMapStadiumSceneryForRefs({
   refs,
@@ -25,7 +26,12 @@ export function buildCustomMapStadiumSceneryForRefs({
 
   const stadiumGroup = new THREE.Group();
   stadiumGroup.name = 'stadium_scenery';
-  const half = getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents);
+  const factors = mapScaleFactors(activeCustomMap.balanceScale);
+  const scaledHalf = getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents);
+  // Build every connected part in authored coordinates, then transform the whole
+  // assembly. Rotated rails, seats, lights, panels and their seams stay aligned.
+  const half = { x: scaledHalf.x / factors.x, z: scaledHalf.z / factors.z };
+  stadiumGroup.scale.set(factors.x, factors.y, factors.z);
   const bx = half.x;
   const bz = half.z;
 

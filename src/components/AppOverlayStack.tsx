@@ -1,4 +1,5 @@
 import React from 'react';
+import { GameStatsView, type GameStatsStore } from './hud/useCurrentGameStats';
 import {
   EDGE_LOW_FPS_SUSTAINED_MS,
   EDGE_LOW_FPS_THRESHOLD,
@@ -44,6 +45,7 @@ interface AppOverlayStackProps {
   };
   pause: {
     isVisible: boolean;
+    prepareDuringLoad: boolean;
     props: PauseOverlayProps;
   };
   uiAdjustment: {
@@ -70,7 +72,7 @@ interface AppOverlayStackProps {
   };
   edgeWarning: {
     isVisible: boolean;
-    currentFps?: EdgePerformanceWarningModalProps['currentFps'];
+    statsStore: GameStatsStore;
     edgeLowFpsSampleDurationMs: EdgePerformanceWarningModalProps['edgeLowFpsSampleDurationMs'];
     graphicsCheck: EdgePerformanceWarningModalProps['graphicsCheck'];
     onDismiss: EdgePerformanceWarningModalProps['onDismiss'];
@@ -110,7 +112,11 @@ export function AppOverlayStack({
         <TerminatedOverlay onReboot={terminated.onReboot} />
       )}
 
-      {pause.isVisible && (
+      {/* Paint the unchanged menu beneath the loading overlay once, so its
+          browser GPU effects are ready when the match ends or the player pauses.
+          It cannot receive input or accessibility focus during preparation. */}
+      {(pause.isVisible || pause.prepareDuringLoad) && (
+        <div className="contents" inert={pause.prepareDuringLoad} aria-hidden={pause.prepareDuringLoad}>
         <PauseOverlay
           showAdminPanel={pause.props.showAdminPanel}
           showLightingMenu={pause.props.showLightingMenu}
@@ -166,6 +172,7 @@ export function AppOverlayStack({
           onCloseKeybindings={pause.props.onCloseKeybindings}
           onCloseLighting={pause.props.onCloseLighting}
         />
+        </div>
       )}
 
       {uiAdjustment.isVisible && uiAdjustment.position && (
@@ -235,14 +242,16 @@ export function AppOverlayStack({
       )}
 
       {edgeWarning.isVisible && (
+        <GameStatsView store={edgeWarning.statsStore}>{stats => (
         <EdgePerformanceWarningModal
-          currentFps={edgeWarning.currentFps}
+          currentFps={stats.fps}
           edgeLowFpsSampleDurationMs={edgeWarning.edgeLowFpsSampleDurationMs}
           graphicsCheck={edgeWarning.graphicsCheck}
           lowFpsThreshold={EDGE_LOW_FPS_THRESHOLD}
           sustainedMs={EDGE_LOW_FPS_SUSTAINED_MS}
           onDismiss={edgeWarning.onDismiss}
         />
+        )}</GameStatsView>
       )}
 
       {graphicsWarning.isVisible && (

@@ -326,6 +326,23 @@ test('texture readiness is bounded and late success cannot resize a terminal fal
   await waitForStadiumTextures(0);
 });
 
+test('slow roster loading preserves full textures beyond the former eight-second deadline', async t => {
+  const requests = mockTextureLoading(t);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const material = createStadiumMaterial('concrete');
+  t.after(() => disposeMaterial(material));
+  let ready = false;
+  const pending = waitForStadiumTextures().then(() => { ready = true; });
+  t.mock.timers.tick(9000);
+  await Promise.resolve();
+  assert.equal(ready, false);
+  const image = { width: 2048, height: 1024 } as HTMLImageElement;
+  requests.forEach(request => request.complete(image));
+  await pending;
+  assert.equal(material.map!.image, image);
+  assert.equal(material.normalMap!.image, image);
+});
+
 test('disposing the last texture owner releases pending readiness immediately', async t => {
   mockTextureLoading(t);
   const material = createStadiumMaterial('concrete');

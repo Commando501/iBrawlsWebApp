@@ -48,6 +48,7 @@ export function resolveTopDownCustomMap({
   if (customMap && (selectedMap === 'custom_file' || customMap.id === mapId)) {
     return { mapId, map: customMap };
   }
+  if (replayData?.balancedMap) return { mapId, map: replayData.balancedMap };
 
   const premade = PREMADE_MAPS.find((map) => map.id === mapId);
   if (premade) return { mapId, map: replayData ? resolveChampionshipStadiumReplayLayout(premade, replayData.stadiumLayoutRevision) : premade };

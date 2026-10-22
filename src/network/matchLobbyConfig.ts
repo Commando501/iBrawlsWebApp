@@ -83,6 +83,18 @@ export const sanitizeLobbyPassword = (password: unknown): string | undefined => 
   return normalized.length > 0 ? normalized : undefined;
 };
 
+/** Repeated relay snapshots must not rebuild a running Three.js map. */
+export const reconcileMatchLobbyConfig = (
+  previous: MatchLobbyConfig | null,
+  incoming: Partial<MatchLobbyConfig> | null | undefined,
+): MatchLobbyConfig => {
+  const next = normalizeMatchLobbyConfig(incoming);
+  if (previous?.customMap && JSON.stringify(previous.customMap) === JSON.stringify(next.customMap)) {
+    next.customMap = previous.customMap;
+  }
+  return next;
+};
+
 export const createMatchLobbySummary = (
   config: MatchLobbyConfig,
   {

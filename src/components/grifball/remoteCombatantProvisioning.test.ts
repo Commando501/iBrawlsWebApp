@@ -6,6 +6,9 @@ import { createOfflineBotCombatant, createRemoteCombatant } from '../../game/ros
 import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { createOrUpdateRemoteCombatantForState } from './remoteCombatantProvisioning';
+import { balanceMap, BALANCEABLE_MAPS } from '../../game/mapBalancing';
+import { syncMultiplayerRuntimeModeForState } from './multiplayerStateRuntime';
+import { resolvePlayerCombatantCollisionsForState } from './playerCollisionSync';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { ENEMY_ARMOR_COLOR, FRIENDLY_ARMOR_COLOR, getCombatantTeamArmorState } from './combatantTeamArmor';
 
@@ -49,6 +52,32 @@ const getAppliedLoadout = (
   assert.ok(meshes);
   return JSON.parse(meshes.group.userData.appliedLoadoutKey);
 };
+
+test('scaled Grifball late joiners start at their owning client team spawn without pushing existing players', () => {
+  const map = balanceMap(BALANCEABLE_MAPS[0], { length: 125, width: 75, height: 60 });
+  const settings = { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball' as const };
+  const { state, refs } = createStateAndRefs(settings);
+  state.isMultiplayer = true;
+  state.multiplayerRole = 'host';
+  syncMultiplayerRuntimeModeForState({ state, refs, isMultiplayer: true, multiplayerRole: 'host',
+    multiplayerSpawnSlot: 0, activeCustomMap: map, spawnPoints: [], replayActive: false });
+  const original = state.playerPos.clone();
+  for (let slot = 1; slot < 8; slot++) {
+    const owner = createStateAndRefs(settings);
+    syncMultiplayerRuntimeModeForState({ ...owner, isMultiplayer: true, multiplayerRole: 'client',
+      multiplayerSpawnSlot: slot, activeCustomMap: map, spawnPoints: [], replayActive: false });
+    createOrUpdateRemoteCombatantForState({ state, refs, clientId: `peer-${slot}`,
+      data: { spawnSlot: slot, role: 'client', hp: 1, visualModelPolicy: 'v1' },
+      opponentClientId: '', activeCustomMap: map, spawnPoints: [], constrainCombatantToArena: () => {} });
+    const remote = state.otherPlayers.get(`peer-${slot}`)!;
+    assert.deepEqual(remote.pos.toArray(), owner.state.playerPos.toArray(), `slot ${slot}`);
+    assert.equal(remote.team, owner.state.localPlayerTeam);
+    const positions = [...state.otherPlayers.values()].map(p => p.pos.toArray());
+    resolvePlayerCombatantCollisionsForState({ state, mainAI: undefined });
+    assert.deepEqual(state.playerPos.toArray(), original.toArray(), `slot ${slot} must not push host`);
+    assert.deepEqual([...state.otherPlayers.values()].map(p => p.pos.toArray()), positions);
+  }
+});
 
 test('offline AI roster visuals stay on the V1 model system', () => {
   const { state, refs } = createStateAndRefs();

@@ -8,6 +8,8 @@ import { disposeStadiumResources } from './stadiumResourceDisposal';
 import { buildCustomMapStadiumSceneryForRefs } from './customMapStadiumSceneryRuntime';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import type { CustomMapData } from '../../types';
+import { balanceMap, BALANCEABLE_MAPS, mapScaleFactors } from '../../game/mapBalancing';
+import { buildCustomMapBaseArenaForRefs } from './customMapArenaRuntime';
 import {
   attachStadiumArchitecture, createStadiumArchitectureInstances, createStadiumArchitectureSourceCache,
   getStadiumArchitecturePlacements, STADIUM_ARCHITECTURE_PARTS,
@@ -27,6 +29,48 @@ function sourceKit() {
   }
   return root;
 }
+
+test('balanced stadium meshes preserve every assembled joint and floor contact at extreme independent scales', async t => {
+  t.mock.method(THREE.ImageLoader.prototype, 'load', () => ({} as HTMLImageElement));
+  t.mock.method(GLTFLoader.prototype, 'loadAsync', async () => ({ scene: sourceKit() }));
+  const base = BALANCEABLE_MAPS[0];
+  const build = async (map: CustomMapData) => {
+    const refs = createInitialGrifballThreeRefs();
+    refs.scene = new THREE.Scene();
+    refs.scene.userData.environmentQuality = getEnvironmentQualityProfile('low');
+    buildCustomMapBaseArenaForRefs({ refs, activeCustomMap: map });
+    const handle = buildCustomMapStadiumSceneryForRefs({ refs, activeCustomMap: map, quality: getEnvironmentQualityProfile('low') })!;
+    await handle.ready;
+    refs.scene.updateMatrixWorld(true);
+    const meshes: THREE.Mesh[] = [];
+    refs.scene.getObjectByName('stadium_scenery')!.traverse(node => { if (node instanceof THREE.Mesh) meshes.push(node); });
+    return { refs, meshes, handle };
+  };
+  const original = await build(base);
+  for (const scale of [{ length: 50, width: 200, height: 50 }, { length: 200, width: 50, height: 200 }, { length: 125, width: 75, height: 60 }]) {
+    const map = balanceMap(base, scale);
+    const current = await build(map);
+    const factors = mapScaleFactors(scale);
+    const matrix = new THREE.Matrix4().makeScale(factors.x, factors.y, factors.z);
+    assert.equal(current.meshes.length, original.meshes.length, 'same assemblies at every scale');
+    current.meshes.forEach((mesh, index) => {
+      const expected = matrix.clone().multiply(original.meshes[index].matrixWorld);
+      mesh.matrixWorld.elements.forEach((value, i) => assert.ok(Math.abs(value - expected.elements[i]) < 1e-8, `joint ${index}, component ${i}`));
+    });
+    for (const object of map.objects) {
+      const actual = new THREE.Box3().setFromObject(current.refs.scene!.getObjectByName(object.id)!);
+      const expected = new THREE.Box3().setFromObject(original.refs.scene!.getObjectByName(object.id)!).applyMatrix4(matrix);
+      assert.ok(actual.min.distanceTo(expected.min) < 1e-6 && actual.max.distanceTo(expected.max) < 1e-6, 'compound goal assembly is transformed without size clamps');
+      assert.ok(actual.min.y >= -1e-5, 'goal plate does not sink into the floor');
+    }
+    const floor = new THREE.Box3().setFromObject(current.refs.scene!.getObjectByName('stadium_floor')!);
+    assert.ok(Math.abs(floor.max.y) < 1e-6, 'floor top stays at y=0');
+    current.handle.cancel();
+    disposeStadiumResources(current.refs.scene);
+  }
+  original.handle.cancel();
+  disposeStadiumResources(original.refs.scene);
+});
 
 test('architecture cache coalesces concurrent requests and retries failed loads independently by quality', async () => {
   const kit = sourceKit();

@@ -1,3 +1,4 @@
+import { parseGameplayMessage } from '../../network/parseGameplayMessage';
 import { receiveOnlineGrifballMessage } from './onlineGrifballRuntime';
 import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
 import { resolveCombatHitDamageForState } from './combatDamage';
@@ -78,7 +79,7 @@ export function createMultiplayerSyncMessageHandler({
 
   return (event: MessageEvent) => {
     try {
-      const data = JSON.parse(event.data);
+      const data = parseGameplayMessage(event);
       const state = stateRef.current;
 
       if (data.type === 'connected') {

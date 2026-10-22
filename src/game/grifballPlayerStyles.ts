@@ -47,6 +47,22 @@ export const GRIFBALL_PASS_PREFERENCES = {
   guardian: 'Favor larger pickup and attack margins for the receiver.',
 } satisfies Record<GrifballPlayerStyle, string>;
 
+/** Seconds of preference in a closely matched ordinary ground-ball assignment. */
+export const GRIFBALL_PICKUP_PREFERENCES = {
+  balanced: { bonus: 0, needsOpening: false, reason: 'Use team arrival and recovery commitment.' },
+  enforcer: { bonus: .15, needsOpening: false, reason: 'Claim closely matched pickups, giving up some screening time.' },
+  opportunist: { bonus: .25, needsOpening: true, reason: 'Claim pickups with a clear attack window, giving up another support job.' },
+  guardian: { bonus: -.15, needsOpening: false, reason: 'Yield marginal pickups to a similarly useful teammate and keep coverage.' },
+} satisfies Record<GrifballPlayerStyle, { bonus: number; needsOpening: boolean; reason: string }>;
+
+/** Metres relative to an ordinary loose-ball lateral cover slot. */
+export const GRIFBALL_PICKUP_SUPPORT_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team pickup-support position.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Support closer to the pickup, giving up some goal-side depth.' },
+  opportunist: { depth: 0, width: 1.25, reason: 'Support from a wider position, accepting a longer return to the pickup.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold deeper pickup coverage, giving up some immediate pressure.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 /** Small execution preferences in seconds, independent of combat difficulty.
  * Earlier commitment can be wasted; later commitment leaves less timing margin. */
 export const GRIFBALL_CLASH_PREFERENCES = {
@@ -124,6 +140,33 @@ export const GRIFBALL_DOUBLE_TEAM_PREFERENCES = {
   opportunist: { threshold: 0, recovery: .15, reason: 'Wait for a longer punish window, passing up brief openings.' },
   guardian: { threshold: .75, recovery: .1, reason: 'Require more value and recovery time before leaving coverage.' },
 } satisfies Record<GrifballPlayerStyle, { threshold: number; recovery: number; reason: string }>;
+
+/** Metres relative to the reserved last-defender position, while retaining the
+ * same timely ground-route cut. Width shades the nearest goal-threatening escort. */
+export const GRIFBALL_SAFETY_POSITION_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team last-defender position.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Hold a tighter last-defender line, giving up some recovery depth.' },
+  opportunist: { depth: 0, width: .75, reason: 'Shade toward a nearby escort flank while retaining the runner cut.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold deeper goal-side coverage, giving up some forward pressure.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
+/** Seconds of pickup caution and extra combat timing cushion. Challenge caution
+ * can only restrict the team's existing permission; it cannot earn another tank. */
+export const GRIFBALL_TIPOFF_PREFERENCES = {
+  balanced: { pickup: 0, challenge: 0, reason: 'Use team opening pickup and challenge timing.' },
+  enforcer: { pickup: -.1, challenge: 0, reason: 'Take tighter opening pickups, accepting less time before an enemy attack.' },
+  opportunist: { pickup: .1, challenge: .15, reason: 'Wait for a clearer pickup or combat window, passing up brief opportunities.' },
+  guardian: { pickup: .25, challenge: .3, reason: 'Require more time to spare before collecting or challenging, giving up opening pressure.' },
+} satisfies Record<GrifballPlayerStyle, { pickup: number; challenge: number; reason: string }>;
+
+/** Metres relative to a passive opening lane. These preferences cannot move the
+ * collector, the rear reserve or a screen already committed to a challenge. */
+export const GRIFBALL_TIPOFF_POSITION_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Use the team opening lane.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Cover slightly farther forward, giving up some recovery depth.' },
+  opportunist: { depth: 0, width: 1.25, reason: 'Offer a wider opening lane, accepting a longer return to the ball.' },
+  guardian: { depth: 1.25, width: 0, reason: 'Hold a deeper opening lane, giving up some forward support.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
 
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {

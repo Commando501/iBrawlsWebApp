@@ -1,6 +1,7 @@
 import React from 'react';
 import { LiveConfig } from '../services/liveConfig';
 import { AccountInfo } from '../services/account';
+import { MapBalancer } from './admin/MapBalancer';
 
 /**
  * Admin Dashboard — an admin-only, full-screen control surface for governing
@@ -118,6 +119,8 @@ const AdminDashboard: React.FC<Props> = ({
           Official Multiplayer Preset and pushed to every peer-to-peer match (live tuning). Player
           identity (name/hue) is never included.
         </p>
+
+        <MapBalancer settings={settings} onSettingChange={onSettingChange} multiplayerPreset={multiplayerPreset} onPublish={onPublish} isPublishing={isPublishing} publishStatus={publishStatus} />
 
         {/* 1. Multiplayer Game Mechanics — publish + full mechanic dials */}
         <div className={cardCls}>

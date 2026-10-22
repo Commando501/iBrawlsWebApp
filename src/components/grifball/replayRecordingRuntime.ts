@@ -9,7 +9,7 @@ import { MAIN_AI_ID } from '../../game/roster';
 import { CHAMPIONSHIP_STADIUM_LAYOUT_REVISION } from '../../game/championshipStadiumLayout';
 import { maybeSendMatchTelemetry } from '../../services/matchTelemetry';
 import { maybeContributeReplay } from '../../services/replayUpload';
-import { type ReplayFile, type ReplayFrame, type UniversalSettings } from '../../types';
+import { type CustomMapData, type ReplayFile, type ReplayFrame, type UniversalSettings } from '../../types';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import { sanitizeCharacterLoadoutForNetwork } from '../customArmor';
 import type { CharacterLoadout } from '../VoxelModels';
@@ -43,6 +43,7 @@ export function initializeReplayRecordingForState({
   matchKillsToWin,
   visualModelPolicy,
   playerLoadout,
+  activeCustomMap,
 }: {
   state: GrifballRuntimeState;
   replayData: ReplayFile | null;
@@ -57,6 +58,7 @@ export function initializeReplayRecordingForState({
   matchKillsToWin?: number;
   visualModelPolicy?: VisualModelPolicy | null;
   playerLoadout?: CharacterLoadout;
+  activeCustomMap?: CustomMapData | null;
 }): void {
   if (replayData || replayRecordingRef.current) return;
 
@@ -75,6 +77,7 @@ export function initializeReplayRecordingForState({
     playerName: adminSettings.playerName || 'Blue (You)',
     opponentName: initialOpponentName,
     mapType: (selectedMap || 'hangar') as ReplayFile['mapType'],
+    ...(activeCustomMap?.balanceScale ? { balancedMap: structuredClone(activeCustomMap) } : {}),
     ...(selectedMap === 'championship_stadium' ? { stadiumLayoutRevision: CHAMPIONSHIP_STADIUM_LAYOUT_REVISION } : {}),
     mode: isTournament ? 'tournament' : 'sandbox',
     gameMode: adminSettings.gameMode ?? 'sandbox',
