@@ -49,6 +49,7 @@ function trace(
   laneStyle?: GrifballPlayerStyle,
   regroup = false,
   recoveryStyle?: GrifballPlayerStyle,
+  handoff?: boolean,
 ) {
   const id = main && !laneStyle ? 'main_ai' : 'collector',
     screenId = main && laneStyle ? 'main_ai' : 'screen',
@@ -67,6 +68,7 @@ function trace(
     tankingEnabled: false,
     passingEnabled: false,
     tipoffRegroupSeconds: regroup ? 0.5 : 0,
+    tipoffScreenHandoffEnabled: handoff ?? false,
   });
   state.grifballTactics.teams.red = { tipoffSpacing: 7 };
   if (style) {
@@ -166,6 +168,7 @@ function trace(
   let regroupFrames = 0,
     resumedFrames = 0;
   let personalRecoveryFrames = 0;
+  let handoffFrames = 0;
   let receipt = 0,
     applied = 0,
     moved = 0,
@@ -175,6 +178,14 @@ function trace(
   // Opponents remain stationary. Both engines independently plan and execute
   // every friendly ground order through actual pickup and the next possession.
   for (let tick = 1; tick <= 180; tick++) {
+    if (handoff !== undefined && tick >= 5 && tick <= 20) {
+      // Controlled visible recovery in both hosts. The resulting role, real
+      // steering and pickup are independently executed below.
+      other.weaponState = tick < 20 ? 'recovering' : 'idle';
+      other.weaponTimer = tick < 20 ? sim.settings.hammerReloadTime : 0;
+      target.weaponState = tick < 20 ? 'recovering' : 'ready';
+      target.weaponTimer = 0;
+    }
     if (regroup && tick === 5) {
       // Controlled casualty; each real snapshot adapter must omit the actor and
       // independently trigger recovery. This is not a claim about kill rates.
@@ -191,6 +202,11 @@ function trace(
     updateGrifballTeamPlanForState(state, dt, goal, f.map);
     updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics }), dt);
     const orders = [...plan.assignments.values()].filter((a) => a.team === team);
+    if (handoff && tick >= 5) {
+      assert.equal(plan.assignments.get('other')!.tipoff!.job, 'screen');
+      assert.equal(plan.assignments.get(screenId)!.tipoff!.job, 'support');
+      handoffFrames++;
+    }
     if (laneStyle) {
       assert.ok(!plan.assignments.get(id)!.tipoff!.positioning);
       assert.ok(!plan.assignments.get('back')!.tipoff!.positioning);
@@ -353,8 +369,21 @@ function trace(
     regroupFrames,
     resumedFrames,
     personalRecoveryFrames,
+    handoffFrames,
   };
 }
+
+for (const main of [false, true])
+  for (const mirror of [false, true])
+    test(`live/sim screen handoff executes new support lanes through pickup ${main}/${mirror}`, () => {
+      const baseline = trace(main, mirror, false, undefined, 'balanced', false, undefined, false);
+      const handoff = trace(main, mirror, true, undefined, 'balanced', false, undefined, true);
+      assert.ok(handoff.handoffFrames > 0);
+      assert.notDeepEqual(handoff.screenPositions[10], baseline.screenPositions[10]);
+      assert.notDeepEqual(handoff.lanePositions[10], baseline.lanePositions[10]);
+      assert.equal(handoff.holder, baseline.holder);
+      assert.equal(handoff.receipt, baseline.receipt, 'handoff cannot delay a safe pickup');
+    });
 
 for (const main of [false, true])
   for (const mirror of [false, true])
@@ -495,6 +524,7 @@ for (const [assigned, regroupCombat] of [
             }
             f.state.grifballTactics = openingTactics();
             f.state.grifballTactics.defaults.tipoffEnabled = true;
+            f.state.grifballTactics.defaults.tipoffScreenHandoffEnabled = true;
             f.state.grifballTactics.defaults.tipoffRegroupSeconds = regroupCombat ? 0.25 : 0;
             f.state.grifballTactics.defaults.tipoffRecoveryAgencyStrength = regroupCombat ? 1 : 0;
             f.state.grifballTactics.defaults.tipoffAgencyStrength = 1;

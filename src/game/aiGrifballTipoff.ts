@@ -11,6 +11,7 @@ import { fieldDistance as distance, isSpaceSegmentOpen } from './grifballSpaceGe
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
 import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
+import { chooseTipoffScreen, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
 import {
   resolveGrifballTipoffRecoveryAgency,
   type TipoffRecovery,
@@ -41,6 +42,7 @@ export interface TipoffOrder {
   positioning?: TipoffPositionDecision;
   recovery?: TipoffRecoveryDecision;
   recoveryAgency?: TipoffRecoveryAgencyDecision;
+  screenSelection?: TipoffScreenDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -219,7 +221,22 @@ export function applyGrifballTipoff(
       resolveGrifballTipoffRecoveryAgency(recovering, memory.elapsed, tuning, snapshot.tactics?.botStyles, a.botId),
     ]),
   );
-  const screen = reserve && !contain ? remaining.find((a) => !personalRecovery.get(a.botId)?.holding) : undefined;
+  const screenSelection = tuning.tipoffScreenHandoffEnabled
+    ? chooseTipoffScreen(
+        remaining.map((a) => ({
+          player: bot(a),
+          reachable: Number.isFinite(travel(bot(a), snapshot.ball)),
+          holding: !!personalRecovery.get(a.botId)?.holding,
+        })),
+        [...previous.values()].find((a) => a.team === team && a.tipoff?.job === 'screen')?.botId ?? null,
+        !!reserve && !contain,
+      )
+    : undefined;
+  const screen = screenSelection
+    ? remaining.find((a) => a.botId === screenSelection.selectedId)
+    : reserve && !contain
+      ? remaining.find((a) => !personalRecovery.get(a.botId)?.holding)
+      : undefined;
   const screenAgency = screen
     ? resolveGrifballTipoffAgency(tuning, snapshot.tactics?.botStyles, screen.botId)
     : undefined;
@@ -330,6 +347,7 @@ export function applyGrifballTipoff(
       reason,
       ...(recovery ? { recovery } : {}),
       ...(recoveryAgency ? { recoveryAgency } : {}),
+      ...(screenSelection ? { screenSelection } : {}),
       ...(agency
         ? {
             agency: {

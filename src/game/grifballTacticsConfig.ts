@@ -100,26 +100,26 @@ export const TACTICS_FIELDS = {
 } as const;
 export type TacticalNumber = keyof typeof TACTICS_FIELDS;
 export type TeamTactics = Record<TacticalNumber, number> & {
-  tipoffEnabled: boolean; passSupportEnabled: boolean; passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
+  tipoffScreenHandoffEnabled: boolean; tipoffEnabled: boolean; passSupportEnabled: boolean; passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 33;
+  schemaVersion: 34;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
   /** Stable roster IDs: styles follow bots when teams are mirrored. */
   botStyles: Record<string, GrifballPlayerStyle>;
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 33, defaults: {
+  return { schemaVersion: 34, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
-    tipoffEnabled: false, passSupportEnabled: false, passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
+    tipoffScreenHandoffEnabled: false, tipoffEnabled: false, passSupportEnabled: false, passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {}, botStyles: {} };
 }
-const booleanKeys = ['tipoffEnabled', 'passSupportEnabled', 'passRecoveryEnabled', 'hammerDefenseEnabled', 'swordGuardEnabled', 'runnerClashEnabled', 'stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
+const booleanKeys = ['tipoffScreenHandoffEnabled', 'tipoffEnabled', 'passSupportEnabled', 'passRecoveryEnabled', 'hammerDefenseEnabled', 'swordGuardEnabled', 'runnerClashEnabled', 'stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–33, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–34, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams', 'botStyles'].includes(key))) throw new Error('Unknown configuration field.');
   const styles = value.botStyles === undefined && (value.schemaVersion as number) < 7 ? {} : value.botStyles;
   if (!object(styles) || Object.keys(styles).length > 128 || Object.entries(styles).some(([id, style]) =>
@@ -135,6 +135,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 34 ? { tipoffScreenHandoffEnabled: false } : {}),
       ...((value.schemaVersion as number) < 33 ? { tipoffRecoveryAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 32 ? { tipoffRegroupSeconds: 0 } : {}),
       ...((value.schemaVersion as number) < 31 ? { tipoffPositionAgencyStrength: 0 } : {}),
@@ -181,7 +182,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 33, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
+  return { schemaVersion: 34, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };

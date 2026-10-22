@@ -19,6 +19,7 @@ import { chooseGrifballPickupAgency, type PickupAgencyDecision } from './aiGrifb
 import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
 import { observeGrifballTipoff, applyGrifballTipoff, selectGrifballTipoffThreat, type TipoffMemory, type TipoffOrder } from './aiGrifballTipoff';
 import { observeGrifballTipoffRecovery } from './aiGrifballTipoffRecovery';
+import { tipoffScreenReadiness } from './aiGrifballTipoffScreen';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -148,6 +149,7 @@ export function updateGrifballTeamPlan(
     snapshot.round, snapshot.playing, snapshot.holderId, snapshot.rosterKey, snapshot.teamDifficulty, state.styleSeed, snapshot.goals, snapshot.spacing, snapshot.tactics, snapshot.geometry?.key, snapshot.passing, snapshot.ballPhysics?.state,
     snapshot.respawns?.map(p => [p.id, p.team, p.pos]),
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),
+    players.map(p => { const t = resolveTeamTactics(config, p.team); return t.enabled && t.spaceEnabled && t.tipoffEnabled && t.tipoffScreenHandoffEnabled && !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds ? [tipoffScreenReadiness(p), (p.height ?? 0) <= .01 && (p.space?.mobileIn ?? Infinity) <= 0] : null; }),
     players.map(p => [p.id, p.team, p.scripted, p.difficulty]),
     players.filter(p => p.id === snapshot.holderId).map(p => {
       const attack = resolveTeamTactics(config, p.team), defense = resolveTeamTactics(config, otherTeam(p.team));

@@ -16,6 +16,7 @@ import { resolveGrifballSupportSteering } from './aiGrifballObjectiveSteering';
 import type { GrifballPlayerStyle } from './grifballPlayerStyles';
 import { createSnapshotRouters } from './aiGrifballRunner';
 import { applyGrifballTipoffPosition } from './aiGrifballTipoffPosition';
+import { chooseTipoffScreen } from './aiGrifballTipoffScreen';
 
 const actor = (id: string, team: string, x: number, z = 0): GrifballTacticalPlayer => ({
   id,
@@ -541,7 +542,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 33);
+  assert.equal(config.schemaVersion, 34);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1062,7 +1063,7 @@ test('team-scoped recovery follows main_ai through mirrored reorder and checkpoi
 
 test('v32 migrations disable regrouping without changing styles or existing opening controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 33);
+  assert.equal(config.schemaVersion, 34);
   assert.equal(config.defaults.tipoffRegroupSeconds, 0);
   for (let v = 1; v < 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1361,7 +1362,7 @@ test('personal recovery survives JSON continuation and follows main_ai under mir
 
 test('v33 migration disables recovery individuality and preserves regroup and style settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 33);
+  assert.equal(config.schemaVersion, 34);
   assert.equal(config.defaults.tipoffRecoveryAgencyStrength, 0);
   for (let v = 1; v <= 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1386,4 +1387,260 @@ test('v33 migration disables recovery individuality and preserves regroup and st
   const missing = JSON.parse(JSON.stringify(config));
   delete missing.defaults.tipoffRecoveryAgencyStrength;
   assert.throws(() => validateGrifballTactics(missing));
+});
+
+function handoffFixture() {
+  const f = fixture();
+  f.tactics.defaults.tipoffScreenHandoffEnabled = true;
+  f.tactics.defaults.refreshSeconds = 1;
+  // Three nearby enemies allow a displaced fourth ally without weakening containment.
+  f.player('enemy-back').pos.x = 40;
+  return f;
+}
+
+for (const condition of ['airborne', 'movement-locked', 'recovering', 'missing-observation'] as const)
+  test(`tip-off hands off a ${condition} screen immediately and retains the replacement`, () => {
+    const f = handoffFixture();
+    f.run(0.01);
+    assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+    const revision = f.state.revision;
+    const p = f.player('screen'),
+      original = structuredClone(p);
+    if (condition === 'airborne') p.height = 1;
+    if (condition === 'movement-locked') p.space!.mobileIn = 0.5;
+    if (condition === 'recovering') p.space!.phase = 'hammer_recover';
+    if (condition === 'missing-observation') delete p.space;
+    f.run(0);
+    assert.ok(f.state.revision > revision);
+    const a = f.state.assignments.get('support')!;
+    assert.equal(a.tipoff!.job, 'screen');
+    assert.equal(a.tipoff!.screenSelection!.previousId, 'screen');
+    assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'support');
+    assert.equal(f.state.assignments.get('collector')!.tipoff!.job, 'collector');
+    assert.equal(f.state.assignments.get('reserve')!.tipoff!.job, 'reserve');
+    assert.ok([...f.state.assignments.values()].filter((a) => a.team === 'blue' && a.tipoff?.attack).length <= 1);
+    Object.assign(p, original);
+    f.run(0);
+    assert.equal(f.state.assignments.get('support')!.tipoff!.job, 'screen', 'no automatic take-back');
+    const stableRevision = f.state.revision;
+    f.run(0.01);
+    assert.equal(f.state.revision, stableRevision, 'unchanged readiness retains ordinary refresh throttling');
+  });
+
+for (const phase of [
+  'swing_up',
+  'swing_down',
+  'slashing',
+  'melee_up',
+  'melee_down',
+  'melee_swing',
+  'lunging',
+  'windup',
+  'active',
+])
+  test(`tip-off waits for an incumbent ${phase} before handoff`, () => {
+    const f = handoffFixture();
+    f.run(0.01);
+    f.player('screen').space!.phase = phase;
+    f.run(0);
+    assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+    assert.ok(f.run(0).every((a) => !a.tipoff?.attack));
+    assert.match(f.state.assignments.get('support')!.tipoff!.screenSelection!.reason, /finish its visible attack/);
+    f.player('screen').space!.phase = 'hammer_recover';
+    f.run(0);
+    assert.equal(f.state.assignments.get('support')!.tipoff!.job, 'screen');
+  });
+
+test('tip-off handoff leaves no screen when both supports are unavailable, then resumes immediately', () => {
+  const f = handoffFixture();
+  f.run(0.01);
+  for (const id of ['screen', 'support']) f.player(id).space!.phase = 'hammer_recover';
+  assert.ok(f.run(0).every((a) => a.tipoff?.job !== 'screen'));
+  assert.match(f.state.assignments.get('support')!.tipoff!.screenSelection!.reason, /No ready support/);
+  f.player('support').space!.phase = 'ready';
+  f.run(0);
+  assert.equal(f.state.assignments.get('support')!.tipoff!.job, 'screen');
+});
+
+test('screen handoff toggle off preserves the old role selection and omits diagnostics', () => {
+  const f = handoffFixture();
+  f.tactics.defaults.tipoffScreenHandoffEnabled = false;
+  f.run();
+  f.player('screen').space!.phase = 'hammer_recover';
+  f.run(1);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+  assert.ok(f.run().every((a) => !a.tipoff?.screenSelection));
+  f.tactics.defaults.tipoffScreenHandoffEnabled = true;
+  f.run(0);
+  assert.equal(f.state.assignments.get('support')!.tipoff!.job, 'screen');
+  f.tactics.defaults.tipoffScreenHandoffEnabled = false;
+  assert.ok(f.run(0).every((a) => !a.tipoff?.screenSelection));
+});
+
+test('screen handoff cannot draft the collector or reserve, bypass containment, or interrupt safe pickup', () => {
+  const f = handoffFixture();
+  f.player('screen').height = 1;
+  f.player('enemy-back').pos.x = 16;
+  assert.ok(
+    f.run().every((a) => a.tipoff?.job !== 'screen'),
+    'local numbers still require containment',
+  );
+  f.player('enemy-back').pos.x = 40;
+  f.player('support').height = 1;
+  assert.ok(
+    f.run().every((a) => a.tipoff?.job !== 'screen'),
+    'only collector/reserve available',
+  );
+  f.player('screen').height = 0;
+  f.player('support').height = 0;
+  pickupWindow(f, 1);
+  f.run();
+  assert.equal(steer(f, 'collector')!.pickupRequested, true);
+  f.player('collector').scripted = false;
+  f.player('collector').pickupRequested = true;
+  f.player('collector').pos.x = -1;
+  f.run(0);
+  assert.ok(!f.state.assignments.has('collector'));
+  assert.ok(f.run().every((a) => a.tipoff!.collectorId === 'collector'));
+});
+
+test('screen handoff respects shared and personal recovery and immediate defense', () => {
+  const f = handoffFixture();
+  f.tactics.defaults.tipoffRegroupSeconds = 0.5;
+  f.tactics.defaults.tipoffRecoveryAgencyStrength = 1;
+  f.tactics.botStyles.support = 'guardian';
+  f.snapshot.players.push(actor('extra', 'blue', -12, 12));
+  f.run(0.01);
+  lose(f, 'extra');
+  assert.ok(f.run(0).every((a) => a.tipoff?.job !== 'screen'));
+  f.player('screen').space!.phase = 'hammer_recover';
+  assert.ok(
+    f.run(0.5).every((a) => a.tipoff?.job !== 'screen'),
+    'Guardian still holds its personal lane',
+  );
+  const held = f.state.assignments.get('support')!;
+  const nearby = structuredClone(f.snapshot.players);
+  nearby.find((p) => p.id === 'enemy')!.pos = { x: f.player('support').pos.x + 1, z: f.player('support').pos.z };
+  assert.equal(selectGrifballAssignmentThreat(held, f.player('support').pos, nearby), 'enemy');
+  f.run(0.5);
+  assert.equal(f.state.assignments.get('support')!.tipoff!.job, 'screen');
+});
+
+test('screen selection skips unreachable candidates and holds an in-flight commitment even during personal recovery', () => {
+  const p = actor('screen', 'blue', -8),
+    q = actor('support', 'blue', -10, 6);
+  const candidates = [
+    { player: p, reachable: false, holding: false },
+    { player: q, reachable: true, holding: false },
+  ];
+  assert.equal(chooseTipoffScreen(candidates, 'screen', true).selectedId, 'support');
+  q.space!.phase = 'hammer_recover';
+  assert.equal(chooseTipoffScreen(candidates, 'screen', true).selectedId, null);
+  q.space!.phase = 'ready';
+  p.space!.phase = 'swing_up';
+  candidates[0].holding = true;
+  assert.equal(chooseTipoffScreen(candidates, 'screen', true).selectedId, null);
+  assert.equal(
+    chooseTipoffScreen(candidates, null, true).selectedId,
+    null,
+    'a cleared role cannot hide the active strike',
+  );
+});
+
+test('screen handoff depends on enabled opening controls and stops at possession, timeout and reset', () => {
+  for (const key of ['enabled', 'spaceEnabled', 'tipoffEnabled'] as const) {
+    const f = handoffFixture();
+    f.run();
+    f.tactics.defaults[key] = false;
+    assert.ok(f.run(0).every((a) => !a.tipoff?.screenSelection));
+  }
+  const f = handoffFixture();
+  f.run();
+  f.snapshot.holderId = 'collector';
+  assert.ok(f.run(0).every((a) => !a.tipoff));
+  f.snapshot.holderId = null;
+  assert.ok(f.run(0).every((a) => !a.tipoff));
+  f.snapshot.round++;
+  assert.ok(f.run(0).every((a) => a.tipoff?.screenSelection));
+  assert.ok(f.run(9).every((a) => !a.tipoff));
+  resetGrifballTeamPlan(f.state);
+  assert.ok(f.run(0).every((a) => a.tipoff?.screenSelection));
+});
+
+test('screen handoff is deterministic across mirroring, roster order, main_ai and serialized continuation', () => {
+  for (const mirror of [false, true]) {
+    const f = handoffFixture();
+    f.player('support').id = 'main_ai';
+    if (mirror) {
+      for (const p of f.snapshot.players) {
+        p.team = p.team === 'blue' ? 'red' : 'blue';
+        p.pos.x *= -1;
+        p.pos.z *= -1;
+      }
+      f.snapshot.players.reverse();
+    }
+    f.tactics.teams[mirror ? 'blue' : 'red'] = { tipoffScreenHandoffEnabled: false };
+    f.run(0.01);
+    const restored = JSON.parse(JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }));
+    restored.assignments = new Map(restored.assignments);
+    f.player('screen').space!.phase = 'hammer_recover';
+    for (const dt of [0, 0.2]) {
+      f.run(dt);
+      updateGrifballTeamPlan(restored, structuredClone(f.snapshot), dt);
+      assert.equal(
+        JSON.stringify({ ...restored, assignments: [...restored.assignments] }),
+        JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }),
+      );
+    }
+    assert.equal(f.state.assignments.get('main_ai')!.tipoff!.job, 'screen');
+  }
+});
+
+test('v34 screen handoff migration, overrides and strict boolean validation', () => {
+  const config = defaultGrifballTactics();
+  assert.equal(config.schemaVersion, 34);
+  assert.equal(config.defaults.tipoffScreenHandoffEnabled, false);
+  for (let version = 1; version < 34; version++) {
+    const old = JSON.parse(JSON.stringify(config));
+    old.schemaVersion = version;
+    delete old.defaults.tipoffScreenHandoffEnabled;
+    old.defaults.tipoffRecoveryAgencyStrength = 0.7;
+    old.teams.red = { tipoffRegroupSeconds: 1.25 };
+    const next = validateGrifballTactics(old);
+    assert.equal(next.defaults.tipoffScreenHandoffEnabled, false);
+    assert.equal(next.defaults.tipoffRecoveryAgencyStrength, 0.7);
+    assert.equal(next.teams.red!.tipoffRegroupSeconds, 1.25);
+  }
+  config.defaults.tipoffScreenHandoffEnabled = true;
+  config.teams.red = { tipoffScreenHandoffEnabled: false };
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
+  assert.equal(resolveTeamTactics(config, 'red').tipoffScreenHandoffEnabled, false);
+  for (const bad of [0, 1, 'true', null, {}])
+    assert.throws(() => validateGrifballTactics({ ...config, teams: { red: { tipoffScreenHandoffEnabled: bad } } }));
+  const missing = JSON.parse(JSON.stringify(config));
+  delete missing.defaults.tipoffScreenHandoffEnabled;
+  assert.throws(() => validateGrifballTactics(missing));
+});
+
+test('a replacement earns its own challenge and uses its own Grifball style', () => {
+  const f = handoffFixture();
+  f.run(0.01);
+  f.player('screen').space!.phase = 'hammer_recover';
+  f.player('support').pos = { x: -4, z: 6 };
+  f.player('enemy-screen').pos = { x: 2, z: 6 };
+  f.run(0);
+  let a = f.state.assignments.get('support')!;
+  assert.equal(a.tipoff!.job, 'screen');
+  assert.equal(a.tipoff!.attack, true, 'the replacement can earn a real challenge');
+  assert.equal(selectGrifballAssignmentThreat(a, f.player('support').pos, f.snapshot.players), 'enemy-screen');
+  f.tactics.defaults.tipoffAgencyStrength = 1;
+  f.tactics.botStyles = { screen: 'enforcer', support: 'guardian' };
+  f.run(0);
+  a = f.state.assignments.get('support')!;
+  assert.equal(a.tipoff!.agency!.style, 'guardian');
+  assert.equal(a.tipoff!.attack, false, 'the old screen cannot lend its less cautious timing');
+  f.tactics.defaults.tipoffAgencyStrength = 0;
+  f.player('collector').pos = { x: -4, z: 3 };
+  f.run(0);
+  assert.equal(f.state.assignments.get('support')!.tipoff!.attack, false, 'shared hammer exposure still blocks the replacement');
 });
