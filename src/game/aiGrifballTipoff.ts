@@ -13,6 +13,7 @@ import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrif
 import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
 import { chooseTipoffScreen, tipoffScreenReadiness, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
 import { chooseTipoffCollector, type TipoffCollectorDecision } from './aiGrifballTipoffCollector';
+import { chooseTipoffReserve, isTipoffReserveCovering, type TipoffReserveDecision } from './aiGrifballTipoffReserve';
 import { observedGrifballPickupHasPriority } from './aiGrifballPickupAgency';
 import { chooseTipoffTarget, type TipoffTargetDecision } from './aiGrifballTipoffTarget';
 import {
@@ -48,6 +49,7 @@ export interface TipoffOrder {
   screenSelection?: TipoffScreenDecision;
   targetSelection?: TipoffTargetDecision;
   collectorSelection?: TipoffCollectorDecision;
+  reserveSelection?: TipoffReserveDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -253,7 +255,35 @@ export function applyGrifballTipoff(
         travel(bot(a), reservePoint) - travel(bot(b), reservePoint) ||
         a.botId.localeCompare(b.botId),
     );
-  const reserve = ranked[0];
+  const reserveSelection = tuning.tipoffReserveHandoffEnabled
+    ? chooseTipoffReserve(
+        assignments.map((a) => {
+          const p = bot(a),
+            old = previous.get(a.botId)?.tipoff;
+          const arrival = travel(p, reservePoint);
+          const rejection =
+            a === collection
+              ? 'Keep the collector on the opening ball.'
+              : tipoffScreenReadiness(p) !== 'ready'
+                ? 'Ground mobility and a ready weapon are required.'
+                : !Number.isFinite(arrival)
+                  ? 'No reachable route to the rear lane.'
+                  : old?.job === 'screen' && old.attack
+                    ? 'Let the assigned screen challenge finish before taking rear coverage.'
+                    : null;
+          return {
+            botId: p.id,
+            arrival,
+            rejection,
+            covered: !rejection && isTipoffReserveCovering(p, snapshot.ball, reservePoint, spacing / 2),
+          };
+        }),
+        [...previous.values()].find((a) => a.team === team && a.tipoff?.job === 'reserve')?.botId ?? null,
+        reservePoint,
+        spacing / 2,
+      )
+    : undefined;
+  const reserve = reserveSelection ? support.find((a) => a.botId === reserveSelection.selectedId) : ranked[0];
   const available = allies.filter((p) => grounded(p) && Number.isFinite(travel(p, snapshot.ball)));
   const localAllies = available.filter((p) => distance(p.pos, snapshot.ball) <= 18);
   const recovering = memory.recovery?.[team];
@@ -268,7 +298,11 @@ export function applyGrifballTipoff(
         }
       : undefined;
   const contain =
-    !!recovery || collectorSelection?.selectedId === null || available.length < 3 || nearby.length > localAllies.length;
+    !!recovery ||
+    collectorSelection?.selectedId === null ||
+    (reserveSelection && !reserveSelection.covered) ||
+    available.length < 3 ||
+    nearby.length > localAllies.length;
   const phase = recovery ? 'regroup' : claim ? 'claim' : contain ? 'contain' : 'contest';
   const slots = new Map<GrifballAssignment, FieldPoint>();
   if (collection) slots.set(collection, claim ? { ...snapshot.ball } : point(reach + 1.5, 0));
@@ -483,6 +517,7 @@ export function applyGrifballTipoff(
       ...(recoveryAgency ? { recoveryAgency } : {}),
       ...(screenSelection ? { screenSelection } : {}),
       ...(collectorSelection ? { collectorSelection } : {}),
+      ...(reserveSelection ? { reserveSelection } : {}),
       ...(a === screen && targetSelection ? { targetSelection } : {}),
       ...(agency
         ? {
@@ -541,6 +576,8 @@ export function selectGrifballTipoffThreat(
     !grounded(attacker) ||
     !reserve ||
     !grounded(reserve) ||
+    (order.reserveSelection &&
+      !isTipoffReserveCovering(reserve, a.anchor, order.reserveSelection.point, order.reserveSelection.halfWidth)) ||
     // A clearer timing window must still exist when the combat adapter consumes
     // the order. Immediate self-defense above never waits for a style preference.
     (((order.agency?.challengeCushion ?? 0) > 0 || order.targetSelection) &&

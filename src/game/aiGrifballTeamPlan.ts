@@ -18,6 +18,7 @@ import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGr
 import { chooseGrifballPickupAgency, observedGrifballPickupHasPriority, type PickupAgencyDecision } from './aiGrifballPickupAgency';
 import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
 import { observeGrifballTipoff, applyGrifballTipoff, selectGrifballTipoffThreat, type TipoffMemory, type TipoffOrder } from './aiGrifballTipoff';
+import { isTipoffReserveCovering } from './aiGrifballTipoffReserve';
 import { observeGrifballTipoffRecovery } from './aiGrifballTipoffRecovery';
 import { tipoffScreenReadiness } from './aiGrifballTipoffScreen';
 import { resolveTipoffTargetCommitAgency } from './aiGrifballTipoffTarget';
@@ -151,7 +152,14 @@ export function updateGrifballTeamPlan(
     snapshot.round, snapshot.playing, snapshot.holderId, snapshot.rosterKey, snapshot.teamDifficulty, state.styleSeed, snapshot.goals, snapshot.spacing, snapshot.tactics, snapshot.geometry?.key, snapshot.passing, snapshot.ballPhysics?.state,
     snapshot.respawns?.map(p => [p.id, p.team, p.pos]),
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),
-    players.map(p => { const t = resolveTeamTactics(config, p.team); return t.enabled && t.spaceEnabled && t.tipoffEnabled && (t.tipoffScreenHandoffEnabled || t.tipoffCollectorHandoffEnabled) && !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds ? [tipoffScreenReadiness(p), (p.height ?? 0) <= .01 && (p.space?.mobileIn ?? Infinity) <= 0] : null; }),
+    players.map(p => { const t = resolveTeamTactics(config, p.team); return t.enabled && t.spaceEnabled && t.tipoffEnabled && (t.tipoffScreenHandoffEnabled || t.tipoffCollectorHandoffEnabled || t.tipoffReserveHandoffEnabled) && !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds ? [tipoffScreenReadiness(p), (p.height ?? 0) <= .01 && (p.space?.mobileIn ?? Infinity) <= 0] : null; }),
+    players.map(p => {
+      const t = resolveTeamTactics(config, p.team), order = state.assignments.get(p.id)?.tipoff;
+      const r = order?.reserveSelection;
+      return t.enabled && t.spaceEnabled && t.tipoffEnabled && t.tipoffReserveHandoffEnabled &&
+        !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds && r?.selectedId === p.id
+        ? isTipoffReserveCovering(p, snapshot.ball, r.point, r.halfWidth) : null;
+    }),
     players.map(p => [p.id, p.team, p.scripted, p.difficulty]),
     players.map(p => {
       const t = resolveTeamTactics(config, p.team), d = state.assignments.get(p.id)?.tipoff?.targetSelection;

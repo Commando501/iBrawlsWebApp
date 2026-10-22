@@ -31,7 +31,7 @@ test('schema 7 keeps support styles and team overrides while migrating runner in
   const old: any = defaultGrifballTactics(); old.schemaVersion = 7; delete old.defaults.runnerAgencyStrength;
   old.defaults.agencyStrength = .8; old.teams.red = { agencyStrength: .3 }; old.botStyles.runner = 'guardian';
   const config = validateGrifballTactics(old);
-  assert.equal(config.schemaVersion, 40); assert.equal(config.defaults.runnerAgencyStrength, 0);
+  assert.equal(config.schemaVersion, 41); assert.equal(config.defaults.runnerAgencyStrength, 0);
   assert.equal(config.defaults.agencyStrength, .8); assert.equal(config.botStyles.runner, 'guardian');
   assert.equal(resolveTeamTactics(config, 'red').agencyStrength, .3);
   for (const runnerAgencyStrength of [-.1, 1.1, NaN, '1'])
