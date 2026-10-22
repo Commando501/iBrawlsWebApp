@@ -1,8 +1,34 @@
 import {
+  GRIFBALL_TIPOFF_COMMITMENT_PREFERENCES,
   GRIFBALL_TIPOFF_TARGET_PREFERENCES,
   resolveGrifballPlayerStyle,
   type GrifballPlayerStyle,
 } from './grifballPlayerStyles';
+
+export interface TipoffCommitmentAgencyDecision {
+  style: GrifballPlayerStyle;
+  strength: number;
+  teamSeconds: number;
+  adjustment: number;
+  seconds: number;
+  reason: string;
+}
+
+/** Share this duration with the planner's expiry interrupt. Live increases may
+ * change the preference, but cannot extend an already captured deadline. */
+export function resolveTipoffTargetCommitAgency(
+  teamSeconds: number,
+  strength: number,
+  style: GrifballPlayerStyle,
+): TipoffCommitmentAgencyDecision | undefined {
+  if (!Number.isFinite(teamSeconds) || teamSeconds <= 0 || !Number.isFinite(strength) || strength <= 0)
+    return undefined;
+  teamSeconds = Math.min(1.5, teamSeconds);
+  strength = Math.min(1, strength);
+  const preference = GRIFBALL_TIPOFF_COMMITMENT_PREFERENCES[style];
+  const seconds = Math.max(0, Math.min(1.5, teamSeconds + preference.adjustment * strength));
+  return { style, strength, teamSeconds, adjustment: seconds - teamSeconds, seconds, reason: preference.reason };
+}
 
 export interface TipoffTargetCandidate {
   targetId: string;
@@ -31,6 +57,7 @@ export interface TipoffTargetDecision {
     remaining: number;
     retained: boolean;
     reason: string;
+    agency?: TipoffCommitmentAgencyDecision;
   };
 }
 
@@ -41,7 +68,7 @@ export function chooseTipoffTarget(
   strength: number,
   styles: Readonly<Record<string, GrifballPlayerStyle>> | undefined,
   botId: string,
-  continuity?: { elapsed: number; seconds: number; previous?: TipoffTargetDecision },
+  continuity?: { elapsed: number; seconds: number; agencyStrength?: number; previous?: TipoffTargetDecision },
 ): TipoffTargetDecision {
   strength = Number.isFinite(strength) ? Math.max(0, Math.min(1, strength)) : 0;
   const style = resolveGrifballPlayerStyle(styles, botId);
@@ -70,7 +97,8 @@ export function chooseTipoffTarget(
   let selected = preferred;
   let commitment: TipoffTargetDecision['commitment'];
   if (strength > 0 && continuity && Number.isFinite(continuity.seconds) && continuity.seconds > 0) {
-    const seconds = Math.min(1.5, continuity.seconds);
+    const agency = resolveTipoffTargetCommitAgency(continuity.seconds, continuity.agencyStrength ?? 0, style);
+    const seconds = agency?.seconds ?? Math.min(1.5, continuity.seconds);
     const elapsed = Math.max(0, continuity.elapsed);
     const previous = continuity.previous;
     const old = previous?.commitment;
@@ -124,6 +152,7 @@ export function chooseTipoffTarget(
       remaining: Math.max(0, until - elapsed),
       retained: selected?.targetId !== preferred?.targetId,
       reason: selected ? reason : 'No safe target remains; release the commitment and hold the lane.',
+      ...(agency ? { agency } : {}),
     };
   }
   return {

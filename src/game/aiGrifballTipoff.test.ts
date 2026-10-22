@@ -543,7 +543,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1064,7 +1064,7 @@ test('team-scoped recovery follows main_ai through mirrored reorder and checkpoi
 
 test('v32 migrations disable regrouping without changing styles or existing opening controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffRegroupSeconds, 0);
   for (let v = 1; v < 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1363,7 +1363,7 @@ test('personal recovery survives JSON continuation and follows main_ai under mir
 
 test('v33 migration disables recovery individuality and preserves regroup and style settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffRecoveryAgencyStrength, 0);
   for (let v = 1; v <= 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1599,7 +1599,7 @@ test('screen handoff is deterministic across mirroring, roster order, main_ai an
 
 test('v34 screen handoff migration, overrides and strict boolean validation', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffScreenHandoffEnabled, false);
   for (let version = 1; version < 34; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1860,7 +1860,7 @@ test('screen preferences remain deterministic across main_ai, mirrors, reorderin
 
 test('v35 migration defaults screen individuality off while preserving handoff and other preferences', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffScreenAgencyStrength, 0);
   for (let v = 1; v < 35; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2112,7 +2112,7 @@ test('target preferences preserve main_ai, mirrored teams, deterministic order a
 
 test('v36 migration defaults target individuality off and preserves existing tip-off controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffTargetAgencyStrength, 0);
   for (let v = 1; v < 36; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2272,7 +2272,7 @@ test('a changed rear reserve or regroup interval clears a screen target hold', (
 
 test('v37 imports leave commitment off while preserving target styles and prior controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 37);
+  assert.equal(config.schemaVersion, 38);
   assert.equal(config.defaults.tipoffTargetCommitSeconds, 0);
   for (let v = 1; v < 37; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2295,5 +2295,142 @@ test('v37 imports leave commitment off while preserving target styles and prior 
     assert.throws(() => validateGrifballTactics({ ...config, teams: { red: { tipoffTargetCommitSeconds: bad } } }));
   const missing = JSON.parse(JSON.stringify(config));
   delete missing.defaults.tipoffTargetCommitSeconds;
+  assert.throws(() => validateGrifballTactics(missing));
+});
+
+for (const [style, duration] of [
+  ['balanced', 0.6],
+  ['enforcer', 0.85],
+  ['opportunist', 0.45],
+  ['guardian', 0.35],
+] as const)
+  test(style + ' personal target expiry interrupts a slow planner refresh', () => {
+    const f = targetFixture(style, 0.01);
+    Object.assign(f.tactics.defaults, {
+      tipoffTargetCommitSeconds: 0.6,
+      tipoffTargetCommitAgencyStrength: 1,
+      refreshSeconds: 1,
+    });
+    f.run(0.01);
+    assert.equal(targetOrder(f).targetId, 'enemy-screen');
+    assert.ok(Math.abs(targetOrder(f).targetSelection!.commitment!.deadline - (0.01 + duration)) < 1e-9);
+    f.player('enemy-screen').pos.x = 4;
+    f.run(0.01);
+    assert.equal(targetOrder(f).targetSelection!.commitment!.preferredId, 'enemy');
+    assert.equal(targetOrder(f).targetId, 'enemy-screen');
+    f.run(duration - 0.02);
+    assert.equal(targetOrder(f).targetId, 'enemy-screen');
+    const revision = f.state.revision;
+    f.run(0.01);
+    assert.ok(f.state.revision > revision);
+    assert.equal(targetOrder(f).targetId, 'enemy');
+    assert.match(targetOrder(f).targetSelection!.commitment!.reason, /expired/);
+  });
+
+test('personal commitment follows roster IDs and team overrides through mirrored JSON continuation', () => {
+  for (const mirror of [false, true]) {
+    const f = targetFixture('balanced', 0.01);
+    f.player('screen').id = 'main_ai';
+    f.tactics.botStyles = { main_ai: 'enforcer' };
+    f.tactics.defaults.tipoffTargetCommitSeconds = 0.6;
+    f.tactics.teams[mirror ? 'red' : 'blue'] = { tipoffTargetCommitAgencyStrength: 1 };
+    if (mirror)
+      for (const p of f.snapshot.players) {
+        p.team = p.team === 'blue' ? 'red' : 'blue';
+        p.pos.x *= -1;
+        p.pos.z *= -1;
+      }
+    f.snapshot.players.reverse();
+    f.run(0.01);
+    const order = f.state.assignments.get('main_ai')!.tipoff!;
+    assert.equal(order.targetSelection!.commitment!.agency!.seconds, 0.85);
+    assert.equal(resolveTeamTactics(f.tactics, mirror ? 'blue' : 'red').tipoffTargetCommitAgencyStrength, 0);
+    const restored = JSON.parse(JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }));
+    restored.assignments = new Map(restored.assignments);
+    f.player('enemy-screen').pos.x = mirror ? -4 : 4;
+    for (const dt of [0.2, 0.2, 0.2, 0.3]) {
+      f.run(dt);
+      updateGrifballTeamPlan(restored, structuredClone(f.snapshot), dt);
+      assert.equal(
+        JSON.stringify({ ...restored, assignments: [...restored.assignments] }),
+        JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }),
+      );
+    }
+  }
+});
+
+test('commitment individuality stays behind dependencies, safety and screen handoff', () => {
+  for (const key of [
+    'enabled',
+    'spaceEnabled',
+    'tipoffEnabled',
+    'tipoffTargetAgencyStrength',
+    'tipoffTargetCommitSeconds',
+  ] as const) {
+    const f = targetFixture('enforcer');
+    Object.assign(f.tactics.defaults, { tipoffTargetCommitSeconds: 0.6, tipoffTargetCommitAgencyStrength: 1 });
+    f.run();
+    Object.assign(f.tactics.defaults, { [key]: key.endsWith('Strength') || key.endsWith('Seconds') ? 0 : false });
+    assert.ok(f.run().every((a) => !a.tipoff?.targetSelection?.commitment?.agency));
+  }
+  const f = targetFixture('enforcer');
+  Object.assign(f.tactics.defaults, {
+    tipoffTargetCommitSeconds: 0.6,
+    tipoffTargetCommitAgencyStrength: 1,
+    tipoffScreenHandoffEnabled: true,
+  });
+  f.run();
+  f.player('enemy').pos = { x: 0, z: -2 };
+  f.run();
+  assert.equal(targetOrder(f).targetId, 'enemy-screen');
+  assert.match(targetOrder(f).targetSelection!.commitment!.reason, /unsafe/);
+  const a = f.state.assignments.get('screen')!;
+  f.player('enemy').pos = { x: -7, z: -6 };
+  assert.equal(selectGrifballAssignmentThreat(a, f.player('screen').pos, f.snapshot.players), 'enemy');
+  f.player('enemy').pos = { x: 3, z: -2.5 };
+  f.player('screen').space!.phase = 'recovering';
+  f.tactics.botStyles.support = 'guardian';
+  f.run();
+  const replacement = f.state.assignments.get('support')!.tipoff!;
+  assert.equal(replacement.job, 'screen');
+  assert.equal(replacement.targetSelection!.commitment!.previousId, null);
+  assert.equal(replacement.targetSelection!.commitment!.agency!.seconds, 0.35);
+  f.snapshot.holderId = 'collector';
+  assert.ok(f.run().every((a) => !a.tipoff));
+});
+
+test('v38 migration leaves commitment individuality off and preserves earlier preferences', () => {
+  const config = defaultGrifballTactics();
+  assert.equal(config.schemaVersion, 38);
+  assert.equal(config.defaults.tipoffTargetCommitAgencyStrength, 0);
+  for (let v = 1; v < 38; v++) {
+    const old = JSON.parse(JSON.stringify(config));
+    old.schemaVersion = v;
+    delete old.defaults.tipoffTargetCommitAgencyStrength;
+    old.defaults.tipoffTargetCommitSeconds = 0.6;
+    old.defaults.tipoffTargetAgencyStrength = 0.7;
+    old.teams.red = { tipoffTargetCommitSeconds: 1, tipoffTargetAgencyStrength: 0.4 };
+    old.botStyles = { main_ai: 'enforcer' };
+    const next = validateGrifballTactics(old);
+    assert.equal(next.defaults.tipoffTargetCommitAgencyStrength, 0);
+    assert.equal(next.defaults.tipoffTargetCommitSeconds, 0.6);
+    assert.equal(next.defaults.tipoffTargetAgencyStrength, 0.7);
+    assert.deepEqual(next.teams.red, old.teams.red);
+    assert.equal(next.botStyles.main_ai, 'enforcer');
+  }
+  config.defaults.tipoffTargetCommitAgencyStrength = 0.4;
+  config.teams.red = { tipoffTargetCommitAgencyStrength: 1 };
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
+  assert.equal(resolveTeamTactics(config, 'red').tipoffTargetCommitAgencyStrength, 1);
+  for (const bad of [-0.1, 1.1, NaN, Infinity, '1', true]) {
+    assert.throws(() =>
+      validateGrifballTactics({ ...config, teams: { red: { tipoffTargetCommitAgencyStrength: bad } } }),
+    );
+    assert.throws(() =>
+      validateGrifballTactics({ ...config, defaults: { ...config.defaults, tipoffTargetCommitAgencyStrength: bad } }),
+    );
+  }
+  const missing = JSON.parse(JSON.stringify(config));
+  delete missing.defaults.tipoffTargetCommitAgencyStrength;
   assert.throws(() => validateGrifballTactics(missing));
 });

@@ -20,6 +20,8 @@ import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
 import { observeGrifballTipoff, applyGrifballTipoff, selectGrifballTipoffThreat, type TipoffMemory, type TipoffOrder } from './aiGrifballTipoff';
 import { observeGrifballTipoffRecovery } from './aiGrifballTipoffRecovery';
 import { tipoffScreenReadiness } from './aiGrifballTipoffScreen';
+import { resolveTipoffTargetCommitAgency } from './aiGrifballTipoffTarget';
+import { resolveGrifballPlayerStyle } from './grifballPlayerStyles';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -157,7 +159,8 @@ export function updateGrifballTeamPlan(
       if (!t.enabled || !t.spaceEnabled || !t.tipoffEnabled || t.tipoffTargetAgencyStrength <= 0 || t.tipoffTargetCommitSeconds <= 0 || state.tipoff!.closed || !c) return null;
       const target = players.find(other => other.id === d!.selectedId);
       // Expiry and the end of a visible recovery interrupt a slow tactical tick.
-      return [p.id, d!.selectedId, state.tipoff!.elapsed + 1e-9 >= Math.min(c.deadline, c.startedAt + t.tipoffTargetCommitSeconds), tipoffScreenReadiness(p), target?.space?.phase.includes('recover') ?? false];
+      const seconds = resolveTipoffTargetCommitAgency(t.tipoffTargetCommitSeconds, t.tipoffTargetCommitAgencyStrength, resolveGrifballPlayerStyle(config.botStyles, p.id))?.seconds ?? t.tipoffTargetCommitSeconds;
+      return [p.id, d!.selectedId, state.tipoff!.elapsed + 1e-9 >= Math.min(c.deadline, c.startedAt + seconds), tipoffScreenReadiness(p), target?.space?.phase.includes('recover') ?? false];
     }),
     players.filter(p => p.id === snapshot.holderId).map(p => {
       const attack = resolveTeamTactics(config, p.team), defense = resolveTeamTactics(config, otherTeam(p.team));

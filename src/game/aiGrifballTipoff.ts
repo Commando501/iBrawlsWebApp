@@ -356,6 +356,7 @@ export function applyGrifballTipoff(
         {
           elapsed: memory.elapsed,
           seconds: tuning.tipoffTargetCommitSeconds,
+              agencyStrength: tuning.tipoffTargetCommitAgencyStrength,
           previous:
             oldOrder?.job === 'screen' &&
             oldOrder.phase === 'contest' &&

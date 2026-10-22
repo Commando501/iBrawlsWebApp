@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseTipoffTarget, type TipoffTargetCandidate, type TipoffTargetDecision } from './aiGrifballTipoffTarget';
+import {
+  chooseTipoffTarget,
+  resolveTipoffTargetCommitAgency,
+  type TipoffTargetCandidate,
+  type TipoffTargetDecision,
+} from './aiGrifballTipoffTarget';
 import type { GrifballPlayerStyle } from './grifballPlayerStyles';
 
 const candidate = (targetId: string, eta: number): TipoffTargetCandidate => ({
@@ -19,8 +24,14 @@ function choose(
   seconds = 0.6,
   style: GrifballPlayerStyle = 'balanced',
   strength = 1,
+  agencyStrength = 0,
 ) {
-  return chooseTipoffTarget(candidates, strength, { screen: style }, 'screen', { elapsed, seconds, previous });
+  return chooseTipoffTarget(candidates, strength, { screen: style }, 'screen', {
+    elapsed,
+    seconds,
+    previous,
+    agencyStrength,
+  });
 }
 
 test('bounded commitment holds a safe target through a small score reversal then expires', () => {
@@ -130,4 +141,89 @@ test('all unsafe candidates clear the commitment and deterministic JSON continua
   const resumed = choose(candidates, 0.3, cleared);
   assert.equal(resumed.commitment!.previousId, null);
   assert.equal(resumed.commitment!.startedAt, 0.3);
+});
+
+for (const [style, adjustment] of [
+  ['balanced', 0],
+  ['enforcer', 0.25],
+  ['opportunist', -0.15],
+  ['guardian', -0.25],
+] as const)
+  test(style + ' blends target patience without changing candidate timing or scores', () => {
+    const candidates = [candidate('a', 1), candidate('b', 1.1)];
+    const baseline = choose(candidates, 0, undefined, 0.6, style);
+    for (const strength of [0.5, 1]) {
+      const first = choose(candidates, 0, undefined, 0.6, style, 1, strength);
+      const duration = 0.6 + adjustment * strength;
+      assert.equal(first.commitment!.deadline, duration);
+      assert.equal(first.commitment!.agency!.teamSeconds, 0.6);
+      assert.equal(first.commitment!.agency!.seconds, duration);
+      assert.deepEqual(first.candidates, baseline.candidates);
+      const reversed = [candidate('a', 1), candidate('b', 0.95)];
+      const held = choose(reversed, duration - 0.01, first, 0.6, style, 1, strength);
+      assert.equal(held.selectedId, 'a');
+      assert.equal(held.commitment!.deadline, duration);
+      assert.equal(choose(reversed, duration, held, 0.6, style, 1, strength).selectedId, 'b');
+    }
+  });
+
+test('commitment individuality clamps duration and cannot revive disabled team commitment', () => {
+  assert.equal(resolveTipoffTargetCommitAgency(1.4, 1, 'enforcer')!.seconds, 1.5);
+  assert.equal(resolveTipoffTargetCommitAgency(0.1, 1, 'guardian')!.seconds, 0);
+  for (const strength of [0, -1, NaN, Infinity])
+    assert.equal(resolveTipoffTargetCommitAgency(0.6, strength, 'enforcer'), undefined);
+  for (const seconds of [0, -1, NaN, Infinity])
+    assert.equal(resolveTipoffTargetCommitAgency(seconds, 1, 'enforcer'), undefined);
+  const candidates = [candidate('a', 1), candidate('b', 1.1)];
+  assert.ok(!choose(candidates, 0, undefined, 0, 'enforcer', 1, 1).commitment);
+  assert.ok(!choose(candidates, 0, undefined, 0.6, 'enforcer', 0, 1).commitment);
+  const first = choose(candidates, 0, undefined, 0.1, 'guardian', 1, 1);
+  assert.equal(first.commitment!.remaining, 0);
+  assert.equal(choose([candidate('a', 1), candidate('b', 0.95)], 0.01, first, 0.1, 'guardian', 1, 1).selectedId, 'b');
+  assert.deepEqual(
+    choose(candidates, 0),
+    chooseTipoffTarget(candidates, 1, { screen: 'balanced' }, 'screen', { elapsed: 0, seconds: 0.6 }),
+  );
+});
+
+test('live individuality edits can shorten but never extend a captured target hold', () => {
+  const candidates = [candidate('a', 1), candidate('b', 1.1)];
+  const first = choose(candidates, 0, undefined, 0.6, 'enforcer');
+  const raised = choose(candidates, 0.1, first, 0.6, 'enforcer', 1, 1);
+  assert.equal(raised.commitment!.agency!.seconds, 0.85);
+  assert.equal(raised.commitment!.deadline, 0.6);
+  const longer = choose(candidates, 0, undefined, 0.6, 'enforcer', 1, 1);
+  const reduced = choose(candidates, 0.1, longer, 0.6, 'enforcer', 1, 0.5);
+  assert.equal(reduced.commitment!.deadline, 0.725);
+  const guardian = choose(candidates, 0, undefined, 0.6, 'guardian', 1, 1);
+  const disabled = choose(candidates, 0.1, guardian, 0.6, 'guardian');
+  assert.equal(disabled.commitment!.deadline, 0.35);
+  assert.ok(!disabled.commitment!.agency);
+  const shortened = choose(candidates, 0.1, choose(candidates, 0, undefined, 0.6, 'guardian'), 0.6, 'guardian', 1, 1);
+  assert.equal(shortened.commitment!.deadline, 0.35);
+});
+
+for (const condition of ['unsafe', 'outside-window', 'better', 'missing'] as const)
+  test('longer Enforcer commitment still yields when ' + condition, () => {
+    const first = choose([candidate('a', 1), candidate('b', 1.1)], 0, undefined, 0.6, 'enforcer', 1, 1);
+    const candidates = [candidate('a', 1), candidate('b', 0.95)];
+    if (condition === 'unsafe') candidates[0].rejection = 'Shared hammer exposure';
+    if (condition === 'outside-window') candidates[0].eta = 1.4;
+    if (condition === 'better') candidates[1].eta = 0.79;
+    if (condition === 'missing') candidates.shift();
+    const next = choose(candidates, 0.1, first, 0.6, 'enforcer', 1, 1);
+    assert.equal(next.selectedId, 'b');
+    assert.equal(next.commitment!.retained, false);
+  });
+
+test('individual duration survives JSON continuation and handles legacy decisions without agency metadata', () => {
+  const candidates = [candidate('a', 1), candidate('b', 1.1)];
+  const first = choose(candidates, 0, undefined, 0.6, 'enforcer', 1, 1);
+  const restored = JSON.parse(JSON.stringify(first));
+  assert.deepEqual(
+    choose(candidates, 0.7, first, 0.6, 'enforcer', 1, 1),
+    choose([...candidates].reverse(), 0.7, restored, 0.6, 'enforcer', 1, 1),
+  );
+  delete restored.commitment.agency;
+  assert.equal(choose(candidates, 0.7, restored, 0.6, 'enforcer', 1, 1).commitment!.deadline, 0.85);
 });

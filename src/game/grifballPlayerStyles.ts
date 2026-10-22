@@ -184,6 +184,19 @@ export const GRIFBALL_TIPOFF_SCREEN_PREFERENCES = {
   guardian: { bias: .25, reason: 'Prefer to keep coverage when another nearby support can screen.' },
 } satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
 
+export const GRIFBALL_TIPOFF_COMMITMENT_PREFERENCES = {
+  balanced: { adjustment: 0, reason: 'Use the team target commitment duration.' },
+  enforcer: { adjustment: 0.25, reason: 'Hold a safe opening target up to 0.25 s longer, within the 1.5 s limit.' },
+  opportunist: {
+    adjustment: -0.15,
+    reason: 'Reassess opening targets up to 0.15 s sooner; ended recovery windows still release immediately.',
+  },
+  guardian: {
+    adjustment: -0.25,
+    reason: 'Reassess opening targets up to 0.25 s sooner while keeping challenge safety checks.',
+  },
+} satisfies Record<GrifballPlayerStyle, { adjustment: number; reason: string }>;
+
 export const GRIFBALL_TIPOFF_TARGET_PREFERENCES = {
   balanced: { reason: 'Challenge the fastest reachable opponent with a safe opening.' },
   enforcer: { reason: 'Favor a nearby opponent contesting the ball, within safe challenge windows.' },

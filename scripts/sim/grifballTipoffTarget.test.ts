@@ -25,6 +25,7 @@ function targetTrace(
   style: GrifballPlayerStyle,
   strength = 1,
   commitmentSeconds?: number,
+  commitmentAgency?: number,
 ) {
   const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', attackRange: 1.8, attackRadius: 2 }, 'nearest');
   const { state, sim, bot, target } = f;
@@ -39,6 +40,7 @@ function targetTrace(
   Object.assign(state.grifballTactics.defaults, {
     tipoffEnabled: true,
     tipoffTargetAgencyStrength: strength,
+    tipoffTargetCommitAgencyStrength: commitmentAgency ?? 0,
     stylesEnabled: false,
     passingEnabled: false,
     ...(commitmentSeconds !== undefined ? { tipoffTargetCommitSeconds: commitmentSeconds, refreshSeconds: 0.05 } : {}),
@@ -89,7 +91,9 @@ function targetTrace(
     state.otherPlayers.set(name, live);
   }
   sim.match.ball.state = state.grifball.ball.state = 'idle';
-  if (style === 'opportunist') {
+  // Duration traces keep rivals ready in both hosts so they isolate patience
+  // from recovery-clock progression (only the screen's live movement is run).
+  if (style === 'opportunist' && commitmentAgency === undefined) {
     const c = sim.combatants.find((c) => c.id === 'preferred')!;
     c.weaponState = 'recovering';
     c.weaponTimer = sim.settings.hammerReloadTime;
@@ -109,7 +113,8 @@ function targetTrace(
   let heldFrames = 0,
     changedTargets = 0;
   let previousTarget: string | null = null;
-  for (let tick = 0; tick < 12; tick++) {
+  const ticks = commitmentAgency === undefined ? 12 : 36;
+  for (let tick = 0; tick < ticks; tick++) {
     if (commitmentSeconds !== undefined && tick > 0) {
       // Both engines observe the same small rival movement. Each independently
       // chooses and executes a screen route; no orders are copied between hosts.
@@ -137,10 +142,15 @@ function targetTrace(
       assert.equal(a.tipoff!.attack, true, JSON.stringify({ order: a.tipoff, players: plan.snapshot!.players }));
       assert.equal(
         a.tipoff!.targetId,
-        strength === 0 || style === 'balanced' ? 'nearest' : 'preferred',
+        strength <= 0.01 || style === 'balanced' ? 'nearest' : 'preferred',
         JSON.stringify(a.tipoff),
       );
-      if (strength > 0) assert.equal(a.tipoff!.targetSelection!.changedByStyle, style !== 'balanced');
+      if (strength > 0.01) assert.equal(a.tipoff!.targetSelection!.changedByStyle, style !== 'balanced');
+      if (commitmentAgency) {
+        const agency = a.tipoff!.targetSelection!.commitment!.agency!;
+        const adjustment = { balanced: 0, enforcer: 0.25, opportunist: -0.15, guardian: -0.25 }[style];
+        assert.equal(agency.seconds, Math.max(0, Math.min(1.5, commitmentSeconds! + adjustment * commitmentAgency)));
+      }
     }
     const input = resolveSimGrifballSupportInput(sim, plan, id, owners, dt)!;
     assert.ok(input);
@@ -180,8 +190,8 @@ function targetTrace(
     assert.deepEqual(rounded(self.vel), rounded(bot.vel));
     frames.push({ ...self.pos });
   }
-  assert.notDeepEqual(frames[0], frames[11]);
-  if (commitmentSeconds !== undefined) {
+  assert.notDeepEqual(frames[0], frames[ticks - 1]);
+  if (commitmentSeconds !== undefined && commitmentAgency === undefined) {
     assert.equal(changedTargets > 0, commitmentSeconds === 0);
     assert.equal(heldFrames > 0, commitmentSeconds > 0);
   }
@@ -195,6 +205,20 @@ for (const id of ['main_ai', 'bot_2'])
       assert.deepEqual(targetTrace(id, mirror, 'enforcer', 0), baseline);
       for (const style of ['enforcer', 'opportunist', 'guardian'] as const)
         assert.notDeepEqual(targetTrace(id, mirror, style), baseline, style + ' must change executed movement');
+    });
+
+for (const id of ['main_ai', 'bot_2'])
+  for (const mirror of [false, true])
+    test(`live/sim personal target duration changes executed movement ${id}/${mirror}`, () => {
+      for (const style of ['enforcer', 'opportunist', 'guardian'] as const) {
+        const team = targetTrace(id, mirror, style, 0.01, 0.2, 0);
+        const personal = targetTrace(id, mirror, style, 0.01, 0.2, 1);
+        assert.notDeepEqual(personal, team, style + ' duration must change executed movement');
+      }
+      assert.deepEqual(
+        targetTrace(id, mirror, 'balanced', 0.01, 0.2, 1),
+        targetTrace(id, mirror, 'balanced', 0.01, 0.2, 0),
+      );
     });
 
 for (const id of ['main_ai', 'bot_2'])
