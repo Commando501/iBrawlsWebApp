@@ -144,7 +144,7 @@ export function updateGrifballTeamPlan(
   state.tipoff = observeGrifballTipoff(state.tipoff, snapshot, dt);
   observeGrifballTipoffRecovery(state.tipoff, snapshot, state.snapshot, state.assignments, config);
   const signature = JSON.stringify([
-    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team); return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds, state.tipoff!.recovery?.[team]] : null; }),
+    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team), r = state.tipoff!.recovery?.[team]; return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds, r, r && state.tipoff!.elapsed + 1e-9 >= r.startedAt + r.duration] : null; }),
     snapshot.round, snapshot.playing, snapshot.holderId, snapshot.rosterKey, snapshot.teamDifficulty, state.styleSeed, snapshot.goals, snapshot.spacing, snapshot.tactics, snapshot.geometry?.key, snapshot.passing, snapshot.ballPhysics?.state,
     snapshot.respawns?.map(p => [p.id, p.team, p.pos]),
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),

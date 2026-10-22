@@ -1,15 +1,69 @@
 import type { GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { TipoffMemory } from './aiGrifballTipoff';
-import { resolveTeamTactics, type GrifballTacticsConfig } from './grifballTacticsConfig';
+import { resolveTeamTactics, type GrifballTacticsConfig, type TeamTactics } from './grifballTacticsConfig';
+import {
+  GRIFBALL_TIPOFF_RECOVERY_PREFERENCES,
+  resolveGrifballPlayerStyle,
+  type GrifballPlayerStyle,
+} from './grifballPlayerStyles';
 
 export interface TipoffRecovery {
   startedAt: number;
   duration: number;
   affectedIds: string[];
   reason: string;
+  /** Per-bot duration caps captured at the disruption, relative to startedAt. */
+  personal?: Record<string, number>;
 }
-export interface TipoffRecoveryDecision extends TipoffRecovery {
+export interface TipoffRecoveryDecision extends Omit<TipoffRecovery, 'personal'> {
   remaining: number;
+}
+
+export interface TipoffRecoveryAgencyDecision {
+  style: GrifballPlayerStyle;
+  strength: number;
+  teamDuration: number;
+  duration: number;
+  remaining: number;
+  holding: boolean;
+  reason: string;
+}
+
+function preference(tuning: TeamTactics, styles: Record<string, GrifballPlayerStyle> | undefined, id: string) {
+  const style = resolveGrifballPlayerStyle(styles, id);
+  const profile = GRIFBALL_TIPOFF_RECOVERY_PREFERENCES[style];
+  return {
+    style,
+    strength: tuning.tipoffRecoveryAgencyStrength,
+    delay: profile.delay * tuning.tipoffRecoveryAgencyStrength,
+    reason: profile.reason,
+  };
+}
+
+/** Only support/screen candidates consume this preference. Pickup and rear
+ * coverage remain mandatory, and the shared recovery is always a floor. */
+export function resolveGrifballTipoffRecoveryAgency(
+  recovery: TipoffRecovery | undefined,
+  elapsed: number,
+  tuning: TeamTactics,
+  styles: Record<string, GrifballPlayerStyle> | undefined,
+  id: string,
+): TipoffRecoveryAgencyDecision | undefined {
+  if (!recovery || tuning.tipoffRecoveryAgencyStrength <= 0 || tuning.tipoffRegroupSeconds <= 0) return undefined;
+  const p = preference(tuning, styles, id);
+  const captured =
+    recovery.personal && Object.hasOwn(recovery.personal, id) ? recovery.personal[id] : recovery.duration;
+  const duration = Math.max(recovery.duration, Math.min(captured, recovery.duration + p.delay));
+  const remaining = Math.max(0, recovery.startedAt + duration - elapsed);
+  return {
+    style: p.style,
+    strength: p.strength,
+    teamDuration: recovery.duration,
+    duration,
+    remaining,
+    holding: duration > recovery.duration && remaining > 1e-9,
+    reason: p.reason,
+  };
 }
 
 const available = (p: GrifballTacticalPlayer) =>
@@ -77,13 +131,32 @@ export function observeGrifballTipoffRecovery(
           .filter(Boolean)
           .join(' '),
       };
+      const personal = Object.fromEntries(
+        [...current.values()]
+          .filter((p) => p.scripted)
+          .map((p) => {
+            const extra = preference(tuning, snapshot.tactics?.botStyles, p.id).delay;
+            return [p.id, extra > 0 ? tuning.tipoffRegroupSeconds + extra : 0] as const;
+          })
+          .filter(([, duration]) => duration > 0),
+      );
+      if (Object.keys(personal).length) memory.recovery[team].personal = personal;
     }
     const recovery = memory.recovery?.[team];
     if (recovery) {
       // Reducing the control takes effect immediately. Increasing it never
       // extends an existing recovery, even after a serialized continuation.
       recovery.duration = Math.min(recovery.duration, tuning.tipoffRegroupSeconds);
-      if (memory.elapsed + 1e-9 >= recovery.startedAt + recovery.duration) delete memory.recovery![team];
+      for (const [id, duration] of Object.entries(recovery.personal ?? {})) {
+        const extra = preference(tuning, snapshot.tactics?.botStyles, id).delay;
+        const capped = Math.min(duration, recovery.duration + extra);
+        if (!current.get(id)?.scripted || extra <= 0 || memory.elapsed + 1e-9 >= recovery.startedAt + capped)
+          delete recovery.personal![id];
+        else recovery.personal![id] = capped;
+      }
+      if (recovery.personal && !Object.keys(recovery.personal).length) delete recovery.personal;
+      if (!recovery.personal && memory.elapsed + 1e-9 >= recovery.startedAt + recovery.duration)
+        delete memory.recovery![team];
     }
   }
   if (memory.recovery && !Object.keys(memory.recovery).length) delete memory.recovery;

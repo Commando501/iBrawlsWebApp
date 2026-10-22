@@ -168,6 +168,14 @@ export const GRIFBALL_TIPOFF_POSITION_PREFERENCES = {
   guardian: { depth: 1.25, width: 0, reason: 'Hold a deeper opening lane, giving up some forward support.' },
 } satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
 
+/** Extra coverage time after the shared opening recovery, in seconds. */
+export const GRIFBALL_TIPOFF_RECOVERY_PREFERENCES = {
+  balanced: { delay: 0, reason: 'Return on the team regroup schedule.' },
+  enforcer: { delay: 0, reason: 'Rejoin the contest as soon as the team regroup interval ends.' },
+  opportunist: { delay: .25, reason: 'Hold coverage briefly longer before seeking a new opening challenge.' },
+  guardian: { delay: .5, reason: 'Keep recovery coverage longer, giving up some renewed opening pressure.' },
+} satisfies Record<GrifballPlayerStyle, { delay: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

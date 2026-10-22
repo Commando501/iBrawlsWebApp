@@ -143,7 +143,7 @@ test('v5 migration supplies style defaults, keeps team overrides and rejects inv
   const old = JSON.parse(JSON.stringify(defaultGrifballTactics())); old.schemaVersion = 5; old.teams.red = { styleWidth: 0.8 };
   delete old.defaults.stylesEnabled; delete old.defaults.adaptationEnabled;
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'styles') delete old.defaults[key];
-  const config = validateGrifballTactics(old); assert.equal(config.schemaVersion, 32); assert.equal(config.defaults.stylesEnabled, true); assert.equal(config.teams.red!.styleWidth, 0.8);
+  const config = validateGrifballTactics(old); assert.equal(config.schemaVersion, 33); assert.equal(config.defaults.stylesEnabled, true); assert.equal(config.teams.red!.styleWidth, 0.8);
   for (const patch of [{ styleAggression: 1.01 }, { adaptationMinSamples: NaN }, { adaptationConfidence: 0.4 }, { stylesEnabled: 1 }]) assert.throws(() => validateGrifballTactics({ ...config, teams: { blue: patch } }));
 });
 

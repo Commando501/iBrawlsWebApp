@@ -11,7 +11,12 @@ import { fieldDistance as distance, isSpaceSegmentOpen } from './grifballSpaceGe
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
 import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
-import type { TipoffRecovery, TipoffRecoveryDecision } from './aiGrifballTipoffRecovery';
+import {
+  resolveGrifballTipoffRecoveryAgency,
+  type TipoffRecovery,
+  type TipoffRecoveryDecision,
+  type TipoffRecoveryAgencyDecision,
+} from './aiGrifballTipoffRecovery';
 
 export interface TipoffMemory {
   round: number;
@@ -35,6 +40,7 @@ export interface TipoffOrder {
   agency?: TipoffAgencyDecision;
   positioning?: TipoffPositionDecision;
   recovery?: TipoffRecoveryDecision;
+  recoveryAgency?: TipoffRecoveryAgencyDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -184,9 +190,11 @@ export function applyGrifballTipoff(
   const localAllies = available.filter((p) => distance(p.pos, snapshot.ball) <= 18);
   const recovering = memory.recovery?.[team];
   const recovery =
-    recovering && tuning.tipoffRegroupSeconds > 0 && memory.elapsed < recovering.startedAt + recovering.duration
+    recovering && tuning.tipoffRegroupSeconds > 0 && memory.elapsed + 1e-9 < recovering.startedAt + recovering.duration
       ? {
-          ...recovering,
+          startedAt: recovering.startedAt,
+          duration: recovering.duration,
+          reason: recovering.reason,
           affectedIds: [...recovering.affectedIds],
           remaining: recovering.startedAt + recovering.duration - memory.elapsed,
         }
@@ -205,7 +213,13 @@ export function applyGrifballTipoff(
         travel(bot(a), snapshot.ball) - travel(bot(b), snapshot.ball) ||
         a.botId.localeCompare(b.botId),
     );
-  const screen = reserve && !contain ? remaining[0] : undefined;
+  const personalRecovery = new Map(
+    remaining.map((a) => [
+      a.botId,
+      resolveGrifballTipoffRecoveryAgency(recovering, memory.elapsed, tuning, snapshot.tactics?.botStyles, a.botId),
+    ]),
+  );
+  const screen = reserve && !contain ? remaining.find((a) => !personalRecovery.get(a.botId)?.holding) : undefined;
   const screenAgency = screen
     ? resolveGrifballTipoffAgency(tuning, snapshot.tactics?.botStyles, screen.botId)
     : undefined;
@@ -215,7 +229,7 @@ export function applyGrifballTipoff(
     slots.set(
       a,
       point(
-        contain ? reach + spacing : a === screen ? 2 : reach + 1.5,
+        contain || personalRecovery.get(a.botId)?.holding ? reach + spacing : a === screen ? 2 : reach + 1.5,
         firstSide * (i % 2 ? -1 : 1) * spacing * (1 + Math.floor(i / 2)),
       ),
     ),
@@ -276,6 +290,7 @@ export function applyGrifballTipoff(
     const job: TipoffOrder['job'] =
       a === collection ? 'collector' : a === reserve ? 'reserve' : a === screen ? 'screen' : 'support';
     const agency = a === collection ? collectorAgency : a === screen ? screenAgency : undefined;
+    const recoveryAgency = personalRecovery.get(a.botId);
     const reason =
       job === 'collector'
         ? claim
@@ -287,11 +302,13 @@ export function applyGrifballTipoff(
             ? attack
               ? 'One screen challenges the contest; collector and reserve stay separate.'
               : 'Approach a separate lane; wait for a reachable, spaced combat opening.'
-            : recovery
-              ? 'Restore a separate goal-side support lane before another opening challenge.'
-              : contain
-                ? 'Numbers or readiness are insufficient; spread and contain the opening.'
-                : 'Keep a separate support lane instead of joining the same clash.';
+            : recoveryAgency?.holding && !recovery
+              ? 'Hold a separate recovery lane until the personal regroup interval ends.'
+              : recovery
+                ? 'Restore a separate goal-side support lane before another opening challenge.'
+                : contain
+                  ? 'Numbers or readiness are insufficient; spread and contain the opening.'
+                  : 'Keep a separate support lane instead of joining the same clash.';
     delete a.defense;
     delete a.escort;
     delete a.receive;
@@ -301,7 +318,7 @@ export function applyGrifballTipoff(
       job === 'collector' && claim ? 'retriever' : job === 'reserve' ? 'safety' : job === 'screen' ? 'lead' : 'cover';
     a.tipoff = {
       job,
-      phase,
+      phase: recoveryAgency?.holding ? 'regroup' : phase,
       collectorId: collector.id,
       reserveId: reserve?.botId ?? null,
       targetId: a === screen ? (target?.id ?? null) : null,
@@ -312,6 +329,7 @@ export function applyGrifballTipoff(
       elapsed: memory.elapsed,
       reason,
       ...(recovery ? { recovery } : {}),
+      ...(recoveryAgency ? { recoveryAgency } : {}),
       ...(agency
         ? {
             agency: {
@@ -322,7 +340,7 @@ export function applyGrifballTipoff(
         : {}),
     };
     a.tanking = {
-      mode: a.tipoff.attack ? 'engage' : contain ? 'delay' : 'cover',
+      mode: a.tipoff.attack ? 'engage' : contain || recoveryAgency?.holding ? 'delay' : 'cover',
       targetId: a.tipoff.targetId,
       partnerId: null,
       recoveryId: reserve?.botId ?? null,

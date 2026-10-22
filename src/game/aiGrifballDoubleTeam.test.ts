@@ -147,7 +147,7 @@ test('human/neural carriers are observed while their own orders remain unassigne
 });
 
 test('v1–21 presets migrate double-team individuality off without resetting older strengths', () => {
-  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 32); assert.equal(current.defaults.doubleTeamAgencyStrength, 0);
+  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 33); assert.equal(current.defaults.doubleTeamAgencyStrength, 0);
   for (let version = 1; version <= 21; version++) {
     const old = JSON.parse(JSON.stringify(current)); old.schemaVersion = version; delete old.defaults.doubleTeamAgencyStrength;
     old.defaults.escortAgencyStrength = .8; old.botStyles.a = 'enforcer';

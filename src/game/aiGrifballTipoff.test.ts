@@ -541,7 +541,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 32);
+  assert.equal(config.schemaVersion, 33);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1062,7 +1062,7 @@ test('team-scoped recovery follows main_ai through mirrored reorder and checkpoi
 
 test('v32 migrations disable regrouping without changing styles or existing opening controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 32);
+  assert.equal(config.schemaVersion, 33);
   assert.equal(config.defaults.tipoffRegroupSeconds, 0);
   for (let v = 1; v < 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1085,4 +1085,305 @@ test('v32 migrations disable regrouping without changing styles or existing open
   const incomplete = JSON.parse(JSON.stringify(config));
   delete incomplete.defaults.tipoffRegroupSeconds;
   assert.throws(() => validateGrifballTactics(incomplete));
+});
+
+function personalRegroup(style: GrifballPlayerStyle, strength = 1) {
+  const f = regroupFixture(0.5);
+  f.tactics.defaults.tipoffRecoveryAgencyStrength = strength;
+  f.tactics.botStyles = { screen: style, collector: 'guardian', reserve: 'guardian' };
+  return f;
+}
+function startPersonalRegroup(f: ReturnType<typeof fixture>) {
+  f.run(0.05);
+  lose(f, 'support');
+  f.run(0);
+}
+
+for (const [style, extra] of [
+  ['balanced', 0],
+  ['enforcer', 0],
+  ['opportunist', 0.25],
+  ['guardian', 0.5],
+] as const)
+  test(`${style} resumes only after its own bounded recovery interval`, () => {
+    const f = personalRegroup(style);
+    startPersonalRegroup(f);
+    const initial = f.state.assignments.get('screen')!.tipoff!.recoveryAgency!;
+    assert.equal(initial.style, style);
+    assert.equal(initial.teamDuration, 0.5);
+    assert.equal(initial.duration, 0.5 + extra);
+    assert.ok(
+      f.run(0.49).every((a) => !a.tipoff!.attack),
+      'no style may leave the shared recovery early',
+    );
+    f.run(0.01);
+    const a = f.state.assignments.get('screen')!;
+    assert.equal(a.tipoff!.attack, extra === 0);
+    assert.equal(
+      f.state.assignments.get('collector')!.tipoff!.phase,
+      'contest',
+      'shared expiry interrupts slow refresh',
+    );
+    assert.equal(a.tipoff!.phase, extra > 0 ? 'regroup' : 'contest');
+    assert.equal(a.tipoff!.recovery, undefined, 'personal wait must not extend the shared interval');
+    if (extra) {
+      assert.equal(a.tipoff!.job, 'support');
+      assert.equal(a.tanking!.mode, 'delay');
+      f.run(extra - 0.01);
+      assert.equal(f.state.assignments.get('screen')!.tipoff!.attack, false);
+      f.run(0.01);
+      assert.equal(f.state.assignments.get('screen')!.tipoff!.attack, true, 'personal expiry interrupts slow refresh');
+    }
+    assert.equal(f.state.assignments.get('collector')!.tipoff!.recoveryAgency, undefined);
+    assert.equal(f.state.assignments.get('reserve')!.tipoff!.recoveryAgency, undefined);
+  });
+
+test('recovery preference blends independently of opening timing, lanes and team style', () => {
+  const f = personalRegroup('guardian', 0.5);
+  startPersonalRegroup(f);
+  f.run(0.5);
+  const a = f.state.assignments.get('screen')!;
+  assert.equal(a.tipoff!.recoveryAgency!.duration, 0.75);
+  assert.ok(a.tipoff!.recoveryAgency!.remaining > 0.24 && a.tipoff!.recoveryAgency!.remaining < 0.26);
+  assert.equal(f.tactics.defaults.stylesEnabled, false);
+  assert.equal(a.tipoff!.agency, undefined);
+  assert.equal(a.tipoff!.positioning, undefined);
+  f.run(0.25);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.attack, true);
+});
+
+test('another eligible teammate screens while a cautious bot keeps its personal recovery lane', () => {
+  const f = personalRegroup('guardian');
+  f.snapshot.players.push(actor('backup', 'blue', -12, 12));
+  f.tactics.botStyles.backup = 'enforcer';
+  startPersonalRegroup(f);
+  f.run(0.5);
+  const waiting = f.state.assignments.get('screen')!,
+    backup = f.state.assignments.get('backup')!;
+  assert.equal(waiting.tipoff!.job, 'support');
+  assert.equal(waiting.tipoff!.phase, 'regroup');
+  assert.equal(backup.tipoff!.job, 'screen');
+  assert.equal(backup.tipoff!.phase, 'contest');
+  assert.equal(f.state.assignments.get('reserve')!.tipoff!.job, 'reserve');
+  assert.equal(f.state.assignments.get('collector')!.tipoff!.job, 'collector');
+  assert.ok([...f.state.assignments.values()].filter((a) => a.team === 'blue' && a.tipoff!.attack).length <= 1);
+  assert.ok(fieldDistance(waiting.destination, backup.destination) >= waiting.tipoff!.spacing);
+});
+
+test('extra recovery never blocks a safe pickup, observed collector, or immediate defense', () => {
+  for (const human of [false, true]) {
+    const f = personalRegroup('guardian');
+    if (human) {
+      f.player('collector').scripted = false;
+      f.player('collector').vel.x = 5;
+    }
+    startPersonalRegroup(f);
+    f.snapshot.players.filter((p) => p.team === 'red').forEach((p) => (p.pos.x = 40));
+    f.run(0.5);
+    if (!human) assert.equal(steer(f, 'collector')!.pickupRequested, true);
+    else assert.equal(f.state.assignments.has('collector'), false);
+    const a = f.state.assignments.get('screen')!;
+    assert.equal(a.tipoff!.collectorId, 'collector');
+    assert.equal(a.tipoff!.phase, 'regroup');
+    f.player('enemy').pos = { x: f.player('screen').pos.x + 1, z: f.player('screen').pos.z };
+    assert.equal(selectGrifballAssignmentThreat(a, f.player('screen').pos, f.snapshot.players), 'enemy');
+  }
+});
+
+test('regroup individuality cannot override containment, missing reserve or positioning protection', () => {
+  const f = personalRegroup('guardian');
+  f.tactics.defaults.tipoffPositionAgencyStrength = 1;
+  startPersonalRegroup(f);
+  f.run(0.5);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.positioning!.applied, false);
+  assert.match(f.state.assignments.get('screen')!.tipoff!.positioning!.reason, /regrouping/);
+  lose(f, 'reserve');
+  f.run(0);
+  f.run(1.1);
+  assert.ok(
+    f.run(0.2).every((a) => !a.tipoff!.attack),
+    'two survivors cannot re-enter as a full contest',
+  );
+});
+
+test('zero individuality and neutral style preserve shared recovery behavior', () => {
+  const baseline = personalRegroup('guardian', 0),
+    neutral = personalRegroup('balanced', 1);
+  for (const f of [baseline, neutral]) {
+    f.tactics.botStyles.collector = 'balanced';
+    f.tactics.botStyles.reserve = 'balanced';
+    startPersonalRegroup(f);
+  }
+  for (const dt of [0.2, 0.3, 0.25]) {
+    baseline.run(dt);
+    neutral.run(dt);
+    for (const id of ['collector', 'screen', 'reserve']) {
+      const a = baseline.state.assignments.get(id)!,
+        b = neutral.state.assignments.get(id)!;
+      assert.deepEqual(a.destination, b.destination);
+      assert.equal(a.tipoff!.job, b.tipoff!.job);
+      assert.equal(a.tipoff!.attack, b.tipoff!.attack);
+      assert.equal(a.tipoff!.recoveryAgency, undefined);
+    }
+  }
+});
+
+test('live strength and style changes can shorten but cannot extend captured waits', () => {
+  for (const change of ['strength', 'style'] as const) {
+    const f = personalRegroup('opportunist', 0.5);
+    startPersonalRegroup(f);
+    const cap = f.state.tipoff!.recovery!.blue.personal!.screen;
+    if (change === 'strength') f.tactics.defaults.tipoffRecoveryAgencyStrength = 1;
+    else f.tactics.botStyles.screen = 'guardian';
+    f.run(0.5);
+    assert.equal(f.state.tipoff!.recovery!.blue.personal!.screen, cap);
+    f.run(0.125);
+    assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+  }
+  const f = personalRegroup('guardian');
+  startPersonalRegroup(f);
+  f.run(0.6);
+  f.tactics.defaults.tipoffRecoveryAgencyStrength = 0.1;
+  f.run(0);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+  f.tactics.defaults.tipoffRecoveryAgencyStrength = 1;
+  f.run(0);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen', 'a released wait cannot restart');
+});
+
+test('shortening shared duration keeps spent time and increasing it cannot prolong personal recovery', () => {
+  const f = personalRegroup('guardian');
+  startPersonalRegroup(f);
+  f.run(0.5);
+  f.tactics.defaults.tipoffRegroupSeconds = 0.25;
+  f.run(0);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.recoveryAgency!.duration, 0.75);
+  f.tactics.defaults.tipoffRegroupSeconds = 3;
+  f.run(0);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.recoveryAgency!.duration, 0.75);
+  f.run(0.25);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+});
+
+test('enabling individuality mid-recovery and joining late cannot invent personal waits', () => {
+  const f = personalRegroup('guardian', 0);
+  startPersonalRegroup(f);
+  f.tactics.defaults.tipoffRecoveryAgencyStrength = 1;
+  f.snapshot.players.push(actor('late', 'blue', -14, 12));
+  f.tactics.botStyles.late = 'guardian';
+  f.run(0.5);
+  assert.equal(f.state.tipoff!.recovery, undefined);
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.job, 'screen');
+  assert.equal(f.state.assignments.get('late')!.tipoff!.recoveryAgency, undefined);
+});
+
+test('a new disruption captures new preferences; continuous unavailability does not restart them', () => {
+  const f = personalRegroup('opportunist', 0.5);
+  startPersonalRegroup(f);
+  f.run(0.4);
+  f.tactics.botStyles.screen = 'guardian';
+  f.player('collector').height = 1;
+  f.run(0);
+  const start = f.state.tipoff!.recovery!.blue.startedAt;
+  assert.equal(f.state.tipoff!.recovery!.blue.personal!.screen, 0.75);
+  f.run(0.3);
+  assert.equal(f.state.tipoff!.recovery!.blue.startedAt, start);
+  f.run(0.45);
+  assert.equal(f.state.tipoff!.recovery, undefined);
+});
+
+for (const key of [
+  'tipoffRecoveryAgencyStrength',
+  'tipoffRegroupSeconds',
+  'tipoffEnabled',
+  'enabled',
+  'spaceEnabled',
+] as const)
+  test(`${key} off clears personal recovery immediately without replay`, () => {
+    const f = personalRegroup('guardian');
+    startPersonalRegroup(f);
+    f.run(0.5);
+    const prior = f.tactics.defaults[key];
+    Object.assign(f.tactics.defaults, { [key]: typeof prior === 'number' ? 0 : false });
+    f.run(0);
+    assert.equal(f.state.tipoff!.recovery, undefined);
+    assert.ok([...f.state.assignments.values()].every((a) => !a.tipoff?.recoveryAgency));
+    Object.assign(f.tactics.defaults, { [key]: prior });
+    f.run(0);
+    assert.equal(f.state.tipoff!.recovery, undefined);
+  });
+
+for (const ending of ['possession', 'displaced', 'round', 'timeout', 'reset'] as const)
+  test(`${ending} clears personal recovery after the team interval`, () => {
+    const f = personalRegroup('guardian');
+    startPersonalRegroup(f);
+    f.run(0.5);
+    if (ending === 'reset') resetGrifballTeamPlan(f.state);
+    else {
+      if (ending === 'possession') f.snapshot.holderId = 'collector';
+      if (ending === 'displaced') f.snapshot.ballPhysics!.pos.x = 2;
+      if (ending === 'round') f.snapshot.round++;
+      f.run(ending === 'timeout' ? 8 : 0);
+    }
+    assert.equal(f.state.tipoff?.recovery, undefined);
+    assert.ok([...f.state.assignments.values()].every((a) => !a.tipoff?.recoveryAgency));
+  });
+
+test('personal recovery survives JSON continuation and follows main_ai under mirrored team overrides', () => {
+  for (const mirror of [false, true])
+    for (const reverse of [false, true]) {
+      const f = personalRegroup('guardian', 0),
+        team = mirror ? 'red' : 'blue';
+      f.player('screen').id = 'main_ai';
+      f.tactics.botStyles.main_ai = 'guardian';
+      f.tactics.teams[team] = { tipoffRecoveryAgencyStrength: 1 };
+      if (mirror)
+        for (const p of f.snapshot.players) {
+          p.team = p.team === 'blue' ? 'red' : 'blue';
+          p.pos.x *= -1;
+          p.pos.z *= -1;
+        }
+      if (reverse) f.snapshot.players.reverse();
+      startPersonalRegroup(f);
+      f.run(0.5);
+      assert.equal(f.state.assignments.get('main_ai')!.tipoff!.recoveryAgency!.style, 'guardian');
+      const saved = JSON.parse(JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }));
+      const restored = { ...saved, assignments: new Map(saved.assignments) };
+      const persisted = (s: typeof f.state) => JSON.stringify({ ...s, assignments: [...s.assignments] });
+      for (const dt of [0.2, 0.3]) {
+        f.run(dt);
+        updateGrifballTeamPlan(restored, structuredClone(f.snapshot), dt);
+        assert.equal(persisted(restored), persisted(f.state));
+      }
+      assert.equal(f.state.assignments.get('main_ai')!.tipoff!.job, 'screen');
+    }
+});
+
+test('v33 migration disables recovery individuality and preserves regroup and style settings', () => {
+  const config = defaultGrifballTactics();
+  assert.equal(config.schemaVersion, 33);
+  assert.equal(config.defaults.tipoffRecoveryAgencyStrength, 0);
+  for (let v = 1; v <= 32; v++) {
+    const old = JSON.parse(JSON.stringify(config));
+    old.schemaVersion = v;
+    delete old.defaults.tipoffRecoveryAgencyStrength;
+    old.defaults.tipoffRegroupSeconds = 1.25;
+    old.defaults.tipoffPositionAgencyStrength = 0.6;
+    old.botStyles.main_ai = 'guardian';
+    old.teams.red = { tipoffRegroupSeconds: 2 };
+    const next = validateGrifballTactics(old);
+    assert.equal(next.defaults.tipoffRecoveryAgencyStrength, 0);
+    assert.equal(next.defaults.tipoffRegroupSeconds, 1.25);
+    assert.equal(next.defaults.tipoffPositionAgencyStrength, 0.6);
+    assert.equal(next.botStyles.main_ai, 'guardian');
+    assert.equal(next.teams.red!.tipoffRegroupSeconds, 2);
+  }
+  config.defaults.tipoffRecoveryAgencyStrength = 0.7;
+  config.teams.red = { tipoffRecoveryAgencyStrength: 1 };
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
+  for (const bad of [-0.1, 1.1, NaN, Infinity, '1', true])
+    assert.throws(() => validateGrifballTactics({ ...config, teams: { red: { tipoffRecoveryAgencyStrength: bad } } }));
+  const missing = JSON.parse(JSON.stringify(config));
+  delete missing.defaults.tipoffRecoveryAgencyStrength;
+  assert.throws(() => validateGrifballTactics(missing));
 });
