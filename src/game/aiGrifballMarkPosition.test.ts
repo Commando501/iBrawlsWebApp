@@ -325,7 +325,7 @@ test('observed markers receive no orders and other bots retain their own styles'
 
 test('schemas 1–24 migrate marking off and preserve existing controls and styles', () => {
   const current = defaultGrifballTactics();
-  assert.equal(current.schemaVersion, 36);
+  assert.equal(current.schemaVersion, 37);
   assert.equal(current.defaults.markAgencyStrength, 0);
   for (let version = 1; version <= 24; version++) {
     const old = JSON.parse(JSON.stringify(current));

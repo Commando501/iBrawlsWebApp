@@ -151,6 +151,14 @@ export function updateGrifballTeamPlan(
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),
     players.map(p => { const t = resolveTeamTactics(config, p.team); return t.enabled && t.spaceEnabled && t.tipoffEnabled && t.tipoffScreenHandoffEnabled && !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds ? [tipoffScreenReadiness(p), (p.height ?? 0) <= .01 && (p.space?.mobileIn ?? Infinity) <= 0] : null; }),
     players.map(p => [p.id, p.team, p.scripted, p.difficulty]),
+    players.map(p => {
+      const t = resolveTeamTactics(config, p.team), d = state.assignments.get(p.id)?.tipoff?.targetSelection;
+      const c = d?.commitment;
+      if (!t.enabled || !t.spaceEnabled || !t.tipoffEnabled || t.tipoffTargetAgencyStrength <= 0 || t.tipoffTargetCommitSeconds <= 0 || state.tipoff!.closed || !c) return null;
+      const target = players.find(other => other.id === d!.selectedId);
+      // Expiry and the end of a visible recovery interrupt a slow tactical tick.
+      return [p.id, d!.selectedId, state.tipoff!.elapsed + 1e-9 >= Math.min(c.deadline, c.startedAt + t.tipoffTargetCommitSeconds), tipoffScreenReadiness(p), target?.space?.phase.includes('recover') ?? false];
+    }),
     players.filter(p => p.id === snapshot.holderId).map(p => {
       const attack = resolveTeamTactics(config, p.team), defense = resolveTeamTactics(config, otherTeam(p.team));
       const goal = snapshot.goals[otherTeam(p.team)], range = goal ? distance(p.pos, goal) : Infinity;

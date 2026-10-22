@@ -346,12 +346,24 @@ export function applyGrifballTipoff(
     // At zero, preserve the original single-candidate choice exactly. Positive
     // strength checks alternatives before applying bounded style preferences.
     const evaluated = (tuning.tipoffTargetAgencyStrength > 0 ? candidates : candidates.slice(0, 1)).map(evaluate);
+    const oldOrder = previous.get(self.id)?.tipoff;
     if (tuning.tipoffTargetAgencyStrength > 0)
       targetSelection = chooseTipoffTarget(
         evaluated.map(({ p, engage, teamAttack, attack, ...c }) => c),
         tuning.tipoffTargetAgencyStrength,
         snapshot.tactics?.botStyles,
         self.id,
+        {
+          elapsed: memory.elapsed,
+          seconds: tuning.tipoffTargetCommitSeconds,
+          previous:
+            oldOrder?.job === 'screen' &&
+            oldOrder.phase === 'contest' &&
+            oldOrder.collectorId === collector.id &&
+            oldOrder.reserveId === reserve?.botId
+              ? oldOrder.targetSelection
+              : undefined,
+        },
       );
     const selected = targetSelection ? evaluated.find((c) => c.targetId === targetSelection.selectedId) : evaluated[0];
     target = selected?.p;

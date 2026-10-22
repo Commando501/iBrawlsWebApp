@@ -19,7 +19,13 @@ import type { GrifballPlayerStyle } from '../../src/game/grifballPlayerStyles';
 const dt = 1 / 60;
 const rounded = (v: unknown) =>
   JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'number' ? Math.round(x * 1e8) / 1e8 : x)));
-function targetTrace(id: string, mirror: boolean, style: GrifballPlayerStyle, strength = 1) {
+function targetTrace(
+  id: string,
+  mirror: boolean,
+  style: GrifballPlayerStyle,
+  strength = 1,
+  commitmentSeconds?: number,
+) {
   const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', attackRange: 1.8, attackRadius: 2 }, 'nearest');
   const { state, sim, bot, target } = f;
   const [self, enemy] = sim.combatants;
@@ -35,6 +41,7 @@ function targetTrace(id: string, mirror: boolean, style: GrifballPlayerStyle, st
     tipoffTargetAgencyStrength: strength,
     stylesEnabled: false,
     passingEnabled: false,
+    ...(commitmentSeconds !== undefined ? { tipoffTargetCommitSeconds: commitmentSeconds, refreshSeconds: 0.05 } : {}),
   });
   state.grifballTactics.botStyles[id] = style;
   for (const [c, live, name, t, x, z] of [
@@ -99,7 +106,15 @@ function targetTrace(id: string, mirror: boolean, style: GrifballPlayerStyle, st
   const goal = (t: string | undefined) => sim.goalPlates.find((p) => p.team !== t)!.position;
   const plan = createGrifballTeamPlanState();
   const frames: unknown[] = [];
+  let heldFrames = 0,
+    changedTargets = 0;
+  let previousTarget: string | null = null;
   for (let tick = 0; tick < 12; tick++) {
+    if (commitmentSeconds !== undefined && tick > 0) {
+      // Both engines observe the same small rival movement. Each independently
+      // chooses and executes a screen route; no orders are copied between hosts.
+      enemy.pos.x = target.pos.x = (Math.floor((tick - 1) / 4) % 2 ? 2.5 : 4) * sign;
+    }
     updateGrifballTeamPlanForState(state, dt, goal, f.map);
     updateGrifballTeamPlan(
       plan,
@@ -111,6 +126,9 @@ function targetTrace(id: string, mirror: boolean, style: GrifballPlayerStyle, st
     assert.equal(a.tipoff!.job, 'screen');
     assert.deepEqual(rounded(a.tipoff), rounded(b.tipoff));
     assert.deepEqual(rounded(a.destination), rounded(b.destination));
+    if (a.tipoff!.targetSelection?.commitment?.retained) heldFrames++;
+    if (previousTarget && previousTarget !== a.tipoff!.targetId) changedTargets++;
+    previousTarget = a.tipoff!.targetId;
     assert.equal(
       selectGrifballAssignmentThreat(a, self.pos, plan.snapshot!.players),
       selectGrifballAssignmentThreat(b, bot.pos, state.aiMatchContext.grifballTeamPlan.snapshot!.players),
@@ -163,6 +181,10 @@ function targetTrace(id: string, mirror: boolean, style: GrifballPlayerStyle, st
     frames.push({ ...self.pos });
   }
   assert.notDeepEqual(frames[0], frames[11]);
+  if (commitmentSeconds !== undefined) {
+    assert.equal(changedTargets > 0, commitmentSeconds === 0);
+    assert.equal(heldFrames > 0, commitmentSeconds > 0);
+  }
   return frames;
 }
 
@@ -173,4 +195,12 @@ for (const id of ['main_ai', 'bot_2'])
       assert.deepEqual(targetTrace(id, mirror, 'enforcer', 0), baseline);
       for (const style of ['enforcer', 'opportunist', 'guardian'] as const)
         assert.notDeepEqual(targetTrace(id, mirror, style), baseline, style + ' must change executed movement');
+    });
+
+for (const id of ['main_ai', 'bot_2'])
+  for (const mirror of [false, true])
+    test(`live/sim target commitment steadies executed movement through rival jitter ${id}/${mirror}`, () => {
+      const reactive = targetTrace(id, mirror, 'balanced', 1, 0);
+      const steady = targetTrace(id, mirror, 'balanced', 1, 0.6);
+      assert.notDeepEqual(steady, reactive, 'commitment must change actual screen movement');
     });

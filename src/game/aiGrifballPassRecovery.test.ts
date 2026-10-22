@@ -150,7 +150,7 @@ test('possession, round changes, idle reset, and explicit reset clear recovery d
   }
 });
 test('v1–16 presets migrate with adaptive recovery off; v17 validates controls and scoped overrides', () => {
-  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 36);
+  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 37);
   assert.equal(current.defaults.passRecoveryEnabled, false); assert.equal(current.defaults.passRecoveryAdvantage, .5);
   for (let version = 1; version <= 16; version++) {
     const old = JSON.parse(JSON.stringify(current)); old.schemaVersion = version;
@@ -265,7 +265,7 @@ test('v1–17 migration leaves recovery individuality off and retains existing r
     old.defaults.passRecoveryEnabled = true; old.defaults.passRecoveryAdvantage = 1.2;
     old.botStyles.original = 'enforcer'; old.teams.red = { passRecoveryAdvantage: .8 };
     const migrated = validateGrifballTactics(old);
-    assert.equal(migrated.schemaVersion, 36); assert.equal(migrated.defaults.passRecoveryAgencyStrength, 0);
+    assert.equal(migrated.schemaVersion, 37); assert.equal(migrated.defaults.passRecoveryAgencyStrength, 0);
     assert.equal(migrated.defaults.passRecoveryEnabled, true); assert.equal(migrated.defaults.passRecoveryAdvantage, 1.2);
     assert.equal(migrated.botStyles.original, 'enforcer'); assert.deepEqual(migrated.teams.red, { passRecoveryAdvantage: .8 });
   }
