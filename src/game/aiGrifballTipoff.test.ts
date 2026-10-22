@@ -543,7 +543,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1064,7 +1064,7 @@ test('team-scoped recovery follows main_ai through mirrored reorder and checkpoi
 
 test('v32 migrations disable regrouping without changing styles or existing opening controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffRegroupSeconds, 0);
   for (let v = 1; v < 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1363,7 +1363,7 @@ test('personal recovery survives JSON continuation and follows main_ai under mir
 
 test('v33 migration disables recovery individuality and preserves regroup and style settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffRecoveryAgencyStrength, 0);
   for (let v = 1; v <= 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1599,7 +1599,7 @@ test('screen handoff is deterministic across mirroring, roster order, main_ai an
 
 test('v34 screen handoff migration, overrides and strict boolean validation', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffScreenHandoffEnabled, false);
   for (let version = 1; version < 34; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1860,7 +1860,7 @@ test('screen preferences remain deterministic across main_ai, mirrors, reorderin
 
 test('v35 migration defaults screen individuality off while preserving handoff and other preferences', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffScreenAgencyStrength, 0);
   for (let v = 1; v < 35; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2112,7 +2112,7 @@ test('target preferences preserve main_ai, mirrored teams, deterministic order a
 
 test('v36 migration defaults target individuality off and preserves existing tip-off controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffTargetAgencyStrength, 0);
   for (let v = 1; v < 36; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2272,7 +2272,7 @@ test('a changed rear reserve or regroup interval clears a screen target hold', (
 
 test('v37 imports leave commitment off while preserving target styles and prior controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffTargetCommitSeconds, 0);
   for (let v = 1; v < 37; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2401,7 +2401,7 @@ test('commitment individuality stays behind dependencies, safety and screen hand
 
 test('v38 migration leaves commitment individuality off and preserves earlier preferences', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffTargetCommitAgencyStrength, 0);
   for (let v = 1; v < 38; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2632,7 +2632,7 @@ test('collector handoff follows main_ai, mirrors, overrides and JSON continuatio
 
 test('v39 migration leaves collector handoff off with a .35 s advantage', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 39);
+  assert.equal(config.schemaVersion, 40);
   assert.equal(config.defaults.tipoffCollectorHandoffEnabled, false);
   assert.equal(config.defaults.tipoffCollectorAdvantage, 0.35);
   for (let v = 1; v < 39; v++) {
@@ -2661,4 +2661,199 @@ test('v39 migration leaves collector handoff off with a .35 s advantage', () => 
     delete missing.defaults[key];
     assert.throws(() => validateGrifballTactics(missing));
   }
+});
+
+function collectorAgencyFixture(strength = 1) {
+  const f = collectorFixture();
+  f.tactics.defaults.tipoffCollectorAgencyStrength = strength;
+  f.tactics.botStyles.screen = 'opportunist';
+  f.player('screen').pos = { x: -8, z: -4 };
+  return f;
+}
+
+test('collector individuality changes the real initial pickup owner, then keeps it stable', () => {
+  const zero = collectorAgencyFixture(0),
+    personal = collectorAgencyFixture();
+  zero.run();
+  personal.run();
+  assert.equal(collectorDecision(zero)!.selectedId, 'collector');
+  const d = collectorDecision(personal)!;
+  assert.equal(d.selectedId, 'screen');
+  assert.equal(d.agency!.baselineId, 'collector');
+  assert.equal(d.agency!.changedChoice, true);
+  assert.equal(steer(personal, 'screen')!.pickupRequested, true);
+  assert.equal(steer(personal, 'collector')!.pickupRequested, false);
+  assert.equal(personal.state.assignments.get('reserve')!.tipoff!.job, 'reserve');
+  assert.deepEqual(personal.state.assignments.get('screen')!.destination, personal.snapshot.ball);
+  personal.tactics.botStyles.screen = 'guardian';
+  personal.run();
+  assert.equal(collectorDecision(personal)!.selectedId, 'screen');
+  assert.deepEqual(collectorDecision(personal)!.agency!.bids, []);
+  personal.player('screen').space!.phase = 'swing_up';
+  assert.equal(steer(personal, 'screen')!.pickupRequested, false);
+});
+
+test('collector individuality preserves actual safe pickups including personal pickup margins', () => {
+  for (const caution of [0, 1]) {
+    const f = collectorAgencyFixture();
+    f.tactics.defaults.tipoffAgencyStrength = caution;
+    // Put a visible attack deadline between the two real pickup arrivals.
+    const enemy = f.player('enemy');
+    enemy.pos = { x: 0, z: 0 };
+    enemy.space!.attackIn = 2;
+    f.run();
+    const d = collectorDecision(f)!;
+    assert.equal(d.selectedId, 'collector');
+    assert.equal(d.candidates.find((c) => c.botId === 'collector')!.pickupSafe, true);
+    assert.equal(d.candidates.find((c) => c.botId === 'screen')!.pickupSafe, false);
+    assert.match(d.agency!.bids.find((c) => c.botId === 'screen')!.rejection!, /safe pickup/);
+    assert.equal(f.state.assignments.get('collector')!.tipoff!.phase, 'claim');
+    assert.equal(steer(f, 'collector')!.pickupRequested, true);
+  }
+});
+
+test('collector individuality selects a close replacement on unavailability without poaching the reserve', () => {
+  const f = collectorAgencyFixture(0);
+  f.run();
+  f.tactics.defaults.tipoffCollectorAgencyStrength = 1;
+  f.tactics.botStyles = { screen: 'guardian', support: 'opportunist', reserve: 'opportunist' };
+  f.player('support').pos = { x: -8, z: 5 };
+  f.player('reserve').pos = { x: -0.5, z: 0 };
+  f.player('collector').space!.phase = 'recovering';
+  f.run();
+  const d = collectorDecision(f)!;
+  assert.equal(d.selectedId, 'support');
+  assert.equal(d.agency!.baselineId, 'screen');
+  assert.match(d.agency!.bids.find((c) => c.botId === 'reserve')!.rejection!, /reserve/);
+  assert.match(d.agency!.bids.find((c) => c.botId === 'collector')!.rejection!, /ready weapon/);
+  assert.equal(steer(f, 'support')!.pickupRequested, true);
+});
+
+test('collector preferences cannot steal an active screen, a personal regroup or observed human pursuit', () => {
+  const f = collectorFixture(false);
+  f.tactics.defaults.tipoffCollectorAgencyStrength = 1;
+  f.tactics.botStyles = { screen: 'opportunist', reserve: 'opportunist', support: 'guardian' };
+  f.player('enemy-screen').pos = { x: 2.5, z: -5.5 };
+  f.run();
+  assert.equal(f.state.assignments.get('screen')!.tipoff!.attack, true);
+  f.player('collector').space!.phase = 'recovering';
+  f.run();
+  assert.equal(collectorDecision(f)!.selectedId, 'support');
+  assert.match(collectorDecision(f)!.agency!.bids.find((c) => c.botId === 'screen')!.rejection!, /screen/);
+  assert.equal(steer(f, 'support')!.pickupRequested, false);
+  f.tactics.defaults.tipoffRegroupSeconds = 1;
+  f.tactics.defaults.tipoffRecoveryAgencyStrength = 1;
+  f.tactics.botStyles.collector = 'guardian';
+  f.run(0.01);
+  f.player('collector').space!.phase = 'ready';
+  f.player('support').height = 1;
+  f.run();
+  assert.match(collectorDecision(f)!.candidates.find((c) => c.botId === 'collector')!.rejection!, /regroup/);
+
+  const h = collectorAgencyFixture(0);
+  h.player('collector').pos = { x: -1, z: 0 };
+  h.run();
+  h.tactics.defaults.tipoffCollectorAgencyStrength = 1;
+  h.tactics.defaults.reassignmentAdvantage = 4;
+  h.player('collector').space!.speed = 0.5;
+  h.player('screen').pos = { x: -2, z: 3 };
+  h.snapshot.players.push({ ...actor('human', 'blue', -4), scripted: false, vel: { x: 1, z: 0 } });
+  h.run();
+  assert.equal(collectorDecision(h)!.selectedId, 'collector');
+  assert.match(collectorDecision(h)!.candidates.find((c) => c.botId === 'screen')!.rejection!, /human or neural/);
+});
+
+test('collector individuality handles unavailable rosters, blocked routes and disabled dependencies', () => {
+  const f = collectorAgencyFixture();
+  f.run();
+  for (const p of f.snapshot.players.filter((p) => p.team === 'blue' && p.id !== 'reserve'))
+    p.space!.phase = 'recovering';
+  assert.ok(f.run().every((a) => a.tipoff!.job !== 'collector' && !a.tipoff!.attack));
+  assert.equal(collectorDecision(f)!.selectedId, null);
+  const blocked = collectorAgencyFixture();
+  blocked.snapshot.geometry!.blockers.push({ kind: 'box', x: 0, z: 0, hx: 1, hz: 1 });
+  blocked.run();
+  assert.equal(collectorDecision(blocked)!.selectedId, null);
+  for (const key of ['tipoffCollectorHandoffEnabled', 'tipoffEnabled', 'enabled', 'spaceEnabled'] as const) {
+    const off = collectorAgencyFixture();
+    off.tactics.defaults[key] = false;
+    assert.ok(off.run().every((a) => !a.tipoff?.collectorSelection?.agency));
+  }
+});
+
+test('collector individuality mirrors main_ai, uses team overrides and survives JSON continuation', () => {
+  for (const mirror of [false, true]) {
+    const f = collectorAgencyFixture(0),
+      team = mirror ? 'red' : 'blue';
+    f.player('screen').id = 'main_ai';
+    f.tactics.botStyles = { main_ai: 'opportunist' };
+    f.tactics.teams[team] = { tipoffCollectorAgencyStrength: 1 };
+    if (mirror)
+      for (const p of f.snapshot.players) {
+        p.team = p.team === 'blue' ? 'red' : 'blue';
+        p.pos.x *= -1;
+        p.pos.z *= -1;
+      }
+    f.snapshot.players.reverse();
+    f.run();
+    assert.equal(f.state.assignments.get('main_ai')!.tipoff!.collectorSelection!.selectedId, 'main_ai');
+    assert.equal(resolveTeamTactics(f.tactics, mirror ? 'blue' : 'red').tipoffCollectorAgencyStrength, 0);
+    const restored = JSON.parse(JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }));
+    restored.assignments = new Map(restored.assignments);
+    f.player('main_ai').space!.phase = 'recovering';
+    for (const dt of [0.2, 0.2, 0.2]) {
+      f.run(dt);
+      updateGrifballTeamPlan(restored, structuredClone(f.snapshot), dt);
+      assert.equal(
+        JSON.stringify({ ...restored, assignments: [...restored.assignments] }),
+        JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }),
+      );
+    }
+  }
+});
+
+test('collector individuality ends with the opening and starts fresh on the next round', () => {
+  for (const end of ['possession', 'displacement', 'timeout', 'round'] as const) {
+    const f = collectorAgencyFixture();
+    f.run();
+    if (end === 'possession') f.snapshot.holderId = 'screen';
+    if (end === 'displacement') f.snapshot.ballPhysics!.pos.x = 1;
+    if (end === 'round') f.snapshot.round++;
+    const orders = f.run(end === 'timeout' ? 9 : 0.2);
+    if (end === 'round') assert.equal(collectorDecision(f)!.previousId, null);
+    else assert.ok(orders.every((a) => !a.tipoff));
+  }
+});
+
+test('schema 40 migrates collector individuality at zero without changing existing handoff settings', () => {
+  const config = defaultGrifballTactics();
+  assert.equal(config.schemaVersion, 40);
+  assert.equal(config.defaults.tipoffCollectorAgencyStrength, 0);
+  for (let version = 1; version < 40; version++) {
+    const old = JSON.parse(JSON.stringify(config));
+    old.schemaVersion = version;
+    delete old.defaults.tipoffCollectorAgencyStrength;
+    old.defaults.tipoffCollectorHandoffEnabled = true;
+    old.defaults.tipoffCollectorAdvantage = 0.6;
+    old.teams.red = { tipoffCollectorAdvantage: 0.8 };
+    old.botStyles = { main_ai: 'opportunist' };
+    const next = validateGrifballTactics(old);
+    assert.equal(next.defaults.tipoffCollectorAgencyStrength, 0);
+    assert.equal(next.defaults.tipoffCollectorHandoffEnabled, true);
+    assert.equal(next.defaults.tipoffCollectorAdvantage, 0.6);
+    assert.deepEqual(next.teams, old.teams);
+    assert.deepEqual(next.botStyles, old.botStyles);
+  }
+  config.defaults.tipoffCollectorAgencyStrength = 0.4;
+  config.teams.red = { tipoffCollectorAgencyStrength: 1 };
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
+  for (const bad of [-0.1, 1.1, NaN, Infinity, '1', true]) {
+    assert.throws(() => validateGrifballTactics({ ...config, teams: { red: { tipoffCollectorAgencyStrength: bad } } }));
+    assert.throws(() =>
+      validateGrifballTactics({ ...config, defaults: { ...config.defaults, tipoffCollectorAgencyStrength: bad } }),
+    );
+  }
+  const missing = JSON.parse(JSON.stringify(config));
+  delete missing.defaults.tipoffCollectorAgencyStrength;
+  assert.throws(() => validateGrifballTactics(missing));
 });

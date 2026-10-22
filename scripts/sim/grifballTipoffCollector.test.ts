@@ -16,7 +16,7 @@ import { updateGrifballObjectiveForState } from '../../src/components/grifball/g
 const dt = 1 / 60;
 const rounded = (v: unknown) =>
   JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'number' ? Math.round(x * 1e8) / 1e8 : x)));
-function collectorTrace(id: string, mirror: boolean, enabled: boolean) {
+function collectorTrace(id: string, mirror: boolean, enabled: boolean, individuality?: number) {
   const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', attackRange: 1.8, attackRadius: 2 }, 'enemy');
   const { state, sim, bot, target } = f;
   const [self, enemy] = sim.combatants;
@@ -30,12 +30,14 @@ function collectorTrace(id: string, mirror: boolean, enabled: boolean) {
   Object.assign(state.grifballTactics.defaults, {
     tipoffEnabled: true,
     tipoffCollectorHandoffEnabled: enabled,
+    tipoffCollectorAgencyStrength: individuality ?? 0,
     stylesEnabled: false,
     passingEnabled: false,
     refreshSeconds: 0.05,
   });
+  if (individuality !== undefined) state.grifballTactics.botStyles[id] = 'opportunist';
   for (const [c, live, name, t, x, z] of [
-    [self, bot, id, team, -2, -2],
+    [self, bot, id, team, -2, individuality !== undefined ? -1.5 : -2],
     [enemy, target, 'enemy', rival, 40, 0],
   ] as const) {
     c.id = name;
@@ -89,7 +91,7 @@ function collectorTrace(id: string, mirror: boolean, enabled: boolean) {
     liveIncumbent = state.otherPlayers.get('collector')!;
   let tookOver = false;
   for (let tick = 0; tick < 36; tick++) {
-    if (tick === 1) {
+    if (tick === 1 && individuality === undefined) {
       incumbent.weaponState = 'recovering';
       incumbent.weaponTimer = sim.settings.hammerReloadTime;
     }
@@ -110,14 +112,21 @@ function collectorTrace(id: string, mirror: boolean, enabled: boolean) {
     assert.deepEqual(rounded(a.tipoff), rounded(b.tipoff));
     assert.deepEqual(rounded(a.destination), rounded(b.destination));
     assert.equal(plan.assignments.get('reserve')!.tipoff!.job, 'reserve');
-    if (tick === 0) assert.equal(a.tipoff!.collectorId, 'collector');
-    if (tick > 0 && enabled) {
+    const collecting = individuality !== undefined ? individuality > 0 : tick > 0 && enabled;
+    if (tick === 0) {
+      assert.equal(a.tipoff!.collectorId, collecting ? id : 'collector');
+      if (individuality) {
+        assert.equal(a.tipoff!.collectorSelection!.agency!.changedChoice, true);
+        assert.equal(a.tipoff!.collectorSelection!.agency!.baselineId, 'collector');
+      }
+    }
+    if (collecting) {
       assert.equal(a.tipoff!.collectorSelection!.selectedId, id);
       tookOver = true;
     }
     const input = resolveSimGrifballSupportInput(sim, plan, id, owners, dt)!;
     assert.ok(input);
-    assert.equal(input.action.pickup, tick > 0 && enabled);
+    assert.equal(input.action.pickup, collecting);
     const frame = {
       pos: bot.pos,
       vel: bot.vel,
@@ -169,9 +178,10 @@ function collectorTrace(id: string, mirror: boolean, enabled: boolean) {
     frames.push({ ...self.pos });
     if (sim.match.ball.holderId) break;
   }
-  assert.equal(tookOver, enabled);
-  assert.equal(sim.match.ball.holderId, enabled ? id : null);
-  if (enabled) {
+  const collects = individuality !== undefined ? individuality > 0 : enabled;
+  assert.equal(tookOver, collects);
+  assert.equal(sim.match.ball.holderId, collects ? id : null);
+  if (collects) {
     updateGrifballTeamPlanForState(state, dt, goal, f.map);
     updateGrifballTeamPlan(
       plan,
@@ -187,4 +197,10 @@ for (const id of ['main_ai', 'bot_2'])
   for (const mirror of [false, true])
     test('live/sim collector handoff moves and collects ' + id + '/' + mirror, () => {
       assert.notDeepEqual(collectorTrace(id, mirror, true), collectorTrace(id, mirror, false));
+    });
+
+for (const id of ['main_ai', 'bot_2'])
+  for (const mirror of [false, true])
+    test('live/sim collector individuality changes movement and actual possession ' + id + '/' + mirror, () => {
+      assert.notDeepEqual(collectorTrace(id, mirror, true, 1), collectorTrace(id, mirror, true, 0));
     });

@@ -184,6 +184,14 @@ export const GRIFBALL_TIPOFF_SCREEN_PREFERENCES = {
   guardian: { bias: .25, reason: 'Prefer to keep coverage when another nearby support can screen.' },
 } satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
 
+/** Bounded collector bids; actual arrival, handoff stability and pickup safety win. */
+export const GRIFBALL_TIPOFF_COLLECTOR_PREFERENCES = {
+  balanced: { bias: 0, reason: 'Use arrival order when the collector role opens.' },
+  enforcer: { bias: .15, reason: 'Prefer to leave a close collection to a teammate and remain available for combat.' },
+  opportunist: { bias: -.25, reason: 'Volunteer for a close collection when the real pickup margin is safe.' },
+  guardian: { bias: .25, reason: 'Prefer coverage when a nearby teammate can collect without losing a safe pickup.' },
+} satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
+
 export const GRIFBALL_TIPOFF_COMMITMENT_PREFERENCES = {
   balanced: { adjustment: 0, reason: 'Use the team target commitment duration.' },
   enforcer: { adjustment: 0.25, reason: 'Hold a safe opening target up to 0.25 s longer, within the 1.5 s limit.' },

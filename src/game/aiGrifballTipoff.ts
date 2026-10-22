@@ -98,7 +98,8 @@ export function tipoffPickupAllowed(
 ): boolean {
   const self = players.find((p) => p.id === a.botId),
     margin = a.tipoff?.agency?.pickupMargin ?? a.tuning?.tipoffPickupMargin ?? 0.35;
-  if (!self || !grounded(self) || (a.tipoff?.collectorSelection && tipoffScreenReadiness(self) !== 'ready')) return false;
+  if (!self || !grounded(self) || (a.tipoff?.collectorSelection && tipoffScreenReadiness(self) !== 'ready'))
+    return false;
   const arrival = distance(pos, ball) / Math.max(0.1, self.space!.speed);
   return players
     .filter((p) => p.team !== a.team)
@@ -141,6 +142,10 @@ export function applyGrifballTipoff(
   };
   let collection = assignments.find((a) => a.role === 'retriever');
   const baselineCollection = collection;
+  const enemyAttackETA = Math.min(
+    Infinity,
+    ...enemies.map((p) => estimateSpaceAttackTime(p, snapshot.ball, routers.get(p.id)!(snapshot.ball, true).length)),
+  );
   let collectorSelection: TipoffCollectorDecision | undefined;
   if (collection && tuning.tipoffCollectorHandoffEnabled) {
     const previousId =
@@ -172,11 +177,24 @@ export function applyGrifballTipoff(
           )
         )
           rejection = 'Observed human or neural pursuit has pickup priority.';
-        return { botId: p.id, arrival, rejection };
+        const pickupMargin =
+          tuning.tipoffCollectorAgencyStrength > 0
+            ? (resolveGrifballTipoffAgency(tuning, snapshot.tactics?.botStyles, p.id)?.pickupMargin ??
+              tuning.tipoffPickupMargin)
+            : tuning.tipoffPickupMargin;
+        return {
+          botId: p.id,
+          arrival,
+          rejection,
+          ...(tuning.tipoffCollectorAgencyStrength > 0
+            ? { pickupSafe: Number.isFinite(arrival) && enemyAttackETA >= arrival + pickupMargin }
+            : {}),
+        };
       }),
       collection.botId,
       previousId,
       tuning.tipoffCollectorAdvantage,
+      { strength: tuning.tipoffCollectorAgencyStrength, styles: snapshot.tactics?.botStyles ?? {} },
     );
     collection = assignments.find((a) => a.botId === collectorSelection!.selectedId);
   }
@@ -202,10 +220,6 @@ export function applyGrifballTipoff(
     grounded(collector) && (!collectorSelection || collectorSelection.selectedId === collector.id)
       ? travel(collector, snapshot.ball)
       : Infinity;
-  const enemyAttackETA = Math.min(
-    Infinity,
-    ...enemies.map((p) => estimateSpaceAttackTime(p, snapshot.ball, routers.get(p.id)!(snapshot.ball, true).length)),
-  );
   const collectorAgency = collection
     ? resolveGrifballTipoffAgency(tuning, snapshot.tactics?.botStyles, collector.id)
     : undefined;
