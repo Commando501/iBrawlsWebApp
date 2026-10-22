@@ -1,4 +1,4 @@
-import type { GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
+import type { FieldPoint, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { SpaceRouters } from './aiGrifballRunner';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
@@ -15,6 +15,19 @@ export interface PickupAgencyCandidate {
   opening: boolean;
   eligible: boolean;
   reason: string;
+}
+
+/** Share observed human/neural pursuit priority with opening collector handoffs. */
+export function observedGrifballPickupHasPriority(
+  teammates: GrifballTacticalPlayer[], candidate: GrifballTacticalPlayer, ball: FieldPoint,
+  reachable: (player: GrifballTacticalPlayer) => boolean,
+): boolean {
+  return teammates.some(p => {
+    if (p.scripted || !reachable(p)) return false;
+    const d = fieldDistance(p.pos, ball);
+    const closingSpeed = ((ball.x - p.pos.x) * p.vel.x + (ball.z - p.pos.z) * p.vel.z) / Math.max(d, .001);
+    return (d <= 1.5 && p.pickupRequested === true) || (d <= 10 && closingSpeed > .5 && d <= fieldDistance(candidate.pos, ball) + 1);
+  });
 }
 export interface PickupAgencyDecision {
   strength: number;

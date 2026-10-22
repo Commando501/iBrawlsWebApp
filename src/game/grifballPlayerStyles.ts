@@ -168,6 +168,50 @@ export const GRIFBALL_TIPOFF_POSITION_PREFERENCES = {
   guardian: { depth: 1.25, width: 0, reason: 'Hold a deeper opening lane, giving up some forward support.' },
 } satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
 
+/** Extra coverage time after the shared opening recovery, in seconds. */
+export const GRIFBALL_TIPOFF_RECOVERY_PREFERENCES = {
+  balanced: { delay: 0, reason: 'Return on the team regroup schedule.' },
+  enforcer: { delay: 0, reason: 'Rejoin the contest as soon as the team regroup interval ends.' },
+  opportunist: { delay: .25, reason: 'Hold coverage briefly longer before seeking a new opening challenge.' },
+  guardian: { delay: .5, reason: 'Keep recovery coverage longer, giving up some renewed opening pressure.' },
+} satisfies Record<GrifballPlayerStyle, { delay: number; reason: string }>;
+
+/** Seconds of bidding preference, never a change to movement or weapon timing. */
+export const GRIFBALL_TIPOFF_SCREEN_PREFERENCES = {
+  balanced: { bias: 0, reason: 'Use team arrival order when the screen role opens.' },
+  enforcer: { bias: -.25, reason: 'Volunteer for a nearby opening screen, giving up some passive coverage.' },
+  opportunist: { bias: -.25, reason: 'Volunteer when a reachable enemy recovery offers a timely opening.' },
+  guardian: { bias: .25, reason: 'Prefer to keep coverage when another nearby support can screen.' },
+} satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
+
+/** Bounded collector bids; actual arrival, handoff stability and pickup safety win. */
+export const GRIFBALL_TIPOFF_COLLECTOR_PREFERENCES = {
+  balanced: { bias: 0, reason: 'Use arrival order when the collector role opens.' },
+  enforcer: { bias: .15, reason: 'Prefer to leave a close collection to a teammate and remain available for combat.' },
+  opportunist: { bias: -.25, reason: 'Volunteer for a close collection when the real pickup margin is safe.' },
+  guardian: { bias: .25, reason: 'Prefer coverage when a nearby teammate can collect without losing a safe pickup.' },
+} satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
+
+export const GRIFBALL_TIPOFF_COMMITMENT_PREFERENCES = {
+  balanced: { adjustment: 0, reason: 'Use the team target commitment duration.' },
+  enforcer: { adjustment: 0.25, reason: 'Hold a safe opening target up to 0.25 s longer, within the 1.5 s limit.' },
+  opportunist: {
+    adjustment: -0.15,
+    reason: 'Reassess opening targets up to 0.15 s sooner; ended recovery windows still release immediately.',
+  },
+  guardian: {
+    adjustment: -0.25,
+    reason: 'Reassess opening targets up to 0.25 s sooner while keeping challenge safety checks.',
+  },
+} satisfies Record<GrifballPlayerStyle, { adjustment: number; reason: string }>;
+
+export const GRIFBALL_TIPOFF_TARGET_PREFERENCES = {
+  balanced: { reason: 'Challenge the fastest reachable opponent with a safe opening.' },
+  enforcer: { reason: 'Favor a nearby opponent contesting the ball, within safe challenge windows.' },
+  opportunist: { reason: 'Favor a nearby opponent in visible recovery while the attack window lasts.' },
+  guardian: { reason: 'Favor a nearby opponent that can threaten the collector, while preserving spacing.' },
+} satisfies Record<GrifballPlayerStyle, { reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

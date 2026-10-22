@@ -15,10 +15,14 @@ import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballH
 import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
 import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
 import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGrifballEscortPosition';
-import { chooseGrifballPickupAgency, type PickupAgencyDecision } from './aiGrifballPickupAgency';
+import { chooseGrifballPickupAgency, observedGrifballPickupHasPriority, type PickupAgencyDecision } from './aiGrifballPickupAgency';
 import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
 import { observeGrifballTipoff, applyGrifballTipoff, selectGrifballTipoffThreat, type TipoffMemory, type TipoffOrder } from './aiGrifballTipoff';
+import { isTipoffReserveCovering } from './aiGrifballTipoffReserve';
 import { observeGrifballTipoffRecovery } from './aiGrifballTipoffRecovery';
+import { tipoffScreenReadiness } from './aiGrifballTipoffScreen';
+import { resolveTipoffTargetCommitAgency } from './aiGrifballTipoffTarget';
+import { resolveGrifballPlayerStyle } from './grifballPlayerStyles';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -144,11 +148,28 @@ export function updateGrifballTeamPlan(
   state.tipoff = observeGrifballTipoff(state.tipoff, snapshot, dt);
   observeGrifballTipoffRecovery(state.tipoff, snapshot, state.snapshot, state.assignments, config);
   const signature = JSON.stringify([
-    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team); return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds, state.tipoff!.recovery?.[team]] : null; }),
+    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team), r = state.tipoff!.recovery?.[team]; return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds, r, r && state.tipoff!.elapsed + 1e-9 >= r.startedAt + r.duration] : null; }),
     snapshot.round, snapshot.playing, snapshot.holderId, snapshot.rosterKey, snapshot.teamDifficulty, state.styleSeed, snapshot.goals, snapshot.spacing, snapshot.tactics, snapshot.geometry?.key, snapshot.passing, snapshot.ballPhysics?.state,
     snapshot.respawns?.map(p => [p.id, p.team, p.pos]),
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),
+    players.map(p => { const t = resolveTeamTactics(config, p.team); return t.enabled && t.spaceEnabled && t.tipoffEnabled && (t.tipoffScreenHandoffEnabled || t.tipoffCollectorHandoffEnabled || t.tipoffReserveHandoffEnabled) && !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds ? [tipoffScreenReadiness(p), (p.height ?? 0) <= .01 && (p.space?.mobileIn ?? Infinity) <= 0] : null; }),
+    players.map(p => {
+      const t = resolveTeamTactics(config, p.team), order = state.assignments.get(p.id)?.tipoff;
+      const r = order?.reserveSelection;
+      return t.enabled && t.spaceEnabled && t.tipoffEnabled && t.tipoffReserveHandoffEnabled &&
+        !state.tipoff!.closed && state.tipoff!.elapsed <= t.tipoffSeconds && r?.selectedId === p.id
+        ? isTipoffReserveCovering(p, snapshot.ball, r.point, r.halfWidth) : null;
+    }),
     players.map(p => [p.id, p.team, p.scripted, p.difficulty]),
+    players.map(p => {
+      const t = resolveTeamTactics(config, p.team), d = state.assignments.get(p.id)?.tipoff?.targetSelection;
+      const c = d?.commitment;
+      if (!t.enabled || !t.spaceEnabled || !t.tipoffEnabled || t.tipoffTargetAgencyStrength <= 0 || t.tipoffTargetCommitSeconds <= 0 || state.tipoff!.closed || !c) return null;
+      const target = players.find(other => other.id === d!.selectedId);
+      // Expiry and the end of a visible recovery interrupt a slow tactical tick.
+      const seconds = resolveTipoffTargetCommitAgency(t.tipoffTargetCommitSeconds, t.tipoffTargetCommitAgencyStrength, resolveGrifballPlayerStyle(config.botStyles, p.id))?.seconds ?? t.tipoffTargetCommitSeconds;
+      return [p.id, d!.selectedId, state.tipoff!.elapsed + 1e-9 >= Math.min(c.deadline, c.startedAt + seconds), tipoffScreenReadiness(p), target?.space?.phase.includes('recover') ?? false];
+    }),
     players.filter(p => p.id === snapshot.holderId).map(p => {
       const attack = resolveTeamTactics(config, p.team), defense = resolveTeamTactics(config, otherTeam(p.team));
       const goal = snapshot.goals[otherTeam(p.team)], range = goal ? distance(p.pos, goal) : Infinity;
@@ -317,12 +338,7 @@ export function updateGrifballTeamPlan(
         if (passRecovery?.receiverId) retriever = ranked.find(p => p.id === passRecovery!.receiverId)!;
         else if (passRecovery) retriever = ranked[0];
       }
-      const observedHasPriority = (candidate: GrifballTacticalPlayer) => teammates.some(p => {
-        if (p.scripted || !Number.isFinite(recoveryDistance(p))) return false;
-        const d = distance(p.pos, snapshot.ball);
-        const closingSpeed = ((snapshot.ball.x - p.pos.x) * p.vel.x + (snapshot.ball.z - p.pos.z) * p.vel.z) / Math.max(d, 0.001);
-        return (d <= 1.5 && p.pickupRequested === true) || (d <= 10 && closingSpeed > 0.5 && d <= distance(candidate.pos, snapshot.ball) + 1);
-      });
+      const observedHasPriority = (candidate: GrifballTacticalPlayer) => observedGrifballPickupHasPriority(teammates, candidate, snapshot.ball, p => Number.isFinite(recoveryDistance(p)));
       const externalRetriever = observedHasPriority(retriever);
       if (!externalRetriever) {
         if (routers) pickupAgency = chooseGrifballPickupAgency({ snapshot, team, tuning, routers,

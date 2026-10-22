@@ -2,6 +2,13 @@ import { GRIFBALL_PLAYER_STYLES, type GrifballPlayerStyle } from './grifballPlay
 
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  tipoffCollectorAgencyStrength: { label: 'Tip-off collector individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'For a new or warranted collector handoff, Opportunists volunteer for safe pickups; Enforcers prefer combat and Guardians prefer coverage. Bids vary by up to 0.25 s at full strength within a 0.35 s arrival window. A ready incumbent, the real handoff margin, an available safe pickup, reserve coverage, active challenges, regroup waits and human/neural pursuit keep priority. Requires Tip-off collector handoff, Coordinated tip-off, Team coordination and Space / threats.' },
+  tipoffCollectorAdvantage: { label: 'Tip-off collector handoff advantage', min: 0, max: 2, step: .05, value: .35, unit: 's', module: 'tipoff', description: 'A ready teammate must reach the opening ball this much sooner to replace a ready collector. Unavailable collectors can be replaced without this margin. Requires Tip-off collector handoff. Routes, rear coverage, active challenges, personal regroup waits and observed human/neural pickup priority retain precedence. Pickup still needs its normal attack margin.' },
+  tipoffTargetCommitAgencyStrength: { label: 'Tip-off target commitment individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'Apply the screen’s Grifball style to target hold duration: Enforcer holds up to 0.25 s longer, Opportunist reassesses up to 0.15 s sooner, Guardian up to 0.25 s sooner, and Balanced keeps team timing. Blended by strength and bounded to 0–1.5 s. Live increases never extend an active hold. Safety gates still release it. Requires positive Tip-off target commitment and Tip-off target individuality, Coordinated tip-off, Team coordination and Space / threats.' },
+  tipoffTargetCommitSeconds: { label: 'Tip-off target commitment', min: 0, max: 1.5, step: .05, value: 0, unit: 's', module: 'tipoff', description: 'Briefly retain a safe screen target through small scoring changes. Release for unsafe or unavailable targets, ended Opportunist recovery windows, targets outside the 0.35 s arrival window, or a safe alternative more than 0.20 s better. Staying on the same target never restarts the clock; longer live settings never extend it. Zero disables commitment. Requires positive Tip-off target individuality, Coordinated tip-off, Team coordination and Space / threats.' },
+  tipoffTargetAgencyStrength: { label: 'Tip-off target individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'Above zero, check all nearby opponents for safe challenges. Balanced takes the fastest safe target; Enforcer favors ball contesters, Opportunist visible recoveries, and Guardian threats to the collector. Preferences subtract up to 0.25 s from selection scores within 0.35 s of the fastest safe attack. Timing, routes, personal caution and teammate spacing still apply. Zero preserves the original single-target choice. Requires Coordinated tip-off, Team coordination and Space / threats.' },
+  tipoffScreenAgencyStrength: { label: 'Tip-off screen individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'When the screen role opens, Enforcers volunteer, Opportunists favor timely enemy recoveries, and Guardians prefer coverage. At full strength, bids vary by up to 0.25 s; only ready supports within 0.35 s of the fastest arrival compete. Eligible incumbents, collector/reserve roles, regroup waits and combat safety gates retain priority. Requires Tip-off screen handoff, Coordinated tip-off, Team coordination and Space / threats.' },
+  tipoffRecoveryAgencyStrength: { label: 'Tip-off recovery individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'After the shared regroup interval, Opportunists hold coverage up to 0.25 s longer and Guardians up to 0.5 s longer; Balanced and Enforcer return on team timing. Another eligible bot may screen. Requires Coordinated tip-off, positive Tip-off regroup time, Team coordination and Space / threats. Applies on new disruptions; shorter live preferences shorten active waits. Pickup, rear coverage and immediate defense retain priority.' },
   tipoffRegroupSeconds: { label: 'Tip-off regroup time', min: 0, max: 3, step: .25, value: 0, unit: 's', module: 'tipoff', description: 'Briefly restore spaced coverage after an opening teammate becomes unavailable or the collector/reserve loses ground mobility. Zero disables regrouping. Safe pickups and immediate self-defense remain available. Requires Coordinated tip-off, Team coordination and Space / threats. New disruptions restart the interval; live edits never extend an active interval.' },
   tipoffPositionAgencyStrength: { label: 'Tip-off positioning individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'Let passive opening covers prefer forward Enforcer, wider Opportunist or deeper Guardian lanes. Zero keeps team positions. Requires Coordinated tip-off, Team coordination and Space / threats. Collector routes, the rear reserve, earned challenges, containment, spacing and visible attack margins retain priority.' },
   tipoffAgencyStrength: { label: 'Tip-off decision individuality', min: 0, max: 1, step: .1, value: 0, unit: '', module: 'tipoff', description: 'Apply each collector or screen’s Grifball style to pickup caution and challenge patience. Enforcers take tighter pickups; Opportunists and Guardians wait for more time to spare. Zero keeps team decisions. Requires Coordinated tip-off, Team coordination and Space / threats. Spacing, one screen and the reserve retain priority.' },
@@ -99,26 +106,26 @@ export const TACTICS_FIELDS = {
 } as const;
 export type TacticalNumber = keyof typeof TACTICS_FIELDS;
 export type TeamTactics = Record<TacticalNumber, number> & {
-  tipoffEnabled: boolean; passSupportEnabled: boolean; passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
+  tipoffReserveHandoffEnabled: boolean; tipoffCollectorHandoffEnabled: boolean; tipoffScreenHandoffEnabled: boolean; tipoffEnabled: boolean; passSupportEnabled: boolean; passRecoveryEnabled: boolean; hammerDefenseEnabled: boolean; swordGuardEnabled: boolean; runnerClashEnabled: boolean; stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 32;
+  schemaVersion: 41;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
   /** Stable roster IDs: styles follow bots when teams are mirrored. */
   botStyles: Record<string, GrifballPlayerStyle>;
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 32, defaults: {
+  return { schemaVersion: 41, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
-    tipoffEnabled: false, passSupportEnabled: false, passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
+    tipoffReserveHandoffEnabled: false, tipoffCollectorHandoffEnabled: false, tipoffScreenHandoffEnabled: false, tipoffEnabled: false, passSupportEnabled: false, passRecoveryEnabled: false, hammerDefenseEnabled: false, swordGuardEnabled: false, runnerClashEnabled: false, stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {}, botStyles: {} };
 }
-const booleanKeys = ['tipoffEnabled', 'passSupportEnabled', 'passRecoveryEnabled', 'hammerDefenseEnabled', 'swordGuardEnabled', 'runnerClashEnabled', 'stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
+const booleanKeys = ['tipoffReserveHandoffEnabled', 'tipoffCollectorHandoffEnabled', 'tipoffScreenHandoffEnabled', 'tipoffEnabled', 'passSupportEnabled', 'passRecoveryEnabled', 'hammerDefenseEnabled', 'swordGuardEnabled', 'runnerClashEnabled', 'stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–32, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1–41, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams', 'botStyles'].includes(key))) throw new Error('Unknown configuration field.');
   const styles = value.botStyles === undefined && (value.schemaVersion as number) < 7 ? {} : value.botStyles;
   if (!object(styles) || Object.keys(styles).length > 128 || Object.entries(styles).some(([id, style]) =>
@@ -134,6 +141,15 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 41 ? { tipoffReserveHandoffEnabled: false } : {}),
+      ...((value.schemaVersion as number) < 40 ? { tipoffCollectorAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 39 ? { tipoffCollectorHandoffEnabled: false, tipoffCollectorAdvantage: .35 } : {}),
+      ...((value.schemaVersion as number) < 38 ? { tipoffTargetCommitAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 37 ? { tipoffTargetCommitSeconds: 0 } : {}),
+      ...((value.schemaVersion as number) < 36 ? { tipoffTargetAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 35 ? { tipoffScreenAgencyStrength: 0 } : {}),
+      ...((value.schemaVersion as number) < 34 ? { tipoffScreenHandoffEnabled: false } : {}),
+      ...((value.schemaVersion as number) < 33 ? { tipoffRecoveryAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 32 ? { tipoffRegroupSeconds: 0 } : {}),
       ...((value.schemaVersion as number) < 31 ? { tipoffPositionAgencyStrength: 0 } : {}),
       ...((value.schemaVersion as number) < 30 ? { tipoffAgencyStrength: 0 } : {}),
@@ -179,7 +195,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 32, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
+  return { schemaVersion: 41, defaults, teams, botStyles: Object.fromEntries(Object.entries(styles)) as Record<string, GrifballPlayerStyle> };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };
