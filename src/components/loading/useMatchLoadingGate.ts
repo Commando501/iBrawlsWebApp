@@ -1,3 +1,4 @@
+import { parseGameplayMessage } from '../../network/parseGameplayMessage';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CustomMapData } from '../../types';
 import type { VisualModelPolicy } from '../../model/modelSystem';
@@ -185,7 +186,7 @@ export function useMatchLoadingGate({
     const handleLoadingStatus = (event: MessageEvent) => {
       let data: { type?: string; action?: string; senderId?: string; ready?: boolean };
       try {
-        data = JSON.parse(event.data);
+        data = parseGameplayMessage(event);
       } catch {
         return;
       }

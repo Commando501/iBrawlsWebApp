@@ -1,3 +1,4 @@
+import { parseGameplayMessage } from '../../network/parseGameplayMessage';
 import {
   useCallback,
   useEffect,
@@ -225,7 +226,7 @@ export function useGameplayConnection({
     const handleMultiplayerMessage = (event: MessageEvent) => {
       if (connectionSocketRef.current !== multiplayerSocket) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = parseGameplayMessage(event);
         if (data.type === 'sync' && data.action === 'chat') {
           setChatMessages(prev => {
             if (prev.some(m => m.id === data.id)) return prev;
@@ -512,7 +513,7 @@ export function useGameplayConnection({
     const handleHostMessage = (event: MessageEvent) => {
       if (connectionSocketRef.current !== ws) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = parseGameplayMessage(event);
         if (data.type === 'hosted') {
           isMultiplayerRef.current = true;
           console.log('Successfully hosted lobby inside room of keys:', data.keys);
@@ -709,7 +710,7 @@ export function useGameplayConnection({
     const handleJoinMessage = (event: MessageEvent) => {
       if (connectionSocketRef.current !== ws) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = parseGameplayMessage(event);
         if (data.type === 'connected') {
           isMultiplayerRef.current = true;
           ws.removeEventListener('message', handleJoinMessage);

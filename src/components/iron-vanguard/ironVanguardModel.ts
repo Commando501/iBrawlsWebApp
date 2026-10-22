@@ -1,3 +1,4 @@
+import { cacheBoneLocalMatrix } from './cacheBoneLocalMatrix';
 import {
   applyVanguardBall,
   createVanguardBallProp,
@@ -231,7 +232,10 @@ function attachAsset(root: THREE.Group, value: GLTF) {
   runtime.scene = model;
   runtime.facingFrame.add(model);
   model.traverse((object) => {
-    if (object instanceof THREE.Bone) runtime.bones[object.name] = object;
+    if (object instanceof THREE.Bone) {
+      runtime.bones[object.name] = object;
+      cacheBoneLocalMatrix(object);
+    }
     if (object instanceof THREE.Mesh) {
       // Cache owns geometry/morph buffers; instances own materials and skeletons.
       object.userData.ironVanguardSharedGeometry = true;

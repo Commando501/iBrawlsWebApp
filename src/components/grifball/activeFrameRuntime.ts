@@ -1,4 +1,5 @@
 import { isOnlineGrifballAuthority } from './onlineGrifballRuntime';
+import { sendGameplaySnapshot } from '../../network/sendGameplaySnapshot';
 import { prepareIronVanguardBallVisuals, finishIronVanguardBallVisuals } from "./ironVanguardBallRuntime";
 import * as THREE from 'three';
 import type { BallArenaBounds } from '../../game/grifballBall';
@@ -179,7 +180,7 @@ export function advanceGrifballFrameForState({
   updateRadarDOM();
 
   if (isMultiplayer && multiplayerRole !== 'observer' && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
-    multiplayerSocket.send(JSON.stringify({
+    sendGameplaySnapshot(multiplayerSocket, {
       type: 'sync',
       spawnSlot: state.multiplayerSpawnSlot,
       pos: { x: state.playerPos.x, y: state.playerPos.y, z: state.playerPos.z },
@@ -211,7 +212,7 @@ export function advanceGrifballFrameForState({
       } : {
         clientHP: state.playerHP,
       }),
-    }));
+    });
   }
 
   if (replayRecordingRef.current && currentReplayRecordTime !== null) {

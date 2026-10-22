@@ -48,6 +48,15 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
     const container = containerRef.current;
     if (!container) return;
 
+    // The fireteam list scrolls: clipped cards must not keep issuing WebGL work.
+    // Retain their assets and clock so scrolling back preserves the same preview.
+    let visible = typeof IntersectionObserver === 'undefined';
+    const visibilityObserver = typeof IntersectionObserver === 'undefined' ? null
+      : new IntersectionObserver(entries => {
+          visible = entries.some(entry => entry.isIntersecting);
+        });
+    visibilityObserver?.observe(container);
+
     const scene = new THREE.Scene();
     const width = container.clientWidth || 96;
     const height = container.clientHeight || 96;
@@ -106,7 +115,7 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
       if (character) {
         character.rotation.y = -0.35 + Math.sin(elapsed * 0.9) * 0.12;
       }
-      renderer.render(scene, camera);
+      if (visible) renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(animate);
     };
     const preparation = createPlayerPreviewPreparation({
@@ -137,6 +146,7 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      visibilityObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
