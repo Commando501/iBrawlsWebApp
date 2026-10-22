@@ -50,6 +50,7 @@ function trace(
   regroup = false,
   recoveryStyle?: GrifballPlayerStyle,
   handoff?: boolean,
+  screenStyle?: GrifballPlayerStyle,
 ) {
   const id = main && !laneStyle ? 'main_ai' : 'collector',
     screenId = main && laneStyle ? 'main_ai' : 'screen',
@@ -95,6 +96,14 @@ function trace(
       tipoffPositionAgencyStrength: 0,
       tipoffRecoveryAgencyStrength: 1,
     };
+  }
+  if (screenStyle) {
+    state.grifballTactics.botStyles[screenId] = screenStyle;
+    Object.assign((state.grifballTactics.teams[team] ??= {}), {
+      tipoffScreenHandoffEnabled: true,
+      tipoffScreenAgencyStrength: 1,
+      tipoffPositionAgencyStrength: 0,
+    });
   }
 
   self.id = id;
@@ -169,6 +178,7 @@ function trace(
     resumedFrames = 0;
   let personalRecoveryFrames = 0;
   let handoffFrames = 0;
+  let personalScreenFrames = 0;
   let receipt = 0,
     applied = 0,
     moved = 0,
@@ -202,6 +212,16 @@ function trace(
     updateGrifballTeamPlanForState(state, dt, goal, f.map);
     updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics }), dt);
     const orders = [...plan.assignments.values()].filter((a) => a.team === team);
+    if (screenStyle) {
+      const expected = screenStyle === 'guardian' ? 'other' : screenId;
+      assert.equal(plan.assignments.get(expected)!.tipoff!.job, 'screen');
+      personalScreenFrames++;
+      if (tick === 1)
+        assert.equal(
+          plan.assignments.get(expected)!.tipoff!.screenSelection!.agency!.changedChoice,
+          screenStyle === 'guardian',
+        );
+    }
     if (handoff && tick >= 5) {
       assert.equal(plan.assignments.get('other')!.tipoff!.job, 'screen');
       assert.equal(plan.assignments.get(screenId)!.tipoff!.job, 'support');
@@ -370,6 +390,7 @@ function trace(
     resumedFrames,
     personalRecoveryFrames,
     handoffFrames,
+    personalScreenFrames,
   };
 }
 
@@ -383,6 +404,18 @@ for (const main of [false, true])
       assert.notDeepEqual(handoff.lanePositions[10], baseline.lanePositions[10]);
       assert.equal(handoff.holder, baseline.holder);
       assert.equal(handoff.receipt, baseline.receipt, 'handoff cannot delay a safe pickup');
+    });
+
+for (const main of [false, true])
+  for (const mirror of [false, true])
+    test(`live/sim screen individuality changes real lanes and preserves pickup ${main}/${mirror}`, () => {
+      const balanced = trace(main, mirror, false, undefined, 'balanced', false, undefined, undefined, 'balanced');
+      const guardian = trace(main, mirror, true, undefined, 'balanced', false, undefined, undefined, 'guardian');
+      assert.ok(guardian.personalScreenFrames > 0);
+      assert.notDeepEqual(guardian.screenPositions[10], balanced.screenPositions[10]);
+      assert.notDeepEqual(guardian.lanePositions[10], balanced.lanePositions[10]);
+      assert.equal(guardian.receipt, balanced.receipt);
+      assert.equal(guardian.holder, balanced.holder);
     });
 
 for (const main of [false, true])

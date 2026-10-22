@@ -352,7 +352,7 @@ test('possession, inactive round, observed players and non-safety roles do not r
 });
 test('schemas 1–27 migrate safety preference off and preserve existing settings', () => {
   const current = defaultGrifballTactics();
-  assert.equal(current.schemaVersion, 34);
+  assert.equal(current.schemaVersion, 35);
   assert.equal(current.defaults.safetyAgencyStrength, 0);
   for (let version = 1; version <= 27; version++) {
     const old = JSON.parse(JSON.stringify(current));

@@ -542,7 +542,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 34);
+  assert.equal(config.schemaVersion, 35);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1063,7 +1063,7 @@ test('team-scoped recovery follows main_ai through mirrored reorder and checkpoi
 
 test('v32 migrations disable regrouping without changing styles or existing opening controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 34);
+  assert.equal(config.schemaVersion, 35);
   assert.equal(config.defaults.tipoffRegroupSeconds, 0);
   for (let v = 1; v < 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1362,7 +1362,7 @@ test('personal recovery survives JSON continuation and follows main_ai under mir
 
 test('v33 migration disables recovery individuality and preserves regroup and style settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 34);
+  assert.equal(config.schemaVersion, 35);
   assert.equal(config.defaults.tipoffRecoveryAgencyStrength, 0);
   for (let v = 1; v <= 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1598,7 +1598,7 @@ test('screen handoff is deterministic across mirroring, roster order, main_ai an
 
 test('v34 screen handoff migration, overrides and strict boolean validation', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 34);
+  assert.equal(config.schemaVersion, 35);
   assert.equal(config.defaults.tipoffScreenHandoffEnabled, false);
   for (let version = 1; version < 34; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1642,5 +1642,245 @@ test('a replacement earns its own challenge and uses its own Grifball style', ()
   f.tactics.defaults.tipoffAgencyStrength = 0;
   f.player('collector').pos = { x: -4, z: 3 };
   f.run(0);
-  assert.equal(f.state.assignments.get('support')!.tipoff!.attack, false, 'shared hammer exposure still blocks the replacement');
+  assert.equal(
+    f.state.assignments.get('support')!.tipoff!.attack,
+    false,
+    'shared hammer exposure still blocks the replacement',
+  );
+});
+
+function screenAgencyFixture(style: GrifballPlayerStyle, strength = 1) {
+  const f = handoffFixture();
+  f.tactics.defaults.tipoffScreenAgencyStrength = strength;
+  f.player('support').pos.x = -9;
+  f.tactics.botStyles.support = style;
+  return f;
+}
+const screenChoice = (f: ReturnType<typeof fixture>) => f.state.assignments.get('support')!.tipoff!.screenSelection!;
+
+for (const [style, expected] of [
+  ['balanced', 'screen'],
+  ['enforcer', 'support'],
+  ['opportunist', 'screen'],
+  ['guardian', 'screen'],
+] as const)
+  test(`${style} bids for a vacant opening screen within the nearby arrival window`, () => {
+    const f = screenAgencyFixture(style);
+    f.run();
+    const choice = screenChoice(f),
+      agency = choice.agency!;
+    assert.equal(choice.selectedId, expected);
+    assert.equal(agency.baselineId, 'screen');
+    assert.equal(agency.changedChoice, expected !== 'screen');
+    assert.deepEqual(
+      agency.bids.map((b) => b.botId),
+      ['screen', 'support'],
+    );
+    const bid = agency.bids.find((b) => b.botId === 'support')!;
+    assert.ok(bid.withinWindow);
+    assert.equal(bid.style, style);
+    assert.equal(bid.adjustment, style === 'enforcer' ? -0.25 : style === 'guardian' ? 0.25 : 0);
+    assert.equal(f.state.assignments.get('collector')!.tipoff!.job, 'collector');
+    assert.equal(f.state.assignments.get('reserve')!.tipoff!.job, 'reserve');
+    assert.ok(f.run().filter((a) => a.tipoff?.attack).length <= 1);
+  });
+
+test('a Guardian can yield an opening screen to a nearby Balanced teammate', () => {
+  const f = screenAgencyFixture('balanced');
+  f.tactics.botStyles.screen = 'guardian';
+  f.run();
+  assert.equal(screenChoice(f).selectedId, 'support');
+  assert.equal(screenChoice(f).agency!.changedChoice, true);
+});
+
+test('screen individuality blends preferences without changing physical arrival estimates', () => {
+  const half = screenAgencyFixture('enforcer', 0.5),
+    full = screenAgencyFixture('enforcer', 1),
+    off = screenAgencyFixture('enforcer', 0);
+  half.run();
+  full.run();
+  off.run();
+  assert.equal(screenChoice(half).selectedId, 'screen');
+  assert.equal(screenChoice(full).selectedId, 'support');
+  assert.equal(screenChoice(off).selectedId, 'screen');
+  assert.ok(!screenChoice(off).agency);
+  assert.equal(screenChoice(half).agency!.bids[1].adjustment, -0.125);
+  assert.equal(screenChoice(half).agency!.bids[1].arrival, screenChoice(full).agency!.bids[1].arrival);
+  assert.equal(full.player('support').space!.speed, 5.2);
+});
+
+test('screen individuality cannot call a farther bot even when its bid beats a Guardian', () => {
+  const f = screenAgencyFixture('enforcer');
+  f.tactics.botStyles.screen = 'guardian';
+  const radius = 10 + 5.2 * 0.4;
+  f.player('support').pos.x = -Math.sqrt(radius * radius - 36);
+  f.run();
+  const agency = screenChoice(f).agency!,
+    preferred = agency.bids.find((b) => b.botId === 'support')!;
+  assert.equal(preferred.withinWindow, false);
+  assert.ok(preferred.score < agency.bids[0].score);
+  assert.equal(screenChoice(f).selectedId, 'screen');
+});
+
+test('Opportunist volunteers only for a reachable and timely visible recovery', () => {
+  for (const condition of ['ready', 'recovery', 'distant', 'too-late'] as const) {
+    const f = screenAgencyFixture('opportunist'),
+      p = f.player('enemy-support');
+    p.pos = { x: 2, z: 6 };
+    p.space!.phase = condition === 'ready' ? 'ready' : 'recovering';
+    p.space!.attackIn = 0.8;
+    if (condition === 'distant') p.pos.x = 40;
+    if (condition === 'too-late') p.space!.attackIn = 0;
+    f.run();
+    const bid = screenChoice(f).agency!.bids.find((b) => b.botId === 'support')!;
+    assert.equal(bid.recoveryOpening, condition === 'recovery');
+    assert.equal(bid.adjustment, condition === 'recovery' ? -0.25 : 0);
+    assert.equal(screenChoice(f).selectedId, condition === 'recovery' ? 'support' : 'screen');
+  }
+});
+
+test('styles do not displace a ready incumbent or hurry an active strike', () => {
+  const f = screenAgencyFixture('balanced');
+  f.run();
+  f.tactics.botStyles.support = 'enforcer';
+  f.tactics.botStyles.screen = 'guardian';
+  f.run(0);
+  assert.equal(screenChoice(f).selectedId, 'screen');
+  assert.deepEqual(screenChoice(f).agency!.bids, []);
+  f.player('screen').space!.phase = 'swing_up';
+  f.run(0);
+  assert.equal(screenChoice(f).selectedId, 'screen');
+  assert.deepEqual(screenChoice(f).agency!.bids, []);
+  f.player('screen').space!.phase = 'recovering';
+  f.run(0);
+  assert.equal(screenChoice(f).selectedId, 'support');
+  assert.equal(screenChoice(f).agency!.bids[0].style, 'enforcer');
+});
+
+test('a vacancy ranks only ready supports outside their personal recovery wait', () => {
+  const old = actor('old', 'blue', -8),
+    plain = actor('plain', 'blue', -9),
+    preferred = actor('preferred', 'blue', -10);
+  old.space!.phase = 'recovering';
+  const candidates = [
+    { player: old, reachable: true, holding: false, arrival: 0.8 },
+    { player: plain, reachable: true, holding: false, arrival: 1 },
+    { player: preferred, reachable: true, holding: false, arrival: 1.15 },
+  ];
+  const options = { strength: 1, styles: { preferred: 'enforcer' as const } };
+  assert.equal(chooseTipoffScreen(candidates, 'old', true, options).selectedId, 'preferred');
+  candidates[2].holding = true;
+  assert.equal(chooseTipoffScreen(candidates, 'old', true, options).selectedId, 'plain');
+  candidates[2].holding = false;
+  candidates[2].reachable = false;
+  assert.equal(chooseTipoffScreen(candidates, 'old', true, options).selectedId, 'plain');
+  candidates[2].reachable = true;
+  preferred.height = 1;
+  assert.equal(chooseTipoffScreen(candidates, 'old', true, options).selectedId, 'plain');
+  preferred.height = 0;
+  preferred.space!.mobileIn = 0.2;
+  assert.equal(chooseTipoffScreen(candidates, 'old', true, options).selectedId, 'plain');
+  assert.equal(chooseTipoffScreen(candidates, 'old', false, options).selectedId, null);
+});
+
+test('screen individuality requires its dependencies and cannot bypass local numbers or human control', () => {
+  for (const key of ['enabled', 'spaceEnabled', 'tipoffEnabled', 'tipoffScreenHandoffEnabled'] as const) {
+    const f = screenAgencyFixture('enforcer');
+    f.tactics.defaults[key] = false;
+    assert.ok(f.run().every((a) => !a.tipoff?.screenSelection?.agency));
+  }
+  const f = screenAgencyFixture('enforcer');
+  f.player('screen').height = 1;
+  f.player('enemy-back').pos.x = 16;
+  assert.ok(f.run().every((a) => a.tipoff?.job !== 'screen'));
+  const human = screenAgencyFixture('enforcer');
+  human.player('support').scripted = false;
+  human.run();
+  assert.ok(!human.state.assignments.has('support'));
+  assert.ok(
+    human.state.assignments.get('screen')!.tipoff!.screenSelection!.agency!.bids.every((b) => b.botId !== 'support'),
+  );
+});
+
+test('screen individuality keeps safe pickup, reserve positions and challenge caution authoritative', () => {
+  const f = screenAgencyFixture('enforcer');
+  f.tactics.botStyles.collector = 'enforcer';
+  f.tactics.botStyles.reserve = 'enforcer';
+  pickupWindow(f, 1);
+  f.run();
+  assert.equal(steer(f, 'collector')!.pickupRequested, true);
+  assert.deepEqual(
+    screenChoice(f).agency!.bids.map((b) => b.botId),
+    ['screen', 'support'],
+  );
+  assert.ok(f.run().every((a) => !a.tipoff!.attack));
+  const cautious = screenAgencyFixture('enforcer');
+  cautious.tactics.defaults.tipoffAgencyStrength = 1;
+  cautious.tactics.botStyles.screen = 'guardian';
+  cautious.tactics.botStyles.support = 'opportunist';
+  cautious.player('enemy-support').pos = { x: 2, z: 6 };
+  cautious.player('enemy-support').space!.phase = 'recovering';
+  cautious.player('enemy-support').space!.attackIn = 0.8;
+  cautious.run();
+  const a = cautious.state.assignments.get('support')!;
+  assert.equal(a.tipoff!.agency!.style, 'opportunist');
+  assert.equal(a.tipoff!.agency!.challengeCushion, 0.15);
+});
+
+test('screen preferences remain deterministic across main_ai, mirrors, reordering and JSON continuation', () => {
+  for (const mirror of [false, true]) {
+    const f = screenAgencyFixture('enforcer');
+    f.player('support').id = 'main_ai';
+    f.tactics.botStyles = { main_ai: 'enforcer' };
+    if (mirror)
+      for (const p of f.snapshot.players) {
+        p.team = p.team === 'blue' ? 'red' : 'blue';
+        p.pos.x *= -1;
+        p.pos.z *= -1;
+      }
+    f.snapshot.players.reverse();
+    f.tactics.teams[mirror ? 'blue' : 'red'] = { tipoffScreenAgencyStrength: 0 };
+    f.run();
+    assert.equal(f.state.assignments.get('main_ai')!.tipoff!.job, 'screen');
+    const restored = JSON.parse(JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }));
+    restored.assignments = new Map(restored.assignments);
+    for (const dt of [0, 0.2, 1]) {
+      f.run(dt);
+      updateGrifballTeamPlan(restored, structuredClone(f.snapshot), dt);
+      assert.equal(
+        JSON.stringify({ ...restored, assignments: [...restored.assignments] }),
+        JSON.stringify({ ...f.state, assignments: [...f.state.assignments] }),
+      );
+    }
+    f.snapshot.holderId = 'collector';
+    assert.ok(f.run().every((a) => !a.tipoff));
+  }
+});
+
+test('v35 migration defaults screen individuality off while preserving handoff and other preferences', () => {
+  const config = defaultGrifballTactics();
+  assert.equal(config.schemaVersion, 35);
+  assert.equal(config.defaults.tipoffScreenAgencyStrength, 0);
+  for (let v = 1; v < 35; v++) {
+    const old = JSON.parse(JSON.stringify(config));
+    old.schemaVersion = v;
+    delete old.defaults.tipoffScreenAgencyStrength;
+    old.defaults.tipoffScreenHandoffEnabled = true;
+    old.defaults.tipoffRecoveryAgencyStrength = 0.7;
+    old.teams.red = { tipoffScreenHandoffEnabled: false };
+    const next = validateGrifballTactics(old);
+    assert.equal(next.defaults.tipoffScreenAgencyStrength, 0);
+    assert.equal(next.defaults.tipoffScreenHandoffEnabled, true);
+    assert.equal(next.defaults.tipoffRecoveryAgencyStrength, 0.7);
+    assert.equal(next.teams.red!.tipoffScreenHandoffEnabled, false);
+  }
+  config.defaults.tipoffScreenAgencyStrength = 0.4;
+  config.teams.red = { tipoffScreenAgencyStrength: 1 };
+  assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);
+  assert.equal(resolveTeamTactics(config, 'red').tipoffScreenAgencyStrength, 1);
+  for (const bad of [-0.1, 1.1, NaN, Infinity, '1', true])
+    assert.throws(() => validateGrifballTactics({ ...config, teams: { red: { tipoffScreenAgencyStrength: bad } } }));
+  const missing = JSON.parse(JSON.stringify(config));
+  delete missing.defaults.tipoffScreenAgencyStrength;
+  assert.throws(() => validateGrifballTactics(missing));
 });

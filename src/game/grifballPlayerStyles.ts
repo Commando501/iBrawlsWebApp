@@ -176,6 +176,14 @@ export const GRIFBALL_TIPOFF_RECOVERY_PREFERENCES = {
   guardian: { delay: .5, reason: 'Keep recovery coverage longer, giving up some renewed opening pressure.' },
 } satisfies Record<GrifballPlayerStyle, { delay: number; reason: string }>;
 
+/** Seconds of bidding preference, never a change to movement or weapon timing. */
+export const GRIFBALL_TIPOFF_SCREEN_PREFERENCES = {
+  balanced: { bias: 0, reason: 'Use team arrival order when the screen role opens.' },
+  enforcer: { bias: -.25, reason: 'Volunteer for a nearby opening screen, giving up some passive coverage.' },
+  opportunist: { bias: -.25, reason: 'Volunteer when a reachable enemy recovery offers a timely opening.' },
+  guardian: { bias: .25, reason: 'Prefer to keep coverage when another nearby support can screen.' },
+} satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

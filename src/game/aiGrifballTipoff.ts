@@ -227,9 +227,23 @@ export function applyGrifballTipoff(
           player: bot(a),
           reachable: Number.isFinite(travel(bot(a), snapshot.ball)),
           holding: !!personalRecovery.get(a.botId)?.holding,
+          arrival: travel(bot(a), snapshot.ball),
+          recoveryOpening:
+            tuning.tipoffScreenAgencyStrength > 0 &&
+            nearby.some((p) => {
+              if (
+                !p.space?.phase.includes('recover') ||
+                distance(p.pos, snapshot.ball) > spacing + tuning.engagementDistance
+              )
+                return false;
+              const eta = estimateSpaceAttackTime(bot(a), p.pos, routers.get(a.botId)!(p.pos, true).length);
+              const response = estimateSpaceAttackTime(p, bot(a).pos, routers.get(p.id)!(bot(a).pos, true).length);
+              return Number.isFinite(eta) && eta <= tuning.threatHorizon + 1 && eta <= response + 0.1;
+            }),
         })),
         [...previous.values()].find((a) => a.team === team && a.tipoff?.job === 'screen')?.botId ?? null,
         !!reserve && !contain,
+        { strength: tuning.tipoffScreenAgencyStrength, styles: snapshot.tactics?.botStyles ?? {} },
       )
     : undefined;
   const screen = screenSelection
