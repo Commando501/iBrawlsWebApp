@@ -184,6 +184,13 @@ export const GRIFBALL_TIPOFF_SCREEN_PREFERENCES = {
   guardian: { bias: .25, reason: 'Prefer to keep coverage when another nearby support can screen.' },
 } satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
 
+export const GRIFBALL_TIPOFF_TARGET_PREFERENCES = {
+  balanced: { reason: 'Challenge the fastest reachable opponent with a safe opening.' },
+  enforcer: { reason: 'Favor a nearby opponent contesting the ball, within safe challenge windows.' },
+  opportunist: { reason: 'Favor a nearby opponent in visible recovery while the attack window lasts.' },
+  guardian: { reason: 'Favor a nearby opponent that can threaten the collector, while preserving spacing.' },
+} satisfies Record<GrifballPlayerStyle, { reason: string }>;
+
 export function grifballPassStyleBonus(style: GrifballPlayerStyle, strength: number,
   candidate: { progress: number; chargeSeconds: number; pickupMargin: number; attackMargin: number }): number {
   const bonus = style === 'enforcer' ? .2 * candidate.progress

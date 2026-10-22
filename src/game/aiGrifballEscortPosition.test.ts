@@ -147,7 +147,7 @@ test('loose balls, opponents, inactive rounds and disabled strength clear escort
   }
 });
 test('v1–20 presets migrate off, preserve styles and validate the new scoped strength', () => {
-  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 35); assert.equal(current.defaults.escortAgencyStrength, 0);
+  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 36); assert.equal(current.defaults.escortAgencyStrength, 0);
   for (let version = 1; version <= 20; version++) {
     const old = JSON.parse(JSON.stringify(current)); old.schemaVersion = version; delete old.defaults.escortAgencyStrength;
     old.defaults.passSupportAgencyStrength = .8; old.botStyles.a = 'enforcer';

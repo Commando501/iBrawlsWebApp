@@ -12,6 +12,7 @@ import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
 import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
 import { chooseTipoffScreen, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
+import { chooseTipoffTarget, type TipoffTargetDecision } from './aiGrifballTipoffTarget';
 import {
   resolveGrifballTipoffRecoveryAgency,
   type TipoffRecovery,
@@ -43,6 +44,7 @@ export interface TipoffOrder {
   recovery?: TipoffRecoveryDecision;
   recoveryAgency?: TipoffRecoveryAgencyDecision;
   screenSelection?: TipoffScreenDecision;
+  targetSelection?: TipoffTargetDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -272,6 +274,7 @@ export function applyGrifballTipoff(
   let target: GrifballTacticalPlayer | undefined,
     attack = false,
     teamAttack = false;
+  let targetSelection: TipoffTargetDecision | undefined;
   if (screen && !claim) {
     const self = bot(screen);
     const candidates = nearby
@@ -282,10 +285,9 @@ export function applyGrifballTipoff(
       }))
       .filter((c) => Number.isFinite(c.eta))
       .sort((a, b) => a.eta - b.eta || a.p.id.localeCompare(b.p.id));
-    target = candidates[0]?.p;
-    if (target && grounded(self) && self.space!.phase === 'ready' && reserve && grounded(bot(reserve))) {
+    const evaluate = ({ p: target, eta }: (typeof candidates)[number]) => {
       const d = distance(self.pos, target.pos),
-        stand = Math.max(1, self.space!.reach * 0.75);
+        stand = Math.max(1, (self.space?.reach ?? 3) * 0.75);
       const engage = {
         x: target.pos.x + ((self.pos.x - target.pos.x) / Math.max(0.001, d)) * stand,
         z: target.pos.z + ((self.pos.z - target.pos.z) / Math.max(0.001, d)) * stand,
@@ -308,14 +310,54 @@ export function applyGrifballTipoff(
               ),
           );
       const response = estimateSpaceAttackTime(target, self.pos, routers.get(target.id)!(self.pos, true).length);
-      teamAttack =
-        separate &&
-        Number.isFinite(travel(self, engage)) &&
-        candidates[0].eta <= tuning.threatHorizon + 1 &&
-        candidates[0].eta <= response + 0.1;
-      attack = teamAttack && candidates[0].eta + (screenAgency?.challengeCushion ?? 0) <= response + 0.1;
-      if (attack) slots.set(screen, engage);
-    }
+      const rejection =
+        !grounded(self) || self.space!.phase !== 'ready' || !reserve || !grounded(bot(reserve))
+          ? 'Screen or reserve is not ready.'
+          : !separate
+            ? 'Teammate spacing or shared hammer exposure is unsafe.'
+            : !Number.isFinite(travel(self, engage))
+              ? 'The challenge position is unreachable.'
+              : eta > tuning.threatHorizon + 1
+                ? 'The challenge is too far away.'
+                : eta > response + 0.1
+                  ? 'The enemy can attack before the screen arrives.'
+                  : null;
+      const personalRejection =
+        rejection ??
+        (eta + (screenAgency?.challengeCushion ?? 0) > response + 0.1
+          ? 'The screen needs a clearer personal challenge window.'
+          : null);
+      return {
+        p: target,
+        eta,
+        engage,
+        response,
+        teamAttack: !rejection,
+        attack: !personalRejection,
+        targetId: target.id,
+        rejection: personalRejection,
+        contestsBall: distance(target.pos, snapshot.ball) <= 4,
+        threatensCollector:
+          estimateSpaceAttackTime(target, collector.pos, routers.get(target.id)!(collector.pos, true).length) <=
+          tuning.threatHorizon,
+        recovering: target.space?.phase.includes('recover') ?? false,
+      };
+    };
+    // At zero, preserve the original single-candidate choice exactly. Positive
+    // strength checks alternatives before applying bounded style preferences.
+    const evaluated = (tuning.tipoffTargetAgencyStrength > 0 ? candidates : candidates.slice(0, 1)).map(evaluate);
+    if (tuning.tipoffTargetAgencyStrength > 0)
+      targetSelection = chooseTipoffTarget(
+        evaluated.map(({ p, engage, teamAttack, attack, ...c }) => c),
+        tuning.tipoffTargetAgencyStrength,
+        snapshot.tactics?.botStyles,
+        self.id,
+      );
+    const selected = targetSelection ? evaluated.find((c) => c.targetId === targetSelection.selectedId) : evaluated[0];
+    target = selected?.p;
+    teamAttack = selected?.teamAttack ?? false;
+    attack = selected?.attack ?? false;
+    if (attack && selected) slots.set(screen, selected.engage);
   }
   for (const a of assignments) {
     const job: TipoffOrder['job'] =
@@ -362,6 +404,7 @@ export function applyGrifballTipoff(
       ...(recovery ? { recovery } : {}),
       ...(recoveryAgency ? { recoveryAgency } : {}),
       ...(screenSelection ? { screenSelection } : {}),
+      ...(a === screen && targetSelection ? { targetSelection } : {}),
       ...(agency
         ? {
             agency: {
@@ -421,9 +464,13 @@ export function selectGrifballTipoffThreat(
     !grounded(reserve) ||
     // A clearer timing window must still exist when the combat adapter consumes
     // the order. Immediate self-defense above never waits for a style preference.
-    ((order.agency?.challengeCushion ?? 0) > 0 &&
-      estimateSpaceAttackTime(attacker, target.pos, distance(self, target.pos)) + order.agency!.challengeCushion >
+    (((order.agency?.challengeCushion ?? 0) > 0 || order.targetSelection) &&
+      estimateSpaceAttackTime(attacker, target.pos, distance(self, target.pos)) +
+        (order.agency?.challengeCushion ?? 0) >
         estimateSpaceAttackTime(target, self, distance(self, target.pos)) + 0.1) ||
+    (order.targetSelection &&
+      estimateSpaceAttackTime(attacker, target.pos, distance(self, target.pos)) >
+        (a.tuning?.threatHorizon ?? 1.5) + 1) ||
     allies.filter(grounded).length < 3 ||
     nearby.length > allies.filter((p) => grounded(p) && distance(p.pos, a.anchor) <= 18).length ||
     nearby.some(
