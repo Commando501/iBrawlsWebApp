@@ -52,6 +52,108 @@ const pose = (root: THREE.Group, state: string, timer: number) =>
     settings,
   });
 
+test("cached authored frames preserve full poses through movement, weapons, and recovery", () => {
+  for (const firstPerson of [false, true]) {
+    const cached = createIronVanguardModel(200, firstPerson, gltf);
+    const reference = createIronVanguardModel(200, firstPerson, gltf);
+    const counts = [0, 0];
+    [cached, reference].forEach((root, index) => {
+      const mixer = root.userData.ironVanguard.mixer as THREE.AnimationMixer;
+      const setTime = mixer.setTime.bind(mixer);
+      mixer.setTime = time => { counts[index]++; return setTime(time); };
+    });
+    try {
+      for (let i = 0; i < 120; i++) {
+        const input = {
+          activeWeapon: i < 50 || i >= 80 ? 'hammer' : i < 65 ? 'sword' : 'ball',
+          weaponState: i >= 80 && i < 90 ? 'swing_up' : i < 100 && i >= 90 ? 'recovering' : 'ready',
+          weaponTimer: i >= 80 && i < 100 ? (i % 10) * .03 : 0,
+          dt: 1 / 60,
+          vel: new THREE.Vector3(i < 10 ? 0 : 5, 0, i < 40 ? 0 : 2),
+          yaw: i * .01,
+          lookPitch: Math.sin(i * .1) * .4,
+          isSprinting: i >= 20 && i < 30,
+          isCrouching: i >= 30 && i < 40,
+          isJumping: i >= 40 && i < 50,
+          ballCharge: .5,
+          settings,
+        };
+        // Re-evaluate the reference with the original mixer path every frame.
+        reference.userData.ironVanguard.authoredFrame = undefined;
+        animateIronVanguard(reference, input);
+        animateIronVanguard(cached, input);
+        cached.updateMatrixWorld(true);
+        reference.updateMatrixWorld(true);
+        const expected: number[] = [], actual: number[] = [];
+        for (const [root, values] of [[reference, expected], [cached, actual]] as const) {
+          root.traverse(object => {
+            values.push(...object.matrixWorld.elements);
+            if (object instanceof THREE.Mesh) values.push(...(object.morphTargetInfluences ?? []));
+          });
+        }
+        assert.deepEqual(actual, expected, `frame ${i}, firstPerson=${firstPerson}`);
+      }
+      assert.equal(counts[1], 120);
+      assert.ok(counts[0] < 25, `only changed authored poses should sample the mixer: ${counts[0]}`);
+    } finally {
+      disposeIronVanguard(cached);
+      disposeIronVanguard(reference);
+    }
+  }
+});
+
+test("conservative culling encloses every skinned vertex through authored and procedural poses", () => {
+  const root = createIronVanguardModel(200, false, gltf);
+  const meshes: THREE.SkinnedMesh[] = [];
+  root.traverse(object => { if (object instanceof THREE.SkinnedMesh) meshes.push(object); });
+  const point = new THREE.Vector3();
+  const assertEnclosed = (label: string) => {
+    root.updateMatrixWorld(true);
+    for (const mesh of meshes) {
+      mesh.skeleton.update();
+      assert.equal(mesh.frustumCulled, true);
+      const sphere = mesh.boundingSphere!;
+      let farthest = 0;
+      for (let i = 0; i < mesh.geometry.attributes.position.count; i++) {
+        mesh.getVertexPosition(i, point);
+        farthest = Math.max(farthest, point.distanceTo(sphere.center));
+      }
+      assert.ok(farthest < sphere.radius, `${label}: ${mesh.name} extent ${farthest} exceeds ${sphere.radius}`);
+    }
+  };
+  try {
+    for (let i = 0; i <= 70; i++) {
+      const state = i <= 24 ? 'swing_up' : i <= 34 ? 'swing_down' : 'recovering';
+      const timer = i <= 24 ? i / 24 * .3 : i <= 34 ? (i - 24) / 10 * .2 : (i - 34) / 36 * 1.1;
+      pose(root, state, timer);
+      assertEnclosed(`authored ${i}`);
+    }
+    for (const activeWeapon of ['hammer', 'sword', 'ball', 'pistol']) {
+      for (let i = 0; i < 32; i++) {
+        animateIronVanguard(root, {
+          activeWeapon, weaponState: i < 16 ? 'ready' : 'swing_up', weaponTimer: (i % 16) / 16 * .3,
+          dt: 1 / 30, vel: new THREE.Vector3(Math.sin(i) * 12, i < 8 ? 5 : 0, Math.cos(i) * 12),
+          yaw: i * .2, lookPitch: Math.sin(i) * 1.3, isJumping: i < 8,
+          isSprinting: i >= 8 && i < 16, isCrouching: i >= 16 && i < 24,
+          isSliding: i >= 24, isLunging: activeWeapon === 'sword' && i < 8,
+          ballCharge: i / 32, settings,
+        });
+        assertEnclosed(`${activeWeapon} procedural ${i}`);
+      }
+    }
+    const camera = new THREE.PerspectiveCamera(60, 1, .1, 200);
+    camera.updateMatrixWorld(true);
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    root.position.set(50, 0, -10); root.updateMatrixWorld(true);
+    assert.ok(meshes.every(mesh => !frustum.intersectsObject(mesh)), 'offscreen bodies can be culled');
+    root.position.set(3, 0, -5); root.updateMatrixWorld(true);
+    assert.ok(meshes.every(mesh => frustum.intersectsObject(mesh)), 'edge-of-view limbs retain a generous margin');
+    root.rotation.set(.1, 1.2, -.15); root.scale.set(1.3, .8, 1.1);
+    assertEnclosed('translated, rotated, and scaled parent');
+  } finally { disposeIronVanguard(root); }
+});
+
 test("gameplay asset retains its corrective shapes, skeleton, and reduced geometry budget", () => {
   const root = createIronVanguardModel(200, false, gltf);
   const body = root.getObjectByName(

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { worldPositionFromMatrix, worldQuaternionFromMatrix } from "./ironVanguardWorldPose";
 import {
   createVanguardAirState,
   shapeVanguardAirPose,
@@ -94,9 +95,11 @@ function sample(name: string, time: number): Pose {
   const t = clip.loop
     ? ((time % clip.duration) + clip.duration) % clip.duration
     : THREE.MathUtils.clamp(time, 0, clip.duration);
-  return Object.fromEntries(
-    clip.tracks.map((tk) => [tk.name, Array.from(tk.interpolant.evaluate(t))]),
-  );
+  const pose: Pose = {};
+  for (const track of clip.tracks) {
+    pose[track.name] = Array.from(track.interpolant.evaluate(t));
+  }
+  return pose;
 }
 const reference = sample("idle", 0);
 export function createVanguardMovementState(): VanguardMovementState {
@@ -122,7 +125,8 @@ export function createVanguardMovementState(): VanguardMovementState {
 const quaternionA = new THREE.Quaternion(),
   quaternionB = new THREE.Quaternion();
 function blend(from: Pose, to: Pose, alpha: number): Pose {
-  for (const [name, value] of Object.entries(to)) {
+  for (const name in to) {
+    const value = to[name];
     const start = from[name];
     if (!start) continue;
     if (name.endsWith(".quaternion")) {
@@ -428,7 +432,7 @@ export function applyVanguardMovement(
     input.activeWeapon === "hammer" &&
     input.weaponState === "ready";
   // Keep the source grip offsets exact while carry poses blend into/out of the slide.
-  root.updateWorldMatrix(true, true);
+  if (slideCarry) root.updateWorldMatrix(true, true);
   const gripOffsets = slideCarry
     ? ["Left", "Right"].map((side) =>
         bones.weapon_hammer.matrixWorld
@@ -583,8 +587,7 @@ function placeMovementFeet(
     const target = root.localToWorld(
       new THREE.Vector3().fromArray(pose[side + "FootTarget.position"]),
     );
-    const rotation = root
-      .getWorldQuaternion(new THREE.Quaternion())
+    const rotation = worldQuaternionFromMatrix(root)
       .multiply(
         new THREE.Quaternion().fromArray(pose[side + "FootTarget.quaternion"]),
       );
@@ -592,12 +595,11 @@ function placeMovementFeet(
       new THREE.Vector3().fromArray(pose[side + "KneeTarget.position"]),
     );
     if (side === landingSide) {
-      const hip = thigh.getWorldPosition(new THREE.Vector3());
+      const hip = worldPositionFromMatrix(thigh);
       const reach =
-        hip.distanceTo(shin.getWorldPosition(new THREE.Vector3())) +
-        shin
-          .getWorldPosition(new THREE.Vector3())
-          .distanceTo(foot.getWorldPosition(new THREE.Vector3()));
+        hip.distanceTo(worldPositionFromMatrix(shin)) +
+        worldPositionFromMatrix(shin)
+          .distanceTo(worldPositionFromMatrix(foot));
       const contact = target.clone();
       contact.y = root.localToWorld(
         new THREE.Vector3().fromArray(reference[side + "FootTarget.position"]),
@@ -620,7 +622,7 @@ function placeMovementFeet(
           reachRatio: 0.99,
           position: contact,
           rotation: rotation.clone(),
-          origin: root.getWorldPosition(new THREE.Vector3()),
+          origin: worldPositionFromMatrix(root),
           age: 0,
           release: 0,
         };
@@ -629,19 +631,18 @@ function placeMovementFeet(
     if (state.support && side === (state.support.side ?? "Right")) {
       const support = state.support;
       support.age += dt;
-      const hip = thigh.getWorldPosition(new THREE.Vector3());
+      const hip = worldPositionFromMatrix(thigh);
       const reach =
-        hip.distanceTo(shin.getWorldPosition(new THREE.Vector3())) +
-        shin
-          .getWorldPosition(new THREE.Vector3())
-          .distanceTo(foot.getWorldPosition(new THREE.Vector3()));
+        hip.distanceTo(worldPositionFromMatrix(shin)) +
+        worldPositionFromMatrix(shin)
+          .distanceTo(worldPositionFromMatrix(foot));
       // Push off briefly, then release before the moving pelvis can overextend the leg.
       if (
         support.release > 0 ||
         support.age >= 0.09 ||
         hip.distanceTo(support.position) >
           reach * (support.reachRatio ?? 0.94) ||
-        root.getWorldPosition(new THREE.Vector3()).distanceTo(support.origin) >
+        worldPositionFromMatrix(root).distanceTo(support.origin) >
           0.28
       )
         support.release = Math.min(1, support.release + dt / 0.12);
@@ -653,12 +654,11 @@ function placeMovementFeet(
     }
     // Preserve floor clearance if a moving support point approaches full extension.
     // Solve in the horizontal plane first instead of clamping the ankle up/down.
-    const hip = thigh.getWorldPosition(new THREE.Vector3());
+    const hip = worldPositionFromMatrix(thigh);
     const reach =
-      hip.distanceTo(shin.getWorldPosition(new THREE.Vector3())) +
-      shin
-        .getWorldPosition(new THREE.Vector3())
-        .distanceTo(foot.getWorldPosition(new THREE.Vector3()));
+      hip.distanceTo(worldPositionFromMatrix(shin)) +
+      worldPositionFromMatrix(shin)
+        .distanceTo(worldPositionFromMatrix(foot));
     const maxHorizontal = Math.sqrt(
       Math.max(0, (reach - 0.0002) ** 2 - (hip.y - target.y) ** 2),
     );
@@ -681,9 +681,10 @@ export function solveLimb(
   rotation: THREE.Quaternion,
   pole?: THREE.Vector3,
 ) {
-  const hip = thigh.getWorldPosition(new THREE.Vector3()),
-    knee = shin.getWorldPosition(new THREE.Vector3()),
-    ankle = foot.getWorldPosition(new THREE.Vector3());
+  thigh.updateWorldMatrix(true, true);
+  const hip = worldPositionFromMatrix(thigh),
+    knee = worldPositionFromMatrix(shin),
+    ankle = worldPositionFromMatrix(foot);
   const upperLength = hip.distanceTo(knee),
     lowerLength = knee.distanceTo(ankle);
   const direction = target.clone().sub(hip);
@@ -701,7 +702,7 @@ export function solveLimb(
   if (bend.lengthSq() < 1e-10)
     bend
       .set(0, 0, -1)
-      .applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
+      .applyQuaternion(worldQuaternionFromMatrix(root));
   bend.normalize();
   const kneeTarget = hip
     .clone()
@@ -715,18 +716,17 @@ export function solveLimb(
     child: THREE.Object3D,
     goal: THREE.Vector3,
   ) => {
-    const start = bone.getWorldPosition(new THREE.Vector3());
-    const from = child
-      .getWorldPosition(new THREE.Vector3())
+    const start = worldPositionFromMatrix(bone);
+    const from = worldPositionFromMatrix(child)
       .sub(start)
       .normalize();
     const to = goal.clone().sub(start).normalize();
     const world = new THREE.Quaternion()
       .setFromUnitVectors(from, to)
-      .multiply(bone.getWorldQuaternion(new THREE.Quaternion()));
+      .multiply(worldQuaternionFromMatrix(bone));
     bone.quaternion.copy(
-      bone
-        .parent!.getWorldQuaternion(new THREE.Quaternion())
+      worldQuaternionFromMatrix(bone
+        .parent!)
         .invert()
         .multiply(world),
     );
@@ -735,8 +735,8 @@ export function solveLimb(
   aim(thigh, shin, kneeTarget);
   aim(shin, foot, target);
   foot.quaternion.copy(
-    foot
-      .parent!.getWorldQuaternion(new THREE.Quaternion())
+    worldQuaternionFromMatrix(foot
+      .parent!)
       .invert()
       .multiply(rotation),
   );

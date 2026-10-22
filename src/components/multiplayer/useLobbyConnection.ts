@@ -63,6 +63,24 @@ const isOpenSocket = (socket: WebSocket | null): socket is WebSocket => {
   return Boolean(socket && socket.readyState === WebSocket.OPEN);
 };
 
+/** Both channels remain connected during play; neither may lose its heartbeat. */
+export function sendRelayHeartbeats(
+  sockets: readonly (Pick<WebSocket, 'readyState' | 'send'> | null)[],
+  timestamp = Date.now(),
+) {
+  const packet: LobbyClientMessage = { type: 'ping', timestamp };
+  const payload = JSON.stringify(packet);
+  for (const socket of new Set(sockets)) {
+    if (socket?.readyState !== 1) continue;
+    try {
+      socket.send(payload);
+    } catch (error) {
+      // One closing connection must not prevent the other channel's heartbeat.
+      console.error('Error sending relay heartbeat:', error);
+    }
+  }
+}
+
 /** A local mode change must leave the server queue as well as hide its UI. */
 export function cancelQueuedQuickPlayIfIdle(
   status: LobbyQuickPlayStatus,
@@ -262,21 +280,7 @@ export function useLobbyConnection({
 
   useEffect(() => {
     const pingInterval = setInterval(() => {
-      const activeSock = isOpenSocket(multiplayerSocket)
-        ? multiplayerSocket
-        : isOpenSocket(menuSocket) ? menuSocket : null;
-
-      if (activeSock) {
-        try {
-          const packet: LobbyClientMessage = {
-            type: 'ping',
-            timestamp: Date.now(),
-          };
-          activeSock.send(JSON.stringify(packet));
-        } catch (e) {
-          console.error('Error sending ping:', e);
-        }
-      }
+      sendRelayHeartbeats([multiplayerSocket, menuSocket]);
     }, 2000);
 
     return () => clearInterval(pingInterval);

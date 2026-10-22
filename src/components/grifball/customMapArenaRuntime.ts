@@ -6,6 +6,7 @@ import { type GrifballThreeRefs } from './threeRefs';
 import { applyStadiumWorldUVs, createStadiumFloorMaterial } from './stadiumMaterials';
 import { buildStadiumFieldMarkings } from './stadiumFieldMarkings';
 import { buildStadiumFillLighting, configureStadiumShadow } from './stadiumLighting';
+import { mapScaleFactors } from '../../game/mapBalancing';
 import { getEnvironmentQualityProfile } from '../../settings/environmentQuality';
 import { createCanyonFloorMaterial } from './canyonMaterials';
 import { buildCanyonFillLighting, configureCanyonShadow } from './canyonLighting';
@@ -161,14 +162,24 @@ export function buildCustomMapBaseArenaForRefs({
   }
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.position.y = -0.1;
+  if (activeCustomMap.balanceScale) {
+    floor.scale.y = mapScaleFactors(activeCustomMap.balanceScale).y;
+    floor.position.y *= floor.scale.y;
+  }
   floor.receiveShadow = true;
   scene.add(floor);
   if (isStadium) {
     floor.name = 'stadium_floor';
-    scene.add(buildStadiumFillLighting(getRectHalfExtents(r, activeCustomMap.arenaHalfExtents)));
+    const factors = mapScaleFactors(activeCustomMap.balanceScale);
+    const scaledHalf = getRectHalfExtents(r, activeCustomMap.arenaHalfExtents);
+    const originalHalf = { x: scaledHalf.x / factors.x, z: scaledHalf.z / factors.z };
+    const fill = buildStadiumFillLighting(originalHalf);
+    fill.scale.set(factors.x, factors.y, factors.z);
+    scene.add(fill);
     if (activeCustomMap.mapShape === 'rectangular') {
-      const half = getRectHalfExtents(r, activeCustomMap.arenaHalfExtents);
-      scene.add(buildStadiumFieldMarkings(half.x, half.z));
+      const markings = buildStadiumFieldMarkings(originalHalf.x, originalHalf.z);
+      markings.scale.set(factors.x, factors.y, factors.z);
+      scene.add(markings);
     }
   } else if (isCanyon) {
     floor.name = 'canyon_floor';
@@ -197,8 +208,17 @@ export function buildCustomMapBaseArenaForRefs({
   activeCustomMap.objects.forEach(obj => {
     if (obj.gameModeKind === 'spawn_point') return;
 
+    // Preserve the authored compound mesh (including tiny trim/ring dimensions).
+    // Scaling its assembled parts avoids generator minimum sizes clipping the floor.
+    const factors = mapScaleFactors(activeCustomMap.balanceScale);
+    const meshObject = activeCustomMap.balanceScale ? {
+      ...obj,
+      scale: { x: obj.scale.x / factors.x, y: obj.scale.y / factors.y, z: obj.scale.z / factors.z },
+    } : obj;
+
     const mesh = (isGlacier ? createGlacierFallbackObject(obj, quality) : isRainy ? createRainyFallbackObject(obj, quality) : isNeon ? createNeonFallbackObject(obj, quality) : isAsteroid ? createAsteroidFallbackObject(obj, quality) : isJungle ? createJungleFallbackObject(obj, quality) : isCyber ? createCyberFallbackObject(obj, quality) : undefined)
-      ?? createHighFidelityObjectMesh(obj, THREE, generateCustomTexture);
+      ?? createHighFidelityObjectMesh(meshObject, THREE, generateCustomTexture);
+    if (activeCustomMap.balanceScale) mesh.scale.set(factors.x, factors.y, factors.z);
     if (isCanyon) mesh.userData.canyonLegacyId = obj.id;
     if (isCyber) mesh.userData.cyberLegacyId = obj.id;
     if (isJungle) mesh.userData.jungleLegacyId = obj.id;

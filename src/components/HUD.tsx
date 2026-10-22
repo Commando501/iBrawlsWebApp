@@ -14,6 +14,7 @@ import { DraggableHUDItem, clampUiScale } from './hud/DraggableHUDItem';
 
 interface HUDProps {
   stats: GameStats;
+  prepareForPlay?: boolean;
   onPauseClick: () => void;
   onThemeToggle?: () => void;
   uiPositions: UiElementPos[];
@@ -211,8 +212,28 @@ export const renderKillFeedIcon = (weaponType: string) => {
   }
 };
 
+export function GrifballCarrierControls({ passCharge }: { passCharge: number }) {
+  return (
+    <div className="absolute top-[58%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex flex-col items-center gap-3">
+      <div className="bg-black/60 backdrop-blur-md border border-orange-400/40 rounded-lg px-4 py-1.5 flex items-center gap-3">
+        <span className="text-orange-300 font-black text-sm uppercase tracking-wider">🏉 Ball</span>
+        <span className="text-[11px] text-white/70 font-mono">LMB Punch · Hold RMB Pass</span>
+      </div>
+      {passCharge > 0 && (
+        <div className="w-96 h-5 bg-black/60 border border-white/20 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-[width] duration-75"
+            style={{ width: `${Math.round(passCharge * 100)}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const HUD: React.FC<HUDProps> = ({ 
   stats, 
+  prepareForPlay = false,
   onPauseClick, 
   uiPositions, 
   uiDefaultPositions,
@@ -266,6 +287,9 @@ export const HUD: React.FC<HUDProps> = ({
 
   // Cooldown bar width percentage
   const cooldownPct = Math.round(stats.weaponCooldown * 100);
+  // Paint the runner view beneath the loading screen so its first layout and
+  // GPU effects do not interrupt a pickup. This never changes gameplay stats.
+  const activeWeapon = prepareForPlay ? 'ball' : stats.activeWeapon;
 
   const handleToggleLock = (id: string) => {
     const nextPositions = draftUiPositionsRef.current.map((ui) => (
@@ -383,7 +407,7 @@ export const HUD: React.FC<HUDProps> = ({
   });
 
   return (
-    <div className={`absolute inset-0 z-10 select-none font-sans text-white ${usesMobileHud ? 'mobile-hud' : 'desktop-hud'} ${isAdjustmentMode ? 'hud-adjusting pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
+    <div inert={prepareForPlay} aria-hidden={prepareForPlay} className={`absolute inset-0 z-10 select-none font-sans text-white ${usesMobileHud ? 'mobile-hud' : 'desktop-hud'} ${isAdjustmentMode ? 'hud-adjusting pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
 
       {/* Grifball ball carrier status */}
       {stats.grifball?.phase === 'playing' && stats.grifball.ballCarrierName && (
@@ -432,21 +456,8 @@ export const HUD: React.FC<HUDProps> = ({
       )}
 
       {/* Grifball ball-carrier controls + Pass-charge meter (local player) */}
-      {stats.grifball && stats.grifball.localCarrying && (
-        <div className="absolute top-[58%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex flex-col items-center gap-3">
-          <div className="bg-black/60 backdrop-blur-md border border-orange-400/40 rounded-lg px-4 py-1.5 flex items-center gap-3">
-            <span className="text-orange-300 font-black text-sm uppercase tracking-wider">🏉 Ball</span>
-            <span className="text-[11px] text-white/70 font-mono">LMB Punch · Hold RMB Pass</span>
-          </div>
-          {stats.grifball.passCharge > 0 && (
-            <div className="w-96 h-5 bg-black/60 border border-white/20 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-[width] duration-75"
-                style={{ width: `${Math.round(stats.grifball.passCharge * 100)}%` }}
-              />
-            </div>
-          )}
-        </div>
+      {(prepareForPlay || stats.grifball?.localCarrying) && (
+        <GrifballCarrierControls passCharge={prepareForPlay ? 1 : stats.grifball!.passCharge} />
       )}
 
       {/* Grid editor overlay line effect */}
@@ -768,20 +779,20 @@ export const HUD: React.FC<HUDProps> = ({
                 </span>
               </div>
               <h2 className="text-2xl font-black uppercase tracking-tight font-display text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-300">
-                {stats.activeWeapon === 'ball' ? 'Grifball' : stats.activeWeapon === 'sword' ? 'Katar Sword' : 'Gravity Hammer'}
+                {activeWeapon === 'ball' ? 'Grifball' : activeWeapon === 'sword' ? 'Katar Sword' : 'Gravity Hammer'}
               </h2>
               <p className="text-[9.5px] font-mono tracking-widest text-[#94a3b8] uppercase mt-0.5">
                 {stats.playerHP <= 0 
                   ? 'SYSTEM SHUT DOWN' 
-                  : stats.activeWeapon === 'ball'
+                  : activeWeapon === 'ball'
                     ? 'Runner · Ball Equipped'
-                  : stats.activeWeapon === 'sword' 
+                  : activeWeapon === 'sword'
                     ? 'Katar Indian Push Dagger' 
                     : 'Overhand Impact Wave Detector'}
               </p>
               {/* Visual keybindings overlay */}
               <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[8.5px] font-mono text-slate-400">
-                {stats.activeWeapon === 'ball' ? (
+                {activeWeapon === 'ball' ? (
                   <>
                     <div className="flex justify-between">
                       <span>PUNCH:</span>
@@ -792,7 +803,7 @@ export const HUD: React.FC<HUDProps> = ({
                       <span className="text-orange-300 font-extrabold">[HOLD RIGHT CLICK]</span>
                     </div>
                   </>
-                ) : stats.activeWeapon === 'sword' ? (
+                ) : activeWeapon === 'sword' ? (
                   <>
                     <div className="flex justify-between">
                       <span>LUNGING ATTACK:</span>
@@ -818,7 +829,7 @@ export const HUD: React.FC<HUDProps> = ({
                   </>
                 )}
                 <div className="flex justify-between border-t border-white/5 pt-1 mt-0.5 text-[8s] text-indigo-300">
-                  <span>{stats.activeWeapon === 'ball' ? 'DROP & RESTORE WEAPON:' : 'SWAP WEAPONS:'}</span>
+                  <span>{activeWeapon === 'ball' ? 'DROP & RESTORE WEAPON:' : 'SWAP WEAPONS:'}</span>
                   <span>[1] or [2] / [SCROLL]</span>
                 </div>
                 <div className="flex justify-between text-[8s] text-emerald-300">
@@ -833,13 +844,13 @@ export const HUD: React.FC<HUDProps> = ({
               {/* Weapon Energy cooling */}
               <div className="flex flex-col">
                 <span className="text-[9px] font-mono text-white/40 uppercase mb-1">
-                  {stats.activeWeapon === 'ball' ? 'PUNCH RECOVERY' : stats.activeWeapon === 'sword' ? 'SWORD CAPACITOR' : 'COOLING SYSTEM'} ({cooldownPct}%)
+                  {activeWeapon === 'ball' ? 'PUNCH RECOVERY' : activeWeapon === 'sword' ? 'SWORD CAPACITOR' : 'COOLING SYSTEM'} ({cooldownPct}%)
                 </span>
                 <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner">
                   <div 
                     className={`h-full transition-all duration-75 ${
                       stats.weaponReady 
-                        ? stats.activeWeapon === 'sword'
+                        ? activeWeapon === 'sword'
                           ? 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)]'
                           : 'bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.9)]' 
                         : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)]'
@@ -955,7 +966,7 @@ export const HUD: React.FC<HUDProps> = ({
         <DraggableHUDItem {...getDraggableProps('crosshair')}>
           <div className="relative flex items-center justify-center pointer-events-none">
             {/* Crosshair Outer Ring */}
-            {stats.activeWeapon === 'sword' ? (
+            {activeWeapon === 'sword' ? (
               <div 
                 className={`w-12 h-12 border-2 rounded-full flex items-center justify-center transition-all duration-150 ${
                   stats.crosshairColor === 'red'
@@ -1239,7 +1250,7 @@ export const HUD: React.FC<HUDProps> = ({
               mobileRightJoystickRef={mobileRightJoystickRef}
               mobileRightJoystickActiveRef={mobileRightJoystickActiveRef}
               isAdjustmentMode={isAdjustmentMode}
-              activeWeapon={stats.activeWeapon}
+              activeWeapon={activeWeapon}
               stats={stats}
             />
           </DraggableHUDItem>

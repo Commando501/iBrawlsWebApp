@@ -47,6 +47,7 @@ function trace(
   reverse: boolean,
   style?: GrifballPlayerStyle,
   laneStyle?: GrifballPlayerStyle,
+  regroup = false,
 ) {
   const id = main && !laneStyle ? 'main_ai' : 'collector',
     screenId = main && laneStyle ? 'main_ai' : 'screen',
@@ -64,6 +65,7 @@ function trace(
     stylesEnabled: false,
     tankingEnabled: false,
     passingEnabled: false,
+    tipoffRegroupSeconds: regroup ? 0.5 : 0,
   });
   state.grifballTactics.teams.red = { tipoffSpacing: 7 };
   if (style) {
@@ -150,6 +152,9 @@ function trace(
   const goal = (t: string | undefined) => sim.goalPlates.find((p) => p.team !== t)!.position;
   const frames: unknown[] = [];
   const lanePositions: { x: number; y: number; z: number }[] = [];
+  const screenPositions: { x: number; y: number; z: number }[] = [];
+  let regroupFrames = 0,
+    resumedFrames = 0;
   let receipt = 0,
     applied = 0,
     moved = 0,
@@ -159,6 +164,15 @@ function trace(
   // Opponents remain stationary. Both engines independently plan and execute
   // every friendly ground order through actual pickup and the next possession.
   for (let tick = 1; tick <= 180; tick++) {
+    if (regroup && tick === 5) {
+      // Controlled casualty; each real snapshot adapter must omit the actor and
+      // independently trigger recovery. This is not a claim about kill rates.
+      const lost = sim.combatants.find((c) => c.id === 'other')!;
+      const liveLost = state.otherPlayers.get('other')!;
+      lost.alive = false;
+      lost.hp = liveLost.hp = 0;
+      lost.respawnTimer = liveLost.respawnTimer = 20;
+    }
     if (style && tick === 25) {
       sim.combatants.find((c) => c.id === 'enemy')!.pos.x = 40 * sign;
       state.otherPlayers.get('enemy')!.pos.x = 40 * sign;
@@ -172,7 +186,16 @@ function trace(
       positioned += orders.filter((a) => a.tipoff!.positioning?.applied).length;
       if (plan.assignments.get(screenId)!.tipoff!.positioning?.applied) screenPositioned++;
     }
-    const claiming = plan.assignments.get(id)!.tipoff!.phase === 'claim';
+    const claiming = plan.assignments.get(id)!.role === 'retriever';
+    const recovering = orders.every((a) => a.tipoff!.phase === 'regroup');
+    if (recovering) regroupFrames++;
+    if (regroupFrames && !recovering) resumedFrames++;
+    if (regroup && tick >= 5 && tick < 35) {
+      assert.ok(recovering);
+      assert.deepEqual(plan.tipoff!.recovery![team].affectedIds, ['other']);
+      assert.ok(orders.every((a) => a.tipoff!.job !== 'screen'));
+    }
+    if (regroup && tick === 35) assert.equal(recovering, false);
     assert.deepEqual(
       orders.filter((a) => a.role === 'retriever').map((a) => a.botId),
       claiming ? [id] : [],
@@ -183,7 +206,7 @@ function trace(
     );
     const collector = plan.assignments.get(id)!;
     assert.equal(collector.tipoff!.job, 'collector');
-    if (!style) assert.equal(collector.tipoff!.phase, 'claim');
+    if (!style) assert.equal(collector.tipoff!.phase, recovering ? 'regroup' : 'claim');
     if (style && tick === 1) {
       assert.equal(claiming, style === 'enforcer');
       assert.equal(collector.tipoff!.agency!.style, style);
@@ -198,7 +221,7 @@ function trace(
         scriptedBots,
         movement: {},
       };
-    const friendly = sim.combatants.filter((c) => c.team === team);
+    const friendly = sim.combatants.filter((c) => c.team === team && c.alive && c.hp > 0);
     for (const c of friendly) {
       const a = plan.assignments.get(c.id)!,
         b = state.aiMatchContext.grifballTeamPlan.assignments.get(c.id)!;
@@ -281,6 +304,7 @@ function trace(
     assert.equal(sim.match.ball.state, state.grifball.ball.state);
     assert.equal(sim.match.ball.holderId, state.grifball.ball.holderId);
     lanePositions.push({ ...sim.combatants.find((c) => c.id === 'other')!.pos });
+    screenPositions.push({ ...other.pos });
     if (Math.hypot(self.vel.x, self.vel.z) > 0.01) moved++;
     frames.push({
       tick,
@@ -300,8 +324,31 @@ function trace(
   updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics }), dt);
   assert.ok([...plan.assignments.values()].every((a) => !a.tipoff));
   assert.ok([...state.aiMatchContext.grifballTeamPlan.assignments.values()].every((a) => !a.tipoff));
-  return { receipt, holder: sim.match.ball.holderId, frames, waited, positioned, screenPositioned, lanePositions };
+  return {
+    receipt,
+    holder: sim.match.ball.holderId,
+    frames,
+    waited,
+    positioned,
+    screenPositioned,
+    lanePositions,
+    screenPositions,
+    regroupFrames,
+    resumedFrames,
+  };
 }
+
+for (const main of [false, true])
+  for (const mirror of [false, true])
+    test(`live/sim regroup after a casualty changes movement, resumes and preserves safe pickup ${main}/${mirror}`, () => {
+      const baseline = trace(main, mirror, false, undefined, 'balanced');
+      const recovery = trace(main, mirror, true, undefined, 'balanced', true);
+      assert.ok(recovery.regroupFrames > 0);
+      assert.ok(recovery.resumedFrames > 0);
+      assert.notDeepEqual(recovery.screenPositions[10], baseline.screenPositions[10]);
+      assert.equal(recovery.holder, baseline.holder);
+      assert.equal(recovery.receipt, baseline.receipt, 'a clear pickup must not wait for recovery');
+    });
 
 for (const main of [false, true])
   for (const mirror of [false, true])
@@ -344,11 +391,14 @@ const unexpected = () => {
   throw new Error('Stationary commitment must not invoke another attack branch');
 };
 
-for (const assigned of [true])
+for (const [assigned, regroupCombat] of [
+  [true, false],
+  [true, true],
+] as const)
   for (const id of ['main_ai', 'bot_2'])
     for (const weapon of ['hammer'] as const)
       for (const multiplier of [1])
-        test(`${assigned ? 'assigned' : 'authored'}/${id}/${weapon}/${multiplier}: tip-off combat permission, commitment, impact and recovery`, () => {
+        test(`${assigned ? 'assigned' : 'authored'}/${id}/${weapon}/${multiplier}/regroup=${regroupCombat}: tip-off combat permission, commitment, impact and recovery`, () => {
           const f = createBotParityFixture(id, true);
           const { sim, bot, target } = f,
             [self, rival] = sim.combatants;
@@ -413,6 +463,7 @@ for (const assigned of [true])
             }
             f.state.grifballTactics = openingTactics();
             f.state.grifballTactics.defaults.tipoffEnabled = true;
+            f.state.grifballTactics.defaults.tipoffRegroupSeconds = regroupCombat ? 3 : 0;
             f.state.grifballTactics.defaults.tipoffAgencyStrength = 1;
             f.state.grifballTactics.defaults.tipoffPositionAgencyStrength = 1;
             f.state.grifballTactics.botStyles[id] = 'guardian';
@@ -429,10 +480,18 @@ for (const assigned of [true])
             simHit = 0;
           let liveAttacks = 0,
             simAttacks = 0;
+          let regroupFrames = 0;
           let continuation: typeof sim | undefined;
           let continuationPlan: typeof plan | undefined;
           let continuationMemory: typeof simMemory | undefined;
           for (let tick = 1; tick <= 180; tick++) {
+            if (regroupCombat && tick === 2) {
+              const lost = sim.combatants.find((c) => c.id === 'support')!;
+              const liveLost = f.state.otherPlayers.get('support')!;
+              lost.alive = false;
+              lost.hp = liveLost.hp = 0;
+              lost.respawnTimer = liveLost.respawnTimer = 20;
+            }
             // Each host owns its plan, observations, readiness and AI memory. Only
             // the original cases author range; assigned cases use current target data.
             let liveTargetId: string | null = null;
@@ -447,6 +506,10 @@ for (const assigned of [true])
                 const livePlan = f.state.aiMatchContext.grifballTeamPlan;
                 const assignment = livePlan.assignments.get(id)!;
                 assert.ok(assignment.tipoff, 'the opening must own this combat decision');
+                if (assignment.tipoff.recovery) {
+                  regroupFrames++;
+                  assert.equal(assignment.tipoff.attack, false);
+                }
                 assert.equal(
                   [...livePlan.assignments.values()].filter((a) => a.team === bot.team && a.tipoff?.job === 'reserve')
                     .length,
@@ -680,6 +743,8 @@ for (const assigned of [true])
           assert.ok(liveHit > liveCommit);
           assert.equal(simHit, liveHit);
           assert.equal(simAttacks, liveAttacks);
+          if (regroupCombat)
+            assert.ok(regroupFrames > 0, 'real immediate-defense impacts must occur during regrouping');
           if (assigned) {
             assert.ok(liveAttacks >= 2);
             assert.ok(target.hp <= 18);

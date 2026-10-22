@@ -15,6 +15,7 @@ export interface OnlineGrifballState {
   lastHolder: string | null;
   sendTimer: number;
   inputSequence: number;
+  lastInput?: { charging: boolean; round: number; possession: number };
   peers: Map<string, PeerInput>;
   pending?: GrifballSnapshot;
   release: GrifballSnapshot['release'];
@@ -33,11 +34,20 @@ const send = (socket: WebSocket | null | undefined, value: unknown) => {
 };
 export function sendGrifballInput(state: GrifballRuntimeState, socket: WebSocket | null | undefined, charging: boolean, release = false, drop = false) {
   const net = onlineGrifball(state);
+  if (socket?.readyState !== 1) return;
+  const last = net.lastInput;
+  // Send every input edge immediately. Unchanged intent only needs a heartbeat
+  // below the host's one-second charge expiry, not a packet every render tick.
+  if (!state.playerPickupRequested && !release && !drop && last &&
+      last.charging === charging && last.round === state.grifball.roundNumber &&
+      last.possession === net.possession && net.sendTimer < 0.25) return;
   const input: GrifballInput = { sequence: ++net.inputSequence, round: state.grifball.roundNumber,
     possession: net.possession, pickup: state.playerPickupRequested, charging,
     ...(drop ? { drop: true } : {}),
     ...(release ? { release: { yaw: state.yaw } } : {}) };
   send(socket, { type: 'sync', action: 'grifball_input', objectiveInput: input });
+  net.lastInput = { charging, round: input.round, possession: input.possession };
+  net.sendTimer = 0;
   state.playerPickupRequested = false;
 }
 export function noteOnlineGrifballThrow(state: GrifballRuntimeState, actorId: string, charge: number) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cancelQueuedQuickPlayIfIdle } from './useLobbyConnection';
+import { cancelQueuedQuickPlayIfIdle, sendRelayHeartbeats } from './useLobbyConnection';
 
 function queuedPlayer() {
   const messages: unknown[] = [];
@@ -11,6 +11,25 @@ function queuedPlayer() {
   };
   return { messages, requested, socket };
 }
+
+test('lobby and gameplay sockets both stay alive throughout a match', () => {
+  const lobby = queuedPlayer(), gameplay = queuedPlayer();
+  sendRelayHeartbeats([gameplay.socket, lobby.socket], 123);
+  assert.deepEqual(lobby.messages, [{ type: 'ping', timestamp: 123 }]);
+  assert.deepEqual(gameplay.messages, lobby.messages);
+  gameplay.socket.readyState = 3;
+  sendRelayHeartbeats([gameplay.socket, lobby.socket, lobby.socket, null], 456);
+  assert.equal(gameplay.messages.length, 1);
+  assert.deepEqual(lobby.messages.at(-1), { type: 'ping', timestamp: 456 });
+  assert.equal(lobby.messages.length, 2);
+});
+
+test('a failed heartbeat on one channel does not starve the other', t => {
+  t.mock.method(console, 'error', () => {});
+  const lobby = queuedPlayer();
+  sendRelayHeartbeats([{ readyState: 1, send: () => { throw new Error('closing'); } }, lobby.socket], 789);
+  assert.deepEqual(lobby.messages, [{ type: 'ping', timestamp: 789 }]);
+});
 
 test('Leaving Quick Play for Training removes the waiting client from the server queue', () => {
   const { messages, requested, socket } = queuedPlayer();

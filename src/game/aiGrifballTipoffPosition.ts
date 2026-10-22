@@ -82,32 +82,34 @@ export function applyGrifballTipoffPosition(
     const teamClearance = path ? supportRouteClearance(teamPoint, path) : 0;
     const preferredClearance = path ? supportRouteClearance(preferredPoint, path) : 0;
     const reason =
-      contain || order.phase === 'contain'
-        ? 'Opening containment keeps the team lane.'
-        : order.attack
-          ? 'An earned screen challenge keeps its exact combat position.'
-          : !reserve ||
-              !reserve.space ||
-              (reserve.height ?? 0) > 0.01 ||
-              reserve.space.mobileIn > 0 ||
-              reserve.space.phase === 'lunging'
-            ? 'No available rear reserve; keep the team lane.'
-            : !collector ||
-                !collector.space ||
-                (collector.height ?? 0) > 0.01 ||
-                collector.space.mobileIn > 0 ||
-                collector.space.phase === 'lunging' ||
-                !path
-              ? 'No available collector route; keep the team lane.'
-              : !preference.depth && !preference.width
-                ? preference.reason
-                : !bot.space || bot.space.phase !== 'ready' || bot.space.mobileIn > 0
-                  ? 'A committed combat action keeps the team lane.'
-                  : depth <= 0 || depth >= goalDistance || Math.abs(lateral) < 0.01
-                    ? 'Keep the opening lane on its original goal-side flank.'
-                    : preferredClearance + 1e-9 < Math.min(order.spacing, teamClearance)
-                      ? 'Preferred lane crowds the collector route; keep the team lane.'
-                      : rejection;
+      order.phase === 'regroup'
+        ? 'Opening regrouping keeps the recovery lane.'
+        : contain || order.phase === 'contain'
+          ? 'Opening containment keeps the team lane.'
+          : order.attack
+            ? 'An earned screen challenge keeps its exact combat position.'
+            : !reserve ||
+                !reserve.space ||
+                (reserve.height ?? 0) > 0.01 ||
+                reserve.space.mobileIn > 0 ||
+                reserve.space.phase === 'lunging'
+              ? 'No available rear reserve; keep the team lane.'
+              : !collector ||
+                  !collector.space ||
+                  (collector.height ?? 0) > 0.01 ||
+                  collector.space.mobileIn > 0 ||
+                  collector.space.phase === 'lunging' ||
+                  !path
+                ? 'No available collector route; keep the team lane.'
+                : !preference.depth && !preference.width
+                  ? preference.reason
+                  : !bot.space || bot.space.phase !== 'ready' || bot.space.mobileIn > 0
+                    ? 'A committed combat action keeps the team lane.'
+                    : depth <= 0 || depth >= goalDistance || Math.abs(lateral) < 0.01
+                      ? 'Keep the opening lane on its original goal-side flank.'
+                      : preferredClearance + 1e-9 < Math.min(order.spacing, teamClearance)
+                        ? 'Preferred lane crowds the collector route; keep the team lane.'
+                        : rejection;
     const applied = !reason && distance(teamPoint, preferredPoint) > 1e-9;
     order.positioning = {
       style,

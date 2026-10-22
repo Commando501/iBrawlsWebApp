@@ -158,7 +158,7 @@ export function createStadiumCeramicMaterial(
 }
 
 /** Wait only for active scene-owned downloads, with neutral terminal fallbacks on failure or timeout. */
-export async function waitForStadiumTextures(timeoutMs = 8000): Promise<void> {
+export async function waitForStadiumTextures(timeoutMs = 30000): Promise<void> {
   const pending = [...pendingSources];
   if (!pending.length) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -171,7 +171,7 @@ export async function waitForStadiumTextures(timeoutMs = 8000): Promise<void> {
           if (incomplete.length) console.warn(`Stadium texture loading timed out; using ${incomplete.length} neutral fallbacks.`);
           incomplete.forEach(entry => entry.fallback());
           resolve();
-        }, Math.max(0, Math.min(Number.isFinite(timeoutMs) ? timeoutMs : 8000, 8000)));
+        }, Math.max(0, Math.min(Number.isFinite(timeoutMs) ? timeoutMs : 30000, 30000)));
       }),
     ]);
   } finally {

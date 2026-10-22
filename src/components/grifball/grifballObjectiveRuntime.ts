@@ -504,9 +504,8 @@ export function updateGrifballObjectiveForState({
   if (follower) {
     const net = onlineGrifball(state);
     net.sendTimer += dt;
-    if (state.multiplayerRole !== 'observer' && (state.playerPickupRequested || net.sendTimer >= 0.05)) {
+    if (state.multiplayerRole !== 'observer') {
       sendGrifballInput(state, multiplayerSocket, ballChargingRef.current);
-      net.sendTimer = 0;
     }
     if (state.grifball.ball.holderId === 'player') tickGrifballRunnerHealingForState(state, 'player', dt);
     renderGrifballObjective({ state, refs, ballMeshRef, ballChargingRef, dt, activeCustomMap, localPlayerModelSystem });

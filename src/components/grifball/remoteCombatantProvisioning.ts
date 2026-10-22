@@ -13,7 +13,7 @@ import { createCombatantMeshRig } from './combatantModels';
 import { syncCombatantTeamArmor } from './combatantTeamArmor';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type CustomMapData } from '../../types';
-import { getMultiplayerSpawnPoint } from './arenaSpawns';
+import { getGrifballTeamSpawn, getMultiplayerSpawnPoint } from './arenaSpawns';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import {
@@ -144,13 +144,19 @@ export function createOrUpdateRemoteCombatantForState({
   if (!scene) return;
 
   const gameplayModelType = resolveGameplayModelType(data);
+  const incomingTeam = inferGrifballRemoteTeam(state, clientId, data);
   let playerState = state.otherPlayers.get(clientId);
   if (!playerState) {
     const isHostPlayer =
       (state.multiplayerRole === 'client' && clientId === opponentClientId) ||
       (state.multiplayerRole === 'observer' && data.role === 'host');
     const spawnZ = isHostPlayer ? 12 : -12;
-    const spawnPos = getMultiplayerSpawnPoint(activeCustomMap, spawnPoints, isHostPlayer ? 0 : data.spawnSlot);
+    const spawnSlot = isHostPlayer ? 0 : data.spawnSlot;
+    // Match the owning client's team spawn before its first movement packet.
+    // Generic arena slots can overlap another Grifball player and push them away.
+    const spawnPos = state.isMultiplayer && state.settings.gameMode === 'grifball' && incomingTeam
+      ? getGrifballTeamSpawn(activeCustomMap, incomingTeam, spawnPoints, [], Math.floor((spawnSlot ?? 0) / 2))
+      : getMultiplayerSpawnPoint(activeCustomMap, spawnPoints, spawnSlot);
     playerState = createRemoteCombatant({
       id: clientId,
       playerName: data.playerName,
@@ -198,7 +204,6 @@ export function createOrUpdateRemoteCombatantForState({
     playerState.modelType = gameplayModelType;
   }
   if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
-  const incomingTeam = inferGrifballRemoteTeam(state, clientId, data);
   if (incomingTeam) {
     playerState.team = incomingTeam;
   }

@@ -148,6 +148,7 @@ export function createReplayRuntimeCallbacksForState({
       matchKillsToWin,
       visualModelPolicy,
       playerLoadout,
+      activeCustomMap: getActiveCustomMap(),
     });
 
   const registerReplayPlaybackEvents = () =>

@@ -11,16 +11,18 @@ import { fieldDistance as distance, isSpaceSegmentOpen } from './grifballSpaceGe
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
 import { resolveGrifballTipoffAgency, type TipoffAgencyDecision } from './aiGrifballTipoffAgency';
 import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGrifballTipoffPosition';
+import type { TipoffRecovery, TipoffRecoveryDecision } from './aiGrifballTipoffRecovery';
 
 export interface TipoffMemory {
   round: number;
   started: boolean;
   closed: boolean;
   elapsed: number;
+  recovery?: Record<string, TipoffRecovery>;
 }
 export interface TipoffOrder {
   job: 'collector' | 'screen' | 'support' | 'reserve';
-  phase: 'claim' | 'contest' | 'contain';
+  phase: 'claim' | 'contest' | 'contain' | 'regroup';
   collectorId: string;
   reserveId: string | null;
   targetId: string | null;
@@ -32,6 +34,7 @@ export interface TipoffOrder {
   reason: string;
   agency?: TipoffAgencyDecision;
   positioning?: TipoffPositionDecision;
+  recovery?: TipoffRecoveryDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -179,8 +182,17 @@ export function applyGrifballTipoff(
   const reserve = ranked[0];
   const available = allies.filter((p) => grounded(p) && Number.isFinite(travel(p, snapshot.ball)));
   const localAllies = available.filter((p) => distance(p.pos, snapshot.ball) <= 18);
-  const contain = available.length < 3 || nearby.length > localAllies.length;
-  const phase = claim ? 'claim' : contain ? 'contain' : 'contest';
+  const recovering = memory.recovery?.[team];
+  const recovery =
+    recovering && tuning.tipoffRegroupSeconds > 0 && memory.elapsed < recovering.startedAt + recovering.duration
+      ? {
+          ...recovering,
+          affectedIds: [...recovering.affectedIds],
+          remaining: recovering.startedAt + recovering.duration - memory.elapsed,
+        }
+      : undefined;
+  const contain = !!recovery || available.length < 3 || nearby.length > localAllies.length;
+  const phase = recovery ? 'regroup' : claim ? 'claim' : contain ? 'contain' : 'contest';
   const slots = new Map<GrifballAssignment, FieldPoint>();
   if (collection) slots.set(collection, claim ? { ...snapshot.ball } : point(reach + 1.5, 0));
   if (reserve) slots.set(reserve, reservePoint);
@@ -275,9 +287,11 @@ export function applyGrifballTipoff(
             ? attack
               ? 'One screen challenges the contest; collector and reserve stay separate.'
               : 'Approach a separate lane; wait for a reachable, spaced combat opening.'
-            : contain
-              ? 'Numbers or readiness are insufficient; spread and contain the opening.'
-              : 'Keep a separate support lane instead of joining the same clash.';
+            : recovery
+              ? 'Restore a separate goal-side support lane before another opening challenge.'
+              : contain
+                ? 'Numbers or readiness are insufficient; spread and contain the opening.'
+                : 'Keep a separate support lane instead of joining the same clash.';
     delete a.defense;
     delete a.escort;
     delete a.receive;
@@ -297,6 +311,7 @@ export function applyGrifballTipoff(
       spacing,
       elapsed: memory.elapsed,
       reason,
+      ...(recovery ? { recovery } : {}),
       ...(agency
         ? {
             agency: {

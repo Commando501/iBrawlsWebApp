@@ -17,6 +17,7 @@ import type { AIArchetypeId } from '../game/aiPersonalities';
 import { TOURNAMENT_DEFAULT_KILLS_TO_WIN } from '../features/tournament/tournament';
 import { GrifballGame } from './GrifballGame';
 import { HUD } from './HUD';
+import { GameStatsView, type GameStatsStore } from './hud/useCurrentGameStats';
 import { ChatOverlay, type ChatMessage } from './ChatOverlay';
 import type { CharacterLoadout } from './VoxelModels';
 import { MatchLoadingOverlay } from './loading/MatchLoadingOverlay';
@@ -87,7 +88,7 @@ interface ActiveGameSurfaceProps {
   playerName: string;
   localPlayerHue: number;
   multiplayerLoadingSnapshot: MultiplayerLoadingSnapshot;
-  currentStats: GameStats;
+  statsStore: GameStatsStore;
   activeUiPositions: UiElementPos[];
   activeUiDefaults: UiElementPos[];
   onUpdateUiPositions: (positions: UiElementPos[]) => void;
@@ -168,7 +169,7 @@ export function ActiveGameSurface({
   playerName,
   localPlayerHue,
   multiplayerLoadingSnapshot,
-  currentStats,
+  statsStore,
   activeUiPositions,
   activeUiDefaults,
   onUpdateUiPositions,
@@ -206,6 +207,11 @@ export function ActiveGameSurface({
       ? (activeGameSettings.iBrawlsKillTarget ?? 25)
     : undefined;
   const chatRole = multiplayerRole === 'observer' ? null : multiplayerRole;
+  const activeCustomMap = selectedMap === 'custom_file'
+    ? lobbyCustomMapData
+    : isMultiplayer && matchLobbyConfig?.customMap?.id === selectedMap
+      ? matchLobbyConfig.customMap
+      : undefined;
 
   return (
     <>
@@ -213,7 +219,7 @@ export function ActiveGameSurface({
         <GrifballGame
           isPlaying={isPlaying}
           selectedMap={selectedMap}
-          customMap={selectedMap === 'custom_file' ? (lobbyCustomMapData || undefined) : undefined}
+          customMap={activeCustomMap ?? undefined}
           playerLoadout={playerLoadout}
           visualModelPolicy={visualModelPolicy ?? undefined}
           v3QualityTier={v3QualityTier}
@@ -260,7 +266,7 @@ export function ActiveGameSurface({
             ? { ...gameLoadingState, visible: true, stage: 'Waiting for fireteam' }
             : gameLoadingState}
           selectedMap={selectedMap}
-          customMap={selectedMap === 'custom_file' ? lobbyCustomMapData : undefined}
+          customMap={activeCustomMap}
           replayData={selectedReplay}
           playerName={playerName}
           playerHue={localPlayerHue}
@@ -272,9 +278,11 @@ export function ActiveGameSurface({
         />
       )}
 
-      {isPlaying && !isMatchLoadingActive && (!isPaused || showUiAdjustment) && (
+      <GameStatsView store={statsStore}>{currentStats => <>
+      {isPlaying && (isMatchLoadingActive || !isPaused || showUiAdjustment) && (
         <HUD
           stats={currentStats}
+          prepareForPlay={isMatchLoadingActive}
           onPauseClick={onPauseToggle}
           uiPositions={activeUiPositions}
           uiDefaultPositions={activeUiDefaults}
@@ -298,6 +306,7 @@ export function ActiveGameSurface({
           onResizePointerDown={onReplayHeatmapResizePointerDown}
         />
       )}
+      </>}</GameStatsView>
 
       {heatmapOnlyReplay && (
         <ReplayHeatmapTheaterOverlay

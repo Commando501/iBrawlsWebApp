@@ -1,4 +1,5 @@
 import { UniversalSettings } from '../types';
+import { sanitizeMapScaleSetting } from '../../shared/mapBalanceSettings';
 import {
   DEFAULT_ADMIN_SETTINGS,
   PersistedGameplaySettings,
@@ -35,7 +36,7 @@ export const pickLiveConfigSettings = (
   const out: Record<string, unknown> = {};
   for (const key of LIVE_CONFIG_KEYS) {
     const value = (settings as Record<string, unknown>)[key as string];
-    if (value !== undefined) out[key as string] = value;
+    if (value !== undefined) out[key as string] = sanitizeMapScaleSetting(key as string, value);
   }
   return out as Partial<PersistedGameplaySettings>;
 };

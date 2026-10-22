@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { getPlayerCountAfterParticipantLeft, useGameplayConnection } from './useGameplayConnection';
 import { upsertLoadingSlot, upsertLoadingSlots } from '../loading/matchLoadingState';
+import { resolveActiveCustomMap } from '../grifball/mapSelection';
+import { createBalancedMapSnapshot } from '../../game/mapBalancing';
 import type { MultiplayerLoadingParticipant } from '../loading/loadingTypes';
 
 class FakeSocket extends EventTarget {
@@ -35,6 +37,53 @@ class FakeSocket extends EventTarget {
 }
 
 type Options = Parameters<typeof useGameplayConnection>[0];
+
+test('a join handshake containing the map does not request another broadcast', t => {
+  const timeouts: (() => void)[] = [];
+  t.mock.method(globalThis, 'setTimeout', ((callback: () => void) => { timeouts.push(callback); return 1; }) as typeof setTimeout);
+  const { connection, latest } = setup(t);
+  connection.handleJoinGame('123456');
+  const socket = latest();
+  socket.open();
+  socket.receive({ type: 'connected', clientId: 'guest', role: 'client', lobbyConfig: {
+    selectedMap: 'championship_stadium', gameMode: 'grifball',
+    customMap: createBalancedMapSnapshot('championship_stadium', { mapScaleStadiumLength: 125 }),
+  } });
+  for (const callback of timeouts) callback();
+  assert.equal(socket.sent.some((message: any) => message.action === 'request_map'), false);
+});
+
+test('hosting a different built-in map clears a previous balanced court snapshot', t => {
+  const { connection, latest } = setup(t, {
+    selectedMap: 'hangar',
+    lobbyCustomMapData: createBalancedMapSnapshot('championship_stadium', { mapScaleStadiumLength: 150 }),
+  });
+  connection.handleHostGame();
+  const socket = latest();
+  socket.open();
+  const message = socket.sent[0] as { lobbyConfig: { selectedMap: string; customMap: unknown } };
+  assert.equal(message.lobbyConfig.selectedMap, 'hangar');
+  assert.equal(message.lobbyConfig.customMap, null);
+});
+
+test('host snapshots published map scaling and sends identical geometry to every peer', t => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  let settings = { mapScaleStadiumLength: 150, mapScaleStadiumWidth: 75, mapScaleStadiumHeight: 50 };
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: (key: string) => key === 'grifball_live_config' ? JSON.stringify({ version: 7, settings }) : null,
+  } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, 'localStorage', previous); else Reflect.deleteProperty(globalThis, 'localStorage'); });
+  const { connection, latest } = setup(t, { selectedMap: 'championship_stadium' });
+  connection.handleHostGame();
+  const socket = latest();
+  socket.open();
+  const message = socket.sent[0] as { lobbyConfig: { customMap: import('../../types').CustomMapData } };
+  const map = message.lobbyConfig.customMap;
+  assert.deepEqual(map.arenaHalfExtents, { x: 92.25, z: 24.81 });
+  settings = { mapScaleStadiumLength: 50, mapScaleStadiumWidth: 50, mapScaleStadiumHeight: 200 };
+  const peerMap = resolveActiveCustomMap({ selectedMap: 'championship_stadium', customMap: JSON.parse(JSON.stringify(map)), gameMode: 'grifball' });
+  assert.deepEqual(peerMap, map, 'the snapshot wins over changed live settings and is not scaled twice');
+});
 
 function setup(t: TestContext, overrides: Partial<Options> = {}) {
   t.mock.method(console, 'log', () => {});

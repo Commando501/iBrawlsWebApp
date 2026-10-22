@@ -6,13 +6,64 @@ import { createRemoteCombatant } from '../../game/roster';
 import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { updateGrifballObjectiveForState, throwPlayerGrifballPassForState, reconcileGrifballCarrierForState } from './grifballObjectiveRuntime';
-import { onlineGrifball, receiveOnlineGrifballMessage, publishOnlineGrifball, applyPendingOnlineGrifball, isOnlineGrifballAuthority } from './onlineGrifballRuntime';
+import { onlineGrifball, receiveOnlineGrifballMessage, publishOnlineGrifball, applyPendingOnlineGrifball, isOnlineGrifballAuthority, sendGrifballInput } from './onlineGrifballRuntime';
 import { allowGrifballMessage } from '../../network/grifballSync';
 import type { CustomMapData } from '../../types';
 import { attachBallTo, throwBall } from '../../game/grifballBall';
 import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
 import { swapPlayerWeaponForState } from './playerWeaponActions';
 const noop = () => {};
+
+test('idle input is coalesced while pickup, charge, release, drop and round changes remain immediate', () => {
+  const c = fixture('client', 'c');
+  const net = onlineGrifball(c.state);
+  c.tick(0);
+  for (let i = 0; i < 20; i++) c.tick(0.01);
+  assert.equal(c.messages.length, 1);
+  c.state.playerPickupRequested = true; c.tick(0);
+  assert.equal(c.messages.at(-1).objectiveInput.pickup, true);
+  assert.equal(c.state.playerPickupRequested, false);
+  sendGrifballInput(c.state, c.socket, true);
+  assert.equal(c.messages.at(-1).objectiveInput.charging, true);
+  sendGrifballInput(c.state, c.socket, false, true);
+  assert.deepEqual(c.messages.at(-1).objectiveInput.release, { yaw: c.state.yaw });
+  sendGrifballInput(c.state, c.socket, false, false, true);
+  assert.equal(c.messages.at(-1).objectiveInput.drop, true);
+  c.state.grifball.roundNumber++; c.tick(0);
+  net.possession++; c.tick(0);
+  assert.equal(c.messages.length, 7);
+  c.tick(0.25);
+  assert.equal(c.messages.length, 8);
+  assert.deepEqual(c.messages.map(m => m.objectiveInput.sequence), [1, 2, 3, 4, 5, 6, 7, 8]);
+});
+
+test('unchanged charging heartbeats maintain the authoritative charge', () => {
+  const h = fixture('host', 'h'), c = fixture('client', 'c');
+  h.peer('c'); h.input('c', 1, { pickup: true }); h.tick(); deliver(h, c);
+  onlineGrifball(c.state).inputSequence = 1;
+  c.args.ballChargingRef.current = true;
+  c.messages.length = 0;
+  for (let frame = 0; frame < 100; frame++) {
+    const count = c.messages.length;
+    c.tick(.02);
+    if (c.messages.length > count) receiveOnlineGrifballMessage(h.state, h.refs, {
+      ...c.messages.at(-1), senderId: 'c', senderRole: 'client',
+    });
+    h.tick(.02);
+  }
+  assert.ok(c.messages.length <= 9, 'unchanged input stays near four packets per second');
+  assert.equal(h.state.otherPlayers.get('c')!.grifballPassCharge, 1);
+});
+
+test('a closed socket does not consume pickup intent or its sequence', () => {
+  const c = fixture('client', 'c');
+  c.state.playerPickupRequested = true;
+  sendGrifballInput(c.state, { readyState: 3 } as WebSocket, false);
+  assert.equal(c.state.playerPickupRequested, true);
+  assert.equal(onlineGrifball(c.state).inputSequence, 0);
+  sendGrifballInput(c.state, c.socket, false);
+  assert.equal(c.messages[0].objectiveInput.pickup, true);
+});
 function fixture(role: 'host' | 'client' | 'observer', id: string) {
   const state = createInitialGrifballRuntimeState({ debugMode: false, isMultiplayer: true, multiplayerRole: role === 'observer' ? null : role,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', grifballCountdownDuration: 0.1, grifballRoundResetDelay: 0.1, grifballGoalTarget: 2 } });

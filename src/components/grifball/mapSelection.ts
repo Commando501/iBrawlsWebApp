@@ -17,6 +17,7 @@ function resolveBaseCustomMap({
   selectedMap,
 }: ResolveActiveCustomMapOptions): CustomMapData | null {
   if (customMap) return customMap;
+  if (replayData?.balancedMap) return replayData.balancedMap;
   const mapId = replayData ? replayData.mapType : selectedMap;
   if (mapId !== 'hangar' && mapId !== 'circle') {
     const premade = PREMADE_MAPS.find((m) => m.id === mapId);

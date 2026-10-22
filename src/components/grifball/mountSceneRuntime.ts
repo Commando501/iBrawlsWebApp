@@ -307,7 +307,9 @@ export async function initializeGrifballMountSceneForState({
         try {
           await waitForGrifballMountTask(Promise.race([
             architecture.ready,
-            new Promise<void>(resolve => { timeout = setTimeout(() => { architecture.cancel(); resolve(); }, 8000); }),
+            // Stadium's full kit shares loading time with every roster preview.
+            // Allow slow decoding to finish instead of silently dropping detail.
+            new Promise<void>(resolve => { timeout = setTimeout(() => { architecture.cancel(); resolve(); }, stadium ? 30000 : 8000); }),
           ]), signal);
         } finally {
           clearTimeout(timeout);
@@ -387,7 +389,19 @@ export async function initializeGrifballMountSceneForState({
       v3Options,
     });
 
-    await report(94, 'Finalizing render targets');
+    await report(94, 'Preparing arena and weapons');
+    await waitForGrifballMountTask(Promise.all([
+      refs.playerHammer?.userData.assetReady,
+      refs.playerSword?.userData.assetReady,
+      refs.playerPistol?.userData.assetReady,
+    ]), signal);
+    throwIfMountAborted(signal);
+    // Include off-camera surfaces and hidden first-person weapons. Their first
+    // appearance must not synchronously compile GPU programs during gameplay.
+    // Three polls renderer-owned programs here; finish before cancellation can
+    // dispose those handles, then reject a canceled mount before publishing it.
+    await initialized.renderer.compileAsync(scene, camera);
+    throwIfMountAborted(signal);
     return initialized;
   } catch (error) {
     stadium?.cancel();

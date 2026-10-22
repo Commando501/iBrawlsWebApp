@@ -50,7 +50,7 @@ import { resolveSessionVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.750';
+const APP_VERSION = '0.753';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -615,7 +615,7 @@ export default function App() {
   });
 
   const {
-    currentStats,
+    statsStore,
     setCurrentStats,
   } = useCurrentGameStats({
     getSavedPlayerHue,
@@ -816,7 +816,7 @@ export default function App() {
 	        playerName={playerName}
 	        localPlayerHue={localPlayerHue}
 	        multiplayerLoadingSnapshot={multiplayerLoadingSnapshot}
-	        currentStats={currentStats}
+	        statsStore={statsStore}
 	        activeUiPositions={activeUiPositions}
 	        activeUiDefaults={activeUiDefaults}
 	        onUpdateUiPositions={handleUpdateUiPositions}
@@ -1042,6 +1042,7 @@ export default function App() {
         }}
         pause={{
           isVisible: !labOpen && isPaused && isPlaying && !showUiAdjustment && !matchResult,
+          prepareDuringLoad: !labOpen && isMatchLoadingActive,
           props: {
             showAdminPanel,
             showLightingMenu,
@@ -1146,7 +1147,7 @@ export default function App() {
         }}
         edgeWarning={{
           isVisible: showEdgePerformanceWarning,
-          currentFps: currentStats.fps,
+          statsStore,
           edgeLowFpsSampleDurationMs,
           graphicsCheck,
           onDismiss: dismissEdgePerformanceWarning,

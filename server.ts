@@ -7,6 +7,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { LIVE_CONFIG_KEY_SET } from "./worker/src/liveConfigKeys";
+import { sanitizeMapScaleSetting } from './shared/mapBalanceSettings';
 import { sanitizeCharacterLoadoutForNetwork } from "./src/components/customArmor";
 import { normalizePublicRoomCode } from "./src/network/roomCodePrivacy";
 import {
@@ -312,7 +313,7 @@ async function startServer() {
     // Keep only governed mechanic keys (drops identity + unknown keys), matching the Worker.
     const settings: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(incoming as Record<string, unknown>)) {
-      if (LIVE_CONFIG_KEY_SET.has(k)) settings[k] = v;
+      if (LIVE_CONFIG_KEY_SET.has(k)) settings[k] = sanitizeMapScaleSetting(k, v);
     }
     if (Object.keys(settings).length === 0) {
       res.status(400).json({ error: "No valid gameplay settings provided" });

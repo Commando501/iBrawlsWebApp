@@ -18,6 +18,7 @@ import { applyGrifballEscortPosition, type EscortPositionDecision } from './aiGr
 import { chooseGrifballPickupAgency, type PickupAgencyDecision } from './aiGrifballPickupAgency';
 import { applyGrifballPickupSupport } from './aiGrifballPickupSupport';
 import { observeGrifballTipoff, applyGrifballTipoff, selectGrifballTipoffThreat, type TipoffMemory, type TipoffOrder } from './aiGrifballTipoff';
+import { observeGrifballTipoffRecovery } from './aiGrifballTipoffRecovery';
 
 export type FieldPoint = { x: number; z: number };
 export type GrifballTeamRole = 'runner' | 'retriever' | 'lead' | 'cover' | 'safety' | 'chaser';
@@ -141,8 +142,9 @@ export function updateGrifballTeamPlan(
   const players = [...snapshot.players].sort(byId);
   const config = snapshot.tactics ?? defaultGrifballTactics();
   state.tipoff = observeGrifballTipoff(state.tipoff, snapshot, dt);
+  observeGrifballTipoffRecovery(state.tipoff, snapshot, state.snapshot, state.assignments, config);
   const signature = JSON.stringify([
-    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team); return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds] : null; }),
+    ...['blue', 'red'].map(team => { const t = resolveTeamTactics(config, team); return t.tipoffEnabled ? [state.tipoff!.closed, state.tipoff!.elapsed > t.tipoffSeconds, state.tipoff!.recovery?.[team]] : null; }),
     snapshot.round, snapshot.playing, snapshot.holderId, snapshot.rosterKey, snapshot.teamDifficulty, state.styleSeed, snapshot.goals, snapshot.spacing, snapshot.tactics, snapshot.geometry?.key, snapshot.passing, snapshot.ballPhysics?.state,
     snapshot.respawns?.map(p => [p.id, p.team, p.pos]),
     players.map(p => p.space && [p.space.reach, p.space.blastRadius, p.space.speed, p.space.lungeReach]),

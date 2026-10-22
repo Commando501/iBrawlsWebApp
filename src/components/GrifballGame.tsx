@@ -741,6 +741,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         disposeGlacierEnvironment(scene);
         disposeCircleEnvironment(scene);
         renderer.dispose();
+        renderer.forceContextLoss();
         return;
       }
       mountedRenderer = renderer;
@@ -883,6 +884,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (mountedScene) disposeCircleEnvironment(mountedScene);
       if (mountedRenderer) {
         mountedRenderer.dispose();
+        mountedRenderer.forceContextLoss();
       }
     };
   }, [isPlaying, replayData, selectedMap, customMap, visualPlayerLoadout]);

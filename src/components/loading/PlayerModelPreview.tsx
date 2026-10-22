@@ -6,6 +6,7 @@ import { disposePreviewObject, getPreviewLoadoutSignature } from '../previewMode
 import type { VisualModelPolicy } from '../../model/modelSystem';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import { getV3GameplayRenderOptions } from '../v3/v3QualityTiers';
+import { createPlayerPreviewPreparation } from './preparePlayerPreview';
 
 interface PlayerModelPreviewProps {
   hue: number;
@@ -97,6 +98,8 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
         currentLoadout = nextLoadout;
         currentLoadoutSignature = nextLoadoutSignature;
         buildCharacter(currentHue, currentLoadout);
+        void preparation.prepare(character!);
+        return;
       }
 
       const elapsed = clock.getElapsedTime();
@@ -106,7 +109,22 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
       renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(animate);
     };
-    animate();
+    const preparation = createPlayerPreviewPreparation({
+      renderer, scene, camera,
+      onReady: () => { animationFrameId = requestAnimationFrame(animate); },
+      onError: error => { console.warn('Player preview preparation failed:', error); },
+      dispose: () => {
+        if (character) {
+          scene.remove(character);
+          disposePreviewObject(character);
+          character = null;
+        }
+        renderer.dispose();
+        // Each mount owns its canvas; release the context before the match.
+        renderer.forceContextLoss();
+      },
+    });
+    void preparation.prepare(character!);
 
     const handleResize = () => {
       const nextWidth = container.clientWidth || width;
@@ -123,12 +141,7 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
       }
-      if (character) {
-        scene.remove(character);
-        disposePreviewObject(character);
-        character = null;
-      }
-      renderer.dispose();
+      preparation.stop();
     };
   }, []);
 

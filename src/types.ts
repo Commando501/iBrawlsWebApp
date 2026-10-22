@@ -5,8 +5,9 @@
 
 import type * as THREE from 'three';
 import type { VisualModelPolicy } from './model/modelSystem';
+import type { MapBalanceScale, MapBalanceSettings } from '../shared/mapBalanceSettings';
 
-export interface UniversalSettings {
+export interface UniversalSettings extends MapBalanceSettings {
   maxHP: number;        // Health (whole number adjustment, e.g. 1 to 10)
   speedForward: number; // Forward movement speed percentage adjustment (e.g. 20% to 300%)
   speedSide: number;    // Side movement speed percentage adjustment (e.g. 20% to 300%)
@@ -770,6 +771,8 @@ export interface ReplayFile {
   mapType: 'rectangular' | 'circle';
   /** Championship Stadium geometry revision. Missing means the original 104m by 46m layout. */
   stadiumLayoutRevision?: 1 | 2;
+  /** Exact balanced court used by this recording, independent of future presets. */
+  balancedMap?: CustomMapData;
   mode: 'sandbox' | 'tournament';
   /**
    * Which game mode produced this replay. Distinct from `mode` (tournament vs free
@@ -889,6 +892,8 @@ export interface CustomMapAtmosphereSettings {
 }
 
 export interface CustomMapData {
+  /** Applied once; also drives the stadium scenery's composed world transform. */
+  balanceScale?: MapBalanceScale;
   id: string;
   name: string;
   description: string;

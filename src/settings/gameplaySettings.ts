@@ -12,6 +12,9 @@ export type PersistedGameplaySettings = Omit<UniversalSettings, 'playerHue' | 'p
 export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   ...buildExposedTuneDefaults(),
   maxHP: 1,
+  mapScaleStadiumLength: 100,
+  mapScaleStadiumWidth: 100,
+  mapScaleStadiumHeight: 100,
   speedForward: 100,
   speedSide: 100,
   speedBackward: 100,

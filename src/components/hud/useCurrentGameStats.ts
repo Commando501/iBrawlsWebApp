@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode, type SetStateAction } from 'react';
 import { type GameStats } from '../../types';
 import {
   DEFAULT_HAMMER_SLAM_ATTACK_TIME,
@@ -110,23 +110,49 @@ interface UseCurrentGameStatsOptions {
   ping: number;
 }
 
+export function createGameStatsStore(initial: GameStats) {
+  let snapshot = initial;
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    setStats: (update: SetStateAction<GameStats>) => {
+      const next = typeof update === 'function' ? update(snapshot) : update;
+      if (Object.is(next, snapshot)) return;
+      snapshot = next;
+      listeners.forEach(listener => listener());
+    },
+  };
+}
+
+export type GameStatsStore = ReturnType<typeof createGameStatsStore>;
+
+// Keep frame-rate HUD/replay updates below the app shell and game runtime.
+// Every snapshot is delivered; rendering quality and update cadence are unchanged.
+export function GameStatsView({ store, children }: {
+  store: GameStatsStore;
+  children: (stats: GameStats) => ReactNode;
+}) {
+  return children(useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot));
+}
+
 export function useCurrentGameStats({
   getSavedPlayerHue,
   ping,
 }: UseCurrentGameStatsOptions) {
-  const [currentStats, setCurrentStats] = useState<GameStats>(() => (
-    createInitialGameStats(getSavedPlayerHue(), ping)
+  const [statsStore] = useState(() => (
+    createGameStatsStore(createInitialGameStats(getSavedPlayerHue(), ping))
   ));
 
   useEffect(() => {
-    setCurrentStats(prev => ({
-      ...prev,
-      ping,
-    }));
-  }, [ping]);
+    statsStore.setStats(prev => prev.ping === ping ? prev : ({ ...prev, ping }));
+  }, [ping, statsStore]);
 
   return {
-    currentStats,
-    setCurrentStats,
+    statsStore,
+    setCurrentStats: statsStore.setStats,
   };
 }

@@ -34,6 +34,9 @@ import { getCombatantTeamArmorState } from "../grifball/combatantTeamArmor";
 import { ironVanguardSourceFrame } from "../../game/ironVanguardTiming";
 
 export const IRON_VANGUARD_ASSET_URL = "/assets/iron-vanguard/hammer-v018.glb";
+// Deliberately wider than the complete animated body/hammer envelope. Bind-pose
+// bounds are unsafe for skinned meshes; this also covers procedural limb motion.
+const IRON_VANGUARD_CULL_RADIUS = 6;
 export const isIronVanguardLoadout = (loadout?: CharacterLoadout) =>
   loadout?.characterAsset === "iron-vanguard";
 let asset: GLTF | undefined;
@@ -88,6 +91,7 @@ interface Runtime {
   sword: VanguardSwordState;
   ball?: THREE.Group;
   authoredMorphs?: number[];
+  authoredFrame?: number;
   proxies: Record<string, THREE.Group>;
   restHand: THREE.Quaternion;
   restLeftHand: THREE.Quaternion;
@@ -279,6 +283,15 @@ function attachAsset(root: THREE.Group, value: GLTF) {
   runtime.action.clampWhenFinished = true;
   runtime.action.play();
   seek(root, 0);
+  if (!runtime.firstPerson) {
+    model.traverse(object => {
+      if (!(object instanceof THREE.SkinnedMesh)) return;
+      const rootToMesh = object.matrixWorld.clone().invert().multiply(root.matrixWorld);
+      object.boundingSphere = new THREE.Sphere(new THREE.Vector3(), IRON_VANGUARD_CULL_RADIUS)
+        .applyMatrix4(rootToMesh);
+      object.frustumCulled = true;
+    });
+  }
   if (runtime.firstPerson) {
     const handle = runtime.bones.weapon_hammer.getWorldPosition(new THREE.Vector3());
     const head = runtime.bones.weapon_hammer_tip.getWorldPosition(new THREE.Vector3());
@@ -342,7 +355,7 @@ export function syncIronVanguardProxies(root: THREE.Group) {
       proxy.quaternion.multiply(runtime.restLeftHand);
   }
 }
-function seek(root: THREE.Group, frame: number) {
+function seek(root: THREE.Group, frame: number, refreshWorld = true) {
   const runtime = root.userData.ironVanguard as Runtime;
   if (!runtime.action) return;
   // Three's mixer may skip identical values. Restore the last authored pose before
@@ -358,22 +371,28 @@ function seek(root: THREE.Group, frame: number) {
       runtime.authoredMorphs.length,
       ...runtime.authoredMorphs,
     );
-  runtime.action.paused = false;
-  runtime.action.enabled = true;
-  runtime.mixer!.setTime(frame / 30);
-  runtime.authoredMorphs = runtime.body?.morphTargetInfluences?.slice();
-  for (const bone of Object.values(runtime.bones)) {
-    const pose = runtime.authoredRotations.get(bone) ?? {
-      position: new THREE.Vector3(),
-      rotation: new THREE.Quaternion(),
-      scale: new THREE.Vector3(),
-    };
-    pose.position.copy(bone.position);
-    pose.rotation.copy(bone.quaternion);
-    pose.scale.copy(bone.scale);
-    runtime.authoredRotations.set(bone, pose);
+  // Idle and locomotion reuse frame zero. The restored pose is already the
+  // mixer's exact result; only a different source frame needs sampling again.
+  // Procedural movement, aim, and weapon layers still run on every render.
+  if (runtime.authoredFrame !== frame) {
+    runtime.action.paused = false;
+    runtime.action.enabled = true;
+    runtime.mixer!.setTime(frame / 30);
+    runtime.authoredMorphs = runtime.body?.morphTargetInfluences?.slice();
+    for (const bone of Object.values(runtime.bones)) {
+      const pose = runtime.authoredRotations.get(bone) ?? {
+        position: new THREE.Vector3(),
+        rotation: new THREE.Quaternion(),
+        scale: new THREE.Vector3(),
+      };
+      pose.position.copy(bone.position);
+      pose.rotation.copy(bone.quaternion);
+      pose.scale.copy(bone.scale);
+      runtime.authoredRotations.set(bone, pose);
+    }
+    runtime.authoredFrame = frame;
   }
-  root.updateWorldMatrix(true, true);
+  if (refreshWorld) root.updateWorldMatrix(true, true);
   root.userData.ironVanguardSourceFrame = frame;
 }
 function rotateInCharacterSpace(
@@ -433,7 +452,7 @@ export function animateIronVanguard(
           input.settings,
         )
       : 0;
-  seek(root, frame);
+  seek(root, frame, runtime.firstPerson);
   if (!runtime.scene) return true;
   runtime.hammer.visible = activeWeapon === "hammer";
   if (runtime.firstPerson) {
@@ -461,7 +480,6 @@ export function animateIronVanguard(
     isSliding: input.isSliding || lungeBlend > 0.01,
   });
   runtime.facingFrame.rotation.y = bodyYaw - (input.yaw ?? 0);
-  runtime.facingFrame.updateWorldMatrix(true, true);
   applyVanguardMovement(runtime.facingFrame, runtime.bones, runtime.movement, {
     ...input,
     yaw: bodyYaw,

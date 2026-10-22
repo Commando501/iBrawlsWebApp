@@ -10,16 +10,29 @@ import { createInitialGrifballRuntimeState } from './runtimeState';
 import { resolveReplayHeatmapMapBounds } from '../replay/ReplayHeatmapCanvas';
 import { stripReplayPII } from '../../services/replayUpload';
 import { resolveTopDownMapBounds } from '../loading/topDownMapModel';
+import { createBalancedMapSnapshot } from '../../game/mapBalancing';
 
-function record(selectedMap: string): ReplayFile {
+function record(selectedMap: string, activeCustomMap?: ReturnType<typeof createBalancedMapSnapshot>): ReplayFile {
   const state = createInitialGrifballRuntimeState({ adminSettings: { ...DEFAULT_ADMIN_SETTINGS }, debugMode: false, isMultiplayer: false, multiplayerRole: null });
   const replayRecordingRef: { current: ReplayFile | null } = { current: null };
-  initializeReplayRecordingForState({ state, replayData: null, replayRecordingRef, selectedMap,
+  initializeReplayRecordingForState({ state, replayData: null, replayRecordingRef, selectedMap, activeCustomMap,
     adminSettings: state.settings, lastRecordTimeRef: { current: 0 }, replayRecordingElapsedTimeRef: { current: 0 },
     lastRecordedStateRef: { current: new Map<string, LastRecordedReplayEntityState>() },
   });
   return replayRecordingRef.current!;
 }
+
+test('balanced court recording survives export, loading, playback and heatmaps without later preset changes', () => {
+  const court = createBalancedMapSnapshot('championship_stadium', { mapScaleStadiumLength: 150, mapScaleStadiumWidth: 50, mapScaleStadiumHeight: 75 })!;
+  const recording = record('championship_stadium', court);
+  const imported = JSON.parse(JSON.stringify(stripReplayPII(recording))) as ReplayFile;
+  court.arenaHalfExtents!.x = 1;
+  const playback = resolveActiveCustomMap({ selectedMap: 'hangar', replayData: imported })!;
+  assert.deepEqual(playback.arenaHalfExtents, { x: 92.25, z: 16.54 });
+  assert.deepEqual(playback.balanceScale, { length: 150, width: 50, height: 75 });
+  assert.deepEqual(resolveTopDownMapBounds({ selectedMap: 'hangar', replayData: imported }).map, playback);
+  assert.deepEqual(resolveReplayHeatmapMapBounds(imported).map, playback);
+});
 
 test('new Stadium recordings retain their layout revision through JSON export and playback selection', () => {
   const recording = record('championship_stadium');
