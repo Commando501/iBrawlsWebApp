@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { AI_CROUCH_SPEED_MULTIPLIER } from '../../game/aiMovementMechanics';
 import { resolveGrifballCarrierDecision, resolveGrifballSupportSteering } from '../../game/aiGrifballObjectiveSteering';
 import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { getGrifballSpaceWaypoint } from '../../game/aiGrifballSpace';
@@ -105,10 +106,11 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   const heldByAnyone = ball.state === 'held' && !!ball.holderId;
   const assignment = state.aiMatchContext.grifballTeamPlan.assignments.get(botId);
   if (!heldByMe && assignment && assignment.role !== 'runner') {
+    const baseSpeed = 5.2 * (self.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
     const movement = resolveGrifballSupportSteering({ assignment, pos: frame.pos, allies: alliesList,
       players: state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [], ball: ball.pos, heldByAnyone,
-      separation: state.settings.grifballEscortSpacing ?? 4, speed: 5.2 * (state.settings.speedForward / 100),
-      retrySpeed: 5.2 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', false), dt });
+      separation: state.settings.grifballEscortSpacing ?? 4, speed: baseSpeed * (state.settings.speedForward / 100),
+      retrySpeed: baseSpeed * resolveDirectionalSpeedMultiplier(state.settings, 'forward', false), dt });
     if (!movement) return false;
     frame.pickupRequested = movement.pickupRequested;
     frame.vel.set(movement.velocity.x, 0, movement.velocity.z);

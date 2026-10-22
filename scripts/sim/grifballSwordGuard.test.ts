@@ -82,6 +82,36 @@ for (const mirror of [false, true]) for (const reverse of [false, true]) for (co
     }
   });
 
+test('crouched sword guard retreats at reduced walking speed in both hosts', () => {
+  const f = fixture();
+  f.state.settings.speedBackward = f.sim.settings.speedBackward = 100;
+  f.state.settings.speedForward = f.sim.settings.speedForward = 100;
+  // Keep the punch a threat in both postures so this checks walking speed.
+  f.bot.modelType = f.sword.modelType = 'large';
+  const standing = f.liveDecision()!;
+  assert.equal(standing.action, 'space'); assert.ok(Math.abs(standing.velocity!.z) > 0);
+  f.bot.isCrouching = f.sword.isCrouching = true;
+  const live = f.liveDecision()!, sim = f.simDecision()!;
+  assert.equal(live.action, 'space'); assert.equal(sim.action, 'space');
+  assert.ok(Math.abs(live.velocity!.z - standing.velocity!.z * .45) < 1e-9);
+  assert.ok(Math.abs(sim.velocity!.z - live.velocity!.z) < 1e-9);
+
+  const id = f.bot.id;
+  f.bot.aiState = f.memory.aiState = 'SIDE_STEPPING'; f.bot.aiTimer = f.memory.timer = 1;
+  const knobs: AIResolvedKnobs = { difficulty: 'normal', reactionLatency: .15, anticipationFactor: .5, movementComplexity: 80,
+    weaponSwapIQ: 0, aiPlaystyle: 50, weaponPrioritization: 100 };
+  const update = liveUpdater(f, knobs), matchContext = createAIMatchContext(); matchContext.grifballTeamPlan = f.plan;
+  const control = { scriptedBots: { [id]: 'normal' }, configs: { [id]: { knobs, derived: deriveAIParams(f.sim.settings, knobs), flags: NEUTRAL_PERSONALITY_FLAGS } },
+    memories: { [id]: f.memory, runner: { ...f.memory } }, matchContext, random: seededRandom(7),
+    getScoreContext: () => ({ scorePlayer: 0, scoreEnemy: 0 }), isObserverMode: true, spawnPoints: f.map.spawnPoints, navigation: {} };
+  const startZ = f.bot.pos.z;
+  withSimulationRandom(seededRandom(7), dt, () => update(id, dt));
+  stepSimulation(f.sim, { runner: { ...idleAction(), aim: f.runner.yaw } }, createSimGrifballActorStepOptions(f.sim, control));
+  assert.equal(f.bot.isCrouching, true); assert.equal(f.sword.isCrouching, true);
+  assert.ok(Math.abs(f.bot.pos.z - startZ - live.velocity!.z * dt) < 1e-9);
+  assert.ok(Math.abs(f.bot.pos.z - f.sword.pos.z) < 1e-9, 'both hosts apply crouch slowdown exactly once');
+});
+
 test('local human pitch/crouch observations use fresh human punch geometry in both hosts', () => {
   const f = fixture(); f.state.grifball.ball.holderId = f.sim.match.ball.holderId = 'player';
   f.state.isObserverMode = f.sim.localPlayerIsObserver = false; f.sim.localPlayerId = f.runner.id = 'player';

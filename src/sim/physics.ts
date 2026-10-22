@@ -20,6 +20,7 @@ import type { ScriptedAIGroundFeedback } from './scriptedAIGround';
  */
 
 import * as THREE from 'three';
+import { AI_CROUCH_SPEED_MULTIPLIER } from '../game/aiMovementMechanics';
 import { finishSimAIEngagementMotion } from './aiEngagementMotion';
 import { advanceAIDashMotion, finishAIHorizontalMotion, type AIDashMotionFrame } from '../game/aiDashMotion';
 import type { ScriptedAIDashDecision, ScriptedAIDashFeedback } from './scriptedAIMobility';
@@ -170,7 +171,7 @@ export function stepCombatantMovement(
     // Objective steering is world-space and independent of attack facing. Live
     // support walking uses forward speed; carriers use the runner forward rule.
     const speed = isRunner ? 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true)
-      : 5.2 * settings.speedForward / 100;
+      : 5.2 * settings.speedForward / 100 * (c.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
     c.vel.x = objectiveMovement.x * speed;
     c.vel.z = objectiveMovement.z * speed;
   } else {

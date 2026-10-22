@@ -87,6 +87,25 @@ for (const condition of ['cooldown', 'no-reaction', 'offensive', 'protected'] as
   });
 const cases: Case[] = [
   { name: 'approach walks', setup: () => {}, state: 'APPROACHING', forward: 4, draws: 0 },
+  { name: 'crouched approach slows forward and lateral movement', setup: f => {
+    f.input.isCrouching = true; f.input.totalApproachLateral = 2;
+  }, state: 'APPROACHING', forward: 1.8,
+    check: f => { close(f.input.frame.pos.x, -f.sign * .81 * f.dt); close(f.input.frame.vel.z, f.sign * 1.8); } },
+  { name: 'crouched forward dance', setup: f => { state(f, 'DANCING_FORWARD'); f.input.isCrouching = true; },
+    state: 'DANCING_FORWARD', forward: 2.25 },
+  { name: 'crouched backward dance', setup: f => { state(f, 'DANCING_BACKWARD'); f.input.isCrouching = true; },
+    state: 'DANCING_BACKWARD', forward: -2.79 },
+  { name: 'crouched feint retreat', setup: f => { state(f, 'DANCING_FORWARD'); f.input.isCrouching = true;
+    f.input.feintChance = 100; f.setFeint(); }, state: 'DANCING_BACKWARD', forward: -2.79, events: ['feint-roll', 'feint'] },
+  { name: 'crouched charge attack sees slowed position', setup: f => { state(f, 'CHARGE_ATTACK'); distance(f, 2); f.input.isCrouching = true; },
+    state: 'COOLDOWN', forward: 2.925, events: ['coordinator', 'target-cooldown', 'attack-hammer'],
+    check: f => close(f.events.at(-1)!.pos[2], 2.925 * f.sign * f.dt) },
+  { name: 'crouched pressure slows before attacking', setup: f => { state(f, 'PRESSURING'); distance(f, 2); f.input.isCrouching = true; },
+    state: 'PRESSURING', forward: 3.6, events: ['coordinator', 'attack-hammer'],
+    check: f => close(f.events.at(-1)!.pos[2], 3.6 * f.sign * f.dt) },
+  { name: 'crouched slide keeps committed speed on its final frame', setup: f => {
+    f.input.isCrouching = true; f.input.frame.slideActive = true; f.input.settings.enableSlide = true; f.input.settings.slideDistance = .01;
+  }, state: 'APPROACHING', forward: 5.8, check: f => assert.equal(f.input.frame.slideActive, false) },
   { name: 'approach sprint and lateral', setup: f => { f.input.sprintMult = 1.5; f.input.totalApproachLateral = 2; },
     state: 'APPROACHING', forward: 6, check: f => close(f.input.frame.pos.x, -f.sign * 1.8 * f.dt) },
   { name: 'approach enters sidestep', setup: f => distance(f, 4), state: 'SIDE_STEPPING', forward: 4, timer: .993, draws: 1 },

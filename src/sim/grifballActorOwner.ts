@@ -1,4 +1,5 @@
 import { hasCoherentSimCarrierState } from './grifballCarrierState';
+import { AI_CROUCH_SPEED_MULTIPLIER } from '../game/aiMovementMechanics';
 import { observeSimGrifballSwordGuard } from './grifballSwordGuard';
 import { recordCalibrationCounterAttempt } from '../game/aiSkillCalibration';
 import { getEffectivePressureAggression } from '../components/grifball/matchPressure';
@@ -116,7 +117,7 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
       const swordGuard = observeSimGrifballSwordGuard(view, ai.grifballTeamPlan, actorId, turn.targetId, scriptedBots, memory, dt);
       if (swordGuard?.action === 'space') {
         memory.timer = (memory.timer ?? 0) - dt; memory.swayTimer += dt;
-        const speed = 5.2 * view.settings.speedForward / 100;
+        const speed = 5.2 * view.settings.speedForward / 100 * (actor.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
         return { kind: 'handled', action: { ...idleAction(), aim: actor.yaw, crouch: actor.isCrouching },
           movement: speed > 0 ? { x: swordGuard.velocity!.x / speed, z: swordGuard.velocity!.z / speed } : { x: 0, z: 0 } };
       }
