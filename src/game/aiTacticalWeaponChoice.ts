@@ -2,6 +2,7 @@ import { resolveBehaviorTuning } from './aiBehaviorTuning';
 import { evaluateAICombatDecision, type AILungeMemory, type AITacticalTarget, type PlayerModelSnapshot } from './aiCombatDecision';
 import { deriveMatchStateMultipliers, type AIMatchScoreContext } from './aiTuning';
 import type { UniversalSettings } from '../types';
+import type { RunnerPursuitDecision } from './aiGrifballRunnerPursuit';
 
 type Position = { x: number; y: number; z: number };
 export interface TacticalWeaponActor {
@@ -15,6 +16,7 @@ export interface TacticalWeaponActor {
   isObserver?: boolean;
 }
 export interface TacticalWeaponChoiceContext {
+  runnerPursuit?: RunnerPursuitDecision | null;
   distanceToTarget?: number;
   combatDistanceToTarget?: number;
   canStartWeaponAction?: boolean;
@@ -57,6 +59,15 @@ export function evaluateTacticalWeaponChoice({ settings, self, actors, target, d
   random?: () => number;
 }) {
   const tuning = resolveBehaviorTuning(settings), easy = difficulty === 'easy';
+  const recentMiss = context.recentLungeMemory && context.recentLungeMemory.timeRemaining > 0 &&
+    ['miss_timeout', 'miss_arena'].includes(context.recentLungeMemory.outcome) &&
+    (!context.recentLungeMemory.targetId || context.recentLungeMemory.targetId === target.id);
+  if (settings.gameMode === 'grifball' && !easy && context.runnerPursuit?.weapon === 'sword' &&
+    (context.weaponPrioritization ?? 50) > 0 && self.activeWeapon !== 'ball' &&
+    self.hp > 0 && target.hp > 0 && target.activeWeapon === 'ball' && !target.isLunging &&
+    !(target.invulnerabilityTimer! > 0) && !recentMiss &&
+    (context.canStartWeaponAction !== false || self.activeWeapon === 'sword') && (context.weaponState ?? 'ready') === 'ready')
+    return { weapon: 'sword' as const, bulltrueCounter: null, postMissSpacing: false, bypassedRandomGate: true };
   const matchMultipliers = deriveMatchStateMultipliers(scoreContext, pressureAggression / 100, {
     aheadThreshold: tuning.scoreAheadThreshold, closeThreshold: tuning.scoreCloseThreshold,
   });

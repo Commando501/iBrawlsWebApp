@@ -29,7 +29,7 @@ import {
   type GameplayMultiplayerRole,
 } from './multiplayerConnectionConstants';
 
-import { createBalancedMapSnapshot } from '../../game/mapBalancing';
+import { createPublishedMapSnapshot } from '../../game/mapBalancing';
 import { getCachedLiveConfig } from '../../services/liveConfig';
 
 interface UseGameplayConnectionOptions {
@@ -480,7 +480,7 @@ export function useGameplayConnection({
       customMap: outgoingMapId === 'custom_file' ? (lobbyConfigOverride?.customMap ?? lobbyCustomMapData) : null,
     });
     // Freeze published geometry in the lobby payload, including for late joiners.
-    const balancedMap = createBalancedMapSnapshot(outgoingLobbyConfig.selectedMap, getCachedLiveConfig()?.settings ?? {});
+    const balancedMap = createPublishedMapSnapshot(outgoingLobbyConfig.selectedMap, getCachedLiveConfig());
     if (balancedMap) outgoingLobbyConfig.customMap = balancedMap;
     setMatchLobbyConfig(outgoingLobbyConfig);
 

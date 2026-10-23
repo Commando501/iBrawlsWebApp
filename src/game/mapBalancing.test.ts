@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
 import { DEFAULT_MAP_SCALE, getStadiumMapScale, normalizeMapScalePercent, sanitizeMapScaleSetting } from '../../shared/mapBalanceSettings';
-import { BALANCEABLE_MAPS, balanceMap, createBalancedMapSnapshot, getMapTraversal } from './mapBalancing';
+import { BALANCEABLE_MAPS, balanceMap, createBalancedMapSnapshot, createPublishedMapSnapshot, getMapTraversal } from './mapBalancing';
 import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
 import { getGoalPlates, findScoringPlate } from './grifballGoals';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
@@ -14,6 +14,24 @@ import { pickLiveConfigSettings } from '../settings/liveConfigKeys';
 
 const base = BALANCEABLE_MAPS[0];
 const near = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`);
+
+test('published map pins geometry and its version together, including default and missing presets', () => {
+  const preset = { version: 42, settings: { mapScaleStadiumLength: 125, mapScaleStadiumWidth: 75, mapScaleStadiumHeight: 60 } };
+  const session = createPublishedMapSnapshot(base.id, preset)!;
+  assert.equal(session.balancePresetVersion, 42);
+  assert.deepEqual(session.balanceScale, { length: 125, width: 75, height: 60 });
+  preset.version = 43;
+  preset.settings.mapScaleStadiumLength = 150;
+  assert.equal(session.balancePresetVersion, 42);
+  assert.equal(session.balanceScale!.length, 125);
+  assert.equal(createPublishedMapSnapshot(base.id, preset)!.balancePresetVersion, 43);
+  assert.equal(createPublishedMapSnapshot(base.id, { version: 44, settings: {} })!.balancePresetVersion, 44);
+  const fallback = createPublishedMapSnapshot(base.id, null)!;
+  assert.deepEqual(fallback.balanceScale, DEFAULT_MAP_SCALE);
+  assert.equal(fallback.balancePresetVersion, null);
+  assert.equal(createPublishedMapSnapshot('custom_file', preset), null);
+  assert.equal(createPublishedMapSnapshot('hangar', preset), null);
+});
 
 test('scale values are bounded and invalid network/storage input cannot corrupt geometry', () => {
   for (const value of [undefined, null, '125', NaN, Infinity, {}, []]) assert.equal(normalizeMapScalePercent(value), 100);

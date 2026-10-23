@@ -14,7 +14,9 @@ function fixture() {
   const config = defaultGrifballTactics(); config.defaults.runnerClashEnabled = true;
   const geometry = buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52,
     arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData, 52);
-  const threat: RunnerSwordThreat = { id: 'sword', pos: { x: 2.5, y: 0, z: 0 }, vel: { x: 0, z: 0 },
+  // Keep the target reachable even at the shortest counter time (.04s), so
+  // these cases isolate style timing under the direct-contact punch rules.
+  const threat: RunnerSwordThreat = { id: 'sword', pos: { x: 2.1, y: 0, z: 0 }, vel: { x: 0, z: 0 },
     kind: 'slash', age: .08, impactIn: .1, bodyHeight: .825, radiusBonus: 0 };
   const input = { pos: { x: 0, y: 0, z: 0 }, threats: [threat], geometry, tuning: config.defaults,
     settings: { ...DEFAULT_ADMIN_SETTINGS }, canPunch: true, dt: 1 / 60 };
@@ -24,6 +26,7 @@ function fixture() {
 test('zero counter individuality preserves the entire decision for every style and other agency strength', () => {
   const f = fixture(); Object.assign(f.config.defaults, { agencyStrength: 1, runnerAgencyStrength: 1, defenseAgencyStrength: 1, passAgencyStrength: 1 });
   const baseline = f.run('balanced');
+  assert.equal(baseline.action, 'track', 'the fixture must produce a reachable timing decision');
   for (const style of styles) assert.deepEqual(f.run(style), baseline);
   assert.equal(baseline.individuality, undefined);
 });
@@ -61,7 +64,9 @@ for (const style of styles) test(`${style} preserves contact, readiness, imminen
   assert.equal(f.run(style).action, 'punch');
   f.input.canPunch = false; assert.equal(f.run(style).action, 'unavailable'); f.input.canPunch = true;
   assert.equal(chooseRunnerPunchClash({ ...f.input, playerStyle: style, finishIn: .01 }).action, 'finish');
-  f.threat.pos.x = 8; assert.equal(f.run(style).action, 'none'); f.threat.pos.x = 2.5;
+  f.threat.pos.x = 2.5;
+  assert.equal(f.run(style).action, 'none', 'style cannot make a .04s counter reach a 2.5m target');
+  f.threat.pos.x = 8; assert.equal(f.run(style).action, 'none'); f.threat.pos.x = 2.1;
   f.threat.invulnerabilityTimer = 1; assert.equal(f.run(style).action, 'none'); f.threat.invulnerabilityTimer = 0;
   const assignment: GrifballAssignment = { botId: 'runner', team: 'blue', role: 'runner', slot: 0,
     carrierId: 'runner', destination: { x: 10, z: 0 }, anchor: { x: 0, z: 0 }, reason: '',
@@ -74,16 +79,23 @@ for (const style of styles) test(`${style} preserves contact, readiness, imminen
 });
 
 for (const gate of ['runnerClashEnabled', 'enabled', 'spaceEnabled', 'runnerEnabled'] as const)
-  test(`counter individuality cannot bypass ${gate}`, () => {
+  test(`counter individuality respects ${gate} without disabling ordinary punches`, () => {
     const f = fixture(); f.config.defaults.runnerClashAgencyStrength = 1;
     const assignment: GrifballAssignment = { botId: 'runner', team: 'blue', role: 'runner', slot: 0,
       carrierId: 'runner', destination: { x: 10, z: 0 }, anchor: { x: 0, z: 0 }, reason: '', geometry: f.input.geometry, tuning: f.input.tuning };
     const input = { ...f.input, assignment, threats: [f.threat], clashThreats: [f.threat], players: [], avoidanceEnemies: [],
       goal: { x: 47, z: 0 }, weaponState: 'ready', canStartWeaponAction: true, playerStyle: 'enforcer' as const };
-    assert.equal(resolveGrifballCarrierDecision(input)!.kind, 'punch');
+    const counter = resolveGrifballCarrierDecision(input)!;
+    assert.equal(counter.kind, 'punch');
+    assert.equal(counter.clash?.action, 'punch', 'the enabled path must actually use timed counter logic');
+    assert.equal(counter.clash.individuality?.style, 'enforcer');
+    f.threat.impactIn = .12;
+    const waiting = resolveGrifballCarrierDecision(input)!;
+    assert.equal(waiting.kind, 'move'); assert.equal(waiting.clash?.action, 'track');
     f.config.defaults[gate] = false;
-    assert.equal(resolveGrifballCarrierDecision(input)!.kind, 'move');
-    assert.equal(resolveGrifballCarrierDecision(input)!.clash, undefined);
+    const ordinary = resolveGrifballCarrierDecision(input)!;
+    assert.equal(ordinary.kind, 'punch', 'ordinary lunge punches remain available with counter timing disabled');
+    assert.equal(ordinary.clash, undefined);
   });
 
 test('v11 migration retains enabled timing, styles and overrides while counter individuality starts at zero', () => {
@@ -91,7 +103,7 @@ test('v11 migration retains enabled timing, styles and overrides while counter i
   Object.assign(old.defaults, { runnerClashEnabled: true, runnerClashReaction: .12, runnerClashLead: .14, runnerAgencyStrength: .8 });
   old.botStyles.runner = 'opportunist'; old.teams.red = { runnerClashReaction: .2 };
   const config = validateGrifballTactics(old);
-  assert.equal(config.schemaVersion, 44); assert.equal(config.defaults.runnerClashAgencyStrength, 0);
+  assert.equal(config.schemaVersion, 45); assert.equal(config.defaults.runnerClashAgencyStrength, 0);
   assert.equal(config.defaults.runnerClashEnabled, true); assert.equal(config.defaults.runnerClashReaction, .12);
   assert.equal(config.defaults.runnerClashLead, .14); assert.equal(config.defaults.runnerAgencyStrength, .8);
   assert.equal(config.botStyles.runner, 'opportunist'); assert.deepEqual(config.teams, old.teams);
@@ -105,6 +117,7 @@ test('v11 migration retains enabled timing, styles and overrides while counter i
 test('style decisions repeat after cloning and mirroring without consuming randomness', () => {
   const f = fixture(); f.config.defaults.runnerClashAgencyStrength = 1;
   const original = chooseRunnerPunchClash({ ...f.input, playerStyle: 'enforcer' });
+  assert.equal(original.action, 'punch');
   const restored = chooseRunnerPunchClash({ ...structuredClone(f.input), playerStyle: 'enforcer' });
   assert.deepEqual(restored, original);
   f.threat.pos.x *= -1;

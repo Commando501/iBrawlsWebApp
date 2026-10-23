@@ -29,6 +29,7 @@ import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectio
 import type { MatchLobbyConfig } from '../network/protocol';
 import type { VisualModelPolicy } from '../model/modelSystem';
 import type { V3QualityTier } from './v3/v3ModelTypes';
+import { LoadedMapIndicator } from './LoadedMapIndicator';
 
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
@@ -48,6 +49,7 @@ interface ActiveGameSurfaceProps {
   isTerminated: boolean;
   selectedMap: string;
   lobbyCustomMapData: CustomMapData | null;
+  trainingMapSnapshot?: CustomMapData | null;
   playerLoadout: CharacterLoadout;
   visualModelPolicy?: VisualModelPolicy | null;
   v3QualityTier?: V3QualityTier;
@@ -124,11 +126,22 @@ export function resolveActiveGameSettings(
   };
 }
 
+/** Both the renderer and status use this exact session snapshot. */
+export function resolveSessionCustomMap({ selectedMap, selectedReplay, lobbyCustomMapData, isMultiplayer, matchLobbyConfig, singlePlayerMode, trainingMapSnapshot }: Pick<ActiveGameSurfaceProps,
+  'selectedMap' | 'selectedReplay' | 'lobbyCustomMapData' | 'isMultiplayer' | 'matchLobbyConfig' | 'singlePlayerMode' | 'trainingMapSnapshot'
+>): CustomMapData | undefined {
+  if (selectedReplay) return undefined; // Playback resolves its own recorded geometry.
+  if (selectedMap === 'custom_file') return lobbyCustomMapData ?? undefined;
+  if (isMultiplayer) return matchLobbyConfig?.customMap?.id === selectedMap ? matchLobbyConfig.customMap : undefined;
+  return singlePlayerMode === 'sandbox' && trainingMapSnapshot?.id === selectedMap ? trainingMapSnapshot : undefined;
+}
+
 export function ActiveGameSurface({
   isPlaying,
   isTerminated,
   selectedMap,
   lobbyCustomMapData,
+  trainingMapSnapshot,
   playerLoadout,
   visualModelPolicy,
   v3QualityTier,
@@ -207,11 +220,7 @@ export function ActiveGameSurface({
       ? (activeGameSettings.iBrawlsKillTarget ?? 25)
     : undefined;
   const chatRole = multiplayerRole === 'observer' ? null : multiplayerRole;
-  const activeCustomMap = selectedMap === 'custom_file'
-    ? lobbyCustomMapData
-    : isMultiplayer && matchLobbyConfig?.customMap?.id === selectedMap
-      ? matchLobbyConfig.customMap
-      : undefined;
+  const activeCustomMap = resolveSessionCustomMap({ selectedMap, selectedReplay, lobbyCustomMapData, isMultiplayer, matchLobbyConfig, singlePlayerMode, trainingMapSnapshot });
 
   return (
     <>
@@ -278,10 +287,19 @@ export function ActiveGameSurface({
         />
       )}
 
+      {isPlaying && !isTerminated && !isMatchLoadingActive && !selectedReplay && activeCustomMap?.balanceScale && (
+        <div className={`fixed z-40 ${multiplayerRole === 'observer' ? 'left-3 top-[28%] max-w-[calc(100vw-24px)]' : 'bottom-2 left-2 max-w-[calc(100vw-112px)] sm:left-1/2 sm:max-w-[calc(100vw-24px)] sm:-translate-x-1/2'} pointer-events-none w-max`}>
+          <LoadedMapIndicator map={activeCustomMap} session={isMultiplayer
+            ? multiplayerRole === 'host' ? 'Host' : multiplayerRole === 'observer' ? 'Observer' : 'Client'
+            : 'Training'} />
+        </div>
+      )}
+
       <GameStatsView store={statsStore}>{currentStats => <>
       {isPlaying && (isMatchLoadingActive || !isPaused || showUiAdjustment) && (
         <HUD
           stats={currentStats}
+          arenaShape={activeCustomMap?.mapShape}
           prepareForPlay={isMatchLoadingActive}
           onPauseClick={onPauseToggle}
           uiPositions={activeUiPositions}

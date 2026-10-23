@@ -327,7 +327,7 @@ test('disabling dependencies and ending the opening clear reserve position diagn
 
 test('schema 43 preserves prior settings and migrates reserve positioning at zero', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 44);
+  assert.equal(config.schemaVersion, 45);
   assert.equal(config.defaults.tipoffReservePositionAgencyStrength, 0);
   for (let version = 1; version < 43; version++) {
     const old = JSON.parse(JSON.stringify(config));

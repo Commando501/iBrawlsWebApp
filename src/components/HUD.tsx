@@ -14,6 +14,7 @@ import { DraggableHUDItem, clampUiScale } from './hud/DraggableHUDItem';
 
 interface HUDProps {
   stats: GameStats;
+  arenaShape?: 'circle' | 'rectangular';
   prepareForPlay?: boolean;
   onPauseClick: () => void;
   onThemeToggle?: () => void;
@@ -232,6 +233,7 @@ export function GrifballCarrierControls({ passCharge }: { passCharge: number }) 
 }
 
 export const HUD: React.FC<HUDProps> = ({ 
+  arenaShape,
   stats, 
   prepareForPlay = false,
   onPauseClick, 
@@ -520,7 +522,7 @@ export const HUD: React.FC<HUDProps> = ({
         <div className="flex flex-col items-end gap-1">
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg text-right">
             <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Map Status</p>
-            <p className="text-lg font-bold tracking-tight uppercase font-display">{stats.grifball ? 'Grifball Court' : 'Circular Arena'}</p>
+            <p className="text-lg font-bold tracking-tight uppercase font-display">{stats.grifball ? 'Grifball Court' : arenaShape === 'rectangular' ? 'Rectangular Arena' : 'Circular Arena'}</p>
           </div>
           
           {/* Pause Button (Interactive pointer-events toggled!) */}

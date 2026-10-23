@@ -5,6 +5,7 @@ import { tacticalDifficulty } from './aiGrifballStyle';
 import { resolveRunnerThrowAllowed } from './runnerBallSettings';
 import { buildGrifballSpaceGeometry } from './grifballSpaceGeometry';
 import { defaultGrifballTactics, type GrifballTacticsConfig } from './grifballTacticsConfig';
+import { runnerPursuitRules } from './aiGrifballRunnerPursuit';
 
 /** Separate from RL observation/action versions: this contract never executes policy actions. */
 export const GRIFBALL_TACTICAL_CONTRACT_VERSION = 1 as const;
@@ -35,6 +36,7 @@ export function createGrifballTacticalSnapshot(input: TacticalFrameInput): Versi
   const ball = match.ball;
   return {
     contractVersion: GRIFBALL_TACTICAL_CONTRACT_VERSION,
+    runnerPursuitRules: runnerPursuitRules(settings),
     rosterKey: JSON.stringify(roster.map(p => [p.id, p.team, p.controller, p.difficulty, p.scripted])), teamDifficulty,
     round: match.roundNumber, playing: match.phase === 'playing',
     ball: point(ball.pos), ballPhysics: { ...ball, pos: { ...ball.pos }, vel: { ...ball.vel }, home: { ...ball.home } },

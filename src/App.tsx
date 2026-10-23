@@ -47,15 +47,19 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 import { statTracker } from './stats/statTracker';
 import { useStatCloudSync } from './stats/useStatCloudSync';
 import { resolveSessionVisualModelPolicy } from './model/modelSystem';
+import type { CustomMapData } from './types';
+import { createPublishedMapSnapshot } from './game/mapBalancing';
+import { getCachedLiveConfig } from './services/liveConfig';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.753';
+const APP_VERSION = '0.760';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
   const labOpen = useSyncExternalStore(grifballLab.subscribe, grifballLab.getOpen);
   const [isLocalTrainingSession, setIsLocalTrainingSession] = useState(false);
+  const [trainingMapSnapshot, setTrainingMapSnapshot] = useState<CustomMapData | null>(null);
   const {
     forceMobileControls,
     setForceMobileControls,
@@ -738,10 +742,15 @@ export default function App() {
           aiPresets,
           onClose: () => setShowBotSetupMenu(false),
           onApplyAndResume: () => {
+            // Resume the existing court unless the player explicitly chose another map.
+            if (trainingMapSnapshot?.id !== selectedMap) {
+              setTrainingMapSnapshot(createPublishedMapSnapshot(selectedMap, getCachedLiveConfig()));
+            }
             setShowBotSetupMenu(false);
             setIsPaused(false);
           },
           onInitializeSimulation: () => {
+            setTrainingMapSnapshot(createPublishedMapSnapshot(selectedMap, getCachedLiveConfig()));
             setShowBotSetupMenu(false);
             setIsLocalTrainingSession(true);
             setSinglePlayerMode('sandbox');
@@ -769,6 +778,7 @@ export default function App() {
 	        isTerminated={isTerminated}
 	        selectedMap={selectedMap}
 	        lobbyCustomMapData={lobbyCustomMapData}
+	        trainingMapSnapshot={isLocalTrainingSession ? trainingMapSnapshot : null}
 	        playerLoadout={playerLoadout}
 	        visualModelPolicy={activeVisualModelPolicy}
 	        v3QualityTier={v3QualityTier}

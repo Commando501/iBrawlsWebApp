@@ -78,7 +78,7 @@ test('schema 12 migrates awareness off, retaining all prior individuality; overr
   delete legacy.defaults.swordGuardEnabled; delete legacy.defaults.swordGuardReaction;
   legacy.defaults.runnerClashAgencyStrength = .8; legacy.botStyles.runner = 'guardian';
   const migrated = validateGrifballTactics(legacy);
-  assert.equal(migrated.schemaVersion, 44); assert.equal(migrated.defaults.swordGuardEnabled, false);
+  assert.equal(migrated.schemaVersion, 45); assert.equal(migrated.defaults.swordGuardEnabled, false);
   assert.equal(migrated.defaults.runnerClashAgencyStrength, .8); assert.equal(migrated.botStyles.runner, 'guardian');
   migrated.teams.red = { swordGuardEnabled: true, swordGuardReaction: .12 };
   const copy = validateGrifballTactics(JSON.parse(JSON.stringify(migrated)));
@@ -151,7 +151,7 @@ test('v13 imports leave sword individuality off while preserving awareness, styl
   Object.assign(legacy.defaults, { swordGuardEnabled: true, swordGuardReaction: .12, runnerClashAgencyStrength: .8 });
   legacy.botStyles.sword = 'opportunist'; legacy.teams.red = { swordGuardReaction: .2 };
   const config = validateGrifballTactics(legacy);
-  assert.equal(config.schemaVersion, 44); assert.equal(config.defaults.swordGuardAgencyStrength, 0);
+  assert.equal(config.schemaVersion, 45); assert.equal(config.defaults.swordGuardAgencyStrength, 0);
   assert.equal(config.defaults.swordGuardEnabled, true); assert.equal(config.defaults.swordGuardReaction, .12);
   assert.equal(config.defaults.runnerClashAgencyStrength, .8); assert.equal(config.botStyles.sword, 'opportunist');
   assert.deepEqual(config.teams, legacy.teams);

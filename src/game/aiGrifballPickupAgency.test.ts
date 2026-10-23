@@ -320,7 +320,7 @@ test('pickup and a fresh round clear the old bid without carrying a retriever ac
 });
 test('schema 1–25 migrations default recovery individuality off and retain previous settings', () => {
   const current = defaultGrifballTactics();
-  assert.equal(current.schemaVersion, 44);
+  assert.equal(current.schemaVersion, 45);
   assert.equal(current.defaults.pickupAgencyStrength, 0);
   for (let version = 1; version <= 25; version++) {
     const old = JSON.parse(JSON.stringify(current));
