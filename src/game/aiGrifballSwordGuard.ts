@@ -1,4 +1,5 @@
 import type { UniversalSettings } from '../types';
+import { AI_CROUCH_SPEED_MULTIPLIER } from './aiMovementMechanics';
 import type { FieldPoint, GrifballAssignment } from './aiGrifballTeamPlan';
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
 import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from './runnerBallSettings';
@@ -24,6 +25,7 @@ export function chooseGrifballSwordGuard(input: {
   assignment: GrifballAssignment | undefined; settings: UniversalSettings; dt: number;
   pos: Point; bodyHeight: number; radiusBonus: number; ownGoals?: readonly GoalPlate[];
   eligible: boolean; punch: ObservedRunnerPunch | null;
+  isCrouching?: boolean;
   playerStyle?: GrifballPlayerStyle;
 }): SwordGuardDecision | null {
   const { assignment, punch, settings, pos, dt } = input, tuning = assignment?.tuning;
@@ -68,7 +70,8 @@ export function chooseGrifballSwordGuard(input: {
     return decision('Immediate goal threat takes priority over waiting for the punch');
   const gap = reach + radius + clearance;
   // Keep this short retreat within the shared grounded objective walk budget.
-  const speed = Math.min(Math.max(0, 5.2 * Math.min(settings.speedBackward, settings.speedForward) / 100), Math.max(0, gap - distance) / dt);
+  const baseSpeed = 5.2 * (input.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
+  const speed = Math.min(Math.max(0, baseSpeed * Math.min(settings.speedBackward, settings.speedForward) / 100), Math.max(0, gap - distance) / dt);
   const velocity = { x: dx / distance * speed, z: dz / distance * speed };
   if (!isSpaceSegmentOpen(assignment.geometry, pos, { x: pos.x + velocity.x * dt, z: pos.z + velocity.z * dt }))
     velocity.x = velocity.z = 0;

@@ -1,4 +1,5 @@
 import { resolveGrifballSupportSteering } from '../game/aiGrifballObjectiveSteering';
+import { AI_CROUCH_SPEED_MULTIPLIER } from '../game/aiMovementMechanics';
 import type { GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import { isNeuralNetDifficulty } from '../game/neuralBrains';
 import { resolveDirectionalSpeedMultiplier } from '../game/runnerBallSettings';
@@ -30,14 +31,15 @@ export function resolveSimGrifballSupportInput(state: SimState, plan: GrifballTe
   const actor = resolveSimGrifballGroundActor(state, botId, scriptedBots, dt);
   if (!actor || actor.hasBall || state.match.ball.state === 'held' && state.match.ball.holderId === botId) return null;
   const scriptedObjective: ScriptedObjectiveInput = { version: SCRIPTED_OBJECTIVE_INPUT_VERSION, scriptedBots, movement: {} };
+  const baseSpeed = 5.2 * (actor.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
   const movement = resolveGrifballSupportSteering({ assignment: plan.assignments.get(botId), pos: actor.pos,
     allies: state.combatants.filter(c => c.id !== botId && c.team === actor.team && c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => c.pos),
     players: plan.snapshot?.players ?? [], ball: state.match.ball.pos,
     heldByAnyone: state.match.ball.state === 'held' && !!state.match.ball.holderId,
-    separation: state.settings.grifballEscortSpacing ?? 4, speed: 5.2 * state.settings.speedForward / 100,
-    retrySpeed: 5.2 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', false), dt });
+    separation: state.settings.grifballEscortSpacing ?? 4, speed: baseSpeed * state.settings.speedForward / 100,
+    retrySpeed: baseSpeed * resolveDirectionalSpeedMultiplier(state.settings, 'forward', false), dt });
   if (!movement) return null;
-  const speed = 5.2 * state.settings.speedForward / 100;
+  const speed = baseSpeed * state.settings.speedForward / 100;
   scriptedObjective.movement = { [botId]: speed > 0
     ? { x: movement.velocity.x / speed, z: movement.velocity.z / speed } : { x: 0, z: 0 } };
   const action = { ...idleAction(), crouch: actor.isCrouching, pickup: movement.pickupRequested,

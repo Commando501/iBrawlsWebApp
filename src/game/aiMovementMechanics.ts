@@ -11,6 +11,8 @@ export type AIMovementState = string;
 
 /** Ground speed (m/s) the player walks at; used to scale AI sprint/slide so the AI keeps pace. */
 export const AI_BASE_GROUND_SPEED = 5.8;
+/** Scripted crouch walking retains the established sidestep/recovery slowdown. */
+export const AI_CROUCH_SPEED_MULTIPLIER = 0.45;
 /** AI must be at least this far beyond its engage range before it bothers sprinting to close. */
 export const SPRINT_ENGAGE_GAP = 5.0;
 /** A target receding at or above this speed (m/s) triggers a chase sprint even at shorter gaps. */

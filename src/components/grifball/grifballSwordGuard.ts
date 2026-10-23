@@ -20,6 +20,7 @@ export function observeLiveGrifballSwordGuard(state: GrifballRuntimeState, self:
   const pos = runner?.pos ?? state.playerPos;
   const team = runner?.team ?? state.localPlayerTeam;
   const result = chooseGrifballSwordGuard({ assignment, settings: state.settings, dt, pos: self.pos,
+    isCrouching: self.isCrouching,
     playerStyle: resolveGrifballPlayerStyle(state.aiMatchContext.grifballTeamPlan.snapshot?.tactics?.botStyles, self.id),
     bodyHeight: human ? .825 : self.isCrouching ? .52 : .825, radiusBonus: getModelTargetRadiusBonus(self.modelType),
     ownGoals: getGoalPlates(map).filter(goal => goal.team === self.team),

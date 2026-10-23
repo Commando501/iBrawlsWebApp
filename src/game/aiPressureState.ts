@@ -1,4 +1,5 @@
 import { simulationRandom } from './simulationRandom';
+import { AI_CROUCH_SPEED_MULTIPLIER } from './aiMovementMechanics';
 import * as THREE from 'three';
 import { type AICombatWeapon } from './aiCombatDecision';
 import {
@@ -86,6 +87,7 @@ export function resolveAIPressureState({
   totalApproachLateral,
   dt,
   sprintMult,
+  isCrouching,
   activeWeapon,
   stationarySwingReach,
   minLungeRange,
@@ -113,6 +115,7 @@ export function resolveAIPressureState({
   totalApproachLateral: number;
   dt: number;
   sprintMult: number;
+  isCrouching: boolean;
   activeWeapon: AICombatWeapon | 'ball';
   stationarySwingReach: number;
   minLungeRange: number;
@@ -156,6 +159,9 @@ export function resolveAIPressureState({
   );
   if (totalApproachLateral !== 0 && frame.weaponState === 'ready') {
     frame.vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.4);
+  }
+  if (isCrouching) {
+    frame.vel.multiplyScalar(AI_CROUCH_SPEED_MULTIPLIER);
   }
   frame.pos.addScaledVector(frame.vel, dt);
 

@@ -3,7 +3,7 @@ import type { AIBehaviorState, UniversalSettings, WeaponState } from '../types';
 import type { AICombatWeapon, AITacticalTargetSnapshot } from './aiCombatDecision';
 import type { AIBehaviorTuning } from './aiBehaviorTuning';
 import { simulationRandom } from './simulationRandom';
-import { advanceAISlide, getSlideSpeed, shouldStartAISlide } from './aiMovementMechanics';
+import { advanceAISlide, AI_CROUCH_SPEED_MULTIPLIER, getSlideSpeed, shouldStartAISlide } from './aiMovementMechanics';
 import { canAttemptChargeAbortFeint, getApproachFeintWindow } from './aiFeints';
 import { shouldForceStandoffCommit } from './aiPsychologicalPressure';
 import { shouldAvoidCoinFlipTrade, type MatchStateMultipliers } from './aiTuning';
@@ -93,6 +93,14 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
     playDash, tryFeintRoll, commitFeint, isTargetOnCooldown, isCoordAttackBlocked, clearPressureTarget,
     triggerCombatantAttack, random = simulationRandom } = input;
   const { pos, vel, dashDir } = frame;
+  // Apply posture before moving or invoking attack callbacks. Slides and dashes
+  // have their own committed travel and must not use the walking slowdown.
+  const advanceWalk = () => {
+    if (isCrouching) {
+      vel.multiplyScalar(AI_CROUCH_SPEED_MULTIPLIER);
+    }
+    pos.addScaledVector(vel, dt);
+  };
   let { aiState: state, timer, weaponState, dashRemaining, dashCooldownTimer, slideActive,
     slideDistanceTraveled, slideCooldownTimer, isSprinting } = frame;
   let groundJumpVelocity: number | undefined;
@@ -159,7 +167,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
       if (totalApproachLateral !== 0) {
         vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.9);
       }
-      pos.addScaledVector(vel, dt);
+      advanceWalk();
     }
 
     if (!slideActive && distanceToTarget <= (resolvedDangerZone + 3.2)) {
@@ -187,10 +195,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
       vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.35);
     }
 
-    if (isCrouching) {
-      vel.multiplyScalar(0.45);
-    }
-    pos.addScaledVector(vel, dt);
+    advanceWalk();
 
     if (dashCooldownTimer <= 0 && distanceToTarget < (resolvedDangerZone + 2.0) && random() < 0.015 && (movementComplexity >= 40)) {
       const sideDir = random() > 0.5 ? 1 : -1;
@@ -260,14 +265,14 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
       timer = tuning.approachFeintBackTimer;
       commitFeint();
       vel.copy(lookHeading).multiplyScalar(-6.2 * (settings.speedBackward / 100));
-      pos.addScaledVector(vel, dt);
+      advanceWalk();
     } else {
     const forwardSpeed = feintLungeFakeout ? 6.2 : 5.0;
     vel.copy(lookHeading).multiplyScalar(forwardSpeed * (settings.speedForward / 100) * sprintMult);
     if (totalApproachLateral !== 0) {
       vel.addScaledVector(sidewayHeading, totalApproachLateral * 0.5);
     }
-    pos.addScaledVector(vel, dt);
+    advanceWalk();
 
     if (target.weaponState === 'swing_up' && !targetIsProtected) {
       state = 'DANCING_BACKWARD';
@@ -295,7 +300,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
   }
   else if (state === 'DANCING_BACKWARD') {
     vel.copy(lookHeading).multiplyScalar(-6.2 * (settings.speedBackward / 100));
-    pos.addScaledVector(vel, dt);
+    advanceWalk();
 
     if (target.weaponState === 'recovering' && attackDistanceToTarget <= (resolvedAiReach + 2.5) && !targetIsProtected) {
       state = 'CHARGE_ATTACK';
@@ -333,7 +338,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
     }
 
     vel.copy(lookHeading).multiplyScalar(6.5 * (settings.speedForward / 100));
-    pos.addScaledVector(vel, dt);
+    advanceWalk();
 
     if (attackDistanceToTarget <= stationarySwingReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
       if (isCoordAttackBlocked()) {
@@ -399,6 +404,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
       totalApproachLateral,
       dt,
       sprintMult,
+      isCrouching,
       activeWeapon,
       stationarySwingReach,
       minLungeRange,
@@ -420,10 +426,7 @@ export function resolveAIGroundState(input: AIGroundStateInput): AIGroundStateFr
   }
   else if (state === 'COOLDOWN') {
     vel.copy(lookHeading).multiplyScalar(-1.5 * (settings.speedBackward / 100));
-    if (isCrouching) {
-      vel.multiplyScalar(0.45);
-    }
-    pos.addScaledVector(vel, dt);
+    advanceWalk();
 
     if (timer <= 0) {
       state = 'SIDE_STEPPING';

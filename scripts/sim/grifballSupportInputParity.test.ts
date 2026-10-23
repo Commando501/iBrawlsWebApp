@@ -88,6 +88,26 @@ for (const id of ['bot_2', 'main_ai']) for (const escort of [false, true]) for (
     if (!escort && !routed) assert.equal(pickupTick, Math.ceil((8 - 1.6) / (5.2 * 1.4 * dt)), 'independent unobstructed arrival time at the default pickup radius');
   });
 
+for (const id of ['main_ai', 'bot_2']) for (const crouching of [true, false])
+  test(`support walking respects crouch speed ${id}/${crouching}`, () => {
+    const f = fixture(id), { state, sim, bot, self, plan, scriptedBots } = f;
+    self.isCrouching = bot.isCrouching = crouching;
+    updateGrifballTeamPlanForState(state, dt, f.goal, f.map);
+    updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots }), dt);
+    const input = resolveSimGrifballSupportInput(sim, plan, id, scriptedBots)!;
+    const frame = { pos: bot.pos, vel: bot.vel, yaw: bot.yaw, aiState: bot.aiState, timer: 0,
+      dashRemaining: 0, slideActive: false, weaponState: 'ready', pickupRequested: false };
+    assert.equal(resolvePrimaryGrifballAIObjectiveMovementForCombatant({ state, botId: id, self: bot, frame,
+      alliesList: [], enemiesList: [], dt, canStartWeaponAction: false,
+      triggerCombatantAttack: () => assert.fail('support must not attack'), getEnemyGoalPos: f.goal,
+      constrainCombatantToArena: () => {} }), true);
+    stepSimulation(sim, { [id]: input.action }, { settings: sim.settings, scriptedObjective: input.scriptedObjective });
+    const speed = 5.2 * 1.4 * (crouching ? .45 : 1);
+    near(bot.vel.x, speed, 'live crouch speed'); near(self.vel.x, speed, 'sim crouch speed');
+    near(bot.pos.x, -8 + speed * dt, 'live crouch distance'); near(self.pos.x, bot.pos.x, 'sim crouch distance');
+    assert.equal(self.isCrouching, crouching);
+  });
+
 test('support recovery keeps attack facing while moving and preserves live reload time', () => {
   const f = fixture('main_ai', true);
   f.self.weaponState = 'recovering'; f.self.yaw = .63;
