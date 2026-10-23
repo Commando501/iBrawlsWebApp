@@ -27,6 +27,7 @@ export const triggerCombatantAttackAction = ({
   playSwing: () => void;
 }): void => {
   self.weaponState = melee ? 'melee_up' : 'swing_up';
+  delete self.punchAttack;
   self.weaponTimer = 0;
   if (weapon === 'sword') {
     self.lastSwordAttackTime = simulationTimestamp();

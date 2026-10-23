@@ -190,8 +190,10 @@ export interface UniversalSettings extends MapBalanceSettings {
   grifballTrajectoryLineThickness?: number;
   /** Trajectory preview color (default #ff2b2b). */
   grifballTrajectoryLineColor?: string;
-  /** Forward reach used by runner Punch while holding the ball (default 1.8m). */
+  /** Maximum travel of a locked ball punch (default 1.8m). Does not change jab reach. */
   grifballPunchLungeDistance?: number;
+  /** Ball punch target assistance from 0 (off) to 100 percent. */
+  grifballPunchMagnetism?: number;
   /** Runner Punch recovery cooldown in seconds (default 0.5s). */
   grifballPunchCooldown?: number;
   /** Max HP while carrying the ball (default 2 HP). */
@@ -402,6 +404,7 @@ export interface ReplayHeatmapData {
 export type CombatantController = 'ai' | 'remote';
 
 export interface Combatant {
+  punchAttack?: import('./game/ballPunch').PunchAttack;
   // Identity
   id: string;
   playerName: string;

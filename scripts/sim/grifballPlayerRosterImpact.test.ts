@@ -102,11 +102,19 @@ for (const identity of ['registered-main', 'legacy-main'] as const) test(`slash/
 });
 
 for (const attack of attacks) for (const mainFirst of [true, false]) {
-  test(`${attack}/multiple victims/mainFirst=${mainFirst}: each opponent receives one hit and one kill credit`, () => {
+  test(`${attack}/multiple victims/mainFirst=${mainFirst}: punches hit only the first model; area attacks hit both`, () => {
     const f = fixture(attack, 'registered-main'), { state, bot, target } = f;
     bot.team = 'red'; bot.pos.copy(target.pos); bot.hp = bot.maxHp = 2; bot.deaths = 0;
+    if (attack === 'punch') bot.pos.addScaledVector(target.pos.clone().sub(state.playerPos).normalize(), .2);
     state.otherPlayers.clear();
     for (const c of mainFirst ? [target, bot] : [bot, target]) state.otherPlayers.set(c.id, c);
+    if (attack === 'punch') {
+      f.impact(); assert.deepEqual([target.hp, bot.hp], [1, 2]);
+      f.impact(); assert.deepEqual([target.hp, bot.hp], [0, 2]);
+      assert.equal(state.playerKills, 1); assert.equal(state.scorePlayer, 1); assert.equal(state.enemyDeaths, 1);
+      assert.deepEqual(f.events.medals, ['main_ai']); assert.equal(f.events.deaths, 1);
+      return;
+    }
     f.impact();
     assert.deepEqual([target.hp, bot.hp], [1, 1]); assert.equal(state.playerKills, 0);
     f.impact();

@@ -2,7 +2,8 @@ import type { UniversalSettings } from '../types';
 import { AI_CROUCH_SPEED_MULTIPLIER } from './aiMovementMechanics';
 import type { FieldPoint, GrifballAssignment } from './aiGrifballTeamPlan';
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
-import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from './runnerBallSettings';
+import { GRIFBALL_PUNCH_RADIUS } from './runnerBallSettings';
+import { BALL_PUNCH_REACH, punchContactDistance } from './ballPunch';
 import { isOverGoalPlate, type GoalPlate } from './grifballGoals';
 import { GRIFBALL_SWORD_GUARD_PREFERENCES, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
@@ -51,11 +52,11 @@ export function chooseGrifballSwordGuard(input: {
     ? Math.max(0, distance - contactRadius) / Math.max(.01, settings.swordLungeSpeed ?? 24) : Infinity;
   const slashIn = Math.hypot(distance, pos.y + 1.65 - punch.pos.y - punch.bodyHeight) <= 2.8 + punch.radiusBonus
     ? (settings.swordSlashSpeed ?? .22) * .5 : Infinity;
-  const reach = resolvePunchLungeDistance(settings), radius = GRIFBALL_PUNCH_RADIUS + input.radiusBonus;
-  const impact = { x: punch.pos.x + punch.heading.x * reach, y: punch.pos.y + punch.originHeight + punch.heading.y * reach,
-    z: punch.pos.z + punch.heading.z * reach };
-  const exposedAt = (range: number) => Math.hypot(punch.pos.x + dx / distance * range - impact.x,
-    pos.y + input.bodyHeight - impact.y, punch.pos.z + dz / distance * range - impact.z) <= radius;
+  const reach = BALL_PUNCH_REACH, radius = GRIFBALL_PUNCH_RADIUS + input.radiusBonus;
+  const exposedAt = (range: number) => punchContactDistance({ id: punch.id, pos: punch.pos,
+    heading: punch.heading, eyeHeight: punch.originHeight }, { id: 'sword',
+    pos: { x: punch.pos.x + dx / distance * range, y: pos.y, z: punch.pos.z + dz / distance * range },
+    isCrouching: input.bodyHeight < .7, modelType: input.radiusBonus > 0 ? 'large' : 'medium' }) !== null;
   // A normal punch landing during sword windup also cancels it. Already inside
   // the punch volume, wait for recovery even if our own impact would come later.
   const exposedNow = exposedAt(distance);

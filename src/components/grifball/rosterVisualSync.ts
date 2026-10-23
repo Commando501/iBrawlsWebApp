@@ -2,6 +2,7 @@ import { syncCombatantTeamArmor, resolveFriendlyArmorTeam } from './combatantTea
 import * as THREE from 'three';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
+import { advancePunchForState } from './ballPunchRuntime';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { updateRunnerVisualStateForGroup } from './runnerVisualState';
@@ -53,6 +54,7 @@ export function updateRosterCombatantVisualsForState({
     }
 
     const swingIsSword = player.activeWeapon === 'sword';
+    advancePunchForState(state, clientId, dt);
     const swingIsBall = player.activeWeapon === 'ball';
     const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
     if (weaponState === 'swing_up') {

@@ -2,7 +2,8 @@ import { getGrifballSpacingOffset, getGrifballRunnerSteering } from './aiGrifbal
 import { getGrifballSpaceWaypoint } from './aiGrifballSpace';
 import { selectGrifballAssignmentThreat, type FieldPoint, type GrifballAssignment, type GrifballTacticalPlayer } from './aiGrifballTeamPlan';
 import { isSpaceSegmentOpen } from './grifballSpaceGeometry';
-import { resolveDirectionalSpeedMultiplier } from './runnerBallSettings';
+import { resolveDirectionalSpeedMultiplier, resolvePunchLungeDistance } from './runnerBallSettings';
+import { BALL_PUNCH_REACH } from './ballPunch';
 import type { UniversalSettings } from '../types';
 import { chooseRunnerPunchClash, type RunnerSwordThreat, type RunnerClashDecision } from './aiGrifballRunnerClash';
 import type { GrifballPlayerStyle } from './grifballPlayerStyles';
@@ -115,7 +116,7 @@ export function resolveGrifballCarrierDecision({ assignment, pos, players, threa
     const range = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (range < distance) { distance = range; closest = { x: dx, z: dz }; }
   }
-  if (!finishBeforePunch && closest && distance <= 2.2 && canStartWeaponAction && weaponState === 'ready') return stopped('punch', closest);
+  if (!finishBeforePunch && closest && distance <= BALL_PUNCH_REACH + resolvePunchLungeDistance(settings) && canStartWeaponAction && weaponState === 'ready') return stopped('punch', closest);
   if (clash?.action !== 'track' && assignment?.pass?.selected && canStartWeaponAction && weaponState === 'ready') return stopped('pass', assignment.pass.selected.direction);
   if (assignment?.runner?.selected.action === 'wait') return stopped('wait');
   // Refresh local avoidance between team-plan updates without replacing a routed

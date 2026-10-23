@@ -1,5 +1,6 @@
 import { runFrameObjectiveTrace, type RunnerCombatCase } from './grifballFrameObjectiveParity';
 import { parityRecorder } from './grifballMultiActorParity';
+import { checkPunchTrace } from './grifballPunchTraceChecks';
 
 const CONTESTS = [
   { attack: 'none', counter: true, enemyHp: 1, shield: false },
@@ -16,12 +17,17 @@ for (const contest of CONTESTS) for (const motion of ['retreat', 'cross', 'appro
       for (const mainAttacker of [false, true]) for (const mirror of [false, true]) for (const reverse of [false, true])
         PLAYER_RUNNER_CASES.push({ hp, mirror, reverse, runner: { ...contest, motion, speed, punchSpeed, mainAttacker } });
 
-/** Actual local input keeps moving during punch windup/impact/recovery. Unlike an
- * AI carrier counter, movement is not paused by an authored tactical intention. */
+/** Local input yields horizontal movement while a locked punch lunges. */
 export function runPlayerRunnerTrace(spec: PlayerRunnerCase, snapshotAt?: number) {
   const { runner: r, hp } = spec;
   const trace = runFrameObjectiveTrace({ player: true, goal: false, lunge: r.attack === 'lunge',
     hp, reverse: spec.reverse, mirror: spec.mirror }, snapshotAt, undefined, undefined, r);
+  if (r.counter) {
+    const expected = checkPunchTrace(trace, hp, r.enemyHp, r.speed, r.shield);
+    return { ...trace, name: `player-runner/${JSON.stringify(spec)}`, scenario: spec,
+      differenceCount: trace.differenceCount + expected.differenceCount,
+      differences: [...trace.differences, ...expected.differences].slice(0, 64) };
+  }
   const record = parityRecorder();
   const hitTick = r.attack === 'none' ? 0 : r.attack === 'lunge' && r.motion === 'retreat' && r.speed === 130 ? 5 : 4;
   const clash = hitTick > 0 && r.counter && !r.shield;

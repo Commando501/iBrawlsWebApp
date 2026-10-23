@@ -2,7 +2,8 @@ import type { UniversalSettings } from '../types';
 import type { FieldPoint } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
-import { resolvePunchLungeDistance, GRIFBALL_PUNCH_RADIUS } from './runnerBallSettings';
+import { resolvePunchLungeDistance } from './runnerBallSettings';
+import { punchContactDistance } from './ballPunch';
 import { GRIFBALL_CLASH_PREFERENCES, type GrifballPlayerStyle } from './grifballPlayerStyles';
 
 /** Fresh, public animation observations. Hosts normalize elapsed/remaining clocks. */
@@ -77,9 +78,12 @@ export function chooseRunnerPunchClash(input: {
     if (horizontal < .001 || !isSpaceSegmentOpen(geometry, pos, predicted)) continue;
     if (threat.kind === 'slash' &&
       Math.hypot(horizontal, threat.pos.y + 1.65 - (pos.y + (input.runnerBodyHeight ?? .825))) > 2.8 + (input.runnerRadiusBonus ?? 0)) continue;
-    const punchReach = resolvePunchLungeDistance(settings);
-    if (Math.hypot(horizontal - punchReach, threat.pos.y + threat.bodyHeight - pos.y - 1.2) >
-      GRIFBALL_PUNCH_RADIUS + threat.radiusBonus) continue;
+    const lungeDuration = Math.max(.02, Math.min(.24, settings.hammerMeleeSpeed ?? .24));
+    const travel = Math.min(Math.max(0, horizontal - 1.15), resolvePunchLungeDistance(settings) * Math.min(1, impactIn / lungeDuration));
+    if (punchContactDistance({ id: 'runner', pos: { x: pos.x + x / horizontal * travel, y: pos.y, z: pos.z + z / horizontal * travel },
+      eyeHeight: (input.runnerBodyHeight ?? .825) < .7 ? .9 : 1.2, heading: { x: x / horizontal, y: 0, z: z / horizontal } },
+      { id: threat.id, pos: { ...predicted, y: threat.pos.y }, modelType: threat.radiusBonus > 0 ? 'large' : 'medium',
+        isCrouching: threat.bodyHeight < .7 }) === null) continue;
     candidates.push({ threat, impactIn, heading: { x: x / horizontal, z: z / horizontal } });
   }
   candidates.sort((a, b) => a.impactIn - b.impactIn || a.threat.id.localeCompare(b.threat.id));

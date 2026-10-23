@@ -91,7 +91,7 @@ for (const phase of ['swing_up', 'swing_down', 'recovering', 'ready'] as const)
     state.playerPos.set(0, 0, 0); state.yaw = state.pitch = state.crouchAmount = 0;
     state.activeWeapon = 'ball'; state.pWeaponState = phase;
     state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'player';
-    const attacker = createOfflineBotCombatant({ id: 'attacker', playerName: 'Sword', team: 'red',
+    const attacker = createOfflineBotCombatant({ id: 'attacker', playerName: 'Sword', team: 'blue',
       spawnPos: new THREE.Vector3(0, 0, -1), yaw: Math.PI, hue: 0, difficulty: 'normal', settings: state.settings });
     attacker.controller = 'remote'; attacker.activeWeapon = 'sword'; attacker.weaponState = 'swing_down';
     attacker.hp = attacker.maxHp = 2; attacker.invulnerabilityTimer = attacker.respawnTimer = 0;

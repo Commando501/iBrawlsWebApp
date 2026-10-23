@@ -130,6 +130,7 @@ export function updatePlayerPhysicsForState({
   pushStatsUpdate: () => void;
   onPauseToggle: () => void;
 }): void {
+  state.punchMap = activeCustomMap;
   if (isMultiplayer && (isPaused || (state.settings.gameMode === 'grifball' && state.grifball.phase !== 'playing'))) {
     state.playerVel.set(0, 0, 0); return;
   }

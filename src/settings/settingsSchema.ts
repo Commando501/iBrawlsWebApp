@@ -565,6 +565,7 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
   {
     key: 'grifballPunchLungeDistance',
     label: 'Punch Lunge Distance',
+    description: 'Maximum travel when punching with a red reticle. Normal jab reach stays fixed.',
     type: 'slider',
     sectionId: 'runnerBall',
     min: 0.5,
@@ -572,6 +573,18 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     step: 0.1,
     unit: 'm',
     formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'grifballPunchMagnetism',
+    label: 'Punch Magnetism',
+    description: 'Target acquisition and tracking assistance. 0% is off; a directly aimed lunge still travels straight.',
+    type: 'slider',
+    sectionId: 'runnerBall',
+    min: 0,
+    max: 100,
+    step: 1,
+    unit: '%',
+    formatValue: (v) => v === 0 ? '0% (Off)' : `${v.toFixed(0)}%`,
   },
   {
     key: 'grifballPunchCooldown',

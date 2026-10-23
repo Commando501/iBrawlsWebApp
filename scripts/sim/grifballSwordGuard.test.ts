@@ -33,7 +33,7 @@ function fixture(enabled = true, mirror = false, reverse = false, main = false, 
   sword.id = id; runner.id = 'runner'; sword.controller = runner.controller = 'ai';
   sim.combatants.push({ ...structuredClone(sword), id: 'outside', controller: 'remote', alive: false, hp: 0,
     pos: { x: 40, y: 35, z: 0 } });
-  bot.pos.set(0, 0, -2.5 * sign); target.pos.set(0, 0, 0);
+  bot.pos.set(0, 0, -1.9 * sign); target.pos.set(0, 0, 0);
   bot.yaw = sign === 1 ? Math.PI : 0; target.yaw = bot.yaw + Math.PI;
   bot.activeWeapon = 'sword'; bot.hp = bot.maxHp = 3; bot.aiState = 'APPROACHING'; bot.aiTimer = 0;
   bot.aiSwayTimer = 0; bot.aiDashRemaining = 0; bot.swapLockoutTimer = 0;
@@ -178,7 +178,7 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
     assert.equal(f.bot.weaponState, enabled ? 'ready' : 'swing_up');
     assert.equal(f.sword.weaponState, enabled ? 'idle' : 'windup');
     assert.ok(Math.abs(f.bot.pos.z - f.sword.pos.z) < 1e-9, 'physical spacing agrees');
-    if (enabled) assert.ok(Math.abs(f.bot.pos.z) > 2.5, 'defender actually steps backward');
+    if (enabled) assert.ok(Math.abs(f.bot.pos.z) > 1.9, 'defender actually steps backward');
     assert.equal(!!events.actorDecisionFrame!.decisions.find(d => d.id === id)!.ground, !enabled);
     if (enabled) {
       f.target.weaponState = 'recovering'; f.runner.weaponState = 'recovering'; f.runner.weaponTimer = .5;
@@ -218,7 +218,7 @@ for (const style of [undefined, 'enforcer', 'opportunist', 'guardian'] as const)
 for (const style of Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[]) for (const mirror of [false, true])
   test(`both production hosts execute ${style} spacing with stable defender identity, mirror=${mirror}`, () => {
     const f = fixture(true, mirror, mirror, mirror, style), id = f.bot.id, sign = mirror ? -1 : 1;
-    f.bot.pos.z = f.sword.pos.z = -3.52 * sign;
+    f.bot.pos.z = f.sword.pos.z = -2.22 * sign;
     f.target.weaponTimer = .1; f.runner.weaponTimer = .14; f.runner.weaponPhaseElapsed = .1;
     f.state.settings.speedBackward = f.sim.settings.speedBackward = 60;
     const live = f.liveDecision()!, sim = f.simDecision()!;
@@ -232,7 +232,7 @@ for (const style of Object.keys(GRIFBALL_PLAYER_STYLES) as GrifballPlayerStyle[]
       getScoreContext: () => ({ scorePlayer: 0, scoreEnemy: 0 }), isObserverMode: true, spawnPoints: f.map.spawnPoints, navigation: {} };
     withSimulationRandom(seededRandom(7), dt, () => update(id, dt));
     stepSimulation(f.sim, { runner: { ...idleAction(), aim: f.runner.yaw } }, createSimGrifballActorStepOptions(f.sim, control));
-    const expected = style === 'opportunist' ? 3.52 : style === 'guardian' ? 3.572 : 3.55;
+    const expected = style === 'opportunist' ? 2.22 : style === 'guardian' ? 2.272 : 2.25;
     assert.ok(Math.abs(Math.abs(f.bot.pos.z) - expected) < 1e-9, 'live movement follows the style clearance');
     assert.ok(Math.abs(f.bot.pos.z - f.sword.pos.z) < 1e-9, 'sim executes identical movement');
     assert.equal(f.bot.weaponState, 'ready'); assert.equal(f.sword.weaponState, 'idle');

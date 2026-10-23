@@ -7,6 +7,7 @@ import {
 } from './attackAnimationPresets';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
+import { advancePunchForState } from './ballPunchRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { sampleV3GameplayFirstPersonWeaponPose as sampleV3FirstPersonWeaponPose } from './v3GameplayAnimation';
 
@@ -49,6 +50,7 @@ export function updatePlayerHammerAnimationForState({
 }): void {
   const isV3Hammer = playerHammer.userData.modelSystem === 'v3';
   const isBallPunch = state.activeWeapon === 'ball';
+  advancePunchForState(state, 'player', dt);
 
   if (state.activeWeapon === 'hammer' || isBallPunch) {
     playerHammer.visible = !isBallPunch;

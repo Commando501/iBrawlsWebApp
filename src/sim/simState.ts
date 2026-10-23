@@ -55,6 +55,7 @@ export type SimMode = 'grifball' | 'combat';
 export type SimWeaponState = 'idle' | 'windup' | 'active' | 'recovering' | 'swapping';
 
 export interface SimCombatant {
+  punchAttack?: import('../game/ballPunch').PunchAttack;
   // Identity / teams
   id: string;
   team: TeamId;

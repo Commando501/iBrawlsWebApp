@@ -30,11 +30,11 @@ const baseInput = {
   random: () => 0.99,
 };
 
-test('carrier spacing uses configured punch projection and splash, independent of hammer tuning', () => {
+test('carrier spacing uses configured lunge travel plus jab reach, independent of hammer tuning', () => {
   for (const [configured, projection] of [[undefined, 1.8], [0.1, 0.5], [4, 4], [99, 5], [NaN, 1.8]]) {
     const settings = { ...baseInput, grifballPunchLungeDistance: configured };
-    assert.equal(resolveAICombatDangerZone(settings, 'ball'), projection! + 1.5 * .85);
-    assert.equal(resolveAICombatDangerZone({ ...settings, attackRange: 90, attackRadius: 40 }, 'ball'), projection! + 1.5 * .85);
+    assert.equal(resolveAICombatDangerZone(settings, 'ball'), projection! + 1.35);
+    assert.equal(resolveAICombatDangerZone({ ...settings, attackRange: 90, attackRadius: 40 }, 'ball'), projection! + 1.35);
     for (const weapon of ['hammer', 'sword'] as const)
       assert.equal(resolveAICombatDangerZone(settings, weapon), baseInput.attackRange + baseInput.attackRadius * .85);
   }

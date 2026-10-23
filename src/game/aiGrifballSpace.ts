@@ -2,6 +2,7 @@ import type { UniversalSettings } from '../types';
 import type { FieldPoint, GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import { resolveHammerSlamTiming } from './hammerSlamTiming';
 import { GRIFBALL_PUNCH_RADIUS, resolveDirectionalSpeedMultiplier, resolvePunchCooldown, resolvePunchLungeDistance } from './runnerBallSettings';
+import { BALL_PUNCH_REACH } from './ballPunch';
 import { createSpaceRouter, createSpaceRouterFactory, fieldDistance, isSpaceSegmentOpen, type GrifballSpaceGeometry, type SpaceRoute } from './grifballSpaceGeometry';
 
 export interface SpaceObservation {
@@ -60,11 +61,11 @@ export function observeGrifballSpace(settings: UniversalSettings, weapon: string
   const mobileIn = details.dashWaitsForLanding ? landingIn + dashRemaining : Math.max(landingIn, dashRemaining);
   return {
     weapon, phase, attackIn,
-    reach: weapon === 'ball' ? resolvePunchLungeDistance(settings) + GRIFBALL_PUNCH_RADIUS : weapon === 'sword' ? swordReach : settings.attackRange + settings.attackRadius,
-    blastRadius: weapon === 'ball' ? GRIFBALL_PUNCH_RADIUS : weapon === 'hammer' ? settings.attackRadius : 0,
+    reach: weapon === 'ball' ? BALL_PUNCH_REACH + GRIFBALL_PUNCH_RADIUS : weapon === 'sword' ? swordReach : settings.attackRange + settings.attackRadius,
+    blastRadius: weapon === 'hammer' ? settings.attackRadius : 0,
     speed: (weapon === 'ball' ? 5.8 : 5.2) * resolveDirectionalSpeedMultiplier(settings, 'forward', weapon === 'ball'),
-    lungeReach: weapon === 'sword' ? settings.swordLungeDistance : 0,
-    lungeSpeed: settings.swordLungeSpeed,
+    lungeReach: weapon === 'ball' ? BALL_PUNCH_REACH + resolvePunchLungeDistance(settings) : weapon === 'sword' ? settings.swordLungeDistance : 0,
+    lungeSpeed: weapon === 'ball' ? resolvePunchLungeDistance(settings) / .24 : settings.swordLungeSpeed,
     mobileIn,
   };
 }

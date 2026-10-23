@@ -1,9 +1,8 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
-import { GRIFBALL_PUNCH_RADIUS, resolvePunchCooldown, resolvePunchLungeDistance } from '../../game/runnerBallSettings';
+import { resolvePunchCooldown } from '../../game/runnerBallSettings';
+import { punchHitTargetForState } from './ballPunchRuntime';
 import type { MedalInfo } from '../../types';
-import { getCombatBodyCenter } from './combatGeometry';
-import { adjustRangeForTargetModel } from './modelHitbox';
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import { getLocalPlayerFeedName, recordDeathEvent } from './deathFeed';
 import { createReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
@@ -60,18 +59,7 @@ export function canRunnerPunchClash(state: GrifballRuntimeState, runnerId: strin
     || (sword ? sword.invulnerabilityTimer ?? 0 : state.playerInvulnerabilityTimer) > 0) return false;
   if ((runner ? runner.activeWeapon : state.activeWeapon) !== 'ball'
     || !activePunch(runner ? runner.weaponState : state.pWeaponState)) return false;
-  const pos = runner?.pos ?? state.playerPos;
-  const humanPunch = !runner || runner.controller === 'remote';
-  const heading = new THREE.Vector3(0, 0, -1);
-  if (humanPunch) heading.applyAxisAngle(new THREE.Vector3(1, 0, 0), runner ? runner.pitch ?? 0 : state.pitch);
-  heading.applyAxisAngle(new THREE.Vector3(0, 1, 0), runner?.yaw ?? state.yaw);
-  const eyeHeight = humanPunch ? 1.65 - (runner ? (runner.isCrouching ? .72 : 0) : state.crouchAmount) : 1.2;
-  const impact = pos.clone().add(new THREE.Vector3(0, eyeHeight, 0))
-    .addScaledVector(heading, resolvePunchLungeDistance(state.settings));
-  const target = sword?.pos ?? state.playerPos;
-  // Local punches use the standing body center, matching their existing impact.
-  const center = getCombatBodyCenter(target, humanPunch ? false : (sword?.isCrouching ?? state.isCrouching));
-  return impact.distanceTo(center) <= adjustRangeForTargetModel(GRIFBALL_PUNCH_RADIUS, sword?.modelType ?? state.playerModelType);
+  return punchHitTargetForState(state, runnerId) === swordId;
 }
 
 export function tryRunnerSwordClash(

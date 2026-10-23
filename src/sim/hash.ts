@@ -38,6 +38,7 @@ export function serializeState(state: SimState): string {
     `t=${state.tick}`,
     `seed=${state.seed}`,
     `rng=${state.rngState}`,
+    ...state.combatants.filter(c => c.punchAttack).map(c => `punch=${c.id}:${JSON.stringify(c.punchAttack)}`),
     // Old/neutral and legacy snapshots keep their hashes. Nonzero player view
     // geometry changes future impacts and must survive determinism comparisons.
     ...state.combatants.filter(c => combatExecutionForActor(state, c) === 'live-player-v1' && (c.pitch || c.crouchAmount))

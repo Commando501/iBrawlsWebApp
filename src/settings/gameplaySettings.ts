@@ -105,6 +105,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   grifballTrajectoryLineThickness: 0.014,
   grifballTrajectoryLineColor: '#ff2b2b',
   grifballPunchLungeDistance: 1.8,
+  grifballPunchMagnetism: 100,
   grifballPunchCooldown: 0.5,
   grifballRunnerHealth: 2,
   grifballRunnerHealDelay: 3.0,

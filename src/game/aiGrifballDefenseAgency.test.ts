@@ -39,7 +39,7 @@ test('schemas 1–8 migrate defense off and retain existing strengths, styles an
     old.defaults.agencyStrength = .8; old.defaults.runnerAgencyStrength = .7;
     old.botStyles.a = 'guardian'; old.teams.red = { runnerAgencyStrength: .4 };
     const config = validateGrifballTactics(old);
-    assert.equal(config.schemaVersion, 43); assert.equal(config.defaults.defenseAgencyStrength, 0);
+    assert.equal(config.schemaVersion, 44); assert.equal(config.defaults.defenseAgencyStrength, 0);
     assert.equal(config.defaults.agencyStrength, .8); assert.equal(config.defaults.runnerAgencyStrength, .7);
     assert.equal(config.botStyles.a, 'guardian'); assert.equal(resolveTeamTactics(config, 'red').runnerAgencyStrength, .4);
   }

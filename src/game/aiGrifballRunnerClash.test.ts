@@ -13,13 +13,13 @@ function fixture() {
   const geometry = buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52,
     arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData, 52);
   const config = defaultGrifballTactics(); config.defaults.runnerClashEnabled = true;
-  const threat: RunnerSwordThreat = { id: 'sword', pos: { x: 2.5, y: 0, z: 0 }, vel: { x: 0, z: 0 },
+  const threat: RunnerSwordThreat = { id: 'sword', pos: { x: 2.1, y: 0, z: 0 }, vel: { x: 0, z: 0 },
     kind: 'slash', age: .07, impactIn: .04, bodyHeight: .825, radiusBonus: 0 };
   const input = { pos: { x: 0, y: 0, z: 0 }, threats: [threat], geometry,
     tuning: config.defaults, settings: { ...DEFAULT_ADMIN_SETTINGS }, canPunch: true, dt: 1 / 60 };
   return { input, threat, config, run: () => chooseRunnerPunchClash(input) };
 }
-test('timed punch covers an imminent slash beyond the old proximity threshold', () => {
+test('timed punch closes the short gap before an imminent slash', () => {
   const f = fixture(); const result = f.run();
   assert.equal(result.action, 'punch'); assert.equal(result.targetId, 'sword');
   assert.deepEqual(result.heading, { x: 1, z: 0 });
@@ -35,14 +35,14 @@ test('reaction and counter window delay a punch without extending its active dur
   assert.equal(f.run().action, 'track'); assert.ok(f.run().window < .03);
 });
 test('an approaching lunge is timed from visible travel, not instantaneous attack ETA', () => {
-  const f = fixture(); Object.assign(f.threat, { kind: 'lunge', age: .1, impactIn: 0, vel: { x: -24, z: 0 } });
+  const f = fixture(); f.threat.pos.x = 2.5; Object.assign(f.threat, { kind: 'lunge', age: .1, impactIn: 0, vel: { x: -24, z: 0 } });
   const result = f.run(); assert.equal(result.action, 'punch');
   assert.ok(Math.abs(result.impactIn! - 1 / 24) < 1e-9);
   f.threat.vel.x = 24; assert.equal(f.run().action, 'none');
 });
 
 test('lunge contact respects model radius, height and a path that misses the runner', () => {
-  const f = fixture(); Object.assign(f.threat, { kind: 'lunge', age: .1, impactIn: 0, vel: { x: -24, z: 0 } });
+  const f = fixture(); f.threat.pos.x = 2.5; Object.assign(f.threat, { kind: 'lunge', age: .1, impactIn: 0, vel: { x: -24, z: 0 } });
   const larger = chooseRunnerPunchClash({ ...f.input, runnerRadiusBonus: .3 });
   assert.ok(Math.abs(larger.impactIn! - .7 / 24) < 1e-9);
   f.threat.pos.y = 2;
@@ -92,7 +92,7 @@ test('schema 10 migrates timing off while keeping player preferences and team ov
   delete old.defaults.runnerClashEnabled; delete old.defaults.runnerClashLead; delete old.defaults.runnerClashReaction;
   old.defaults.passAgencyStrength = .8; old.botStyles.runner = 'guardian';
   const result = validateGrifballTactics(old);
-  assert.equal(result.schemaVersion, 43); assert.equal(result.defaults.runnerClashEnabled, false);
+  assert.equal(result.schemaVersion, 44); assert.equal(result.defaults.runnerClashEnabled, false);
   assert.equal(result.defaults.passAgencyStrength, .8); assert.equal(result.botStyles.runner, 'guardian');
   result.teams.red = { runnerClashEnabled: true, runnerClashReaction: .12 };
   assert.equal(resolveTeamTactics(result, 'red').runnerClashReaction, .12);
@@ -111,6 +111,6 @@ for (const gate of ['runnerClashEnabled', 'enabled', 'spaceEnabled', 'runnerEnab
       settings: f.input.settings, dt: 1 / 60 };
     assert.equal(resolveGrifballCarrierDecision(input)!.kind, 'punch');
     f.input.tuning[gate] = false;
-    assert.equal(resolveGrifballCarrierDecision(input)!.kind, 'move');
+    assert.equal(resolveGrifballCarrierDecision(input)!.kind, 'punch', 'ordinary lunge punch remains available without clash timing');
     assert.equal(resolveGrifballCarrierDecision(input)!.clash, undefined);
   });

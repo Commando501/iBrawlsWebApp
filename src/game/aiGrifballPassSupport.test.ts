@@ -169,7 +169,7 @@ test('team overrides enable only that team and keep the landing depth independen
   assert.equal(cover.anchor.x - cover.destination.x, 6);
 });
 test('v1–18 presets migrate off without losing existing recovery settings; v19 validates both controls', () => {
-  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 43);
+  const current = defaultGrifballTactics(); assert.equal(current.schemaVersion, 44);
   assert.equal(current.defaults.passSupportEnabled, false); assert.equal(current.defaults.passSupportDepth, 4);
   for (let version = 1; version <= 18; version++) {
     const old = JSON.parse(JSON.stringify(current)); old.schemaVersion = version;

@@ -26,6 +26,8 @@ import { advanceAIDashMotion, finishAIHorizontalMotion, type AIDashMotionFrame }
 import type { ScriptedAIDashDecision, ScriptedAIDashFeedback } from './scriptedAIMobility';
 import { type UniversalSettings } from '../types';
 import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
+import { isPunchLungeActive } from '../game/ballPunch';
+import { startSimPunch } from './ballPunch';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
 import { GRAVITY_ACCELERATION } from '../components/grifball/combatGeometry';
 import { type SimState, type SimCombatant, combatExecutionForActor } from './simState';
@@ -118,6 +120,9 @@ export function stepCombatantMovement(
 
   // Face the requested aim instantly (mouse-equivalent), normalized to (-PI, PI].
   c.yaw = normalizeYaw(action.aim);
+  if (playerView && c.weapon === 'ball' && c.weaponState === 'idle' && action.attackPrimary &&
+    c.weaponReadyTimer <= 0 && c.attackCooldown <= 0 && c.dashRemaining <= 0) startSimPunch(state, c);
+  const punchLocked = c.weapon === 'ball' && isPunchLungeActive(c.punchAttack) && c.weaponState !== 'recovering';
   // Live local inputs allow crouching in flight; other profiles keep grounded-only stance.
   c.isCrouching = action.crouch && (engagementPrepared || playerView || !c.isJumping);
   const savedVelY = c.vel.y;
@@ -162,7 +167,9 @@ export function stepCombatantMovement(
   }
 
   // --- Horizontal velocity ---
-  if (c.dashRemaining > 0) {
+  if (punchLocked) {
+    c.vel.x = c.vel.z = 0; c.dashRemaining = 0; c.slideActive = false;
+  } else if (c.dashRemaining > 0) {
     c.dashRemaining = Math.max(0, c.dashRemaining - dt);
     const speed = settings.dashDistance / (settings.dashDuration || 0.25);
     c.vel.x = c.dashDir.x * speed;

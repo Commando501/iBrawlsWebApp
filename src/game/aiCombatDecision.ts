@@ -6,7 +6,8 @@ import {
   type MatchStateMultipliers,
 } from './aiTuning';
 import { type CharacterModelType, type UniversalSettings } from '../types';
-import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from './runnerBallSettings';
+import { resolvePunchLungeDistance } from './runnerBallSettings';
+import { BALL_PUNCH_REACH } from './ballPunch';
 
 export type AICombatWeapon = 'hammer' | 'sword';
 
@@ -106,13 +107,12 @@ export function isMissedLungeMemory(memory?: AILungeMemory | null): boolean {
     (memory.outcome === 'miss_timeout' || memory.outcome === 'miss_arena');
 }
 
-/** Base spacing heuristic, before style scaling. Punches use their own projected
- * reach and 1.5-unit splash instead of inheriting the hammer's larger volume. */
+/** Base spacing heuristic, before style scaling. Punch threat includes short lunge travel. */
 export function resolveAICombatDangerZone(
   settings: Pick<UniversalSettings, 'attackRange' | 'attackRadius' | 'grifballPunchLungeDistance'>,
   targetWeapon: AITacticalTarget['activeWeapon'],
 ): number {
-  return targetWeapon === 'ball' ? resolvePunchLungeDistance(settings) + GRIFBALL_PUNCH_RADIUS * 0.85
+  return targetWeapon === 'ball' ? BALL_PUNCH_REACH + resolvePunchLungeDistance(settings)
     : settings.attackRange + settings.attackRadius * 0.85;
 }
 

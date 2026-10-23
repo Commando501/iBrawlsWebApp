@@ -1,5 +1,6 @@
 import { runFrameObjectiveTrace, type FrameObjectiveCase, type RunnerCombatCase } from './grifballFrameObjectiveParity';
 import { parityRecorder } from './grifballMultiActorParity';
+import { checkPunchTrace } from './grifballPunchTraceChecks';
 export interface RunnerCombatSpec { frame: FrameObjectiveCase; runner: RunnerCombatCase }
 export const RUNNER_COMBAT_CASES: RunnerCombatSpec[] = [];
 for (const attack of ['none', 'slash', 'lunge'] as const) for (const counter of [false, true])
@@ -10,6 +11,11 @@ for (const attack of ['none', 'slash', 'lunge'] as const) for (const counter of 
           runner: { attack, counter, speed, punchSpeed, enemyHp, shield } });
 export function runRunnerCombatTrace(spec: RunnerCombatSpec, snapshotAt?: number) {
   const trace = runFrameObjectiveTrace(spec.frame, snapshotAt, undefined, undefined, spec.runner);
+  if (spec.runner.counter) {
+    const expected = checkPunchTrace(trace, spec.frame.hp, spec.runner.enemyHp, spec.runner.speed, spec.runner.shield);
+    return { ...trace, differenceCount: trace.differenceCount + expected.differenceCount,
+      differences: [...trace.differences, ...expected.differences].slice(0, 64) };
+  }
   const record = parityRecorder(), { frame, runner } = spec;
   const incoming = runner.attack !== 'none';
   const counterStarted = runner.counter && !runner.shield && !(incoming && runner.attack === 'lunge' && !frame.reverse);

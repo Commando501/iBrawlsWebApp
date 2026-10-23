@@ -13,10 +13,11 @@ const desktopDevice: DeviceInfo = {
   os: 'desktop',
 };
 
-const renderLocalCarrierHud = (passCharge: number, prepareForPlay = false) => {
+const renderLocalCarrierHud = (passCharge: number, prepareForPlay = false, crosshairColor: 'red' | 'white' = 'white') => {
   const stats: GameStats = {
     ...createInitialGameStats(90, 0),
     activeWeapon: prepareForPlay ? 'hammer' : 'ball',
+    crosshairColor,
     grifball: {
       phase: 'playing',
       blueGoals: 0,
@@ -82,4 +83,18 @@ test('loading prepares the complete runner HUD without exposing controls or chan
   assert.ok(markup.includes('Hold RMB Pass'));
   assert.ok(markup.includes('width:100%'));
   assert.ok(!markup.includes('Gravity Hammer'));
+});
+
+test('ball lock renders a red reticle and punch lunge prompt', () => {
+  const markup = renderLocalCarrierHud(0, false, 'red');
+  const crosshair = markup.slice(markup.indexOf('data-hud-id="crosshair"'));
+  assert.ok(crosshair.includes('border-red-500'));
+  assert.ok(crosshair.includes('Punch Lunge Ready'));
+});
+
+test('unlocked ball reticle stays white without a lunge prompt', () => {
+  const markup = renderLocalCarrierHud(0);
+  const crosshair = markup.slice(markup.indexOf('data-hud-id="crosshair"'));
+  assert.ok(crosshair.includes('border-white bg-white/5'));
+  assert.ok(!crosshair.includes('Punch Lunge Ready'));
 });

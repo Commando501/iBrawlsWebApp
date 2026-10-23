@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { type Combatant } from '../../types';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
+import { advancePunchForState } from './ballPunchRuntime';
 import {
   applyWeaponPose,
   getThirdPersonCombatantArmPose,
@@ -49,6 +50,7 @@ export function updateMainAIWeaponAnimationsForState({
   if (state.isMultiplayer || !enemyHammerModel || !enemySwordModel || !mainAI) return;
 
   const alive = mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING';
+  advancePunchForState(state, mainAI.id, dt, mainAI);
   syncV3DeathVoxelBurstForCombatant({
     refs,
     id: 'combatant:main_ai',

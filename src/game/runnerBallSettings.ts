@@ -2,8 +2,8 @@ import type { UniversalSettings } from '../types';
 
 export type RunnerMovementDirection = 'forward' | 'backward' | 'side';
 
-/** Existing punch splash radius, shared by execution and tactical observations. */
-export const GRIFBALL_PUNCH_RADIUS = 1.5;
+/** Model contact allowance used by conservative tactical reach estimates. */
+export const GRIFBALL_PUNCH_RADIUS = 0.65;
 
 const DEFAULT_RUNNER_SPEED_PERCENT = 130;
 const DEFAULT_TRAJECTORY_COLOR = '#ff2b2b';
@@ -60,6 +60,10 @@ export function resolveTrajectoryLineColor(settings: UniversalSettings): string 
 
 export function resolvePunchLungeDistance(settings: Pick<UniversalSettings, 'grifballPunchLungeDistance'>): number {
   return clamp(finiteNumber(settings.grifballPunchLungeDistance, 1.8), 0.5, 5.0);
+}
+
+export function resolvePunchMagnetism(settings: Pick<UniversalSettings, 'grifballPunchMagnetism'>): number {
+  return clamp(finiteNumber(settings.grifballPunchMagnetism, 100), 0, 100) / 100;
 }
 
 export function resolvePunchCooldown(settings: UniversalSettings): number {

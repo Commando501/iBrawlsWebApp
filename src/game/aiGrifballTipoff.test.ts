@@ -543,7 +543,7 @@ test('stable collector/reserve roles, mirrors, main_ai, team overrides and check
 });
 test('schema migration defaults tip-off off and preserves other styles and team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffEnabled, false);
   for (let version = 1; version <= 28; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1064,7 +1064,7 @@ test('team-scoped recovery follows main_ai through mirrored reorder and checkpoi
 
 test('v32 migrations disable regrouping without changing styles or existing opening controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffRegroupSeconds, 0);
   for (let v = 1; v < 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1363,7 +1363,7 @@ test('personal recovery survives JSON continuation and follows main_ai under mir
 
 test('v33 migration disables recovery individuality and preserves regroup and style settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffRecoveryAgencyStrength, 0);
   for (let v = 1; v <= 32; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1599,7 +1599,7 @@ test('screen handoff is deterministic across mirroring, roster order, main_ai an
 
 test('v34 screen handoff migration, overrides and strict boolean validation', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffScreenHandoffEnabled, false);
   for (let version = 1; version < 34; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -1860,7 +1860,7 @@ test('screen preferences remain deterministic across main_ai, mirrors, reorderin
 
 test('v35 migration defaults screen individuality off while preserving handoff and other preferences', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffScreenAgencyStrength, 0);
   for (let v = 1; v < 35; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2112,7 +2112,7 @@ test('target preferences preserve main_ai, mirrored teams, deterministic order a
 
 test('v36 migration defaults target individuality off and preserves existing tip-off controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffTargetAgencyStrength, 0);
   for (let v = 1; v < 36; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2272,7 +2272,7 @@ test('a changed rear reserve or regroup interval clears a screen target hold', (
 
 test('v37 imports leave commitment off while preserving target styles and prior controls', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffTargetCommitSeconds, 0);
   for (let v = 1; v < 37; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2401,7 +2401,7 @@ test('commitment individuality stays behind dependencies, safety and screen hand
 
 test('v38 migration leaves commitment individuality off and preserves earlier preferences', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffTargetCommitAgencyStrength, 0);
   for (let v = 1; v < 38; v++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -2632,7 +2632,7 @@ test('collector handoff follows main_ai, mirrors, overrides and JSON continuatio
 
 test('v39 migration leaves collector handoff off with a .35 s advantage', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffCollectorHandoffEnabled, false);
   assert.equal(config.defaults.tipoffCollectorAdvantage, 0.35);
   for (let v = 1; v < 39; v++) {
@@ -2827,7 +2827,7 @@ test('collector individuality ends with the opening and starts fresh on the next
 
 test('schema 40 migrates collector individuality at zero without changing existing handoff settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffCollectorAgencyStrength, 0);
   for (let version = 1; version < 40; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -3066,7 +3066,7 @@ test('reserve handoff lifecycle ends at possession, displacement or timeout and 
 
 test('schema 41 migrates reserve handoff off and preserves existing collector settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffReserveHandoffEnabled, false);
   for (let version = 1; version < 41; version++) {
     const old = JSON.parse(JSON.stringify(config));
@@ -3275,7 +3275,7 @@ test('reserve individuality clears on disabled dependencies and opening lifecycl
 
 test('schema 42 migrates reserve individuality at zero while preserving existing settings', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 43);
+  assert.equal(config.schemaVersion, 44);
   assert.equal(config.defaults.tipoffReserveAgencyStrength, 0);
   for (let v = 1; v < 42; v++) {
     const old = JSON.parse(JSON.stringify(config));
