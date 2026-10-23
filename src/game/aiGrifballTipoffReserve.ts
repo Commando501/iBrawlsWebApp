@@ -1,5 +1,10 @@
 import type { FieldPoint, GrifballTacticalPlayer } from './aiGrifballTeamPlan';
 import { tipoffScreenReadiness } from './aiGrifballTipoffScreen';
+import {
+  GRIFBALL_TIPOFF_RESERVE_PREFERENCES,
+  resolveGrifballPlayerStyle,
+  type GrifballPlayerStyle,
+} from './grifballPlayerStyles';
 
 export interface TipoffReserveCandidate {
   botId: string;
@@ -16,6 +21,20 @@ export interface TipoffReserveDecision {
   covered: boolean;
   reason: string;
   candidates: TipoffReserveCandidate[];
+  agency?: {
+    strength: number;
+    baselineId: string | null;
+    changedChoice: boolean;
+    bids: {
+      botId: string;
+      style: GrifballPlayerStyle;
+      arrival: number;
+      covered: boolean;
+      adjustment: number;
+      score: number;
+      rejection: string | null;
+    }[];
+  };
 }
 
 /** Coverage needs a ready defender in the rear lane, not just a role reservation.
@@ -43,14 +62,51 @@ export function chooseTipoffReserve(
   previousId: string | null,
   point: FieldPoint,
   halfWidth: number,
+  preferences?: { strength: number; styles: Readonly<Record<string, GrifballPlayerStyle>> },
 ): TipoffReserveDecision {
   const ordered = [...candidates].sort((a, b) => a.botId.localeCompare(b.botId));
   const eligible = ordered.filter((c) => !c.rejection && Number.isFinite(c.arrival));
-  const selected =
+  let selected =
     eligible.find((c) => c.botId === previousId) ??
     [...eligible].sort(
       (a, b) => Number(b.covered) - Number(a.covered) || a.arrival - b.arrival || a.botId.localeCompare(b.botId),
     )[0];
+  const agency: TipoffReserveDecision['agency'] =
+    preferences && preferences.strength > 0
+      ? { strength: preferences.strength, baselineId: selected?.botId ?? null, changedChoice: false, bids: [] }
+      : undefined;
+  // A style can fill a vacancy, never create one or give up established cover.
+  // Compare real arrivals only within the baseline choice's coverage group.
+  if (agency && selected && selected.botId !== previousId) {
+    const baseline = selected;
+    agency.bids = ordered.map((c) => {
+      const style = resolveGrifballPlayerStyle(preferences!.styles, c.botId);
+      const adjustment = agency.strength * GRIFBALL_TIPOFF_RESERVE_PREFERENCES[style].bias;
+      const rejection =
+        c.rejection ??
+        (!Number.isFinite(c.arrival)
+          ? 'No finite arrival.'
+          : baseline.covered && !c.covered
+            ? 'Preserve established rear coverage.'
+            : c.arrival > baseline.arrival + 0.35 + 1e-9
+              ? 'Outside the 0.35 s arrival window.'
+              : null);
+      return {
+        botId: c.botId,
+        style,
+        arrival: c.arrival,
+        covered: c.covered,
+        adjustment,
+        score: c.arrival + adjustment,
+        rejection,
+      };
+    });
+    const winner = agency.bids
+      .filter((c) => !c.rejection)
+      .sort((a, b) => a.score - b.score || a.arrival - b.arrival || a.botId.localeCompare(b.botId))[0];
+    if (winner) selected = eligible.find((c) => c.botId === winner.botId)!;
+    agency.changedChoice = selected.botId !== agency.baselineId;
+  }
   const reason = !selected
     ? 'No ready reserve can cover the rear lane; contain without a planned screen challenge.'
     : !selected.covered
@@ -66,7 +122,8 @@ export function chooseTipoffReserve(
     point: { ...point },
     halfWidth,
     covered: selected?.covered ?? false,
-    reason,
+    reason: agency?.changedChoice ? `Grifball style selects a nearby ready reserve. ${reason}` : reason,
     candidates: ordered,
+    ...(agency ? { agency } : {}),
   };
 }

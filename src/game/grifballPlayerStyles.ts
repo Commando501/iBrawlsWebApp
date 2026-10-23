@@ -192,6 +192,14 @@ export const GRIFBALL_TIPOFF_COLLECTOR_PREFERENCES = {
   guardian: { bias: .25, reason: 'Prefer coverage when a nearby teammate can collect without losing a safe pickup.' },
 } satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
 
+/** Preferences for a vacant reserve role; never override established coverage. */
+export const GRIFBALL_TIPOFF_RESERVE_PREFERENCES = {
+  balanced: { bias: 0, reason: 'Use coverage readiness and arrival order when the rear role opens.' },
+  enforcer: { bias: .25, reason: 'Prefer combat availability when a nearby teammate can provide equivalent rear cover.' },
+  opportunist: { bias: .1, reason: 'Prefer flexible support when a nearby teammate can provide equivalent rear cover.' },
+  guardian: { bias: -.25, reason: 'Volunteer for a close rear assignment while preserving established coverage.' },
+} satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
+
 export const GRIFBALL_TIPOFF_COMMITMENT_PREFERENCES = {
   balanced: { adjustment: 0, reason: 'Use the team target commitment duration.' },
   enforcer: { adjustment: 0.25, reason: 'Hold a safe opening target up to 0.25 s longer, within the 1.5 s limit.' },

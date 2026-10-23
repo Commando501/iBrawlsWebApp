@@ -16,7 +16,7 @@ import { updateGrifballObjectiveForState } from '../../src/components/grifball/g
 const dt = 1 / 60;
 const rounded = (v: unknown) =>
   JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'number' ? Math.round(x * 1e8) / 1e8 : x)));
-function reserveTrace(id: string, mirror: boolean, enabled: boolean) {
+function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuality?: number) {
   const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', attackRange: 1.8, attackRadius: 2 }, 'enemy');
   const { state, sim, bot, target } = f;
   const [self, enemy] = sim.combatants;
@@ -30,14 +30,15 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean) {
   Object.assign(state.grifballTactics.defaults, {
     tipoffEnabled: true,
     tipoffReserveHandoffEnabled: enabled,
-
+    tipoffReserveAgencyStrength: individuality ?? 0,
     stylesEnabled: false,
     passingEnabled: false,
     refreshSeconds: 0.05,
   });
+  if (individuality !== undefined) state.grifballTactics.botStyles[id] = 'guardian';
 
   for (const [c, live, name, t, x, z] of [
-    [self, bot, id, team, -10, 6],
+    [self, bot, id, team, individuality !== undefined ? -16.8 : -10, individuality !== undefined ? 0 : 6],
     [enemy, target, 'enemy', rival, 4, -6],
   ] as const) {
     c.id = name;
@@ -94,7 +95,7 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean) {
     covered = 0,
     returning = false;
   for (let tick = 0; tick < 150; tick++) {
-    if (tick === 1) {
+    if (tick === 1 && individuality === undefined) {
       incumbent.weaponState = 'recovering';
       incumbent.weaponTimer = sim.settings.hammerReloadTime;
     }
@@ -114,8 +115,14 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean) {
       b = state.aiMatchContext.grifballTeamPlan.assignments.get(id)!;
     assert.deepEqual(rounded(a.tipoff), rounded(b.tipoff));
     assert.deepEqual(rounded(a.destination), rounded(b.destination));
-    if (tick === 0) assert.equal(a.tipoff!.reserveId, 'reserve');
-    if (enabled && tick > 0) {
+    if (tick === 0) {
+      assert.equal(a.tipoff!.reserveId, individuality ? id : 'reserve');
+      if (individuality) {
+        assert.equal(a.tipoff!.reserveSelection!.agency!.changedChoice, true);
+        assert.equal(a.tipoff!.reserveSelection!.agency!.baselineId, 'reserve');
+      }
+    }
+    if (individuality === undefined ? enabled && tick > 0 : individuality > 0) {
       assert.equal(a.tipoff!.reserveId, id);
       assert.equal(a.tipoff!.job, 'reserve');
       if (a.tipoff!.reserveSelection!.covered) covered++;
@@ -179,8 +186,8 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean) {
     frames.push({ ...self.pos });
   }
   assert.equal(sim.match.ball.holderId, null);
-  if (enabled) {
-    assert.ok(pending > 0, 'replacement spends real frames returning');
+  if (individuality === undefined ? enabled : individuality > 0) {
+    if (individuality === undefined) assert.ok(pending > 0, 'replacement spends real frames returning');
     assert.ok(covered > 0, 'replacement actually reaches rear coverage');
     assert.equal(returning, true, 'recovered reserve does not take the role back');
   }
@@ -190,4 +197,10 @@ for (const id of ['main_ai', 'bot_2'])
   for (const mirror of [false, true])
     test('live/sim reserve handoff executes return to coverage ' + id + '/' + mirror, () => {
       assert.notDeepEqual(reserveTrace(id, mirror, true), reserveTrace(id, mirror, false));
+    });
+
+for (const id of ['main_ai', 'bot_2'])
+  for (const mirror of [false, true])
+    test('live/sim reserve individuality changes role and executed movement ' + id + '/' + mirror, () => {
+      assert.notDeepEqual(reserveTrace(id, mirror, true, 1), reserveTrace(id, mirror, true, 0));
     });

@@ -281,6 +281,7 @@ export function applyGrifballTipoff(
         [...previous.values()].find((a) => a.team === team && a.tipoff?.job === 'reserve')?.botId ?? null,
         reservePoint,
         spacing / 2,
+        { strength: tuning.tipoffReserveAgencyStrength, styles: snapshot.tactics?.botStyles ?? {} },
       )
     : undefined;
   const reserve = reserveSelection ? support.find((a) => a.botId === reserveSelection.selectedId) : ranked[0];
