@@ -36,7 +36,9 @@ import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { deflectBallWithHammer } from '../game/hammerBallDeflection';
 import { exceedsSwordLungeTravel } from '../game/swordLungeTravel';
 import { dropBall } from '../game/grifballBall';
-import { GRIFBALL_PUNCH_RADIUS, resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
+import { resolvePunchCooldown } from '../game/runnerBallSettings';
+import { BALL_PUNCH_REACH, punchContactDistance } from '../game/ballPunch';
+import { simPunchActor, simPunchHitTarget, stepSimPunch } from './ballPunch';
 import { adjustRangeForTargetModel } from '../components/grifball/modelHitbox';
 import { awardTeamKill, recordTeamDeath } from '../game/teamScoring';
 import {
@@ -86,8 +88,8 @@ function recoverDuration(c: SimCombatant, settings: UniversalSettings): number {
 
 function meleeReach(c: SimCombatant, settings?: UniversalSettings): number {
   if (c.weapon === 'sword') return MELEE_SWORD_SLASH_REACH;
-  if (c.weapon === 'ball') return settings ? resolvePunchLungeDistance(settings) : 1.8;
-  return MELEE_HAMMER_SWIPE_REACH; // hammer & ball-punch share the swipe reach
+  if (c.weapon === 'ball') return BALL_PUNCH_REACH;
+  return MELEE_HAMMER_SWIPE_REACH;
 }
 
 /** Hammer-strike forward distance (live-tunable `attackRange`). */
@@ -161,13 +163,7 @@ function canRunnerPunchClash(state: SimState, runner: SimCombatant, sword: SimCo
   if (state.match.ball.state !== 'held' || state.match.ball.holderId !== runner.id
     || !runner.alive || runner.hp <= 0 || runner.weapon !== 'ball' || sword.invulnerabilityTimer > 0
     || (runner.weaponState !== 'windup' && runner.weaponState !== 'active')) return false;
-  const execution = combatExecutionForActor(state, runner);
-  if (isMixedPlayer(state, runner) || execution === 'live-player-v1') return inPlayerPunchVolume(runner, sword, settings);
-  if (!isRosterExecution(execution)) return inMeleeHitVolume(runner, sword, settings);
-  const fwd = forwardDir(runner.yaw), reach = resolvePunchLungeDistance(settings);
-  return Math.hypot(sword.pos.x - runner.pos.x - fwd.x * reach,
-    sword.pos.y + (sword.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT) - runner.pos.y - 1.2,
-    sword.pos.z - runner.pos.z - fwd.z * reach) <= adjustRangeForTargetModel(GRIFBALL_PUNCH_RADIUS, sword.modelType);
+  return simPunchHitTarget(state, runner)?.id === sword.id;
 }
 
 const SIM_FPS = 60;
@@ -225,6 +221,7 @@ export function inMeleeHitVolume(
   settings?: UniversalSettings,
   playerView = false
 ): boolean {
+  if (attacker.weapon === 'ball') return punchContactDistance(simPunchActor(attacker, playerView), victim) !== null;
   const reach = playerView ? adjustRangeForTargetModel(meleeReach(attacker, settings), victim.modelType) : meleeReach(attacker, settings);
   const fwd = playerView ? playerLookDirection(attacker) : forwardDir(attacker.yaw);
   const ey = attacker.pos.y + MELEE_EYE_HEIGHT - (playerView ? attacker.crouchAmount ?? 0 : 0);
@@ -306,13 +303,11 @@ function resolveHammerStrike(
   }
 }
 
-/** Player punch uses a 1.5-unit splash around its projected impact, not a swipe cone. */
+/** A jab intersects the model body within fixed arm reach. */
 export function inPlayerPunchVolume(attacker: SimCombatant, victim: SimCombatant, settings: UniversalSettings): boolean {
-  const fwd = playerLookDirection(attacker);
-  const reach = resolvePunchLungeDistance(settings);
-  return Math.hypot(victim.pos.x - attacker.pos.x - fwd.x * reach,
-    victim.pos.y + BODY_CENTER_HEIGHT - attacker.pos.y - MELEE_EYE_HEIGHT + (attacker.crouchAmount ?? 0) - fwd.y * reach,
-    victim.pos.z - attacker.pos.z - fwd.z * reach) <= adjustRangeForTargetModel(GRIFBALL_PUNCH_RADIUS, victim.modelType);
+  const actor = simPunchActor(attacker, true);
+  if (attacker.punchAttack?.targetId) actor.heading = attacker.punchAttack.direction;
+  return punchContactDistance(actor, victim) !== null;
 }
 
 function playerLookDirection(c: SimCombatant) {
@@ -320,23 +315,24 @@ function playerLookDirection(c: SimCombatant) {
   return { x: Math.sin(c.yaw) * planar, y: Math.sin(pitch), z: Math.cos(c.yaw) * planar };
 }
 
-function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], learning?: RosterCombatLearning): void {
-  for (const victim of state.combatants) {
-    if (victim.alive && areHostile(c, victim) && victim.invulnerabilityTimer <= 0 && inPlayerPunchVolume(c, victim, settings)) {
-      if (!strike(state, c, victim, settings, events)) {
-        learning?.lifecycle?.impact(victim, c, 'melee');
-        return;
-      }
-      learning?.lifecycle?.impact(c, victim, 'melee');
+function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], learning?: RosterCombatLearning, feedback?: RosterMeleeHitFeedback): void {
+  const victim = simPunchHitTarget(state, c);
+  if (victim) {
+    if (!strike(state, c, victim, settings, events)) {
+      learning?.lifecycle?.impact(victim, c, 'melee');
+      return;
     }
+    if (isRosterExecution(combatExecutionForActor(state, c))) learning?.meleeHit(c, victim);
+    learning?.lifecycle?.impact(c, victim, 'melee');
+    if (victim.hp > 0) feedback?.(c, victim);
   }
 }
 
-/** Roster bots use a planar, body-centered splash, including sword and side-swipe. */
+/** Ball punches contact one model; other roster melee retains its splash geometry. */
 function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[], feedback?: RosterMeleeHitFeedback, learning?: RosterCombatLearning): void {
-  const reach = c.weapon === 'ball' ? resolvePunchLungeDistance(settings)
-    : strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
-  const radius = c.weapon === 'ball' ? GRIFBALL_PUNCH_RADIUS : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
+  if (c.weapon === 'ball') { resolvePlayerPunch(state, c, settings, events, learning, feedback); return; }
+  const reach = strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
+  const radius = c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
   const fwd = forwardDir(c.yaw);
   const impact = c.weapon === 'hammer' && c.hammerJumpPlanned
     ? { x: c.pos.x, y: c.pos.y + 1.2 - reach, z: c.pos.z }
@@ -416,6 +412,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       learning?.hammerAttack(c);
     enter('windup', swingDuration());
   }
+  stepSimPunch(state, c, dt);
   const previous = c.weaponPhaseElapsed ?? 0;
   const elapsed = previous + dt;
   c.weaponPhaseElapsed = elapsed;
@@ -839,6 +836,7 @@ export function stepCombatantWeapons(
     return;
   }
 
+  stepSimPunch(state, c, dt);
   switch (c.weaponState) {
     case 'idle': {
       // Secondary: sword = lunge, hammer = quick swipe, ball = pass (handled in grifball.ts).
@@ -849,7 +847,9 @@ export function stepCombatantWeapons(
       // Primary: hammer = AoE strike, sword = slash, ball = punch.
       if (action.attackPrimary && canAttack) {
         const kind = c.weapon === 'hammer' ? 'strike' : c.weapon === 'sword' ? 'slash' : 'punch';
+        delete c.punchAttack;
         beginAttack(c, kind, settings);
+        stepSimPunch(state, c, 0);
       }
       break;
     }
@@ -863,6 +863,8 @@ export function stepCombatantWeapons(
           // A grounded hammer strike opens the hammer-jump window (sim has no pitch, so we
           // gate on "grounded" instead of the live "aim the impact at your feet").
           if (c.grounded) c.hammerJumpWindowTimer = settings.hammerJumpWindow ?? 0.6;
+        } else if (c.attackKind === 'punch') {
+          resolvePlayerPunch(state, c, settings, events);
         } else {
           resolveMeleeHit(state, c, settings, events);
         }

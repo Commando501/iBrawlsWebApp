@@ -966,7 +966,7 @@ export const HUD: React.FC<HUDProps> = ({
         <DraggableHUDItem {...getDraggableProps('crosshair')}>
           <div className="relative flex items-center justify-center pointer-events-none">
             {/* Crosshair Outer Ring */}
-            {activeWeapon === 'sword' ? (
+            {activeWeapon === 'sword' || activeWeapon === 'ball' ? (
               <div 
                 className={`w-12 h-12 border-2 rounded-full flex items-center justify-center transition-all duration-150 ${
                   stats.crosshairColor === 'red'
@@ -977,7 +977,7 @@ export const HUD: React.FC<HUDProps> = ({
                 {/* Inner dot or target bracket/lines */}
                 <div className={`w-1.5 h-1.5 rounded-full ${stats.crosshairColor === 'red' ? 'bg-red-500 animate-pulse' : 'bg-white/70'}`} />
                 
-                {/* Decorative crosshair notches for Sword locking */}
+                {/* Target-lock notches for sword and ball lunges */}
                 <div className={`absolute w-0.5 h-2 -top-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
                 <div className={`absolute w-0.5 h-2 -bottom-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
                 <div className={`absolute h-0.5 w-2 -left-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
@@ -986,7 +986,7 @@ export const HUD: React.FC<HUDProps> = ({
                 {/* Lunge Prompter text overlay */}
                 {stats.crosshairColor === 'red' && (
                   <div className="absolute text-[8px] font-mono text-red-400 font-extrabold top-14 whitespace-nowrap animate-bounce uppercase">
-                    Lunge Ready
+                    {activeWeapon === 'ball' ? 'Punch Lunge Ready' : 'Lunge Ready'}
                   </div>
                 )}
               </div>

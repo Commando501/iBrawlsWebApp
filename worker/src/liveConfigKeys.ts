@@ -82,6 +82,7 @@ export const LIVE_CONFIG_KEYS: string[] = [
   "grifballPunchCooldown",
   "grifballPunchLungeDistance",
   "grifballPunchLungeRange",
+  "grifballPunchMagnetism",
   "grifballRoundResetDelay",
   "grifballRunnerHealDelay",
   "grifballRunnerHealRate",

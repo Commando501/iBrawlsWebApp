@@ -9,6 +9,8 @@ import { type CharacterModelType, type Combatant, type DeathEvent, type MedalInf
 import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
+  playerPunchAttack?: import('../../game/ballPunch').PunchAttack;
+  punchMap?: import('../../types').CustomMapData | null;
   onlineGrifball?: OnlineGrifballState;
   grifballTactics?: GrifballTacticsConfig;
   /** Local validation-owned roster tuning; never serialized into settings/network messages. */

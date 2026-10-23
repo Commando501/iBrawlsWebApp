@@ -27,7 +27,7 @@ function fixture(enabled: boolean, mirror: boolean, reverse: boolean, reaction =
   sim.combatExecution = 'live-roster-v2'; sim.match.phase = 'playing'; state.grifball = structuredClone(sim.match);
   enemy.id = 'sword'; runner.id = 'runner'; runner.controller = 'ai';
   const sign = mirror ? -1 : 1;
-  bot.pos.set(2.5 * sign, 0, 0); target.pos.set(0, 0, 0);
+  bot.pos.set(2.1 * sign, 0, 0); target.pos.set(0, 0, 0);
   bot.yaw = getYawForHeading(-sign, 0); target.yaw = getYawForHeading(sign, 0);
   bot.activeWeapon = 'sword'; bot.hp = bot.maxHp = 2;
   for (const [c, live] of [[enemy, bot], [runner, target]] as const) {
@@ -96,7 +96,8 @@ for (const enabled of [false, true]) for (const mirror of [false, true]) for (co
       assert.ok(result.punchTick >= 8 && result.punchTick <= 10, `counter tick ${result.punchTick}`);
       assert.equal(result.runnerHP, 7); assert.equal(result.swordHP, 1, 'counter deals normal one-point damage');
     } else {
-      assert.equal(result.punchTick, 0); assert.equal(result.runnerHP, 0, 'proximity-only runner loses to the slash at 2.5m');
+      assert.equal(result.punchTick, 1); assert.equal(result.runnerHP, 7);
+      assert.equal(result.swordHP, 1, 'ordinary lunge punch reaches the model without the timing module');
     }
   });
 
@@ -202,7 +203,8 @@ test('a deliberately slow reaction misses the short slash instead of granting im
       constrainCombatantToArena: () => {}, triggerCombatantAttack: () => { punched = true; } });
     f.visuals(dt);
   }
-  assert.equal(punched, false); assert.equal(f.target.hp, 0);
+  assert.equal(punched, true, 'ordinary proximity punch can still be attempted after the counter window is missed');
+  assert.equal(f.target.hp, 0, 'an attempted punch grants no immunity without model contact');
 });
 
 for (const player of [false, true]) for (const age of [.03, .07, .12])
@@ -228,7 +230,7 @@ for (const player of [false, true]) for (const age of [.03, .07, .12])
       alliesList: [], enemiesList: [bot.pos], dt, canStartWeaponAction: true, getEnemyGoalPos: () => ({ x: 47, z: 0 }),
       constrainCombatantToArena: () => {}, triggerCombatantAttack: () => { punch = true; } });
     const result = resolveSimGrifballCarrierInput(sim, plan, 'runner', { runner: 'normal' }, true, dt, { punch: true })!;
-    assert.equal(punch, age === .07);
+    assert.equal(punch, age >= .07, 'a spent sword observation still permits an ordinary nearby punch');
     assert.equal(result.decision.kind === 'punch', punch);
     const live = state.aiMatchContext.grifballTeamPlan.assignments.get('runner')!.runnerClash!;
     assert.equal(result.decision.clash!.action, live.action);

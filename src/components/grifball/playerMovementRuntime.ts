@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type Keybindings } from '../../types';
 import { resolveDirectionalSpeedMultiplier } from '../../game/runnerBallSettings';
+import { isPunchLungeActive } from '../../game/ballPunch';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -80,6 +81,12 @@ export function updatePlayerHorizontalMovementForState({
   }
 
   state.playerIsSprinting = false;
+  if (state.activeWeapon === 'ball' && isPunchLungeActive(state.playerPunchAttack) &&
+    (state.pWeaponState === 'swing_up' || state.pWeaponState === 'swing_down')) {
+    state.playerVel.x = state.playerVel.z = 0;
+    state.playerDashRemaining = 0; state.playerSlideActive = false;
+    return;
+  }
   const isPlayerDashing = state.playerDashRemaining > 0;
   if (isPlayerDashing) {
     state.playerDashRemaining = Math.max(0, state.playerDashRemaining - dt);

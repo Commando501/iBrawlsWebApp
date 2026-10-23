@@ -1,4 +1,5 @@
 import { simulationTimestamp } from '../../game/simulationRandom';
+import { startPlayerPunchForState } from './ballPunchRuntime';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type CharacterModelType, type Combatant } from '../../types';
@@ -44,6 +45,7 @@ export function triggerPlayerHammerSwingForState({
   state.pWeaponState = 'swing_up';
   state.pWeaponTimer = 0;
   state.pWeaponReady = false;
+  if (state.activeWeapon === 'ball') startPlayerPunchForState(state);
   state.lastPlayerHammerAttackTime = simulationTimestamp();
   recordHammerAttack();
   playSwing();

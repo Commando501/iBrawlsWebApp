@@ -31,7 +31,7 @@ policy dynamic (AI-only / unused) · 🎨 cosmetic.
 | `grifballAllowThrowing` | step, grifball | blocks pass charge and release |
 | `grifballRunnerSpeedForward` / `grifballRunnerSpeedBackward` / `grifballRunnerSpeedSide` | physics | carrier-only multipliers stacked on universal directional speed |
 | `grifballAllowRunnerThrust` | physics | blocks new dash/thrust starts while carrying |
-| `grifballPunchLungeDistance` / `grifballPunchCooldown` | weapons | ball-punch reach and recovery cooldown |
+| `grifballPunchLungeDistance` / `grifballPunchMagnetism` / `grifballPunchCooldown` | weapons, ballPunch | short lunge travel, 0–100% target assistance, and recovery; fixed jab reach hits one model |
 | `grifballRunnerHealth` / `grifballRunnerHealDelay` / `grifballRunnerHealRate` | grifball | carrier pickup HP and delayed healing |
 
 Runner / Ball settings are wired into the sim and live gameplay, but this change intentionally
@@ -84,7 +84,7 @@ If sprint/slide become important levers, they're a bounded follow-up like the ab
 - **AI-only** (drive the scripted heuristic, not the RL agent's physics): all `ai*` tuning
   keys, `aiDifficulty`, `aiArchetype`, `grifballEscortSpacing`.
 - **Legacy unused:** `grifballPunchLungeRange` (kept for older saved settings; current punch
-  reach uses `grifballPunchLungeDistance`).
+  lock range is fixed jab reach plus `grifballPunchLungeDistance`).
 
 ## 🎨 Cosmetic (no dynamics)
 

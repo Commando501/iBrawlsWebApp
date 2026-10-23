@@ -1,4 +1,5 @@
 import { type Combatant } from '../../types';
+import { getPlayerPunchLockTarget } from './ballPunchRuntime';
 import { updateMainAIWeaponAnimationsForState } from './mainAIWeaponAnimationRuntime';
 import { updatePlayerHammerAnimationForState } from './playerHammerAnimationRuntime';
 import { updatePlayerPistolAnimationForState } from './playerPistolAnimationRuntime';
@@ -77,7 +78,7 @@ export function updateWeaponAnimationFrameForState({
     idleYBob = Math.sin(timeScale * 1.5) * 0.008;
   }
 
-  state.crosshairColor = getPlayerSwordLockTarget() ? 'red' : 'white';
+  state.crosshairColor = (state.activeWeapon === 'ball' ? getPlayerPunchLockTarget(state, mainAI) : getPlayerSwordLockTarget()) ? 'red' : 'white';
 
   if (state.playerHP <= 0) {
     for (const model of [playerHammer, playerSword, refs.playerPistol]) {

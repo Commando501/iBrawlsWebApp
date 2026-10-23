@@ -95,6 +95,26 @@ function deliver(host: ReturnType<typeof fixture>, follower: ReturnType<typeof f
   return data;
 }
 
+test('host punch distance reaches clients and observers while magnetism stays a local option', () => {
+  const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
+  h.state.settings.grifballPunchLungeDistance = 0.5;
+  h.state.settings.grifballPunchMagnetism = 100;
+  c.state.settings.grifballPunchMagnetism = 0;
+  o.state.settings.grifballPunchMagnetism = 25;
+  h.tick();
+  const message = deliver(h, c);
+  deliver(h, o);
+  assert.equal(message.objective.rules.grifballPunchLungeDistance, 0.5);
+  assert.equal(c.state.settings.grifballPunchLungeDistance, 0.5);
+  assert.equal(o.state.settings.grifballPunchLungeDistance, 0.5);
+  assert.equal(c.state.settings.grifballPunchMagnetism, 0);
+  assert.equal(o.state.settings.grifballPunchMagnetism, 25);
+  h.state.settings.grifballPunchLungeDistance = 5;
+  h.tick(); deliver(h, c); deliver(h, o);
+  assert.equal(c.state.settings.grifballPunchLungeDistance, 5);
+  assert.equal(o.state.settings.grifballPunchLungeDistance, 5);
+});
+
 test('runner swap requests a host-authorized drop and restores the pre-pickup sword on all peers', () => {
   const h = fixture('host', 'h'), c = fixture('client', 'c'), o = fixture('observer', 'o');
   h.peer('c').activeWeapon = 'sword';

@@ -4,7 +4,8 @@ import { resolveCombatHitDamageForState } from './combatDamage';
 import { cancelSwordForRunnerPunch, tryRunnerSwordClash } from './runnerSwordClash';
 import { applyAIHammerJumpAtImpact } from './aiHammerJumpImpact';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
-import { GRIFBALL_PUNCH_RADIUS, resolvePunchLungeDistance } from '../../game/runnerBallSettings';
+import { BALL_PUNCH_REACH } from '../../game/ballPunch';
+import { punchHitTargetForState } from './ballPunchRuntime';
 import { getForwardHeadingForYaw } from '../../game/yaw';
 import { getCombatBodyCenter, SWORD_SLASH_FORWARD_FACTOR, SWORD_SLASH_RADIUS } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
@@ -52,18 +53,19 @@ export function applyBotMeleeImpactForState({
   const weapon = bot.activeWeapon === 'sword' ? 'sword' : (bot.activeWeapon === 'ball' ? 'ball' : 'hammer');
   const isHammer = weapon === 'hammer';
   const isBall = weapon === 'ball';
+  const punchTarget = isBall ? punchHitTargetForState(state, botId) : null;
   const recordComboHit = (targetId: string) => {
     if (isBall || bot.controller !== 'ai') return;
     const melee = weapon === 'sword' || bot.weaponState === 'melee_down' || bot.weaponState === 'melee_swing';
     tryStartComboOnHit?.(botId, targetId, weapon, melee ? { targetRecovering: true } : undefined);
   };
   const forward = isBall
-    ? resolvePunchLungeDistance(state.settings)
+    ? BALL_PUNCH_REACH
     : (isHammer
       ? (state.settings.attackRange ?? 3.2)
       : (state.settings.attackRange ?? 3.2) * SWORD_SLASH_FORWARD_FACTOR);
   const radius = isBall
-    ? GRIFBALL_PUNCH_RADIUS
+    ? 0
     : (isHammer ? (state.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS);
 
   const eye = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);
@@ -82,12 +84,10 @@ export function applyBotMeleeImpactForState({
   if (isHammer) {
     deflectBallWithHammerForState(state, bot.pos, impactPos, radius);
     renderHammerSplashVfx(impactPos, '#f97316', radius);
-  } else if (isBall) {
-    spawnVoxelShockwaveParticles(impactPos, '#7dd3fc'); // cyan shockwave for punch!
-  } else {
+  } else if (!isBall) {
     spawnVoxelShockwaveParticles(impactPos, '#ef4444');
   }
-  playExplosion();
+  if (!isBall) playExplosion();
 
   const creditKill = (
     victimId: string,
@@ -114,8 +114,8 @@ export function applyBotMeleeImpactForState({
     state.playerRespawnTimer <= 0 &&
     state.playerInvulnerabilityTimer <= 0 &&
     areGrifballCombatantsHostileForState(state, botId, 'player') &&
-    impactPos.distanceTo(getCombatBodyCenter(state.playerPos, state.isCrouching)) <=
-      adjustRangeForTargetModel(radius, state.playerModelType)
+    (isBall ? punchTarget === 'player' : impactPos.distanceTo(getCombatBodyCenter(state.playerPos, state.isCrouching)) <=
+      adjustRangeForTargetModel(radius, state.playerModelType))
   ) {
     if (weapon === 'sword' && tryRunnerSwordClash(state, botId, 'player', {
       playSwing, playDeath, spawnVoxelShockwaveParticles, recordBotCalibrationDeath, recordBotPsychKill,
@@ -152,7 +152,7 @@ export function applyBotMeleeImpactForState({
     if (!areGrifballCombatantsHostileForState(state, botId, otherId)) return;
     const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
     if (
-      impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) >
+      isBall ? punchTarget !== otherId : impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) >
       adjustRangeForTargetModel(radius, other.modelType)
     ) return;
     if (weapon === 'sword' && tryRunnerSwordClash(state, botId, otherId, {

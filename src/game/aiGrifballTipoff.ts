@@ -14,6 +14,11 @@ import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGr
 import { chooseTipoffScreen, tipoffScreenReadiness, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
 import { chooseTipoffCollector, type TipoffCollectorDecision } from './aiGrifballTipoffCollector';
 import { chooseTipoffReserve, isTipoffReserveCovering, type TipoffReserveDecision } from './aiGrifballTipoffReserve';
+import { planTipoffLanes, type TipoffLaneDecision } from './aiGrifballTipoffLanes';
+import {
+  applyGrifballTipoffReservePosition,
+  type TipoffReservePositionDecision,
+} from './aiGrifballTipoffReservePosition';
 import { observedGrifballPickupHasPriority } from './aiGrifballPickupAgency';
 import { chooseTipoffTarget, type TipoffTargetDecision } from './aiGrifballTipoffTarget';
 import {
@@ -50,6 +55,8 @@ export interface TipoffOrder {
   targetSelection?: TipoffTargetDecision;
   collectorSelection?: TipoffCollectorDecision;
   reserveSelection?: TipoffReserveDecision;
+  reservePosition?: TipoffReservePositionDecision;
+  laneSelection?: TipoffLaneDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -281,6 +288,7 @@ export function applyGrifballTipoff(
         [...previous.values()].find((a) => a.team === team && a.tipoff?.job === 'reserve')?.botId ?? null,
         reservePoint,
         spacing / 2,
+        { strength: tuning.tipoffReserveAgencyStrength, styles: snapshot.tactics?.botStyles ?? {} },
       )
     : undefined;
   const reserve = reserveSelection ? support.find((a) => a.botId === reserveSelection.selectedId) : ranked[0];
@@ -357,15 +365,26 @@ export function applyGrifballTipoff(
     : undefined;
   const sideOf = (p: FieldPoint) => Math.sign(-dz * (p.x - snapshot.ball.x) + dx * (p.z - snapshot.ball.z)) || 1;
   const firstSide = remaining[0] ? sideOf(bot(remaining[0]).pos) : 1;
+  const laneDepth = (a: GrifballAssignment) =>
+    contain || personalRecovery.get(a.botId)?.holding ? reach + spacing : a === screen ? 2 : reach + 1.5;
   remaining.forEach((a, i) =>
-    slots.set(
-      a,
-      point(
-        contain || personalRecovery.get(a.botId)?.holding ? reach + spacing : a === screen ? 2 : reach + 1.5,
-        firstSide * (i % 2 ? -1 : 1) * spacing * (1 + Math.floor(i / 2)),
-      ),
-    ),
+    slots.set(a, point(laneDepth(a), firstSide * (i % 2 ? -1 : 1) * spacing * (1 + Math.floor(i / 2)))),
   );
+  const laneSelections = tuning.tipoffLaneContinuityEnabled
+    ? planTipoffLanes({
+        snapshot,
+        remaining,
+        slots,
+        previous,
+        tuning,
+        routers,
+        collectorId: collector.id,
+        spacing,
+        firstSide,
+        point,
+        depth: laneDepth,
+      })
+    : undefined;
   // A small roster may consist only of the collector; no fictitious reserve.
   // Keep all destinations reachable or keep that bot at its current position.
   for (const [a, destination] of slots)
@@ -518,6 +537,7 @@ export function applyGrifballTipoff(
       ...(screenSelection ? { screenSelection } : {}),
       ...(collectorSelection ? { collectorSelection } : {}),
       ...(reserveSelection ? { reserveSelection } : {}),
+      ...(laneSelections?.has(a.botId) ? { laneSelection: laneSelections.get(a.botId)! } : {}),
       ...(a === screen && targetSelection ? { targetSelection } : {}),
       ...(agency
         ? {
@@ -540,6 +560,7 @@ export function applyGrifballTipoff(
     };
     a.reason = `tip-off ${job}: ${reason}`;
   }
+  applyGrifballTipoffReservePosition(snapshot, assignments, tuning, routers, contain);
   applyGrifballTipoffPosition(snapshot, assignments, tuning, routers, contain);
   return true;
 }

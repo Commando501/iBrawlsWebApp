@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseTipoffReserve, isTipoffReserveCovering, type TipoffReserveCandidate } from './aiGrifballTipoffReserve';
 import type { GrifballTacticalPlayer } from './aiGrifballTeamPlan';
+import type { GrifballPlayerStyle } from './grifballPlayerStyles';
 
 const candidate = (
   botId: string,
@@ -10,6 +11,81 @@ const candidate = (
   rejection: string | null = null,
 ): TipoffReserveCandidate => ({ botId, arrival, covered, rejection });
 const point = { x: -10, z: 0 };
+const preference = (styles: Record<string, GrifballPlayerStyle>, strength = 1) => ({ styles, strength });
+
+test('zero reserve individuality preserves the full decision for every style and incumbent state', () => {
+  const bids = [candidate('a', 1, true), candidate('b', 1.1, true)];
+  for (const style of ['balanced', 'enforcer', 'opportunist', 'guardian'] as const)
+    for (const previous of [null, 'a', 'gone'])
+      assert.deepEqual(
+        chooseTipoffReserve(bids, previous, point, 3, preference({ a: style, b: style }, 0)),
+        chooseTipoffReserve(bids, previous, point, 3),
+      );
+});
+
+test('reserve styles blend close bids without changing arrival, geometry or inputs', () => {
+  const bids = [candidate('a', 1, true), candidate('b', 1.2, true)],
+    original = structuredClone(bids);
+  const full = chooseTipoffReserve(bids, null, point, 3, preference({ b: 'guardian' }));
+  assert.equal(full.selectedId, 'b');
+  assert.equal(full.agency!.baselineId, 'a');
+  assert.equal(full.agency!.changedChoice, true);
+  assert.equal(full.agency!.bids[1].arrival, 1.2);
+  assert.deepEqual(full.point, point);
+  assert.equal(full.halfWidth, 3);
+  assert.equal(chooseTipoffReserve(bids, null, point, 3, preference({ b: 'guardian' }, 0.5)).selectedId, 'a');
+  for (const style of ['enforcer', 'opportunist'] as const)
+    assert.equal(
+      chooseTipoffReserve([candidate('a', 1), candidate('b', 1.05)], null, point, 3, preference({ a: style }))
+        .selectedId,
+      'b',
+    );
+  assert.equal(chooseTipoffReserve(bids, null, point, 3, preference({})).selectedId, 'a');
+  assert.deepEqual(bids, original);
+});
+
+test('reserve individuality cannot displace a ready incumbent even outside coverage', () => {
+  for (const covered of [true, false]) {
+    const result = chooseTipoffReserve(
+      [candidate('a', 2, covered), candidate('b', 0.1, true)],
+      'a',
+      point,
+      3,
+      preference({ a: 'enforcer', b: 'guardian' }),
+    );
+    assert.equal(result.selectedId, 'a');
+    assert.equal(result.covered, covered);
+    assert.deepEqual(result.agency!.bids, []);
+  }
+});
+
+test('styles preserve established cover before comparing real arrivals in the same coverage group', () => {
+  const bids = [candidate('a', 2, true), candidate('b', 0.1, false), candidate('c', 2.2, true)];
+  const result = chooseTipoffReserve(bids, null, point, 3, preference({ b: 'guardian', c: 'guardian' }));
+  assert.equal(result.selectedId, 'c');
+  assert.equal(result.covered, true);
+  assert.match(result.agency!.bids[1].rejection!, /established rear coverage/);
+  assert.equal(result.agency!.bids[2].rejection, null, 'arrival window starts at fastest covered candidate');
+});
+
+test('reserve preference respects readiness rejections, finite routes, the window boundary and ordering', () => {
+  const p = preference({ a: 'enforcer', b: 'guardian' });
+  for (const rejection of ['Collector', 'Active screen', 'Recovering', 'Airborne', 'Blocked']) {
+    const next = chooseTipoffReserve([candidate('a', 1), candidate('b', 0.1, true, rejection)], 'gone', point, 3, p);
+    assert.equal(next.selectedId, 'a');
+    assert.equal(next.agency!.bids[1].rejection, rejection);
+  }
+  assert.equal(chooseTipoffReserve([candidate('a', 1), candidate('b', 1.35)], null, point, 3, p).selectedId, 'b');
+  const outside = chooseTipoffReserve([candidate('a', 1), candidate('b', 1.351)], null, point, 3, p);
+  assert.equal(outside.selectedId, 'a');
+  assert.match(outside.agency!.bids[1].rejection!, /arrival window/);
+  assert.equal(chooseTipoffReserve([candidate('a', Infinity)], null, point, 3, p).selectedId, null);
+  const tied = [candidate('b', 1), candidate('a', 1)];
+  assert.deepEqual(
+    chooseTipoffReserve(tied, null, point, 3, preference({})),
+    chooseTipoffReserve([...tied].reverse(), null, point, 3, preference({})),
+  );
+});
 
 test('reserve selection retains an eligible incumbent through positional changes and returning teammates', () => {
   const bids = [candidate('a', 2), candidate('b', 0.1, true)];

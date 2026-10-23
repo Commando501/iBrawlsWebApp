@@ -41,7 +41,7 @@ function setup(style: GrifballPlayerStyle = 'enforcer') {
 
 test('styles migrate independently of combat settings; invalid styles and strength fail atomically', () => {
   const old: any = defaultGrifballTactics(); old.schemaVersion = 6; delete old.botStyles; delete old.defaults.agencyStrength;
-  const migrated = validateGrifballTactics(old); assert.equal(migrated.schemaVersion, 41);
+  const migrated = validateGrifballTactics(old); assert.equal(migrated.schemaVersion, 44);
   assert.equal(migrated.defaults.agencyStrength, 0); assert.deepEqual(migrated.botStyles, {});
   const config = defaultGrifballTactics(); config.botStyles = { main_ai: 'enforcer', blue2: 'guardian' };
   assert.deepEqual(validateGrifballTactics(JSON.parse(JSON.stringify(config))), config);

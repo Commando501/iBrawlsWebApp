@@ -27,6 +27,7 @@ export const GRIFBALL_RULE_KEYS = [
   'grifballCountdownDuration', 'grifballRoundResetDelay',
   'grifballRunnerHealth', 'grifballRunnerHealDelay', 'grifballRunnerHealRate',
   'grifballRunnerSpeedForward', 'grifballRunnerSpeedBackward', 'grifballRunnerSpeedSide',
+  'grifballPunchLungeDistance',
   'hammerBallDeflectionStrength',
 ] as const;
 export const GRIFBALL_BOOLEAN_RULE_KEYS = ['grifballAllowThrowing', 'grifballAllowRunnerThrust', 'hammerBallDeflectionEnabled'] as const;
