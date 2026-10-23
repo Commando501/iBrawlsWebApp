@@ -16,7 +16,7 @@ import { updateGrifballObjectiveForState } from '../../src/components/grifball/g
 const dt = 1 / 60;
 const rounded = (v: unknown) =>
   JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'number' ? Math.round(x * 1e8) / 1e8 : x)));
-function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuality?: number) {
+function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuality?: number, position?: number) {
   const f = createBotParityFixture(id, true, { aiDifficulty: 'normal', attackRange: 1.8, attackRadius: 2 }, 'enemy');
   const { state, sim, bot, target } = f;
   const [self, enemy] = sim.combatants;
@@ -31,6 +31,7 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuali
     tipoffEnabled: true,
     tipoffReserveHandoffEnabled: enabled,
     tipoffReserveAgencyStrength: individuality ?? 0,
+    tipoffReservePositionAgencyStrength: position ?? 0,
     stylesEnabled: false,
     passingEnabled: false,
     refreshSeconds: 0.05,
@@ -38,8 +39,15 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuali
   if (individuality !== undefined) state.grifballTactics.botStyles[id] = 'guardian';
 
   for (const [c, live, name, t, x, z] of [
-    [self, bot, id, team, individuality !== undefined ? -16.8 : -10, individuality !== undefined ? 0 : 6],
-    [enemy, target, 'enemy', rival, 4, -6],
+    [
+      self,
+      bot,
+      id,
+      team,
+      position !== undefined ? -10.5 : individuality !== undefined ? -16.8 : -10,
+      individuality !== undefined ? 0 : 6,
+    ],
+    [enemy, target, 'enemy', rival, position !== undefined ? 40 : 4, -6],
   ] as const) {
     c.id = name;
     c.team = live.team = t;
@@ -56,8 +64,8 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuali
     c.hp = c.maxHp = live.hp;
   }
   for (const [name, x, z] of [
-    ['collector', -8, 0],
-    ['reserve', -16, 0],
+    ['collector', position !== undefined ? -2 : -8, 0],
+    ['reserve', position !== undefined ? -20 : -16, 0],
     ['screen', -8, -6],
   ] as const) {
     const c = structuredClone(self);
@@ -116,8 +124,8 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuali
     assert.deepEqual(rounded(a.tipoff), rounded(b.tipoff));
     assert.deepEqual(rounded(a.destination), rounded(b.destination));
     if (tick === 0) {
-      assert.equal(a.tipoff!.reserveId, individuality ? id : 'reserve');
-      if (individuality) {
+      assert.equal(a.tipoff!.reserveId, position !== undefined || individuality ? id : 'reserve');
+      if (individuality && position === undefined) {
         assert.equal(a.tipoff!.reserveSelection!.agency!.changedChoice, true);
         assert.equal(a.tipoff!.reserveSelection!.agency!.baselineId, 'reserve');
       }
@@ -132,6 +140,15 @@ function reserveTrace(id: string, mirror: boolean, enabled: boolean, individuali
       }
       if (incumbent.weaponState === 'idle') returning = true;
     } else if (!enabled) assert.ok(!a.tipoff!.reserveSelection);
+    if (position !== undefined) {
+      assert.equal(a.tipoff!.reserveId, id);
+      assert.equal(a.tipoff!.reserveSelection!.covered, true);
+      if (position > 0) {
+        assert.equal(a.tipoff!.reservePosition!.applied, true, a.tipoff!.reservePosition!.reason);
+        assert.equal(a.destination.x, -11.5 * sign);
+        assert.equal(a.tipoff!.reserveSelection!.point.x, -10.5 * sign);
+      } else assert.equal(a.tipoff!.reservePosition, undefined);
+    }
     const input = resolveSimGrifballSupportInput(sim, plan, id, owners, dt)!;
     assert.ok(input);
     assert.equal(input.action.pickup, false);
@@ -203,4 +220,10 @@ for (const id of ['main_ai', 'bot_2'])
   for (const mirror of [false, true])
     test('live/sim reserve individuality changes role and executed movement ' + id + '/' + mirror, () => {
       assert.notDeepEqual(reserveTrace(id, mirror, true, 1), reserveTrace(id, mirror, true, 0));
+    });
+
+for (const id of ['main_ai', 'bot_2'])
+  for (const mirror of [false, true])
+    test('live/sim reserve position individuality changes covered movement ' + id + '/' + mirror, () => {
+      assert.notDeepEqual(reserveTrace(id, mirror, true, 1, 1), reserveTrace(id, mirror, true, 1, 0));
     });

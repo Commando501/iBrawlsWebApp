@@ -14,6 +14,10 @@ import { applyGrifballTipoffPosition, type TipoffPositionDecision } from './aiGr
 import { chooseTipoffScreen, tipoffScreenReadiness, type TipoffScreenDecision } from './aiGrifballTipoffScreen';
 import { chooseTipoffCollector, type TipoffCollectorDecision } from './aiGrifballTipoffCollector';
 import { chooseTipoffReserve, isTipoffReserveCovering, type TipoffReserveDecision } from './aiGrifballTipoffReserve';
+import {
+  applyGrifballTipoffReservePosition,
+  type TipoffReservePositionDecision,
+} from './aiGrifballTipoffReservePosition';
 import { observedGrifballPickupHasPriority } from './aiGrifballPickupAgency';
 import { chooseTipoffTarget, type TipoffTargetDecision } from './aiGrifballTipoffTarget';
 import {
@@ -50,6 +54,7 @@ export interface TipoffOrder {
   targetSelection?: TipoffTargetDecision;
   collectorSelection?: TipoffCollectorDecision;
   reserveSelection?: TipoffReserveDecision;
+  reservePosition?: TipoffReservePositionDecision;
 }
 
 /** Once per round, from a known untouched home ball. Observing possession or a
@@ -541,6 +546,7 @@ export function applyGrifballTipoff(
     };
     a.reason = `tip-off ${job}: ${reason}`;
   }
+  applyGrifballTipoffReservePosition(snapshot, assignments, tuning, routers, contain);
   applyGrifballTipoffPosition(snapshot, assignments, tuning, routers, contain);
   return true;
 }

@@ -192,6 +192,14 @@ export const GRIFBALL_TIPOFF_COLLECTOR_PREFERENCES = {
   guardian: { bias: .25, reason: 'Prefer coverage when a nearby teammate can collect without losing a safe pickup.' },
 } satisfies Record<GrifballPlayerStyle, { bias: number; reason: string }>;
 
+/** Small offsets for a ready reserve; the original coverage lane stays fixed. */
+export const GRIFBALL_TIPOFF_RESERVE_POSITION_PREFERENCES = {
+  balanced: { depth: 0, width: 0, reason: 'Keep the team rear position.' },
+  enforcer: { depth: -.75, width: 0, reason: 'Hold up to 0.75 m nearer the contest while keeping rear coverage.' },
+  opportunist: { depth: 0, width: 1, reason: 'Shade an occupied flank by up to 1 m while keeping rear coverage.' },
+  guardian: { depth: 1, width: 0, reason: 'Hold up to 1 m deeper while keeping rear coverage.' },
+} satisfies Record<GrifballPlayerStyle, { depth: number; width: number; reason: string }>;
+
 /** Preferences for a vacant reserve role; never override established coverage. */
 export const GRIFBALL_TIPOFF_RESERVE_PREFERENCES = {
   balanced: { bias: 0, reason: 'Use coverage readiness and arrival order when the rear role opens.' },
