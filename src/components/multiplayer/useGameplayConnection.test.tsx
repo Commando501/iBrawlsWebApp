@@ -79,6 +79,7 @@ test('host snapshots published map scaling and sends identical geometry to every
   socket.open();
   const message = socket.sent[0] as { lobbyConfig: { customMap: import('../../types').CustomMapData } };
   const map = message.lobbyConfig.customMap;
+  assert.equal(map.balancePresetVersion, 7);
   assert.deepEqual(map.arenaHalfExtents, { x: 92.25, z: 24.81 });
   settings = { mapScaleStadiumLength: 50, mapScaleStadiumWidth: 50, mapScaleStadiumHeight: 200 };
   const peerMap = resolveActiveCustomMap({ selectedMap: 'championship_stadium', customMap: JSON.parse(JSON.stringify(map)), gameMode: 'grifball' });

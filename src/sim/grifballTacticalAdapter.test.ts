@@ -101,11 +101,13 @@ function fixture() {
       live.localPlayerTeam = c.team; live.playerPos.set(c.pos.x, c.pos.y, c.pos.z); live.playerVel.set(c.vel.x, c.vel.y, c.vel.z);
       live.yaw = c.yaw; live.playerHP = c.hp; live.playerRespawnTimer = 0; live.activeWeapon = 'hammer';
       live.pWeaponState = 'ready'; live.pWeaponTimer = 0; live.swapLockoutTimer = 0; live.playerPickupRequested = undefined;
+      live.playerInvulnerabilityTimer = c.invulnerabilityTimer;
       continue;
     }
     const bot = createOfflineBotCombatant({ id: c.id, playerName: c.id, team: c.team, spawnPos: new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z),
       yaw: c.yaw, hue: 0, difficulty: 'normal', settings: sim.settings });
     Object.assign(bot, { controller: c.controller, activeWeapon: c.weapon, weaponState: 'ready', weaponTimer: 0, respawnTimer: 0, swapLockoutTimer: 0, pickupRequested: undefined });
+    bot.invulnerabilityTimer = c.invulnerabilityTimer;
     live.otherPlayers.set(c.id, bot);
   }
   const scriptedBots = Object.fromEntries(sim.combatants.filter(c => c.controller === 'ai').map(c => [c.id, 'normal']));

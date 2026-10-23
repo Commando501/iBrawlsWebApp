@@ -49,6 +49,14 @@ export function createBalancedMapSnapshot(mapId: string, settings: MapBalanceSet
   return base ? balanceMap(base, getStadiumMapScale(settings)) : null;
 }
 
+/** Bind the version to the geometry, not to the latest live-config UI state.
+ * null means no preset was available; absent metadata on old snapshots is unknown.
+ */
+export function createPublishedMapSnapshot(mapId: string, preset: { version: number; settings: MapBalanceSettings } | null): CustomMapData | null {
+  const map = createBalancedMapSnapshot(mapId, preset?.settings ?? {});
+  return map ? { ...map, balancePresetVersion: preset?.version ?? null } : null;
+}
+
 export function getMapTraversal(map: CustomMapData, settings: UniversalSettings) {
   const half = getRectHalfExtents(map.arenaRadius, map.arenaHalfExtents);
   // Match playerMovementRuntime: full forward input, no ball, no transient abilities.

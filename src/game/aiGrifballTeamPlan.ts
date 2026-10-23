@@ -11,6 +11,7 @@ import { isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceG
 import { applyGrifballSupportInitiative, type SupportAgencyDecision } from './aiGrifballAgency';
 import type { RunnerClashDecision } from './aiGrifballRunnerClash';
 import type { SwordGuardDecision } from './aiGrifballSwordGuard';
+import { chooseGrifballRunnerPursuit, type RunnerPursuitRules } from './aiGrifballRunnerPursuit';
 import type { HammerDefenseDecision, ObservedGrifballThrow } from './aiGrifballHammerDefense';
 import { chooseGrifballPassRecovery, type PassRecoveryDecision } from './aiGrifballPassRecovery';
 import { resolveGrifballPassSupport } from './aiGrifballPassSupport';
@@ -35,6 +36,8 @@ export interface GrifballTacticalPlayer {
   scripted: boolean;
   difficulty?: string;
   pickupRequested?: boolean;
+  swapLockoutRemaining?: number;
+  invulnerabilityTimer?: number;
   height?: number;
   heading?: FieldPoint;
   space?: SpaceObservation;
@@ -48,6 +51,7 @@ export interface GrifballTacticalSnapshot {
   ball: FieldPoint;
   ballPhysics?: GrifballBall;
   passing?: PassingRules;
+  runnerPursuitRules?: RunnerPursuitRules;
   respawns?: { id: string; team: TeamId; pos: FieldPoint; seconds: number; speed: number }[];
   holderId: string | null;
   players: GrifballTacticalPlayer[]; // alive, active participants only
@@ -415,6 +419,11 @@ export function updateGrifballTeamPlan(
     if (tuning.spaceEnabled && evaluateSpace) for (const assignment of teamAssignments) {
       assignment.geometry = snapshot.geometry;
       evaluateSpace(assignment, players.find(p => p.id === assignment.botId)!, previous.get(assignment.botId), !!assignment.escort || !!assignment.tanking || !!assignment.defense || !!assignment.receive);
+      if (tuning.runnerPursuitEnabled && assignment.defense && snapshot.runnerPursuitRules && ownGoal && holder && !friendly) {
+        assignment.defense.pursuit = { rules: { ...snapshot.runnerPursuitRules }, goal: { ...ownGoal },
+          weapon: null, reason: '', hammerETA: null, swordETA: null, horizon: tuning.defenseLookahead, intercept: null };
+        Object.assign(assignment.defense.pursuit, chooseGrifballRunnerPursuit(assignment, players));
+      }
     }
   }
 }

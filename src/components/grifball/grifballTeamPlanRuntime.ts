@@ -25,6 +25,8 @@ export function createLiveGrifballTacticalSnapshot(
       state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer,
       state.swapCooldownTimer ?? 0, state.playerPos.y, state.playerVel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH,
       { lunging: state.isLunging, swordRecoverySeconds: state.pSwordRecoverDuration, dashRemaining: state.playerDashRemaining });
+    players[players.length - 1].swapLockoutRemaining = state.swapLockoutTimer ?? 0;
+    players[players.length - 1].invulnerabilityTimer = state.playerInvulnerabilityTimer ?? 0;
   }
   for (const bot of state.otherPlayers.values()) {
     if (bot.hp <= 0 || (bot.respawnTimer ?? 0) > 0 || bot.isObserver || !bot.team) continue;
@@ -32,6 +34,7 @@ export function createLiveGrifballTacticalSnapshot(
       id: bot.id, team: bot.team, heading: { x: -Math.sin(bot.yaw), z: -Math.cos(bot.yaw) }, pos: point(bot.pos), vel: point(bot.vel),
       scripted: bot.controller === 'ai' && !isNeuralNetDifficulty(bot.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty),
       difficulty: bot.difficulty ?? state.settings.aiDifficulty, height: bot.pos.y, pickupRequested: bot.pickupRequested,
+      swapLockoutRemaining: bot.swapLockoutTimer ?? 0, invulnerabilityTimer: bot.invulnerabilityTimer ?? 0,
       space: observeGrifballSpace(state.settings, bot.activeWeapon, bot.weaponState, bot.weaponTimer ?? 0,
         bot.swapCooldownTimer ?? 0, bot.pos.y, bot.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH,
         { lunging: bot.isLunging, dashRemaining: bot.aiDashRemaining,

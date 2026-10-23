@@ -340,7 +340,7 @@ test('disabled continuity restores ordinary lanes and dependencies/lifecycle cle
 
 test('schema 44 migrates continuity off without altering reserve settings or sparse team overrides', () => {
   const config = defaultGrifballTactics();
-  assert.equal(config.schemaVersion, 44);
+  assert.equal(config.schemaVersion, 45);
   assert.equal(config.defaults.tipoffLaneContinuityEnabled, false);
   for (let version = 1; version < 44; version++) {
     const old = JSON.parse(JSON.stringify(config));

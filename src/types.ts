@@ -897,6 +897,8 @@ export interface CustomMapAtmosphereSettings {
 export interface CustomMapData {
   /** Applied once; also drives the stadium scenery's composed world transform. */
   balanceScale?: MapBalanceScale;
+  /** Official preset that produced this geometry; travels with lobby/replay snapshots. */
+  balancePresetVersion?: number | null;
   id: string;
   name: string;
   description: string;

@@ -255,7 +255,7 @@ test('carrier changes transfer style and reset possession memory; inactive play 
 });
 test('v1–23 imports migrate patience off while preserving older settings and styles', () => {
   const current = defaultGrifballTactics();
-  assert.equal(current.schemaVersion, 44);
+  assert.equal(current.schemaVersion, 45);
   assert.equal(current.defaults.runnerPatienceAgencyStrength, 0);
   for (let version = 1; version <= 23; version++) {
     const old = JSON.parse(JSON.stringify(current));

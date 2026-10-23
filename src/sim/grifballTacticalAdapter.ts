@@ -110,6 +110,7 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
     tactics: options.tactics ?? defaultGrifballTactics(), roster,
     players: observedActors.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
       id: c.id, team: c.team, scripted: scripted(c), difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, pos: c.pos, vel: c.vel, height: c.pos.y,
+      swapLockoutRemaining: c.swapLockoutTimer ?? 0, invulnerabilityTimer: c.invulnerabilityTimer ?? 0,
       heading: { x: headingSign * Math.sin(c.yaw), z: headingSign * Math.cos(c.yaw) }, pickupRequested: pickupRequested(c.id),
       space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c), scripted(c)),
     })),

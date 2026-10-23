@@ -9,6 +9,7 @@ import type { GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import type { AIBehaviorState } from '../types';
 import { isMixedPlayer, type SimCombatant, type SimState } from './simState';
 import { resolveSimGrifballAssignedCombatInput, type AssignedCombatTuning } from './grifballAssignedCombatInput';
+import { chooseGrifballRunnerPursuit } from '../game/aiGrifballRunnerPursuit';
 
 export interface TacticalAIMemory { aiState: AIBehaviorState | undefined; timer: number | undefined; cooldownMultiplier: number }
 
@@ -64,6 +65,16 @@ export function resolveSimGrifballTacticalWeaponChoice(state: SimState, plan: Gr
     context: { distanceToTarget: observation.prediction.distanceToTarget, combatDistanceToTarget: observation.range.combatDistanceToTarget,
       canStartWeaponAction, weaponState: context.weaponFrame?.weaponState ?? (self.weaponState === 'idle' ? 'ready' : observeSimTacticalWeaponTarget(state, self).weaponState),
       weaponSwapIQ: tuning.weaponSwapIQ, weaponPrioritization: tuning.weaponPrioritization,
-      recentLungeMemory: context.recentLungeMemory, playerModel: context.playerModel } });
+      recentLungeMemory: context.recentLungeMemory, playerModel: context.playerModel,
+      runnerPursuit: (() => {
+        const assignment = plan.assignments.get(botId);
+        if (!assignment || state.match.phase !== 'playing' || state.match.ball.state !== 'held' || state.match.ball.holderId !== target.id ||
+          plan.snapshot?.players.find(p => p.id === botId)?.space?.weapon !== (context.weaponFrame?.activeWeapon ?? self.weapon) ||
+          self.isLunging || !self.alive || self.controller !== 'ai' ||
+          self.weapon !== 'sword' && remainingDecisionSwapTime(self.swapLockoutTimer, dt, clockPhase) > 0) return null;
+        const players = (plan.snapshot?.players ?? []).map(p => p.id === target.id ? { ...p, pos: target.pos, vel: target.vel,
+          height: target.pos.y, invulnerabilityTimer: target.invulnerabilityTimer, space: p.space ? { ...p.space, weapon: target.weapon, phase: observed.weaponState } : undefined } : p);
+        return chooseGrifballRunnerPursuit(assignment, players, self.pos);
+      })() } });
   return { target: observed, prediction: observation.prediction, range: observation.range, decision };
 }

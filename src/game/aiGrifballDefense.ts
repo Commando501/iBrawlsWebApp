@@ -8,6 +8,7 @@ import { chooseGrifballPassSupportPosition, type PassLandingSupport } from './ai
 import { applyGrifballMarkPosition, type MarkPositionDecision } from './aiGrifballMarkPosition';
 import type { PickupSupportDecision } from './aiGrifballPickupSupport';
 import { applyGrifballSafetyPosition, type SafetyPositionDecision } from './aiGrifballSafetyPosition';
+import { chooseGrifballRunnerPursuit, type RunnerPursuitPlan } from './aiGrifballRunnerPursuit';
 
 export interface DefensePressureCandidate {
   botId: string; style: GrifballPlayerStyle; arrival: number; bonus: number;
@@ -15,6 +16,7 @@ export interface DefensePressureCandidate {
 }
 
 export interface DefenseOrder {
+  pursuit?: RunnerPursuitPlan;
   mode: 'intercept' | 'contain' | 'mark' | 'last-defender' | 'recover';
   targetId: string | null; intercept: FieldPoint; arrivalETA: number; carrierETA: number;
   advantage: number; reinforcementIn: number; emergency: boolean; transitioning: boolean;
@@ -352,6 +354,9 @@ export function selectDefenseThreat(a: GrifballAssignment, self: FieldPoint, pla
   if (immediate.length) return immediate[0].id;
   const target = enemies.find(p => p.id === order.targetId);
   if (!target) return null;
+  // Release an otherwise unreachable ground cut only for a feasible sword chase.
+  // Immediate defense above and assigned coverage within the helper retain priority.
+  if (chooseGrifballRunnerPursuit(a, players, self)?.weapon === 'sword') return target.id;
   const defender = players.find(p => p.id === a.botId);
   const reach = defender?.space?.reach ?? 3;
   const inEngagementRange = distance(self, target.pos) <= (a.tuning?.engagementDistance ?? 6);
