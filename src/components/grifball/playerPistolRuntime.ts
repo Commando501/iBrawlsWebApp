@@ -1,3 +1,4 @@
+import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type DeathEvent, type MedalInfo } from '../../types';
@@ -11,7 +12,7 @@ type PistolHitSyncPayload = {
   action: 'hit_taken';
   damage: 1;
   targetId: string;
-  weapon: 'sword';
+  weapon: 'pistol';
 };
 
 export function triggerPlayerPistolFireForState({
@@ -80,7 +81,7 @@ export function triggerPlayerPistolFireForState({
   const closestHitPoint = new THREE.Vector3();
 
   state.otherPlayers.forEach((other, otherId) => {
-    if (other.hp > 0 && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+    if (!other.isObserver && other.aiState !== 'RESPAWNING' && other.hp > 0 && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
       const center = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
       const toEnemy = center.clone().sub(eyePos);
       const proj = toEnemy.dot(cameraLookDir);
@@ -117,7 +118,7 @@ export function triggerPlayerPistolFireForState({
       action: 'hit_taken',
       damage: 1,
       targetId: closestTarget.id,
-      weapon: 'sword',
+      weapon: 'pistol',
     });
 
     if (!sent) {
@@ -126,27 +127,7 @@ export function triggerPlayerPistolFireForState({
       state.lastStrikePos = bot.pos.clone ? bot.pos.clone() : new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z);
       state.lastStrikeTick = 1.0;
       if (bot.hp <= 0) {
-        bot.hp = 0;
-        bot.respawnTimer = 3.0;
-        if (bot.controller === 'ai') {
-          bot.aiState = 'RESPAWNING';
-          bot.weaponState = 'ready';
-          bot.weaponTimer = 0;
-          if (bot.id === MAIN_AI_ID) {
-            state.scorePlayer += 1;
-            state.playerKills += 1;
-            state.enemyDeaths += 1;
-            recordBotCalibrationDeath(bot.id);
-          } else {
-            bot.deaths += 1;
-            state.scorePlayer += 1;
-            state.playerKills += 1;
-          }
-        } else {
-          bot.deaths += 1;
-          state.scorePlayer += 1;
-          state.playerKills += 1;
-        }
+        recordPlayerMeleeKillForState(state, bot, recordBotCalibrationDeath);
         playDeath();
         const medals = evaluatePlayerKillMedals(bot.id);
         const newDeath: DeathEvent = {

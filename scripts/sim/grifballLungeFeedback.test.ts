@@ -70,6 +70,7 @@ for (const targetId of ['main_ai', 'ordinary']) test(`surviving sword trade cons
 
 for (const targetId of ['main_ai', 'ordinary', 'player', 'absent']) test(`lunge completion uses current target vitals: ${targetId}`, () => {
   const f = fixture('main_ai'); f.state.aiHP = 99; f.state.aiInvulnerabilityTimer = 99;
+  f.state.localPlayerTeam = f.bot.team === 'blue' ? 'red' : 'blue';
   f.target.hp = 7; f.target.invulnerabilityTimer = .75;
   f.state.playerHP = 4; f.state.playerInvulnerabilityTimer = .25;
   if (targetId === 'ordinary') { f.state.otherPlayers.set(targetId, { ...f.target, id: targetId }); }

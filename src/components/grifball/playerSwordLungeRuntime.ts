@@ -1,3 +1,4 @@
+import { creditCombatKillForState } from './combatScoring';
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import { resolveCombatHitDamageForState } from './combatDamage';
 import { tryRunnerSwordClash } from './runnerSwordClash';
@@ -27,7 +28,7 @@ export function updatePlayerSwordLungeForState({
   activeCustomMap,
   multiplayerSocket,
   getMainAi,
-  areCombatantsHostile,
+  canCombatantsDamage,
   constrainCombatantToArena,
   renderSwordLungeTrailVfx,
   recordPlayerLungeEnd,
@@ -49,7 +50,7 @@ export function updatePlayerSwordLungeForState({
   activeCustomMap: CustomMapData | null;
   multiplayerSocket: WebSocket | null;
   getMainAi: () => Combatant | undefined;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
   renderSwordLungeTrailVfx: (
     trailPos: THREE.Vector3,
@@ -98,7 +99,7 @@ export function updatePlayerSwordLungeForState({
     state,
     mainAi: getMainAi(),
     isMultiplayer,
-    areCombatantsHostile,
+    canCombatantsDamage,
   });
 
   if (!closestTarget) {
@@ -145,12 +146,7 @@ export function updatePlayerSwordLungeForState({
           state.playerDeaths += 1;
 
           if (other) {
-            other.score = (other.score || 0) + 1;
-            other.kills = (other.kills || 0) + 1;
-            if (other.id === MAIN_AI_ID) {
-              state.scoreEnemy += 1;
-              state.enemyKills += 1;
-            }
+            creditCombatKillForState(state, other.id, 'player');
           }
 
           const newDeath: DeathEvent = {

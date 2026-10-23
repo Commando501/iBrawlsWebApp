@@ -22,7 +22,7 @@ export interface LungeParityCase {
   name: string; target?: { x: number; z: number }; startZ?: number; hp?: number;
   trade?: 'sword' | 'hammer'; shield?: number; carrier?: boolean;
   settings?: Partial<UniversalSettings>; hits: number; deaths?: number;
-  cancel?: 'dead' | 'friendly'; attackerHp?: number; attackerHits?: number; pairedLunge?: boolean; reverseOrder?: boolean;
+  cancel?: 'dead'; friendly?: boolean; attackerHp?: number; attackerHits?: number; pairedLunge?: boolean; reverseOrder?: boolean;
   window?: { weapon: 'sword' | 'hammer'; ageMs?: number; limitMs: number; enabled?: boolean; wrongWeapon?: boolean };
   attackerModel?: CharacterModelType; targetModel?: CharacterModelType;
   attackerCrouch?: boolean; targetCrouch?: boolean;
@@ -38,7 +38,8 @@ export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'tuned-cooldown', settings: { swordLungeReload: .35 }, hits: 1 },
   { name: 'arena-boundary', startZ: 22, target: { x: 4, z: 22 }, hits: 0 },
   { name: 'dead-target-cancel', cancel: 'dead', hits: 0 },
-  { name: 'friendly-target-cancel', cancel: 'friendly', hits: 0 },
+  { name: 'friendly-target-contact', friendly: true, hits: 1 },
+  { name: 'friendly-target-death', friendly: true, hp: 1, hits: 1, deaths: 1 },
   { name: 'shield-contact', target: { x: 0, z: .4 }, shield: 1, hits: 0 },
   { name: 'shield-expiry-order', target: { x: 0, z: .4 }, shield: 1 / 60, hits: 1 },
   { name: 'lethal-respawn', hp: 1, hits: 1, deaths: 1 },
@@ -156,7 +157,8 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   stepCombatantWeapons(sim, self, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
   if (spec.cancel === 'dead') {
     target.hp = rival.hp = 0; rival.alive = false; target.respawnTimer = rival.respawnTimer = 10;
-  } else if (spec.cancel === 'friendly') { target.team = bot.team; rival.team = self.team; }
+  }
+  if (spec.friendly) { target.team = bot.team; rival.team = self.team; }
   const differences: ParityDifference[] = [], frames = [];
   let liveAttackerDamage = 0, simAttackerDamage = 0;
   let liveFirstHitTick = 0, simFirstHitTick = 0;
@@ -196,7 +198,9 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
         ? groundMotionAction(rival, spec.targetMovement, tick, Math.PI, sim.settings) : idleAction()),
         aim: Math.PI, crouch: !!spec.targetCrouch } }, { settings: sim.settings });
     for (const event of events.kills) {
-      killCounts.set(event.attackerId, (killCounts.get(event.attackerId) ?? 0) + 1);
+      const attacker = sim.combatants.find(c => c.id === event.attackerId);
+      const victim = sim.combatants.find(c => c.id === event.victimId);
+      if (attacker?.team !== victim?.team) killCounts.set(event.attackerId, (killCounts.get(event.attackerId) ?? 0) + 1);
       deathCounts.set(event.victimId, (deathCounts.get(event.victimId) ?? 0) + 1);
     }
     liveAttackerDamage += Math.max(0, before[0] - bot.hp); simAttackerDamage += Math.max(0, headlessBefore[0] - self.hp);

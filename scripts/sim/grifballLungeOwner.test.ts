@@ -110,10 +110,10 @@ for (const [id, targetId] of [['main_ai', 'target'], ['bot_2', 'main_ai']]) for 
             coordinator: { ...c, recentTags: new Map(c.recentTags.map(([key, tags]: [string, any]) => [key, new Map(tags)])), engagements: new Map(c.engagements), tacticalEngagements: new Map(c.tacticalEngagements) } } };
         }
       }
-      const expected = kind === 'timeout' || kind === 'shield' ? 'miss_timeout' : kind === 'boundary' ? 'miss_arena' : kind === 'target-dead' || kind === 'friendly' ? 'target_dead' : 'hit';
+      const expected = kind === 'timeout' || kind === 'shield' ? 'miss_timeout' : kind === 'boundary' ? 'miss_arena' : kind === 'target-dead' ? 'target_dead' : 'hit';
       if (kind !== 'trade-self-dead' && kind !== 'trade-both-dead') {
         assert.equal(control.memories[id].lastLungeOutcome, expected);
-        assert.equal(control.memories[id].aiState, pressure && expected === 'hit' && target.hp > 0 && kind !== 'skip-pressure' ? 'PRESSURING' : 'COOLDOWN');
+        assert.equal(control.memories[id].aiState, pressure && expected === 'hit' && target.hp > 0 && kind !== 'skip-pressure' && kind !== 'friendly' ? 'PRESSURING' : 'COOLDOWN');
       }
       else assert.equal(control.memories[id].lastLungeOutcome, undefined);
     });

@@ -14,7 +14,7 @@ export function createCombatImpactCallbacksForState({
   getMainAI,
   getEnemyAITarget,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
   executeTrade,
   sendSync,
   applyOutgoingMultiplayerHitLocally,
@@ -38,7 +38,7 @@ export function createCombatImpactCallbacksForState({
   getMainAI: () => Combatant | undefined;
   getEnemyAITarget: () => EnemyAITarget | null;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   executeTrade: (reason: CombatTradeReason) => void;
   sendSync: (payload: object) => boolean;
   applyOutgoingMultiplayerHitLocally: (targetId: string, damage?: number) => void;
@@ -76,7 +76,7 @@ export function createCombatImpactCallbacksForState({
       mainAI: getMainAI(),
       getEnemyAITarget,
       isMultiplayer,
-      areCombatantsHostile,
+      canCombatantsDamage,
       sendSync,
       applyOutgoingMultiplayerHitLocally,
       renderHammerSplashVfx,
@@ -102,7 +102,7 @@ export function createCombatImpactCallbacksForState({
       mainAI: getMainAI(),
       target: getEnemyAITarget(),
       isMultiplayer,
-      areCombatantsHostile,
+      canCombatantsDamage,
       executeTrade,
       recordPlayerDamageTaken,
       tryRecordCalibrationCounterSuccess,
@@ -122,7 +122,7 @@ export function createCombatImpactCallbacksForState({
       state: getState(),
       mainAI: getMainAI(),
       isMultiplayer,
-      areCombatantsHostile,
+      canCombatantsDamage,
       sendSync,
       playSwing,
       playDeath,
@@ -136,7 +136,7 @@ export function createCombatImpactCallbacksForState({
       state: getState(),
       mainAI: getMainAI(),
       isMultiplayer,
-      areCombatantsHostile,
+      canCombatantsDamage,
       executeTrade,
       sendSync,
       applyOutgoingMultiplayerHitLocally,
@@ -153,7 +153,7 @@ export function createCombatImpactCallbacksForState({
       mainAI: getMainAI(),
       target: getEnemyAITarget(),
       isMultiplayer,
-      areCombatantsHostile,
+      canCombatantsDamage,
       recordPlayerDamageTaken,
       tryRecordCalibrationCounterSuccess,
       playSwing,

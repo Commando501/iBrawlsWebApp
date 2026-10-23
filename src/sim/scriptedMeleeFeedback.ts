@@ -43,7 +43,7 @@ export function validateScriptedMeleeFeedback(state: SimState, control: Scripted
  * victim's damage or later actor's animation. No end-of-frame reconstruction. */
 export function createScriptedMeleeFeedback(state: SimState, control: ScriptedMeleeFeedback, settings: UniversalSettings): RosterMeleeHitFeedback {
   return (attacker, victim) => {
-    if (!Object.hasOwn(control.knobs, attacker.id) || attacker.weapon === 'ball' || victim.hp <= 0) return;
+    if (!Object.hasOwn(control.knobs, attacker.id) || attacker.weapon === 'ball' || victim.hp <= 0 || attacker.team === victim.team) return;
     const current = control.combos.get(attacker.id) ?? null;
     const next = resolveAIHitCombo({ current, targetId: victim.id, openingWeapon: attacker.weapon,
       botPos: attacker.pos, target: observeSimTacticalWeaponTarget(state, victim, control.memories[victim.id]),

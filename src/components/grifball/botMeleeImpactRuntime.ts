@@ -1,3 +1,5 @@
+import { creditCombatKillForState, isFriendlyFireForState } from './combatScoring';
+import { canCombatantsDamage } from '../../game/combatDamage';
 import * as THREE from 'three';
 import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
 import { resolveCombatHitDamageForState } from './combatDamage';
@@ -11,7 +13,6 @@ import { getCombatBodyCenter, SWORD_SLASH_FORWARD_FACTOR, SWORD_SLASH_RADIUS } f
 import { adjustRangeForTargetModel } from './modelHitbox';
 import { recordBotDamageTagForState } from './aiBookkeeping';
 import { recordDeathEvent as recordDeathEventOnState } from './deathFeed';
-import { areGrifballCombatantsHostileForState } from './grifballObjectiveRuntime';
 import {
   observePlayerDamageDealt,
   observePlayerDamageReceived,
@@ -55,7 +56,7 @@ export function applyBotMeleeImpactForState({
   const isBall = weapon === 'ball';
   const punchTarget = isBall ? punchHitTargetForState(state, botId) : null;
   const recordComboHit = (targetId: string) => {
-    if (isBall || bot.controller !== 'ai') return;
+    if (isBall || bot.controller !== 'ai' || isFriendlyFireForState(state, botId, targetId)) return;
     const melee = weapon === 'sword' || bot.weaponState === 'melee_down' || bot.weaponState === 'melee_swing';
     tryStartComboOnHit?.(botId, targetId, weapon, melee ? { targetRecovering: true } : undefined);
   };
@@ -94,18 +95,13 @@ export function applyBotMeleeImpactForState({
     victimName: string,
     victimSource: ReturnType<typeof createReplayHeatmapCombatantSource>
   ) => {
-    bot.score = (bot.score || 0) + 1;
-    bot.kills = (bot.kills || 0) + 1;
-    if (bot.id === MAIN_AI_ID) {
-      state.scoreEnemy += 1;
-      state.enemyKills += 1;
-    }
+    creditCombatKillForState(state, botId, victimId);
     playDeath();
     recordDeathEventOnState(state, bot.playerName, victimName, undefined, weapon === 'ball' ? 'hammer' : weapon, {
       attacker: createReplayHeatmapCombatantSource(botId, bot),
       victim: victimSource,
     });
-    recordBotPsychKill(botId, victimId, false);
+    if (!isFriendlyFireForState(state, botId, victimId)) recordBotPsychKill(botId, victimId, false);
   };
 
   if (
@@ -113,7 +109,7 @@ export function applyBotMeleeImpactForState({
     state.playerHP > 0 &&
     state.playerRespawnTimer <= 0 &&
     state.playerInvulnerabilityTimer <= 0 &&
-    areGrifballCombatantsHostileForState(state, botId, 'player') &&
+    canCombatantsDamage(botId, 'player') &&
     (isBall ? punchTarget === 'player' : impactPos.distanceTo(getCombatBodyCenter(state.playerPos, state.isCrouching)) <=
       adjustRangeForTargetModel(radius, state.playerModelType))
   ) {
@@ -149,7 +145,7 @@ export function applyBotMeleeImpactForState({
     if (otherId === botId) return;
     if (other.controller !== 'ai') return;
     if (!isAICombatReady(other)) return;
-    if (!areGrifballCombatantsHostileForState(state, botId, otherId)) return;
+    if (!canCombatantsDamage(botId, otherId)) return;
     const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
     if (
       isBall ? punchTarget !== otherId : impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) >

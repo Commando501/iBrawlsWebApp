@@ -1,8 +1,9 @@
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBotParityFixture } from './grifballBotExecutionParity';
 import { createCombatImpactCallbacksForState } from '../../src/components/grifball/combatImpactCallbacks';
-import { areGrifballCombatantsHostileForState, reconcileGrifballCarrierForState, setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
+import { reconcileGrifballCarrierForState, setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { updateWeaponAnimationFrameForState } from '../../src/components/grifball/weaponAnimationFrameRuntime';
 import { triggerPlayerSwordSlashForState, triggerPlayerHammerSwingForState, triggerPlayerHammerMeleeForState } from '../../src/components/grifball/playerWeaponActions';
 
@@ -31,7 +32,7 @@ function fixture(attack: Attack, identity: Identity, multiplayer = false) {
     sent: [] as object[], outgoing: [] as string[] };
   const impacts = createCombatImpactCallbacksForState({ getState: () => state, getMainAI: () => mainAI,
     getEnemyAITarget: () => null, isMultiplayer: multiplayer,
-    areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
+    canCombatantsDamage,
     executeTrade: reason => { events.trades.push(reason); },
     sendSync: payload => { events.sent.push(payload); return true; },
     applyOutgoingMultiplayerHitLocally: id => { events.outgoing.push(id); },
@@ -74,9 +75,7 @@ for (const attack of attacks) for (const identity of identities) {
     assert.equal(target.deaths, 1); assert.equal(state.playerKills, 1); assert.equal(events.deaths, 1);
   });
 
-  for (const exclusion of ['shield', 'dead', 'respawn-timer', 'respawn-state', 'observer', 'dead-player', 'far', 'friendly'] as const) {
-    // An unregistered legacy actor has no team lookup in the current Grifball roster.
-    if (exclusion === 'friendly' && identity === 'legacy-main') continue;
+  for (const exclusion of ['shield', 'dead', 'respawn-timer', 'respawn-state', 'observer', 'dead-player', 'far'] as const) {
     test(`${attack}/${identity}: excludes ${exclusion}`, () => {
       const f = fixture(attack, identity), { state, target } = f;
       if (exclusion === 'shield') target.invulnerabilityTimer = 1;
@@ -86,7 +85,6 @@ for (const attack of attacks) for (const identity of identities) {
       if (exclusion === 'observer') target.isObserver = true;
       if (exclusion === 'dead-player') state.playerHP = 0;
       if (exclusion === 'far') target.pos.set(50, 0, 50);
-      if (exclusion === 'friendly') target.team = 'blue';
       const hp = target.hp;
       f.impact();
       assert.equal(target.hp, hp); assert.equal(state.playerKills, 0); assert.equal(f.events.deaths, 0);

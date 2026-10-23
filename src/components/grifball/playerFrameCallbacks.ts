@@ -39,7 +39,7 @@ export function createPlayerFrameCallbacksForState({
   deviceIsMobile,
   forceMobileControls,
   multiplayerSocket,
-  areCombatantsHostile,
+  canCombatantsDamage,
   constrainCombatantToArena,
   renderHammerSplashVfx,
   renderSwordLungeTrailVfx,
@@ -94,7 +94,7 @@ export function createPlayerFrameCallbacksForState({
   deviceIsMobile: boolean;
   forceMobileControls: boolean;
   multiplayerSocket: WebSocket | null;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
   renderHammerSplashVfx: (impactCenter: THREE.Vector3, color: string, radius: number) => void;
   renderSwordLungeTrailVfx: (
@@ -173,7 +173,7 @@ export function createPlayerFrameCallbacksForState({
       spawnPoints,
       gravityAcceleration: GRAVITY_ACCELERATION,
       getMainAi: getMainAI,
-      areCombatantsHostile,
+      canCombatantsDamage,
       constrainCombatantToArena,
       renderSwordLungeTrailVfx,
       recordGamepadDash: (dashDir) => {

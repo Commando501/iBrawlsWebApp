@@ -18,7 +18,7 @@ export function applyPlayerHammerMeleeImpactForState({
   state,
   mainAI,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
   sendSync,
   playSwing,
   playDeath,
@@ -29,7 +29,7 @@ export function applyPlayerHammerMeleeImpactForState({
   state: GrifballRuntimeState;
   mainAI: Combatant | undefined;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   sendSync: (payload: PlayerHammerMeleeHitSyncPayload) => boolean;
   playSwing: () => void;
   playDeath: () => void;
@@ -57,7 +57,7 @@ export function applyPlayerHammerMeleeImpactForState({
     (mainAI.respawnTimer ?? 0) <= 0 &&
     mainAI.aiState !== 'RESPAWNING' &&
     (mainAI.invulnerabilityTimer ?? 0) <= 0 &&
-    areCombatantsHostile('player', MAIN_AI_ID)
+    canCombatantsDamage('player', MAIN_AI_ID)
   ) {
     const enemyCenter = new THREE.Vector3(mainAI.pos.x, mainAI.pos.y + 0.825, mainAI.pos.z);
     const toEnemy = enemyCenter.clone().sub(eyePos);
@@ -111,7 +111,7 @@ export function applyPlayerHammerMeleeImpactForState({
       !other.isObserver &&
       other.respawnTimer <= 0 &&
       (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) &&
-      areCombatantsHostile('player', other.id)
+      canCombatantsDamage('player', other.id)
     ) {
       const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
       const toOther = otherBodyCenter.clone().sub(eyePos);

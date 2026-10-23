@@ -1,3 +1,4 @@
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import * as THREE from 'three';
 import { createBotParityFixture } from './grifballBotExecutionParity';
 import { parityRecorder } from './grifballMultiActorParity';
@@ -5,7 +6,6 @@ import { DEFAULT_KEYBINDINGS, type Combatant } from '../../src/types';
 import { triggerPlayerSwordLungeForState } from '../../src/components/grifball/playerWeaponActions';
 import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
 import { executeMainAITradeForState } from '../../src/components/grifball/tradeRuntime';
-import { areGrifballCombatantsHostileForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { updatePlayerHorizontalMovementForState, updatePlayerVerticalIntegrationForState } from '../../src/components/grifball/playerMovementRuntime';
 import { updatePlayerRespawnForState } from '../../src/components/grifball/playerRespawnRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
@@ -85,6 +85,12 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
   bot.team = pairs[0][1].team = threatened ? opponent : team;
   bot.pos.set(threatened ? 2 : mixed ? .3 : 40, 0, direction * (threatened ? 2.8 : mixed ? targetZ - 2 : 40));
   bot.yaw = threatened ? Math.PI / 2 : spec.mirror ? 0 : Math.PI;
+  if (mixed && !threatened) {
+    // Isolate impact ordering: keep the allied slasher beside/beyond the target,
+    // outside both the player's committed path and reciprocal friendly splash.
+    bot.pos.set(1.8, 0, direction * (targetZ + 1.6));
+    bot.yaw = Math.atan2(bot.pos.x - target.pos.x, bot.pos.z - target.pos.z);
+  }
   target.yaw = spec.mirror ? Math.PI : 0;
   if (spec.kind === 'boundary') { target.pos.set(3, 0, 0); bot.pos.set(-2, 0, 0); }
   for (const [a, b] of pairs) { b.pos = { x: a.pos.x, y: a.pos.y, z: a.pos.z }; b.yaw = a.yaw - Math.PI; }
@@ -138,7 +144,7 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
       if (!dead) {
         if (state.isLunging) updatePlayerSwordLungeForState({ ...effects, dt: 1 / 60, isMultiplayer: false,
           activeCustomMap: map, multiplayerSocket: null, getMainAi,
-          areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
+          canCombatantsDamage,
           constrainCombatantToArena: constrain, renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: hit => { ends.push(hit); },
           recordPlayerCounterSuccess: noop, recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: noop,
           executeTrade: reason => executeMainAITradeForState({ ...effects, mainAi: getMainAi(), reason }) });
@@ -162,7 +168,11 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
       record.compare(tick, 'snapshot.state', JSON.stringify(restored), JSON.stringify(sim));
     }
     if (tick === snapshotAt) restored = JSON.parse(JSON.stringify(sim));
-    for (const e of events.kills) { kills.set(e.attackerId, (kills.get(e.attackerId) ?? 0) + 1); deaths.set(e.victimId, (deaths.get(e.victimId) ?? 0) + 1); }
+    for (const e of events.kills) {
+      if (sim.combatants.find(c => c.id === e.attackerId)?.team !== sim.combatants.find(c => c.id === e.victimId)?.team)
+        kills.set(e.attackerId, (kills.get(e.attackerId) ?? 0) + 1);
+      deaths.set(e.victimId, (deaths.get(e.victimId) ?? 0) + 1);
+    }
     if (wasLunging && !state.isLunging && !endTick) endTick = tick;
     if (simWasLunging && !player.isLunging && !simEndTick) simEndTick = tick;
     const livePlayer = { hp: state.playerHP, lunging: state.isLunging, phase: state.pSwordState === 'ready' ? 'idle' : state.pSwordState,
@@ -191,7 +201,7 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
   }
   record.compare(120, 'finishTick', endTick, simEndTick);
   const expectedTargetHp = spec.geometry?.expectedHit === false ? 2 : spec.kind === 'hit-two' || spec.kind.endsWith('trade-two') ? 1
-    : spec.kind === 'shield' ? 2 : ['friendly', 'timeout', 'boundary', 'killed-flight'].includes(spec.kind) ? 1 : 0;
+    : spec.kind === 'shield' ? 2 : ['timeout', 'boundary', 'killed-flight'].includes(spec.kind) ? 1 : 0;
   const expectedPlayerHp = spec.kind.endsWith('trade-one') || spec.kind === 'killed-flight' ? 0
     : ['hit-two', 'same-frame-two'].includes(spec.kind) ? 2 : 1;
   for (const [side, hp, targetHp] of [['live', state.playerHP, target.hp], ['headless', player.hp, pairs[1][1].hp]] as const) {
@@ -200,9 +210,9 @@ export function runPlayerLungeParityTrace(spec: PlayerLungeParityCase, execution
   }
   // Independently derive the first step strictly beyond 16 units at 24 units/s.
   const travelEnd = Math.floor(16 / (24 / 60)) + 1;
-  const expectedFinish = spec.geometry?.finishTick ?? (trade ? 1 : spec.kind === 'boundary' ? 9 : spec.kind === 'timeout' ? travelEnd
-    : ['shield', 'friendly'].includes(spec.kind) ? 1 : spec.kind === 'player-first' ? 6
-    : spec.kind === 'melee-first' ? 8 : spec.kind.startsWith('same-frame') || spec.kind === 'killed-flight' ? 7
+  const expectedFinish = spec.geometry?.finishTick ?? (trade ? 1 : spec.kind === 'boundary' ? 9 : ['timeout', 'shield', 'melee-first'].includes(spec.kind) ? travelEnd
+    : spec.kind === 'player-first' ? 6
+    : spec.kind.startsWith('same-frame') || spec.kind === 'killed-flight' ? 7
     : spec.kind === 'damaged-flight' ? 27 : 9);
   record.compare(120, 'expected.live.finish', endTick, expectedFinish); record.compare(120, 'expected.headless.finish', simEndTick, expectedFinish);
   const expectedPlayerKills = ['hit-one', 'player-first', 'same-frame-one', 'damaged-flight'].includes(spec.kind) || spec.kind.endsWith('trade-one') ? 1 : 0;

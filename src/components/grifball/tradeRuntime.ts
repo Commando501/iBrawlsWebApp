@@ -1,3 +1,4 @@
+import { creditCombatKillForState } from './combatScoring';
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import { resolveCombatHitDamageForState } from './combatDamage';
 import { simulationTimestamp } from '../../game/simulationRandom';
@@ -142,8 +143,7 @@ export function executeCustomBotTradeForState({
     }
 
     if (target.id === 'player') {
-      state.scorePlayer += 1;
-      state.playerKills += 1;
+      creditCombatKillForState(state, 'player', attackerBot.id);
       const medals = evaluatePlayerKillMedals(attackerBot.id);
       recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals, tradeWeapon, {
         attacker: createReplayHeatmapCombatantSource('player', undefined, {
@@ -153,12 +153,7 @@ export function executeCustomBotTradeForState({
         victim: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
       });
     } else if (targetCombatant) {
-      targetCombatant.score = (targetCombatant.score || 0) + 1;
-      targetCombatant.kills = (targetCombatant.kills || 0) + 1;
-      if (targetCombatant.id === MAIN_AI_ID) {
-        state.scoreEnemy += 1;
-        state.enemyKills += 1;
-      }
+      creditCombatKillForState(state, targetCombatant.id, attackerBot.id);
       recordDeathEvent(
         `${targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id)} [${tradeText}]`,
         attackerBot.playerName,
@@ -180,12 +175,7 @@ export function executeCustomBotTradeForState({
     state.playerHP = 0;
     state.playerRespawnTimer = 3.0;
     state.playerDeaths += 1;
-    attackerBot.score = (attackerBot.score || 0) + 1;
-    attackerBot.kills = (attackerBot.kills || 0) + 1;
-    if (attackerBot.id === MAIN_AI_ID) {
-      state.scoreEnemy += 1;
-      state.enemyKills += 1;
-    }
+    creditCombatKillForState(state, attackerBot.id, target.id, attackerBot);
     recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName(), undefined, tradeWeapon, {
       attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
       victim: createReplayHeatmapCombatantSource('player', undefined, {
@@ -205,12 +195,7 @@ export function executeCustomBotTradeForState({
       state.enemyDeaths += 1;
       recordBotCalibrationDeath(targetCombatant.id);
     }
-    attackerBot.score = (attackerBot.score || 0) + 1;
-    attackerBot.kills = (attackerBot.kills || 0) + 1;
-    if (attackerBot.id === MAIN_AI_ID) {
-      state.scoreEnemy += 1;
-      state.enemyKills += 1;
-    }
+    creditCombatKillForState(state, attackerBot.id, target.id, attackerBot);
     recordDeathEvent(
       `${attackerBot.playerName} [${tradeText}]`,
       targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id),
@@ -326,11 +311,8 @@ export function executePlayerCombatantTradeForState({
   if (state.playerHP <= 0) {
     state.playerHP = 0;
     state.playerRespawnTimer = 3.0;
-    if (combatant.id === MAIN_AI_ID) state.scoreEnemy += 1;
     state.playerDeaths += 1;
-    if (combatant.id === MAIN_AI_ID) state.enemyKills += 1;
-    combatant.kills = (combatant.kills ?? 0) + 1;
-    combatant.score = (combatant.score ?? 0) + 1;
+    creditCombatKillForState(state, combatant.id, 'player', combatant);
   }
   state.pWeaponState = 'ready';
   state.pWeaponTimer = 0;

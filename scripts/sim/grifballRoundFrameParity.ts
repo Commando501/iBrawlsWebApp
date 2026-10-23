@@ -1,6 +1,6 @@
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import { triggerPlayerSwordLungeForState } from '../../src/components/grifball/playerWeaponActions';
 import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
-import { areGrifballCombatantsHostileForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { attachLungeRuntime } from './grifballLungeFixture';
 import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
@@ -175,7 +175,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
           if (!updatePlayerRespawnForState({ state, dt, isMultiplayer: false, getMainAi: () => undefined, activeCustomMap: map, spawnPoints: [], playRespawn: noop })) {
             if (playerFlight && state.isLunging) {
               updatePlayerSwordLungeForState({ state, dt, isMultiplayer: false, activeCustomMap: map, multiplayerSocket: null,
-                getMainAi: () => state.otherPlayers.get('main_ai'), areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
+                getMainAi: () => state.otherPlayers.get('main_ai'), canCombatantsDamage,
                 constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
                 renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: hit => playerEnds.push(hit), recordPlayerCounterSuccess: noop,
                 recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: noop, recordBotCalibrationDeath: noop,
@@ -238,7 +238,8 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     });
     const simActors = sim.combatants.map(c => ({ id: c.id, hp: c.hp, maxHp: c.maxHp, respawn: c.respawnTimer, shield: c.invulnerabilityTimer,
       weapon: c.weapon, pos: Object.values(c.pos), vel: Object.values(c.vel), heading: [Math.sin(c.yaw + Math.PI), Math.cos(c.yaw + Math.PI)] }));
-    combatKills += events.kills.filter(e => e.attackerId === (playerFlight ? player.id : injured.id)).length;
+    combatKills += events.kills.filter(e => e.attackerId === (playerFlight ? player.id : injured.id) &&
+      sim.combatants.find(c => c.id === e.attackerId)?.team !== sim.combatants.find(c => c.id === e.victimId)?.team).length;
     combatDeaths += events.kills.filter(e => e.victimId === victim?.[1].id).length;
     const combatLive = combat ? { phase: target.weaponState === 'ready' ? 'idle'
       : ['swing_up', 'melee_up'].includes(target.weaponState!) ? 'windup'

@@ -22,7 +22,7 @@ const callbacks = {
   recordPlayerDamageTaken: noop, tryRecordCalibrationCounterSuccess: noop,
   recordBotPsychKill: noop, recordBotDamageTag: noop, tryEnterPressureState: () => false,
   tryStartComboOnHit: noop, pushStatsUpdate: noop, executeTrade: noop,
-  evaluatePlayerKillMedals: () => [], areCombatantsHostile: () => true,
+  evaluatePlayerKillMedals: () => [], canCombatantsDamage: () => true,
   sendSync: () => true, applyOutgoingMultiplayerHitLocally: noop,
   recordDeathEvent: () => ({ id: 'death', attacker: 'attacker', victim: 'victim' }),
 };

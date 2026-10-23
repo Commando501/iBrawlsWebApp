@@ -1,3 +1,4 @@
+import { creditCombatKillForState } from './combatScoring';
 import * as THREE from 'three';
 import { type DeathEvent, type MedalInfo } from '../../types';
 import { createReplayHeatmapCombatantSource, type ReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
@@ -32,7 +33,7 @@ export function applyOutgoingMultiplayerHitForState({
   spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
 }): void {
   const target = state.otherPlayers.get(targetId);
-  if (!target || target.hp <= 0 || target.respawnTimer > 0) return;
+  if (!target || target.isObserver || target.hp <= 0 || target.respawnTimer > 0 || (target.invulnerabilityTimer ?? 0) > 0) return;
 
   target.hp = Math.max(0, target.hp - damage);
   if (target.hp > 0) return;
@@ -40,8 +41,7 @@ export function applyOutgoingMultiplayerHitForState({
   target.hp = 0;
   target.respawnTimer = 3.0;
   target.deaths = (target.deaths || 0) + 1;
-  state.scorePlayer += 1;
-  state.playerKills += 1;
+  creditCombatKillForState(state, 'player', targetId);
   playDeath();
   const medals = evaluatePlayerKillMedals(targetId);
   recordDeathEvent(

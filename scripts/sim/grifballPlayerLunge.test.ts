@@ -1,3 +1,4 @@
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
@@ -6,7 +7,7 @@ import { triggerPlayerSwordLungeForState, findPlayerSwordLungeHitTargetForState 
 import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
 import { executeMainAITradeForState } from '../../src/components/grifball/tradeRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
-import { areGrifballCombatantsHostileForState, reconcileGrifballCarrierForState, setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
+import { reconcileGrifballCarrierForState, setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
 
 const noop = () => {};
@@ -32,20 +33,20 @@ function fixture(identity: Identity, hp = 2) {
   const effects = { state, playExplosion: noop, playDeath: noop, playSwing: noop, spawnVoxelShockwaveParticles: noop,
     pushStatsUpdate: noop, recordBotCalibrationDeath: (id: string) => { events.calibration.push(id); },
     evaluatePlayerKillMedals: (id: string) => { events.medals.push(id); return []; } };
-  const hostile = (a: string, b: string) => areGrifballCombatantsHostileForState(state, a, b);
+  const hostile = (a: string, b: string) => canCombatantsDamage(a, b);
   const start = () => triggerPlayerSwordLungeForState({ state, lockTarget: target, recordLungeStart: d => { events.starts.push(d); }, playDash: noop, sendSync: noop });
   let tick = 0;
   const random = seededRandom(55);
   const step = (dt = 1 / 60) => withSimulationRandom(random, ++tick / 60, () => updatePlayerSwordLungeForState({
     ...effects, dt, isMultiplayer: state.isMultiplayer, activeCustomMap: null, multiplayerSocket: network.socket, getMainAi: () => mainAi,
-    areCombatantsHostile: hostile, constrainCombatantToArena: (pos, vel) => {
+    canCombatantsDamage: hostile, constrainCombatantToArena: (pos, vel) => {
       constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: null, arenaRadius: state.arenaRadius });
     }, renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: hit => { events.ends.push(hit); },
     recordPlayerCounterSuccess: () => { events.counter++; }, recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: id => { events.outgoing.push(id); },
     executeTrade: reason => { events.trades.push(reason); executeMainAITradeForState({ ...effects, mainAi, reason }); },
   }));
   const finish = () => { let frames = 0; while (state.isLunging && frames < 90) { step(); frames++; } return frames; };
-  const select = () => findPlayerSwordLungeHitTargetForState({ state, mainAi, isMultiplayer: false, areCombatantsHostile: hostile });
+  const select = () => findPlayerSwordLungeHitTargetForState({ state, mainAi, isMultiplayer: false, canCombatantsDamage: hostile });
   return { ...f, events, network, start, step, finish, select };
 }
 
@@ -127,17 +128,16 @@ for (const identity of identities) for (const hp of [1, 2]) for (const yaw of [0
   });
 }
 
-for (const identity of identities) for (const excluded of ['shield', 'dead', 'respawn-clock', 'respawn-state', 'observer', 'friendly'] as const) {
-  if (identity === 'legacy-main' && excluded === 'friendly') continue;
+for (const identity of identities) for (const excluded of ['shield', 'dead', 'respawn-clock', 'respawn-state', 'observer'] as const) {
   test(`player flight/${identity}: excludes ${excluded} from contact selection`, () => {
     const f = fixture(identity), { target, state } = f;
+    f.bot.isObserver = true; // Isolate this victim; living allies now count as contacts.
     target.pos.z = 1;
     if (excluded === 'shield') target.invulnerabilityTimer = 1;
     if (excluded === 'dead') target.hp = 0;
     if (excluded === 'respawn-clock') target.respawnTimer = 1;
     if (excluded === 'respawn-state') target.aiState = 'RESPAWNING';
     if (excluded === 'observer') target.isObserver = true;
-    if (excluded === 'friendly') target.team = 'blue';
     const hp = target.hp;
     assert.equal(f.select().closestTarget, null);
     f.start(); f.step(); assert.deepEqual(f.events.ends, [false]); assert.equal(target.hp, hp);
@@ -172,6 +172,7 @@ for (const identity of ['registered-main', 'regular'] as const) for (const kind 
     const sent: { targetId: string; action: string; damage: number }[] = [];
     f.network.socket = { readyState: kind === 'closed' ? 3 : 1, send: (payload: string) => sent.push(JSON.parse(payload)) } as unknown as WebSocket;
     state.isMultiplayer = true; target.controller = 'remote'; target.pos.z = 1;
+    f.bot.isObserver = true;
     state.settings.enableSwordTrade = state.settings.enableHammerSwordTrade = true;
     if (kind === 'sword' || kind === 'hammer') { target.activeWeapon = kind; target.weaponState = 'swing_up'; }
     if (kind === 'future') target.lastHammerAttackTime = 2_000_000;

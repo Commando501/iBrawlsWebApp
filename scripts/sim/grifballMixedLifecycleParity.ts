@@ -1,3 +1,4 @@
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import { triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
 import * as THREE from 'three';
 import { lungeFixture } from './grifballLungeFixture';
@@ -8,7 +9,7 @@ import { updatePlayerHorizontalMovementForState, updatePlayerVerticalIntegration
 import { triggerPlayerSwordSlashForState, triggerPlayerHammerSwingForState, triggerPlayerSwordLungeForState } from '../../src/components/grifball/playerWeaponActions';
 import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
 import { executeMainAITradeForState } from '../../src/components/grifball/tradeRuntime';
-import { areGrifballCombatantsHostileForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
+import { updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { advanceGrifballFrameForState } from '../../src/components/grifball/activeFrameRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
 import { tickCombatantInvulnerability } from '../../src/components/grifball/aiTickState';
@@ -151,7 +152,7 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
               spawnVoxelShockwaveParticles: noop, recordBotCalibrationDeath: noop, evaluatePlayerKillMedals: () => [] };
             updatePlayerSwordLungeForState({ ...effects, dt: 1 / 60, isMultiplayer: false, activeCustomMap: map,
               multiplayerSocket: null, getMainAi: () => state.otherPlayers.get('main_ai'),
-              areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
+              canCombatantsDamage,
               constrainCombatantToArena: constrain, renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: noop,
               recordPlayerCounterSuccess: noop, recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: noop,
               executeTrade: reason => executeMainAITradeForState({ ...effects, mainAi: state.otherPlayers.get('main_ai'), reason }) });
@@ -203,7 +204,11 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
       record.compare(tick, 'snapshot.events', JSON.stringify(restoredEvents), JSON.stringify(events));
     }
     if (tick === snapshotAt) restored = JSON.parse(JSON.stringify(sim));
-    for (const e of events.kills) { kills.set(e.attackerId, (kills.get(e.attackerId) ?? 0) + 1); deaths.set(e.victimId, (deaths.get(e.victimId) ?? 0) + 1); }
+    for (const e of events.kills) {
+      if (sim.combatants.find(c => c.id === e.attackerId)?.team !== sim.combatants.find(c => c.id === e.victimId)?.team)
+        kills.set(e.attackerId, (kills.get(e.attackerId) ?? 0) + 1);
+      deaths.set(e.victimId, (deaths.get(e.victimId) ?? 0) + 1);
+    }
     const rawPhase = state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState;
     const canonical = (phase: string) => phase === 'ready' ? 'idle' : ['slashing', 'swing_up', 'swing_down'].includes(phase) ? 'attack' : phase;
     const live = { hp: state.playerHP, lunging: state.isLunging, phase: canonical(rawPhase), elapsed: state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer,
@@ -265,7 +270,7 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   if (opposed?.shields) return { name: `shielded-opposed/${opposed.first}/${spec.main}/${spec.mirror}/${spec.reverse}`,
     scenario: { ...spec, opposed }, ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
-  const hit = !['shield', 'friendly', 'dead', 'double-respawn'].includes(spec.kind);
+  const hit = !['shield', 'dead', 'double-respawn'].includes(spec.kind);
   const expectedPlayerHp = hit ? player.maxHp - 1 : spec.kind === 'dead' ? 0 : player.maxHp;
   const contactTick = near ? 1 : spec.kind === 'shield-expiry' ? 10 : 9;
   const reviveTick = spec.kind === 'double-respawn' ? 2 : spec.kind === 'dead' ? 181 : hit && player.maxHp === 1 ? contactTick + 181 : 0;
@@ -284,7 +289,7 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
   }
   for (const side of ['liveBot', 'simBot'] as const) {
     record.compare(120, `expected.${side}.damage`, frames[119][side].hp, trade ? self.maxHp - 1 : self.maxHp);
-    record.compare(300, `expected.${side}.kills`, frames[299][side].kills, hit && player.maxHp === 1 ? 1 : 0);
+    record.compare(300, `expected.${side}.kills`, frames[299][side].kills, hit && spec.kind !== 'friendly' && player.maxHp === 1 ? 1 : 0);
     if (spec.kind === 'double-respawn' || trade && self.maxHp === 1) {
       record.compare(reviveTick, `expected.${side}.occupiedSpawn`, frames[reviveTick - 1][side].pos[0], 10);
       record.compare(reviveTick, `expected.${side}.revivalShield`, frames[reviveTick - 1][side].shield, .5 - 1 / 60, 1e-6);

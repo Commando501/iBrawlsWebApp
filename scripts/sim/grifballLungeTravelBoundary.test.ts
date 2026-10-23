@@ -66,7 +66,7 @@ function checkBoundary(kind: 'roster' | 'player', distance: number, contact = fa
   const ends: boolean[] = [];
   updatePlayerSwordLungeForState({ state: s, dt: 0, isMultiplayer: false, activeCustomMap: f.map,
     multiplayerSocket: null, getMainAi: () => undefined,
-    areCombatantsHostile: (_a, b) => b === f.target.id, constrainCombatantToArena: noop,
+    canCombatantsDamage: (_a, b) => b === f.target.id, constrainCombatantToArena: noop,
     renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: hit => ends.push(hit),
     recordPlayerCounterSuccess: noop, recordPlayerDamageDealt: noop, recordBotCalibrationDeath: noop,
     evaluatePlayerKillMedals: () => [], executeTrade: () => assert.fail('unexpected trade'),

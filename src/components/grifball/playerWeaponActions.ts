@@ -146,12 +146,12 @@ export function findPlayerSwordLungeHitTargetForState({
   state,
   mainAi,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
 }: {
   state: GrifballRuntimeState;
   mainAi: Combatant | undefined;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
 }): {
   closestTarget: PlayerSwordLungeHitTarget | null;
   distance: number;
@@ -168,7 +168,7 @@ export function findPlayerSwordLungeHitTargetForState({
     (mainAi.respawnTimer ?? 0) <= 0 &&
     (mainAi.invulnerabilityTimer ?? 0) <= 0 &&
     mainAi.aiState !== 'RESPAWNING' &&
-    areCombatantsHostile('player', MAIN_AI_ID)
+    canCombatantsDamage('player', MAIN_AI_ID)
   ) {
     closestTarget = { id: MAIN_AI_ID, pos: mainAi.pos, hp: mainAi.hp, name: 'Red (AI)', modelType: mainAi.modelType };
     distance = playerCenter.distanceTo(getCombatBodyCenter(mainAi.pos, mainAi.isCrouching));
@@ -182,7 +182,7 @@ export function findPlayerSwordLungeHitTargetForState({
       (other.invulnerabilityTimer ?? 0) <= 0 &&
       !other.isObserver &&
       other.respawnTimer <= 0 &&
-      areCombatantsHostile('player', other.id)
+      canCombatantsDamage('player', other.id)
     ) {
       const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
       const candidateDistance = playerCenter.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching));

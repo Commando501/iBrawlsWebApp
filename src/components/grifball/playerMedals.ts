@@ -3,6 +3,7 @@ import { evaluateKillMedals } from '../../game/rewards';
 import { type Combatant, type MedalInfo } from '../../types';
 import { queueReplayHeatmapMedalEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
+import { isFriendlyFireForState } from './combatScoring';
 
 interface EvaluatePlayerKillMedalsOptions {
   state: GrifballRuntimeState;
@@ -21,6 +22,7 @@ export const evaluatePlayerKillMedalsForState = ({
   playMedal,
   onPopupExpired,
 }: EvaluatePlayerKillMedalsOptions): MedalInfo[] => {
+  if (isFriendlyFireForState(s, 'player', victimId)) return [];
   const now = simulationTimestamp();
 
   let isLunging = false;

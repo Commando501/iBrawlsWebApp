@@ -1,4 +1,5 @@
 import { resolveGrifballCarrierDecision } from '../game/aiGrifballObjectiveSteering';
+import { AI_CROUCH_SPEED_MULTIPLIER } from '../game/aiMovementMechanics';
 import type { GrifballTeamPlanState } from '../game/aiGrifballTeamPlan';
 import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
 import { selectGrifballRunnerEvasion } from '../game/aiGrifballRunnerEvasion';
@@ -38,7 +39,7 @@ export function resolveSimGrifballCarrierInput(state: SimState, plan: GrifballTe
     goal: state.goalPlates.find(p => p.team !== actor.team)?.position ?? null,
     weaponState: actor.weaponState === 'idle' ? 'ready' : actor.weaponState === 'windup' ? 'swing_up' : actor.weaponState === 'active' ? 'swing_down' : 'recovering',
     canStartWeaponAction, settings: state.settings, dt, clashThreats, runnerRadiusBonus: getModelTargetRadiusBonus(actor.modelType),
-    runnerBodyHeight: actor.isCrouching ? .52 : .825,
+    runnerBodyHeight: actor.isCrouching ? .52 : .825, isCrouching: actor.isCrouching,
     playerStyle: resolveGrifballPlayerStyle(plan.snapshot?.tactics?.botStyles, botId) });
   if (!decision) return null;
   if (execution.punch && assignment) {
@@ -57,7 +58,7 @@ export function resolveSimGrifballCarrierInput(state: SimState, plan: GrifballTe
     if (evasion) return { decision, input: null, evasion };
   }
   if (decision.kind === 'pass' && !execution.pass || decision.kind === 'punch' && !execution.punch) return { decision, input: null };
-  const speed = 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true);
+  const speed = 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true) * (actor.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
   const scriptedObjective: ScriptedObjectiveInput = { version: SCRIPTED_OBJECTIVE_INPUT_VERSION, scriptedBots,
     movement: { [botId]: { x: decision.velocity.x / speed, z: decision.velocity.z / speed } } };
   const action = { ...idleAction(), crouch: actor.isCrouching, attackPrimary: decision.kind === 'punch', aim: decision.heading && actor.weaponState === 'idle'

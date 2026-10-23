@@ -66,7 +66,7 @@ export function createScriptedActorLifecycle(state: SimState, control: ScriptedC
         }
         return; // Live trades do not record psychological/calibration kills.
       }
-      if (local || target.hp > 0) return;
+      if (local || target.hp > 0 || actor.team === target.team) return;
       const difficulty = control.scriptedBots[actor.id];
       if (isSkillCalibrationEnabled(difficulty))
         recordCalibrationKill(ai, actor.id, (state.combatTimeMs ?? 0) / 1000, tuning.calibrationWindowSize);

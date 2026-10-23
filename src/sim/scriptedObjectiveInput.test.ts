@@ -18,13 +18,13 @@ function fixture() {
     scriptedBots: { walker: 'normal' }, movement: { walker: { x: 0, z: -1 } } };
   return { state, actor, actions, input };
 }
-for (const runner of [false, true]) for (const scale of [0, .35, 1])
-  test(`scripted objective world steering keeps attack facing ${runner}/${scale}`, () => {
+for (const runner of [false, true]) for (const crouch of [false, true]) for (const scale of [0, .35, 1])
+  test(`scripted objective world steering keeps attack facing ${runner}/crouch=${crouch}/${scale}`, () => {
     const { state, actor, actions, input } = fixture();
     if (runner) { setSimCarrier(actor, true, state.settings); state.match.ball.state = 'held'; state.match.ball.holderId = actor.id; }
     input.movement = { walker: { x: .6 * scale, z: -.8 * scale } };
-    actions.walker.aim = .73;
-    const before = { ...actor.pos }, speed = runner ? 7.54 : 5.2;
+    actions.walker.aim = .73; actions.walker.crouch = crouch;
+    const before = { ...actor.pos }, speed = (runner ? 7.54 : 5.2) * (crouch ? .45 : 1);
     stepSimulation(state, actions, { settings: state.settings, scriptedObjective: input });
     assert.ok(Math.abs(actor.vel.x - .6 * scale * speed) < 1e-10);
     assert.ok(Math.abs(actor.vel.z + .8 * scale * speed) < 1e-10);

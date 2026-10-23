@@ -17,7 +17,7 @@ const callbacks = {
   spawnVoxelShockwaveParticles: noop, recordBotCalibrationDeath: noop, recordPlayerDamageTaken: noop,
   tryRecordCalibrationCounterSuccess: noop, recordBotPsychKill: noop, recordBotDamageTag: noop,
   tryEnterPressureState: () => false, tryStartComboOnHit: noop, pushStatsUpdate: noop,
-  evaluatePlayerKillMedals: () => [], areCombatantsHostile: () => false,
+  evaluatePlayerKillMedals: () => [], canCombatantsDamage: () => false,
   sendSync: () => true, applyOutgoingMultiplayerHitLocally: noop,
 };
 function fixture() {

@@ -1,3 +1,4 @@
+import { canCombatantsDamage } from '../game/combatDamage';
 import { useModelVariantsEnabled } from '../model/ModelVariantsContext';
 import { normalizeSelectableVisualModelPolicy } from '../model/modelSystem';
 import { onlineGrifball } from './grifball/onlineGrifballRuntime';
@@ -44,7 +45,6 @@ import { type GrifballGameProps } from './grifball/GrifballGameProps';
 import { createCombatImpactCallbacksForState } from './grifball/combatImpactCallbacks';
 import { createCombatResolutionCallbacksForState } from './grifball/combatResolutionCallbacks';
 import {
-  areGrifballCombatantsHostileForState,
   ensureGrifballBallMeshForRefs,
   getGrifballCombatantRefForState,
   getGrifballEnemyGoalPosForMap,
@@ -387,10 +387,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const grifballEnemyGoalPos = (team: string | undefined): { x: number; z: number } | null =>
     getGrifballEnemyGoalPosForMap(team, getActiveCustomMap());
 
-  // Team-based combat: in Grifball, friendly fire is OFF and AI only targets the
-  // enemy team. Everywhere else combat stays free-for-all (everyone hostile).
-  const areCombatantsHostile = (attackerId: string, victimId: string): boolean =>
-    areGrifballCombatantsHostileForState(stateRef.current, attackerId, victimId);
+  // Damage includes teammates; tactical target selection remains enemy-only.
 
   // Equip/holster the ball weapon on a combatant. The player additionally hides
   // their first-person weapon while carrying (the ball replaces the loadout).
@@ -1148,7 +1145,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     getMainAI: mai,
     getEnemyAITarget,
     isMultiplayer,
-    areCombatantsHostile,
+    canCombatantsDamage,
     executeTrade,
     sendSync: sendPlayerWeaponSync,
     applyOutgoingMultiplayerHitLocally,
@@ -1194,7 +1191,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     deviceIsMobile: deviceInfo.isMobile,
     forceMobileControls,
     multiplayerSocket,
-    areCombatantsHostile,
+    canCombatantsDamage,
     constrainCombatantToArena,
     renderHammerSplashVfx,
     renderSwordLungeTrailVfx,
@@ -1278,7 +1275,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     startAIHammerJump,
     triggerCombatantLunge,
     spawnVoxelShockwaveParticles,
-    areCombatantsHostile,
+    canCombatantsDamage,
     executeCustomBotTrade,
     renderSwordLungeTrailVfx,
     recordPlayerDamageTaken,

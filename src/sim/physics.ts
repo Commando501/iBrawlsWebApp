@@ -177,8 +177,8 @@ export function stepCombatantMovement(
   } else if (objectiveMovement) {
     // Objective steering is world-space and independent of attack facing. Live
     // support walking uses forward speed; carriers use the runner forward rule.
-    const speed = isRunner ? 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true)
-      : 5.2 * settings.speedForward / 100 * (c.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
+    const speed = (isRunner ? 5.8 * resolveDirectionalSpeedMultiplier(settings, 'forward', true)
+      : 5.2 * settings.speedForward / 100) * (c.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1);
     c.vel.x = objectiveMovement.x * speed;
     c.vel.z = objectiveMovement.z * speed;
   } else {
@@ -186,7 +186,7 @@ export function stepCombatantMovement(
     forwardDir(c.yaw, _f);
     rightDir(c.yaw, _r);
 
-    const baseSpeed = c.isCrouching && !isRunner ? CROUCH_SPEED : BASE_SPEED;
+    const baseSpeed = c.isCrouching ? CROUCH_SPEED : BASE_SPEED;
 
     const moveForward = action.moveZ;
     const moveRight = action.moveX;

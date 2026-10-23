@@ -1,3 +1,4 @@
+import { isFriendlyFireForState } from './combatScoring';
 import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
 import { cancelSwordForRunnerPunch } from './runnerSwordClash';
@@ -36,7 +37,7 @@ export function applyHammerStrikeImpactForState({
   mainAI,
   getEnemyAITarget,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
   sendSync,
   applyOutgoingMultiplayerHitLocally,
   renderHammerSplashVfx,
@@ -60,7 +61,7 @@ export function applyHammerStrikeImpactForState({
   mainAI: Combatant | undefined;
   getEnemyAITarget: () => EnemyAITarget | null;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   sendSync: (payload: HammerStrikeSyncPayload) => boolean;
   applyOutgoingMultiplayerHitLocally: (targetId: string, damage?: number) => void;
   renderHammerSplashVfx: (impactCenter: THREE.Vector3, color: string, radius: number) => void;
@@ -139,7 +140,7 @@ export function applyHammerStrikeImpactForState({
       (mainAI.respawnTimer ?? 0) <= 0 &&
       mainAI.aiState !== 'RESPAWNING' &&
       (mainAI.invulnerabilityTimer ?? 0) <= 0 &&
-      areCombatantsHostile('player', MAIN_AI_ID)
+      canCombatantsDamage('player', MAIN_AI_ID)
     ) {
       const enemyBodyCenter = new THREE.Vector3(mainAI.pos.x, mainAI.pos.y + 0.825, mainAI.pos.z);
       const dist = impactPos.distanceTo(enemyBodyCenter);
@@ -188,7 +189,7 @@ export function applyHammerStrikeImpactForState({
         !other.isObserver &&
         other.respawnTimer <= 0 &&
         (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) &&
-        areCombatantsHostile('player', other.id)
+        canCombatantsDamage('player', other.id)
       ) {
         const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
         const dist = impactPos.distanceTo(otherBodyCenter);
@@ -276,7 +277,7 @@ export function applyHammerStrikeImpactForState({
     renderHammerSplashVfx(impactPos, '#f97316', impactRadius);
   }
 
-  if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
+  if (target.hp > 0 && target.invuln <= 0 && canCombatantsDamage(MAIN_AI_ID, target.id)) {
     const dist = impactPos.distanceTo(targetBodyCenter);
 
     if (isBall ? punchTarget === target.id : dist <= adjustRangeForTargetModel(impactRadius, target.modelType)) {
@@ -288,9 +289,11 @@ export function applyHammerStrikeImpactForState({
         if (state.playerHP <= 0) {
           state.playerHP = 0;
           state.playerRespawnTimer = 3.0;
-          state.scoreEnemy += 1;
           state.playerDeaths += 1;
-          state.enemyKills += 1;
+          if (!isFriendlyFireForState(state, MAIN_AI_ID, 'player')) {
+            state.scoreEnemy += 1;
+            state.enemyKills += 1;
+          }
           playDeath();
           state.pWeaponState = 'ready';
           state.pWeaponTimer = 0;
@@ -334,8 +337,10 @@ export function applyHammerStrikeImpactForState({
           if (other.hp <= 0) {
             other.hp = 0;
             other.respawnTimer = 3.0;
-            state.scoreEnemy += 1;
-            state.enemyKills += 1;
+            if (!isFriendlyFireForState(state, MAIN_AI_ID, other.id)) {
+              state.scoreEnemy += 1;
+              state.enemyKills += 1;
+            }
             other.deaths = (other.deaths || 0) + 1;
             playDeath();
 

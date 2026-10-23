@@ -7,6 +7,7 @@ import {
   type PlayerModelObserver,
 } from './playerModelObservations';
 import { type GrifballRuntimeState } from './runtimeState';
+import { isFriendlyFireForState } from './combatScoring';
 
 export interface AISwordLungeFinishFrame {
   pos: THREE.Vector3;
@@ -63,6 +64,7 @@ const getCombatantTargetVitals = (
 
 export function finishAISwordLungeForCombatant(context: AISwordLungeFinishContext & { frame: AISwordLungeFinishFrame }): void {
   finishAISwordLungeWithVitals({ ...context,
+    allowFollowup: !context.targetId || !isFriendlyFireForState(context.state, context.botId, context.targetId),
     targetVitals: context.targetId ? getCombatantTargetVitals(context.state, context.targetId) : { hp: 0, invulnerabilityTimer: 0 } });
 }
 
@@ -82,11 +84,13 @@ export function finishAISwordLungeWithVitals({
   tryEnterPressureState,
   tryStartComboOnHit,
   targetVitals,
+  allowFollowup = true,
 }: Omit<AISwordLungeFinishContext, 'state' | 'self'> & {
   state: Pick<GrifballRuntimeState, 'settings'>;
   self: Pick<Combatant, 'isLunging' | 'swordLungeHit' | 'weaponState' | 'aiLastLungeOutcome' | 'aiLastLungeTargetId' |
     'aiPostLungeDecisionTimer' | 'lungeStartPos' | 'aiTimer' | 'isJumping' | 'vel'>;
   targetVitals: { hp: number; invulnerabilityTimer: number };
+  allowFollowup?: boolean;
   frame: AISwordLungeFinishFrame;
 }): void {
   self.isLunging = false;
@@ -103,16 +107,16 @@ export function finishAISwordLungeWithVitals({
 
   let enteredPressure = false;
   if (outcome === 'hit' && targetId) {
-    recordBotDamageTag(botId, targetId);
+    if (allowFollowup) recordBotDamageTag(botId, targetId);
     if (!damageAlreadyRecorded) recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
 
-    enteredPressure = tryEnterPressureState(
+    enteredPressure = allowFollowup && tryEnterPressureState(
       botId,
       targetId,
       targetVitals.hp,
       targetVitals.invulnerabilityTimer
     );
-    if (targetVitals.hp > 0) {
+    if (allowFollowup && targetVitals.hp > 0) {
       tryStartComboOnHit(botId, targetId, 'sword');
     }
   }

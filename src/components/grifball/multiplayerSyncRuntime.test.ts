@@ -7,6 +7,7 @@ import { createInitialGrifballThreeRefs } from './threeRefs';
 import { createMultiplayerSyncMessageHandler } from './multiplayerSyncRuntime';
 import { createOfflineBotCombatant } from '../../game/roster';
 import { prepareRunnerSwordPrediction, recordRunnerSwordPrediction, rejectRunnerSwordPrediction } from './runnerSwordPrediction';
+import { applyOutgoingMultiplayerHitForState } from './multiplayerHitRuntime';
 
 const createHandler = (
   capturedRemoteUpdates: unknown[],
@@ -44,6 +45,49 @@ const createHandler = (
 const emit = (handler: (event: MessageEvent) => void, data: unknown) => {
   handler({ data: JSON.stringify(data) } as MessageEvent);
 };
+
+for (const weapon of ['hammer', 'sword', 'ball', 'pistol']) for (const localVictim of [true, false]) {
+  test(`online friendly ${weapon} hit/${localVictim ? 'local' : 'remote'} victim: death without points`, () => {
+    const state = createInitialGrifballRuntimeState({ debugMode: false, isMultiplayer: true,
+      multiplayerRole: 'host', adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball' } });
+    state.localPlayerTeam = 'blue'; state.isObserverMode = false;
+    state.playerHP = 1; state.playerInvulnerabilityTimer = state.playerRespawnTimer = 0;
+    const add = (id: string) => {
+      const actor = createOfflineBotCombatant({ id, playerName: id, team: 'blue',
+        spawnPos: new THREE.Vector3(), yaw: 0, hue: 0, difficulty: 'normal', settings: state.settings });
+      actor.controller = 'remote'; actor.hp = 1; actor.invulnerabilityTimer = actor.respawnTimer = 0;
+      state.otherPlayers.set(id, actor); return actor;
+    };
+    const attacker = add('attacker'), victim = localVictim ? undefined : add('victim');
+    const data = { type: 'sync', action: 'hit_taken', senderId: attacker.id, targetId: victim?.id ?? 'local-id', weapon, damage: 1 };
+    const handler = createHandler([], state);
+    emit(handler, data); emit(handler, data);
+    assert.equal(victim?.hp ?? state.playerHP, 0);
+    assert.equal(victim?.deaths ?? state.playerDeaths, 1, 'repeated hits must not count another death');
+    assert.equal(attacker.kills, 0); assert.equal(attacker.score, 0);
+    assert.equal(state.playerKills, 0); assert.equal(state.enemyKills, 0);
+    assert.equal(state.scorePlayer, 0); assert.equal(state.scoreEnemy, 0);
+  });
+}
+
+test('rejecting a predicted friendly runner death restores the victim without removing earned points', () => {
+  const state = createInitialGrifballRuntimeState({ debugMode: false, isMultiplayer: true,
+    multiplayerRole: 'host', adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball' } });
+  const target = createOfflineBotCombatant({ id: 'ally', playerName: 'Ally', team: state.localPlayerTeam,
+    spawnPos: new THREE.Vector3(), yaw: 0, hue: 0, difficulty: 'normal', settings: state.settings });
+  target.controller = 'remote'; target.hp = 3; target.invulnerabilityTimer = target.respawnTimer = 0;
+  state.otherPlayers.set(target.id, target); state.grifball.ball.holderId = target.id; state.grifball.ball.state = 'held';
+  state.scorePlayer = state.playerKills = 4;
+  const hitId = prepareRunnerSwordPrediction(state, target.id);
+  applyOutgoingMultiplayerHitForState({ state, targetId: target.id, damage: 3, evaluatePlayerKillMedals: () => [],
+    recordDeathEvent: () => ({ id: 'predicted', attacker: 'You', victim: 'Ally' }), getLocalPlayerFeedName: () => 'You',
+    playDeath: () => {}, spawnVoxelShockwaveParticles: () => {} });
+  recordRunnerSwordPrediction(state, hitId);
+  assert.equal(target.hp, 0); assert.equal(state.playerKills, 4);
+  rejectRunnerSwordPrediction(state, target.id, hitId, 3);
+  assert.equal(target.hp, 3); assert.equal(target.deaths, 0); assert.equal(target.respawnTimer, 0);
+  assert.equal(state.playerKills, 4); assert.equal(state.scorePlayer, 4);
+});
 
 for (const role of ['host', 'client', 'observer'] as const) {
   test(`remote hammer explosion is resolved by ${role === 'host' ? 'the host' : 'no follower'} (${role})`, () => {

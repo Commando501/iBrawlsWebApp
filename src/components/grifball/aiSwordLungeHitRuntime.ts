@@ -1,3 +1,4 @@
+import { creditCombatKillForState, isFriendlyFireForState } from './combatScoring';
 import * as THREE from 'three';
 import { resolveCombatHitDamageForState } from './combatDamage';
 import { tryRunnerSwordClash } from './runnerSwordClash';
@@ -69,12 +70,7 @@ export function applyAISwordLungeHitForState({
       state.pSwordReady = state.pWeaponReady = true;
       state.playerRespawnTimer = 3.0;
       state.playerDeaths += 1;
-      attackerBot.score = (attackerBot.score || 0) + 1;
-      attackerBot.kills = (attackerBot.kills || 0) + 1;
-      if (attackerBot.id === MAIN_AI_ID) {
-        state.scoreEnemy += 1;
-        state.enemyKills += 1;
-      }
+      creditCombatKillForState(state, attackerBot.id, target.id, attackerBot);
       playDeath();
 
       recordDeathEvent(attackerBot.playerName, state.settings.playerName || 'Blue (You)', undefined, 'sword', {
@@ -84,7 +80,7 @@ export function applyAISwordLungeHitForState({
           pos: state.playerPos,
         }),
       });
-      recordBotPsychKill(attackerBot.id, 'player', true);
+      if (!isFriendlyFireForState(state, attackerBot.id, 'player')) recordBotPsychKill(attackerBot.id, 'player', true);
     }
     return;
   }
@@ -103,12 +99,7 @@ export function applyAISwordLungeHitForState({
       mainAi.respawnTimer = 3.0;
       mainAi.deaths = (mainAi.deaths || 0) + 1;
       state.enemyRespawnTimer = 3.0;
-      attackerBot.score = (attackerBot.score || 0) + 1;
-      attackerBot.kills = (attackerBot.kills || 0) + 1;
-      if (attackerBot.id === MAIN_AI_ID) {
-        state.scoreEnemy += 1;
-        state.enemyKills += 1;
-      }
+      creditCombatKillForState(state, attackerBot.id, target.id, attackerBot);
       state.enemyDeaths += 1;
       recordBotCalibrationDeath(MAIN_AI_ID);
       playDeath();
@@ -117,7 +108,7 @@ export function applyAISwordLungeHitForState({
         attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
         victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
       });
-      recordBotPsychKill(attackerBot.id, MAIN_AI_ID, true);
+      if (!isFriendlyFireForState(state, attackerBot.id, MAIN_AI_ID)) recordBotPsychKill(attackerBot.id, MAIN_AI_ID, true);
     }
     return;
   }
@@ -133,12 +124,7 @@ export function applyAISwordLungeHitForState({
   if (targetBot.hp <= 0) {
     targetBot.hp = 0;
     targetBot.respawnTimer = 3.0;
-    attackerBot.score = (attackerBot.score || 0) + 1;
-    attackerBot.kills = (attackerBot.kills || 0) + 1;
-    if (attackerBot.id === MAIN_AI_ID) {
-      state.scoreEnemy += 1;
-      state.enemyKills += 1;
-    }
+    creditCombatKillForState(state, attackerBot.id, target.id, attackerBot);
     targetBot.deaths = (targetBot.deaths || 0) + 1;
     playDeath();
 
@@ -146,6 +132,6 @@ export function applyAISwordLungeHitForState({
       attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
       victim: createReplayHeatmapCombatantSource(target.id, targetBot),
     });
-    recordBotPsychKill(attackerBot.id, target.id, true);
+    if (!isFriendlyFireForState(state, attackerBot.id, target.id)) recordBotPsychKill(attackerBot.id, target.id, true);
   }
 }

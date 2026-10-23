@@ -43,6 +43,35 @@ function fixture(id: string, mirror: boolean, routed: boolean, pickup: boolean) 
   return { ...f, self, other, goal, plan: createGrifballTeamPlanState(), scriptedBots: { [id]: 'normal' } };
 }
 
+for (const id of ['bot_2', 'main_ai']) for (const mirror of [false, true]) for (const routed of [false, true])
+  test(`crouching carrier slows exactly once and resumes standing speed ${id}/${mirror}/${routed}`, () => {
+    const f = fixture(id, mirror, routed, false), { sim, state, self, bot, plan, scriptedBots } = f;
+    for (const crouch of [false, true, false]) for (let tick = 0; tick < 12; tick++) {
+      self.isCrouching = bot.isCrouching = crouch;
+      updateGrifballTeamPlanForState(state, dt, f.goal, f.map);
+      updateGrifballTeamPlan(plan, createSimGrifballTacticalSnapshot(sim, { scriptedBots, tactics: state.grifballTactics }), dt);
+      const result = resolveSimGrifballCarrierInput(sim, plan, id, scriptedBots, false)!;
+      assert.equal(result.decision.kind, 'move'); assert.ok(result.input);
+      const frame = { pos: bot.pos, vel: bot.vel, yaw: bot.yaw, aiState: bot.aiState, timer: 0,
+        dashRemaining: 0, slideActive: false, weaponState: 'ready', pickupRequested: false };
+      const before = bot.pos.clone();
+      assert.ok(resolvePrimaryGrifballAIObjectiveMovementForCombatant({ state, botId: id, self: bot, frame,
+        alliesList: [], enemiesList: [f.target.pos], dt, canStartWeaponAction: false,
+        triggerCombatantAttack: () => assert.fail('No attack expected'), getEnemyGoalPos: f.goal,
+        constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: f.map, arenaRadius: state.arenaRadius }) }));
+      bot.yaw = frame.yaw;
+      stepSimulation(sim, { [id]: result.input.action }, { settings: sim.settings, scriptedObjective: result.input.scriptedObjective });
+      const expectedSpeed = 5.8 * 1.4 * 1.3 * (crouch ? .45 : 1);
+      near(Math.hypot(bot.vel.x, bot.vel.z), expectedSpeed, 'live crouch speed');
+      near(Math.hypot(self.vel.x, self.vel.z), expectedSpeed, 'sim crouch speed');
+      near(bot.pos.distanceTo(before), expectedSpeed * dt, 'travel distance');
+      for (const axis of ['x', 'y', 'z'] as const) {
+        near(bot.pos[axis], self.pos[axis], `position.${axis}`);
+        near(bot.vel[axis], self.vel[axis], `velocity.${axis}`);
+      }
+    }
+  });
+
 function runnerWindup(id = 'bot_2', mirror = false) {
   const f = fixture(id, mirror, false, false), sign = mirror ? -1 : 1;
   updateGrifballTeamPlanForState(f.state, .2, f.goal, f.map);

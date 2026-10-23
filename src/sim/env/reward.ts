@@ -374,7 +374,9 @@ export function computeStepRewardDetails(
 
   // Kills/deaths credited to the specific attacker / victim (not the whole team).
   for (const k of events.kills) {
-    if (k.attackerId in out) addReward(out, components, k.attackerId, config.kill, 'kill');
+    const attacker = state.combatants.find(c => c.id === k.attackerId);
+    const victim = state.combatants.find(c => c.id === k.victimId);
+    if (k.attackerId in out && attacker && victim && areHostile(attacker, victim)) addReward(out, components, k.attackerId, config.kill, 'kill');
     if (k.victimId in out) addReward(out, components, k.victimId, -config.death, 'death');
     const previousThreat = memory.combatThreat[k.victimId];
     if (

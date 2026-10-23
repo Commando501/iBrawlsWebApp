@@ -24,7 +24,7 @@ export function applyPlayerSwordSlashImpactForState({
   state,
   mainAI,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
   executeTrade,
   sendSync,
   applyOutgoingMultiplayerHitLocally,
@@ -37,7 +37,7 @@ export function applyPlayerSwordSlashImpactForState({
   state: GrifballRuntimeState;
   mainAI: Combatant | undefined;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   executeTrade: (reason: 'sword_vs_sword' | 'sword_lunge_vs_hammer') => void;
   sendSync: (payload: PlayerSwordSlashHitSyncPayload) => boolean;
   applyOutgoingMultiplayerHitLocally: (targetId: string, damage?: number) => void;
@@ -67,7 +67,7 @@ export function applyPlayerSwordSlashImpactForState({
     (mainAI.respawnTimer ?? 0) <= 0 &&
     mainAI.aiState !== 'RESPAWNING' &&
     (mainAI.invulnerabilityTimer ?? 0) <= 0 &&
-    areCombatantsHostile('player', MAIN_AI_ID)
+    canCombatantsDamage('player', MAIN_AI_ID)
   ) {
     const enemyCenter = new THREE.Vector3(mainAI.pos.x, mainAI.pos.y + 0.825, mainAI.pos.z);
     const toEnemy = enemyCenter.clone().sub(eyePos);
@@ -138,7 +138,7 @@ export function applyPlayerSwordSlashImpactForState({
         !other.isObserver &&
         other.respawnTimer <= 0 &&
         (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) &&
-        areCombatantsHostile('player', other.id)
+        canCombatantsDamage('player', other.id)
       ) {
         const otherCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
         const toOther = otherCenter.clone().sub(eyePos);
