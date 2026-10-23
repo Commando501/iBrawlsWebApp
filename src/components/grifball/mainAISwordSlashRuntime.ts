@@ -1,3 +1,4 @@
+import { isFriendlyFireForState } from './combatScoring';
 import { simulationTimestamp } from '../../game/simulationRandom';
 import { resolveCombatHitDamageForState } from './combatDamage';
 import { tryRunnerSwordClash } from './runnerSwordClash';
@@ -19,7 +20,7 @@ export function applyMainAISwordSlashImpactForState({
   mainAI,
   target,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
   executeTrade,
   recordPlayerDamageTaken,
   tryRecordCalibrationCounterSuccess,
@@ -36,7 +37,7 @@ export function applyMainAISwordSlashImpactForState({
   mainAI: Combatant | undefined;
   target: EnemyAITarget | null;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   executeTrade: (reason: 'sword_vs_sword' | 'sword_lunge_vs_hammer') => void;
   recordPlayerDamageTaken: () => void;
   tryRecordCalibrationCounterSuccess: (botId: string) => void;
@@ -71,7 +72,7 @@ export function applyMainAISwordSlashImpactForState({
 
   if (isMultiplayer) return;
 
-  if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
+  if (target.hp > 0 && target.invuln <= 0 && canCombatantsDamage(MAIN_AI_ID, target.id)) {
     const dist = aiEyePos.distanceTo(targetBodyCenter);
 
     if (dist <= adjustRangeForTargetModel(MELEE_SWORD_SLASH_REACH, target.modelType)) {
@@ -97,9 +98,11 @@ export function applyMainAISwordSlashImpactForState({
         if (state.playerHP <= 0) {
           state.playerHP = 0;
           state.playerRespawnTimer = 3.0;
-          state.scoreEnemy += 1;
           state.playerDeaths += 1;
-          state.enemyKills += 1;
+          if (!isFriendlyFireForState(state, MAIN_AI_ID, 'player')) {
+            state.scoreEnemy += 1;
+            state.enemyKills += 1;
+          }
           playDeath();
           state.pWeaponState = 'ready';
           state.pWeaponTimer = 0;
@@ -142,8 +145,10 @@ export function applyMainAISwordSlashImpactForState({
           if (other.hp <= 0) {
             other.hp = 0;
             other.respawnTimer = 3.0;
-            state.scoreEnemy += 1;
-            state.enemyKills += 1;
+            if (!isFriendlyFireForState(state, MAIN_AI_ID, other.id)) {
+              state.scoreEnemy += 1;
+              state.enemyKills += 1;
+            }
             other.deaths = (other.deaths || 0) + 1;
             playDeath();
 

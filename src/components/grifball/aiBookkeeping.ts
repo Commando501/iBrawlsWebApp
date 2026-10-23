@@ -1,4 +1,5 @@
 import { notifyBotDamageTag } from '../../game/aiBotCoordinator';
+import { isFriendlyFireForState } from './combatScoring';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import {
   isSkillCalibrationEnabled,
@@ -61,7 +62,7 @@ export const recordBotDamageTagForState = ({
   targetId: string;
   isMultiplayer: boolean;
 }): void => {
-  if (isMultiplayer) return;
+  if (isMultiplayer || isFriendlyFireForState(state, botId, targetId)) return;
 
   notifyBotDamageTag(
     state.aiMatchContext.coordinator,

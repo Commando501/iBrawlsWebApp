@@ -50,7 +50,7 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
       modelType: target.modelType, weaponState: target.weaponState ?? 'ready', isLunging: !!target.isLunging,
       isCrouching: !!target.isCrouching, isObserver: false, respawnTimer: target.respawnTimer ?? 0,
       invuln: target.invulnerabilityTimer ?? 0 }), isMultiplayer: false,
-    areCombatantsHostile: (a, b) => a !== b, executeTrade: noop, sendSync: () => false, applyOutgoingMultiplayerHitLocally: noop,
+    canCombatantsDamage: (a, b) => a !== b, executeTrade: noop, sendSync: () => false, applyOutgoingMultiplayerHitLocally: noop,
     evaluatePlayerKillMedals: () => [], recordPlayerDamageTaken: noop, tryRecordCalibrationCounterSuccess: noop,
     recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop, playJump: noop, pushStatsUpdate: noop });
   const actions = createCombatantActionCallbacksForState({ getState: () => state, getRefs: () => refs, spawnPoints: [],

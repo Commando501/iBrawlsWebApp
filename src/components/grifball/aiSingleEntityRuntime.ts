@@ -1,4 +1,9 @@
 import type { CustomMapData } from '../../types';
+import { planLiveTeamSafeAim } from './aiTeamSafeAimRuntime';
+import { isTeamAimAttackPending } from '../../game/aiTeamSafeAim';
+import { beginPunch } from '../../game/ballPunch';
+import { punchTargetsForState } from './ballPunchRuntime';
+import { AI_CROUCH_SPEED_MULTIPLIER } from '../../game/aiMovementMechanics';
 import { observeLiveGrifballSwordGuard } from './grifballSwordGuard';
 import { resolveAIGroundState } from '../../game/aiGroundState';
 import { selectGrifballEscortEvasion } from '../../game/aiGrifballEvasion';
@@ -142,7 +147,7 @@ export function createAISingleEntityUpdaterForState({
   startAIHammerJump,
   triggerCombatantLunge,
   spawnVoxelShockwaveParticles,
-  areCombatantsHostile,
+  canCombatantsDamage,
   executeCustomBotTrade,
   renderSwordLungeTrailVfx,
   recordPlayerDamageTaken,
@@ -193,6 +198,8 @@ export function createAISingleEntityUpdaterForState({
       const vel = self.vel;
       let yaw = self.yaw;
       let newlyCommittedAimTarget: THREE.Vector3 | null = null;
+      let teamAimTargetId: string | undefined;
+      const teamAimStart = { x: pos.x, z: pos.z, vy: vel.y, lunging: !!self.isLunging };
       let activeWeapon = self.activeWeapon;
       let weaponState = self.weaponState || 'ready';
   
@@ -258,6 +265,45 @@ export function createAISingleEntityUpdaterForState({
         if (newlyCommittedAimTarget && ['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(self.weaponState ?? '')) {
           const dx = newlyCommittedAimTarget.x - pos.x, dz = newlyCommittedAimTarget.z - pos.z;
           if (dx !== 0 || dz !== 0) yaw = Math.atan2(-dx, -dz);
+        }
+        // Final autonomous intent, before the roster animation can deal damage.
+        // Re-evaluate during windup as neighbours move; committed flights keep
+        // their launch direction and the normal friendly-fire collision rules.
+        if (s.settings.gameMode === 'grifball' && s.grifball.phase === 'playing' && self.activeWeapon === 'ball' &&
+          isTeamAimAttackPending('ball', self.weaponState) && !self.punchAttack) {
+          // Lock assistance at commitment, as the simulator does, before later
+          // roster turns can move the target out of the acquisition envelope.
+          self.punchAttack = beginPunch({ ...self, heading: { x: -Math.sin(yaw), y: 0, z: -Math.cos(yaw) },
+            eyeHeight: self.isCrouching ? .9 : 1.2 }, punchTargetsForState(s, botId), s.settings, getActiveCustomMap());
+        }
+        const aimPlan = planLiveTeamSafeAim(s, self, yaw, teamAimStart.lunging, getActiveCustomMap(), teamAimTargetId);
+        if (aimPlan.kind === 'aim') {
+          yaw = Math.atan2(-aimPlan.heading.x, -aimPlan.heading.z);
+          if (self.isLunging) self.lungeTargetDir = { ...aimPlan.heading };
+          else if (self.activeWeapon === 'ball' && isTeamAimAttackPending('ball', self.weaponState)) {
+            // Do not let punch assistance steer a deliberately offset jab back
+            // through a teammate on the following animation tick.
+            self.punchAttack = beginPunch({ ...self, heading: aimPlan.heading, eyeHeight: self.isCrouching ? .9 : 1.2 }, [], s.settings);
+          }
+        } else if (aimPlan.kind === 'hold' || aimPlan.kind === 'reposition') {
+          if (self.isLunging || isTeamAimAttackPending(self.activeWeapon === 'sword' ? 'sword' : self.activeWeapon === 'ball' ? 'ball' : 'hammer', self.weaponState ?? '')) {
+            if (self.isLunging) { vel.y = Math.min(vel.y, teamAimStart.vy); self.isJumping = pos.y > .01 || vel.y > .01; }
+            self.isLunging = false; self.lungeTimer = 0;
+            self.weaponState = weaponState = 'ready'; self.weaponTimer = 0;
+            self.hammerJumpPlanned = false; delete self.punchAttack;
+            s.aiMatchContext.comboState.delete(botId);
+            state = 'SIDE_STEPPING'; timer = .15;
+          }
+          if (!teamAimStart.lunging && !self.isJumping && pos.y <= .01 && dashRemaining <= 0 && !slideActive) {
+            const dx = aimPlan.kind === 'reposition' ? aimPlan.destination.x - pos.x : 0;
+            const dz = aimPlan.kind === 'reposition' ? aimPlan.destination.z - pos.z : 0;
+            const length = Math.hypot(dx, dz);
+            const speed = Math.min(3.5 * s.settings.speedSide / 100 * (self.isCrouching ? AI_CROUCH_SPEED_MULTIPLIER : 1), length / Math.max(dt, .001));
+            vel.x = length > .001 ? dx / length * speed : 0;
+            vel.z = length > .001 ? dz / length * speed : 0;
+            pos.x = teamAimStart.x + vel.x * dt; pos.z = teamAimStart.z + vel.z * dt;
+            isSprinting = false; constrainCombatantToArena(pos, vel);
+          }
         }
         syncAICombatantFrameToState({
           self,
@@ -336,7 +382,7 @@ export function createAISingleEntityUpdaterForState({
               gravityAcceleration: GRAVITY_ACCELERATION,
               recoverCombatantAltitude,
               constrainCombatantToArena,
-              areCombatantsHostile,
+              canCombatantsDamage,
               finishSwordLunge,
               finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
                 state: s, self: other, botId: other.id, targetId: attackerId,
@@ -730,6 +776,7 @@ export function createAISingleEntityUpdaterForState({
       }
   
       registerBotEngagement(s.aiMatchContext.coordinator, botId, target.id);
+      teamAimTargetId = target.id;
       if (!['swing_up', 'swing_down', 'melee_up', 'melee_down'].includes(weaponState)) newlyCommittedAimTarget = target.pos;
   
       // SPAWN_GUARDING is only driven by the post-kill-pressure / no-target early-return
@@ -1114,7 +1161,7 @@ export function createAISingleEntityUpdaterForState({
           gravityAcceleration: GRAVITY_ACCELERATION,
           recoverCombatantAltitude,
           constrainCombatantToArena,
-          areCombatantsHostile,
+          canCombatantsDamage,
           finishSwordLunge,
           finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
             state: s, self: other, botId: other.id, targetId: attackerId,

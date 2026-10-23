@@ -49,7 +49,7 @@ export function updatePlayerPhysicsForState({
   spawnPoints,
   gravityAcceleration,
   getMainAi,
-  areCombatantsHostile,
+  canCombatantsDamage,
   constrainCombatantToArena,
   renderSwordLungeTrailVfx,
   recordGamepadDash,
@@ -98,7 +98,7 @@ export function updatePlayerPhysicsForState({
   spawnPoints: THREE.Vector3[];
   gravityAcceleration: number;
   getMainAi: () => Combatant | undefined;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
   renderSwordLungeTrailVfx: (
     trailPos: THREE.Vector3,
@@ -339,7 +339,7 @@ export function updatePlayerPhysicsForState({
         activeCustomMap,
         multiplayerSocket,
         getMainAi,
-        areCombatantsHostile,
+        canCombatantsDamage,
         constrainCombatantToArena,
         renderSwordLungeTrailVfx,
         recordPlayerLungeEnd,

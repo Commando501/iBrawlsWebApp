@@ -32,7 +32,7 @@ export function resolveAISwordLungeFlightForCombatant({
   gravityAcceleration,
   recoverCombatantAltitude,
   constrainCombatantToArena,
-  areCombatantsHostile,
+  canCombatantsDamage,
   finishSwordLunge,
   finishTradedTargetLunge,
   executeCustomBotTrade,
@@ -60,7 +60,7 @@ export function resolveAISwordLungeFlightForCombatant({
   gravityAcceleration: number;
   recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   finishSwordLunge: (cooldownMultiplier: number, outcome: AILungeOutcome, targetId?: string, damageAlreadyRecorded?: boolean) => void;
   finishTradedTargetLunge: (target: Combatant, attackerId: string) => void;
   executeCustomBotTrade: (
@@ -114,16 +114,42 @@ export function resolveAISwordLungeFlightForCombatant({
   trailPos.y += 0.825;
   renderSwordLungeTrailVfx(trailPos, '#ef4444', targetDir, 'enemyCube');
 
-  const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
-  if (target.hp <= 0 || !areCombatantsHostile(botId, target.id)) {
+  // Committed flight can contact a bystander, including an ally. This does not
+  // change the enemy selected by the AI or steer the committed launch direction.
+  let contactDistance = Infinity;
+  const considerContact = (candidate: TacticalTargetCandidate) => {
+    if (candidate.id === botId || !canCombatantsDamage(botId, candidate.id) || candidate.hp <= 0 || (candidate.invulnerabilityTimer ?? 0) > 0) return;
+    if (candidate.id === 'player' && (state.isObserverMode || state.playerRespawnTimer > 0)) return;
+    const actor = state.otherPlayers.get(candidate.id);
+    if (actor?.isObserver || (actor?.respawnTimer ?? 0) > 0 || actor?.aiState === 'RESPAWNING') return;
+    const distance = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(candidate.pos, candidate.isCrouching));
+    if (distance <= adjustRangeForTargetModel(1.5, candidate.modelType) && distance < contactDistance) {
+      target = candidate;
+      contactDistance = distance;
+    }
+  };
+  considerContact(target);
+  if (!state.isObserverMode && state.playerRespawnTimer <= 0) considerContact({
+    id: 'player', pos: state.playerPos, vel: state.playerVel, hp: state.playerHP, maxHp: state.playerMaxHP,
+    activeWeapon: state.activeWeapon, weaponState: state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState,
+    isLunging: state.isLunging, isCrouching: state.isCrouching, playerName: state.settings.playerName || 'Player',
+    modelType: state.playerModelType, invulnerabilityTimer: state.playerInvulnerabilityTimer,
+  });
+  for (const other of state.otherPlayers.values()) {
+    if (other.isObserver || other.respawnTimer > 0 || other.aiState === 'RESPAWNING') continue;
+    considerContact({ ...other, weaponState: other.weaponState ?? 'ready', isLunging: !!other.isLunging });
+  }
+
+  if (target.hp <= 0 || !canCombatantsDamage(botId, target.id)) {
     finishSwordLunge(cooldownMult, 'target_dead', target.id);
     return 'continue';
-  } else if ((target.invulnerabilityTimer ?? 0) <= 0 && dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
+  } else if (Number.isFinite(contactDistance)) {
+    const contactMainAI = target.id === MAIN_AI_ID ? state.otherPlayers.get(MAIN_AI_ID) ?? mainAi : undefined;
     // A shielded initiator can land a hit, but cannot take reciprocal trade damage.
     const tradeReason = (self.invulnerabilityTimer ?? 0) > 0 ? null : resolveSwordLungeTradeReasonForState({
       state,
       target,
-      mainAi: target.id === MAIN_AI_ID ? mainAi : undefined,
+      mainAi: contactMainAI,
     });
 
     if (tradeReason) {
@@ -141,7 +167,7 @@ export function resolveAISwordLungeFlightForCombatant({
       state,
       attackerBot: self,
       target,
-      mainAi: target.id === MAIN_AI_ID ? mainAi : undefined,
+      mainAi: contactMainAI,
       cooldownMult,
       finishSwordLunge: (cooldownMultiplier, outcome, targetId) => {
         finishSwordLunge(cooldownMultiplier, outcome, targetId);

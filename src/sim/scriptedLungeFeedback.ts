@@ -87,6 +87,7 @@ export function createScriptedLungeFeedback(state: SimState, control: ScriptedLu
         isJumping: actor.isJumping, vel: point(actor.vel) };
       const frame = { pos: point(actor.pos), vel: self.vel, aiState: memory.aiState, timer: memory.timer ?? 0, weaponState: 'ready' as const };
       finishAISwordLungeWithVitals({ state: { settings }, self, frame, botId: actor.id, outcome, targetId, damageAlreadyRecorded,
+        allowFollowup: !target || target.team !== actor.team,
         cooldownMultiplier: memory.cooldownMultiplier, targetVitals: { hp: target?.hp ?? 0, invulnerabilityTimer: target?.invulnerabilityTimer ?? 0 },
         recordCombatantObservation: observe,
         recordBotDamageTag: (id, targetId) => notifyBotDamageTag(control.coordinator, id, targetId, tuning.damageTagTtl),

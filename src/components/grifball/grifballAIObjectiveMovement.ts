@@ -141,7 +141,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
         if (observed) clashThreats.push(observed);
       }
     });
-    const decision = resolveGrifballCarrierDecision({ assignment, pos: frame.pos,
+    const decision = resolveGrifballCarrierDecision({ assignment, pos: frame.pos, isCrouching: !!self.isCrouching,
       players: state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [], threats, avoidanceEnemies: enemiesList,
       goal: getEnemyGoalPos(self.team), weaponState: frame.weaponState, canStartWeaponAction, settings: state.settings, dt,
       clashThreats, runnerRadiusBonus: getModelTargetRadiusBonus(self.modelType), runnerBodyHeight: self.isCrouching ? .52 : .825,

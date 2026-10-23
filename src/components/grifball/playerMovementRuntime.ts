@@ -181,8 +181,10 @@ export function updatePlayerHorizontalMovementForState({
   const isRunner = state.settings.gameMode === 'grifball' && state.activeWeapon === 'ball' && state.grifball.ball.holderId === 'player';
   // Publish the actual gait, including toggle/gamepad input and runner restrictions.
   state.playerIsSprinting = isSprinting && !isRunner;
-  if (state.isCrouching && !isRunner) {
-    baseSpeed = isSliding ? BASE_WALK_SPEED * (state.settings.speedSlide / 100) : 2.5;
+  if (state.isCrouching && !isSliding) {
+    baseSpeed = 2.5;
+  } else if (isSliding && !isRunner) {
+    baseSpeed = BASE_WALK_SPEED * (state.settings.speedSlide / 100);
   } else if (isSprinting && !isRunner) {
     baseSpeed = BASE_WALK_SPEED * (state.settings.speedSprint / 100);
   }

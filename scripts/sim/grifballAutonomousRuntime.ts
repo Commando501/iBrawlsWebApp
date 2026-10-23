@@ -1,3 +1,4 @@
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import * as THREE from 'three';
 import { DEFAULT_KEYBINDINGS } from '../../src/types';
 import type { FrozenCase, ValidationJob } from '../../src/game/grifballValidation/types';
@@ -21,7 +22,7 @@ import { advanceGrifballFrameForState } from '../../src/components/grifball/acti
 import { buildCombatantRigForModel } from '../../src/components/grifball/combatantRig';
 import { updateGrifballMatchTimers } from '../../src/components/grifball/matchTimers';
 import { applyValidationLocalInput } from '../../src/components/grifball/validationLocalInputRuntime';
-import { areGrifballCombatantsHostileForState, getGrifballCombatantRefForState, getGrifballTeamOfForState,
+import { getGrifballCombatantRefForState, getGrifballTeamOfForState,
   getGrifballEnemyGoalPosForMap, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 
 
@@ -109,11 +110,10 @@ export function createAutonomousValidationRuntime(fixture: FrozenCase, job: Vali
   const weapons = createWeaponActionCallbacksForState({ ...common, ...effects, ...observations, ...bookkeeping,
     ...resolution, ...targets, getMainAI: roster.mai, getOpponentDisplay: roster.opponentDisplay,
     getIsPaused: () => false, getIsPlaying: () => true });
-  const areCombatantsHostile = (a: string, b: string) => areGrifballCombatantsHostileForState(state, a, b);
   const impacts = createCombatImpactCallbacksForState({ ...common, ...effects, ...observations, ...bookkeeping,
-    ...resolution, ...targets, areCombatantsHostile, getMainAI: roster.mai, sendSync: weapons.sendPlayerWeaponSync });
+    ...resolution, ...targets, canCombatantsDamage, getMainAI: roster.mai, sendSync: weapons.sendPlayerWeaponSync });
   const player = createPlayerFrameCallbacksForState({ ...common, ...effects, ...observations, ...bookkeeping,
-    ...resolution, ...weapons, ...impacts, ...collision, areCombatantsHostile, getMainAI: roster.mai,
+    ...resolution, ...weapons, ...impacts, ...collision, canCombatantsDamage, getMainAI: roster.mai,
     recordPlayerLungeEnd: observations.recordPlayerLungeEndObservation,
     getIsPaused: () => false, getKeyboardKeybindings: () => DEFAULT_KEYBINDINGS,
     getActionKeybindings: () => DEFAULT_KEYBINDINGS, getKeysPressed: () => keysPressed.current,
@@ -159,7 +159,7 @@ export function createAutonomousValidationRuntime(fixture: FrozenCase, job: Vali
   const updateSingleAIEntity = createAISingleEntityUpdaterForState({ ...common, ...effects, ...observations,
     ...roster, ...bookkeeping, ...resolution, ...observedTargets, ...collision, ...actions,
     playDash: actionObservers?.dashUpdate ? () => { dashRequests++; effects.playDash(); } : effects.playDash,
-    stateRef: ref(state), threeRef: ref(refs), grifballEnemyGoalPos: goal, areCombatantsHostile,
+    stateRef: ref(state), threeRef: ref(refs), grifballEnemyGoalPos: goal, canCombatantsDamage,
     getOptimalSpawnPoint: arena.getOptimalSpawnPoint,
     grifballTeamOf: (id: string) => getGrifballTeamOfForState(state, id),
     grifballCombatantRef: (id: string) => getGrifballCombatantRefForState(state, id) });

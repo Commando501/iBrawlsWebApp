@@ -1,6 +1,7 @@
 import type { GrifballRuntimeState } from './runtimeState';
+import { isFriendlyFireForState } from './combatScoring';
 
-type Prediction = { targetId: string; credited: boolean; deathId?: string };
+type Prediction = { targetId: string; credited: boolean; killCredit?: boolean; deathId?: string };
 const pending = new WeakMap<GrifballRuntimeState, { sequence: number; hits: Map<string, Prediction> }>();
 
 /** Correlate a predicted runner kill with the defender's authoritative clash reply. */
@@ -19,6 +20,7 @@ export function recordRunnerSwordPrediction(state: GrifballRuntimeState, hitId: 
   const hit = hitId && pending.get(state)?.hits.get(hitId);
   if (!hit) return;
   hit.credited = (state.otherPlayers.get(hit.targetId)?.hp ?? 1) <= 0;
+  hit.killCredit = hit.credited && !isFriendlyFireForState(state, 'player', hit.targetId);
   if (hit.credited) hit.deathId = state.lastDeaths[0]?.id;
 }
 
@@ -30,7 +32,9 @@ export function rejectRunnerSwordPrediction(
   if (!hit || hit.targetId !== senderId) return;
   ledger!.hits.delete(hitId);
   if (!hit.credited) return;
-  state.playerKills = Math.max(0, state.playerKills - 1); state.scorePlayer = Math.max(0, state.scorePlayer - 1);
+  if (hit.killCredit) {
+    state.playerKills = Math.max(0, state.playerKills - 1); state.scorePlayer = Math.max(0, state.scorePlayer - 1);
+  }
   const target = state.otherPlayers.get(senderId);
   if (target) {
     target.hp = runnerHp; target.respawnTimer = 0;

@@ -136,7 +136,7 @@ export function runExecutionParityTrace(name: string, options: ParityTraceOption
   if (name === 'respawn') { self.hp = live.playerHP = 0; self.alive = false; self.respawnTimer = live.playerRespawnTimer = .25; }
   if (name === 'countdown') { sim.match.phase = live.grifball.phase = 'countdown'; sim.match.phaseTimer = live.grifball.phaseTimer = .2; }
   if (!name.includes('hit')) { rival.pos.x = target.pos.x = 30; }
-  const effects = { state: live, mainAI: undefined, isMultiplayer: false, areCombatantsHostile: () => true,
+  const effects = { state: live, mainAI: undefined, isMultiplayer: false, canCombatantsDamage: () => true,
     sendSync: () => false, playSwing: noop, playDeath: noop, spawnVoxelShockwaveParticles: noop,
     evaluatePlayerKillMedals: () => [], recordBotCalibrationDeath: noop };
   const swordImpact = () => applyPlayerSwordSlashImpactForState({ ...effects, executeTrade: noop, applyOutgoingMultiplayerHitLocally: noop });
@@ -232,7 +232,9 @@ export const PARITY_TRACE_CASES: { name: string; actionTrace: string; options?: 
     { name: 'oblique-hit', x: 1, z: 1.8, hits: 1 }, { name: 'oblique-miss', x: 2, z: .5, hits: 0 },
     { name: 'reach-hit', x: 0, z: 2.6, hits: 1 }, { name: 'reach-miss', x: 0, z: 3.2, hits: 0 },
   ].flatMap(p => ['sword', 'punch'].map(weapon => ({ name: `${weapon}-${p.name}`, actionTrace: `${weapon}-hit-recovery`,
-    options: { targetHp: 20, targetPosition: { x: p.x, y: 0, z: p.z } }, hits: p.hits }))),
+    // Punches use a narrow body-contact ray rather than the sword's splash sphere.
+    options: { targetHp: 20, targetPosition: { x: weapon === 'punch' && p.name === 'oblique-hit' ? .4 : p.x, y: 0, z: p.z } }, hits: p.hits }))),
+  { name: 'punch-wide-oblique-miss', actionTrace: 'punch-hit-recovery', options: { targetHp: 20, targetPosition: { x: 1, y: 0, z: 1.8 } }, hits: 0 },
   { name: 'sword-rotated-aim', actionTrace: 'sword-hit-recovery', options: { targetHp: 20, aim: Math.PI / 2, targetPosition: { x: 2, y: 0, z: 0 } }, hits: 1 },
   { name: 'punch-rotated-aim', actionTrace: 'punch-hit-recovery', options: { targetHp: 20, aim: Math.PI / 2, targetPosition: { x: 2, y: 0, z: 0 } }, hits: 1 },
 ];

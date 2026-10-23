@@ -29,12 +29,16 @@ test('a shielded target cannot take lunge damage or initiate a trade', () => {
   assert.equal(f.bot.isLunging, true); assert.deepEqual(f.outcomes, []);
 });
 
-test('dead or friendly targets cancel a lunge without damage or a second finish', () => {
-  for (const reason of ['dead', 'friendly']) {
-    const f = lungeFixture(); f.bot.lungeTimer = .8;
-    if (reason === 'dead') f.target.hp = 0; else f.target.team = f.bot.team;
-    const hp = f.target.hp; f.flight(); assert.equal(f.target.hp, hp); assert.deepEqual(f.outcomes, ['target_dead']);
-  }
+test('dead targets cancel a lunge without damage or a second finish', () => {
+  const f = lungeFixture(); f.bot.lungeTimer = .8; f.target.hp = 0;
+  f.flight(); f.flight(); assert.equal(f.target.hp, 0); assert.deepEqual(f.outcomes, ['target_dead']);
+});
+
+test('friendly targets take a committed lunge hit without kill credit', () => {
+  const f = lungeFixture(); f.target.team = f.bot.team; f.target.hp = 1;
+  for (let tick = 0; tick < 60; tick++) f.flight();
+  assert.equal(f.target.hp, 0); assert.deepEqual(f.outcomes, ['hit']);
+  assert.equal(f.target.deaths, 1); assert.equal(f.bot.kills, 0); assert.equal(f.bot.score, 0);
 });
 
 for (const weapon of ['sword', 'hammer'] as const) test(`live ${weapon} lunge trade damages both once and respawns both after the delay`, () => {

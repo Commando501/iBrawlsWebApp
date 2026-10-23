@@ -1,3 +1,4 @@
+import { creditCombatKillForState } from './combatScoring';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
@@ -103,9 +104,7 @@ export function tryRunnerSwordClash(
       if (swordId === MAIN_AI_ID) { state.enemyDeaths++; state.enemyRespawnTimer = 3; calibration(swordId); }
     }
     if (runner) {
-      runner.kills = (runner.kills ?? 0) + 1; runner.score = (runner.score ?? 0) + 1;
-      if (runnerId === MAIN_AI_ID) { state.enemyKills++; state.scoreEnemy++; }
-      effects.recordBotPsychKill?.(runnerId, swordId, false);
+      if (creditCombatKillForState(state, runnerId, swordId)) effects.recordBotPsychKill?.(runnerId, swordId, false);
     }
   }
   effects.playDeath?.();

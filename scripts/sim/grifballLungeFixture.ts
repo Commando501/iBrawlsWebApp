@@ -1,4 +1,5 @@
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
+import { canCombatantsDamage } from '../../src/game/combatDamage';
 import * as THREE from 'three';
 import { createBotParityFixture } from './grifballBotExecutionParity';
 import { triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
@@ -39,7 +40,7 @@ export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>,
       botId: bot.id, botMesh: refs.otherPlayerMeshes.get(bot.id)!.group, pos: bot.pos, vel: bot.vel, dt,
       cooldownMult: 1, activeCustomMap: map, gravityAcceleration: 18, recoverCombatantAltitude: () => false,
       constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
-      areCombatantsHostile: () => bot.team !== target.team,
+      canCombatantsDamage,
       finishSwordLunge: (cooldownMultiplier, outcome, targetId, damageAlreadyRecorded) => {
         outcomes.push(outcome);
         const result = finishAISwordLungeFrameForCombatant({ state, self: bot, botId: bot.id, pos: bot.pos, vel: bot.vel,

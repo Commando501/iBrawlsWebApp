@@ -12,6 +12,10 @@ import {
   triggerPointerAltPlayerActionForState,
 } from './playerInputRuntime';
 import { updatePlayerHorizontalMovementForState } from './playerMovementRuntime';
+import { resolveNeuralPlanarVelocity } from './neuralLiveAdapter';
+import { createMatch } from '../../sim/factory';
+import { stepCombatantMovement } from '../../sim/physics';
+import { idleAction } from '../../sim/actions';
 import { swapPlayerWeaponForState } from './playerWeaponActions';
 import { createWeaponActionCallbacksForState } from './weaponActionCallbacks';
 import type { GrifballRuntimeState } from './runtimeState';
@@ -324,6 +328,37 @@ test('ball carrier movement stacks runner directional speed on universal movemen
 
   assertNear(state.playerVel.x, 0);
   assertNear(state.playerVel.z, -11.6);
+});
+
+for (const direction of [
+  { key: 'w', x: 0, z: 1, rate: 1.4 * 2 },
+  { key: 's', x: 0, z: -1, rate: .7 * .8 },
+  { key: 'd', x: 1, z: 0, rate: .9 * 1.25 },
+  { key: 'a', x: -1, z: 0, rate: .9 * 1.25 },
+]) test(`crouching runner slows and stands back up across player, neural and sim movement: ${direction.key}`, () => {
+  const state = makeRunnerBallState();
+  Object.assign(state.settings, { speedForward: 140, speedBackward: 70, speedSide: 90 });
+  const sim = createMatch({ seed: 9, combatExecution: 'live-player-v1', settings: state.settings });
+  const carrier = sim.combatants[0];
+  carrier.weapon = 'ball'; carrier.hasBall = true; carrier.pos = { x: 0, y: 0, z: 0 };
+  for (const crouch of [false, true, false]) {
+    state.isCrouching = crouch;
+    updatePlayerHorizontalMovementForState({ state, refs: {} as GrifballThreeRefs, dt: 1 / 60,
+      keysPressed: { [direction.key]: true }, movementKeybindings: keybindings, actionKeybindings: keybindings,
+      gamepad: null, mobileJoystick: null, mobileControlsActive: false,
+      sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
+    const action = { ...idleAction(), crouch, moveX: direction.x, moveZ: direction.z };
+    const neural = resolveNeuralPlanarVelocity(action, 0, state.settings, 'ball', crouch);
+    const before = { ...carrier.pos };
+    stepCombatantMovement(sim, carrier, action, sim.settings, 1 / 60);
+    const speed = (crouch ? 2.5 : 5.8) * direction.rate;
+    assertNear(state.playerVel.x, direction.x * speed);
+    assertNear(state.playerVel.z, -direction.z * speed);
+    assertNear(neural.x, direction.x * speed); assertNear(neural.z, direction.z * speed);
+    assertNear(carrier.vel.x, direction.x * speed); assertNear(carrier.vel.z, direction.z * speed);
+    assertNear(carrier.pos.x - before.x, direction.x * speed / 60);
+    assertNear(carrier.pos.z - before.z, direction.z * speed / 60);
+  }
 });
 
 test('disabled runner thrust blocks new player dash starts while holding the ball', () => {

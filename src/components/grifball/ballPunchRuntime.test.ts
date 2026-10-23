@@ -24,7 +24,7 @@ const effects = {
   recordPlayerDamageTaken: noop, tryRecordCalibrationCounterSuccess: noop,
   recordBotPsychKill: noop, recordBotDamageTag: noop, tryEnterPressureState: () => false,
   tryStartComboOnHit: noop, pushStatsUpdate: noop, evaluatePlayerKillMedals: () => [],
-  areCombatantsHostile: () => true, sendSync: () => true, applyOutgoingMultiplayerHitLocally: noop,
+  canCombatantsDamage: () => true, sendSync: () => true, applyOutgoingMultiplayerHitLocally: noop,
 };
 function fixture(attacker: string, distance = 3, magnetism = 100) {
   const state = createInitialGrifballRuntimeState({ debugMode: false, isMultiplayer: false, multiplayerRole: null,

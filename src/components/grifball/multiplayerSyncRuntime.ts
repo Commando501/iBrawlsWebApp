@@ -1,4 +1,5 @@
 import { parseGameplayMessage } from '../../network/parseGameplayMessage';
+import { creditCombatKillForState, isFriendlyFireForState } from './combatScoring';
 import { receiveOnlineGrifballMessage } from './onlineGrifballRuntime';
 import { deflectBallWithHammerForState } from './hammerBallDeflectionRuntime';
 import { resolveCombatHitDamageForState } from './combatDamage';
@@ -241,6 +242,7 @@ export function createMultiplayerSyncMessageHandler({
             triggerEnemySwordLunge(lungeDir);
           }
         } else if (data.action === 'hit_taken') {
+          if (data.senderId && data.senderId === data.targetId) return;
           if (data.senderId) {
             rejectRunnerSwordPrediction(state, data.senderId, data.negatedSwordHitId, data.runnerHp);
             if (data.weapon === 'ball') {
@@ -250,7 +252,8 @@ export function createMultiplayerSyncMessageHandler({
           }
           if (data.targetId && state.otherPlayers.has(data.targetId)) {
             const targetPlayer = state.otherPlayers.get(data.targetId);
-            if (targetPlayer) {
+            if (targetPlayer && !targetPlayer.isObserver && targetPlayer.hp > 0 && targetPlayer.respawnTimer <= 0 &&
+              (targetPlayer.invulnerabilityTimer ?? 0) <= 0) {
               targetPlayer.hp = Math.max(0, targetPlayer.hp - resolveCombatHitDamageForState(
                 state, data.targetId, targetPlayer.hp, data.weapon, data.damage || 1
               ));
@@ -261,11 +264,9 @@ export function createMultiplayerSyncMessageHandler({
                 if (data.senderId) {
                   const attacker = state.otherPlayers.get(data.senderId);
                   if (attacker) {
-                    attacker.score = (attacker.score || 0) + 1;
-                    attacker.kills = (attacker.kills || 0) + 1;
+                    creditCombatKillForState(state, attacker.id, data.targetId);
                   } else {
-                    state.scorePlayer += 1;
-                    state.playerKills += 1;
+                    creditCombatKillForState(state, 'player', data.targetId);
                   }
                 }
                 playDeath();
@@ -302,7 +303,7 @@ export function createMultiplayerSyncMessageHandler({
                 );
               }
             }
-          } else if (state.playerHP > 0 && state.playerInvulnerabilityTimer <= 0) {
+          } else if (!state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0 && state.playerInvulnerabilityTimer <= 0) {
             if (data.weapon === 'sword' && data.senderId && tryRunnerSwordClash(state, data.senderId, 'player', {
               playSwing, playDeath, spawnVoxelShockwaveParticles,
               sendPunchHit: targetId => {
@@ -317,14 +318,11 @@ export function createMultiplayerSyncMessageHandler({
               state.playerHP = 0;
               state.playerRespawnTimer = 3.0;
               state.playerDeaths += 1;
-              state.scoreEnemy += 1;
-              state.enemyKills += 1;
-              if (data.senderId) {
+              if (!isFriendlyFireForState(state, data.senderId, 'player')) {
+                state.scoreEnemy += 1;
+                state.enemyKills += 1;
                 const attacker = state.otherPlayers.get(data.senderId);
-                if (attacker) {
-                  attacker.score = (attacker.score || 0) + 1;
-                  attacker.kills = (attacker.kills || 0) + 1;
-                }
+                if (attacker) creditCombatKillForState(state, attacker.id, 'player');
               }
               playDeath();
               const newDeath: DeathEvent = {

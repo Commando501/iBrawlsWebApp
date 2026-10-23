@@ -14,14 +14,14 @@ export function punchActorForState(state: GrifballRuntimeState, id: string, fall
     heading: { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) } };
 }
 
-export function punchTargetsForState(state: GrifballRuntimeState, id: string, fallback?: Combatant): PunchBody[] {
+export function punchTargetsForState(state: GrifballRuntimeState, id: string, fallback?: Combatant, includeTeammates = false): PunchBody[] {
   const targets: PunchBody[] = [];
   if (id !== 'player' && !state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0 &&
-    state.playerInvulnerabilityTimer <= 0 && areGrifballCombatantsHostileForState(state, id, 'player'))
+    state.playerInvulnerabilityTimer <= 0 && (includeTeammates || areGrifballCombatantsHostileForState(state, id, 'player')))
     targets.push({ id: 'player', pos: state.playerPos, modelType: state.playerModelType, isCrouching: state.isCrouching });
   const consider = (other: Combatant) => {
     if (other.id === id || other.hp <= 0 || other.isObserver || other.aiState === 'RESPAWNING' ||
-      other.respawnTimer > 0 || (other.invulnerabilityTimer ?? 0) > 0 || !areGrifballCombatantsHostileForState(state, id, other.id)) return;
+      other.respawnTimer > 0 || (other.invulnerabilityTimer ?? 0) > 0 || (!includeTeammates && !areGrifballCombatantsHostileForState(state, id, other.id))) return;
     targets.push(other);
   };
   state.otherPlayers.forEach(consider);
@@ -61,5 +61,5 @@ export function punchHitTargetForState(state: GrifballRuntimeState, id: string, 
   const actor = punchActorForState(state, id, fallback);
   const attack = id === 'player' ? state.playerPunchAttack : (state.otherPlayers.get(id) ?? fallback)?.punchAttack;
   if (attack?.targetId) actor.heading = attack.direction;
-  return findPunchHitTarget(actor, punchTargetsForState(state, id, fallback), state.punchMap)?.id ?? null;
+  return findPunchHitTarget(actor, punchTargetsForState(state, id, fallback, true), state.punchMap)?.id ?? null;
 }

@@ -1,4 +1,5 @@
 import { hasCoherentSimCarrierState } from './grifballCarrierState';
+import { applySimTeamSafeAim, type TeamAimTurnStart } from './teamSafeAim';
 import { AI_CROUCH_SPEED_MULTIPLIER } from '../game/aiMovementMechanics';
 import { observeSimGrifballSwordGuard } from './grifballSwordGuard';
 import { recordCalibrationCounterAttempt } from '../game/aiSkillCalibration';
@@ -59,7 +60,7 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
       !Object.hasOwn(planner.punchControl!.cooldowns, id))))
     throw new Error('Composed objectives must share actor authority, team plan and reload ownership');
 
-  const turns = new Map<string, { adaptive: Adaptive; targetId?: string | null; resolved?: boolean; strikeCommitted?: boolean }>();
+  const turns = new Map<string, { adaptive: Adaptive; start: TeamAimTurnStart; targetId?: string | null; resolved?: boolean; strikeCommitted?: boolean }>();
   const current = (view: SimState, actorId: string, stepDt: number) => {
     if (view.combatants !== state.combatants || view.tick !== tick || stepDt !== dt || !Object.hasOwn(scriptedBots, actorId))
       throw new Error('Composed actor hooks belong to one simulation frame');
@@ -77,7 +78,8 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
         ...configs[actorId], memory, matchContext: ai, score: control.getScoreContext(view),
       }, dt);
       if (!adaptive) throw new Error(`Composed actor prelude lost authority: ${actorId}`);
-      turns.set(actorId, { adaptive });
+      const actor = view.combatants.find(c => c.id === actorId)!;
+      turns.set(actorId, { adaptive, start: { x: actor.pos.x, z: actor.pos.z, vy: actor.vel.y, lunging: actor.isLunging } });
       if (planner) planner.punchControl!.cooldowns[actorId] = memory.aiState === 'COOLDOWN' ? Math.max(0, memory.timer ?? 0) : 0;
     },
     prepare: ({ state: view, actorId, dt: stepDt }) => {
@@ -164,6 +166,10 @@ export function createSimGrifballActorStepOptions(state: SimState, control: SimG
       }
       if (record.noTarget) Object.assign(memory, record.noTarget.memory);
       adoptSimGrifballMovementFeedback(record, memories, ai);
+      if (applySimTeamSafeAim(view, actor, memory, turn.start, stepDt, control.isObserverMode, turn.targetId ?? undefined)) {
+        ai.comboState.delete(actorId);
+        if (planner) planner.punchControl!.cooldowns[actorId] = 0;
+      }
     },
   };
   validateScriptedActorDecisionOwner(state, actorDecisions, state.settings, dt);

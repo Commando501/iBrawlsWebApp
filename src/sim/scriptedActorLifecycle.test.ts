@@ -323,7 +323,7 @@ for (const main of [false, true]) for (const outcome of ['hit', 'trade', 'miss']
       playExplosion: noop, playDeath: noop, spawnVoxelShockwaveParticles: noop, pushStatsUpdate: noop });
     updatePlayerSwordLungeForState({ state: l.live, dt: 1 / 60, isMultiplayer: false, activeCustomMap: f.state.map,
       multiplayerSocket: null, getMainAi: () => l.live.otherPlayers.get('main_ai'),
-      areCombatantsHostile: (_, victimId) => victimId === f.target.id, constrainCombatantToArena: noop,
+      canCombatantsDamage: (_, victimId) => victimId === f.target.id, constrainCombatantToArena: noop,
       renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: hit => recordLocalPlayerLungeEndObservation(l.live, hit),
       recordPlayerCounterSuccess: () => recordLocalPlayerModelObservation(l.live, model => observePlayerCounter(model, true)),
       recordPlayerDamageDealt: counter => recordLocalPlayerDamageDealtObservation(l.live, counter), ...callbacks,
@@ -337,6 +337,7 @@ for (const main of [false, true]) for (const outcome of ['hit', 'trade', 'miss']
 
 for (const hp of [1, 3]) test(`AI lunge against local player keeps cosmetic IDs outside gameplay RNG ${hp}`, () => {
   const f = fixture(), { live, bot } = liveFor(f);
+  live.localPlayerTeam = bot.team === 'blue' ? 'red' : 'blue';
   live.playerHP = hp; live.settings.playerName = 'Local runner';
   let draws = 0, feeds = 0, kills = 0;
   withSimulationRandom(() => { draws++; return .5; }, 10, () => {

@@ -1,12 +1,12 @@
 import type { RosterCombatLearning } from './scriptedCombatLearning';
-import { resolveCombatHitDamage } from '../game/combatDamage';
+import { canCombatantsDamage, resolveCombatHitDamage } from '../game/combatDamage';
 /**
  * Headless weapon / combat step — the default legacy-v1 training model is a distilled port of the hammer/sword/punch
  * resolution from `GrifballGame.updatePhysics`. Each combatant runs a small FSM:
  *   idle --attack--> windup --(timer)--> active(one hit frame) --> recovering --> idle
  *
- * On the single `active` frame the strike resolves against hostile, living, non-invuln
- * enemies inside the weapon's forward reach and deals 1 damage, except sword hits
+ * On the single `active` frame the strike resolves against living, non-invuln
+ * combatants (including teammates) inside the weapon's forward reach and deals 1 damage, except sword hits
  * instantly kill the ball carrier regardless of runner HP, unless a reciprocal
  * active punch wins the clash, as in the live game.
  * The sword's secondary is a lunge (a short forward flight that kills
@@ -131,7 +131,7 @@ function strike(
     victim.isLunging = false; victim.weaponState = 'idle'; victim.weaponTimer = 0;
     victim.weaponPhaseElapsed = 0; victim.attackKind = 'none'; victim.attackCooldown = 0;
   }
-  awardTeamKill(state.scores, attacker.team);
+  if (areHostile(attacker, victim)) awardTeamKill(state.scores, attacker.team);
   recordTeamDeath(state.scores, victim.team);
   // Carrier death drops the ball loose where they fell.
   if (state.match.ball.holderId === victim.id && !usesRosterLifecycle(state)) {
@@ -270,7 +270,7 @@ function resolveMeleeHit(
 ): void {
   const initiatesTrade = attacker.attackKind === 'slash'; // only sword slash trades
   for (const v of state.combatants) {
-    if (!v.alive || !areHostile(attacker, v)) continue;
+    if (!v.alive || !canCombatantsDamage(attacker.id, v.id)) continue;
     if (v.invulnerabilityTimer > 0) continue;
     if (inMeleeHitVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) {
       if (!applyHit(state, attacker, v, settings, events, initiatesTrade, learning)) break; // attacker traded out
@@ -294,7 +294,7 @@ function resolveHammerStrike(
     z: attacker.pos.z + fwd.z * reach };
   if (state.match.phase === 'playing') deflectBallWithHammer(state.match.ball, attacker.pos, impact, strikeRadius(settings), settings);
   for (const v of state.combatants) {
-    if (!v.alive || !areHostile(attacker, v)) continue;
+    if (!v.alive || !canCombatantsDamage(attacker.id, v.id)) continue;
     if (v.invulnerabilityTimer > 0) continue;
     if (inHammerStrikeVolume(attacker, v, settings, combatExecutionForActor(state, attacker) === 'live-player-v1')) {
       strike(state, attacker, v, settings, events);
@@ -351,7 +351,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
   const victims = state.combatExecution === 'live-mixed-v1'
     ? [...state.combatants].sort((a, b) => Number(isMixedPlayer(state, b)) - Number(isMixedPlayer(state, a))) : state.combatants;
   for (const victim of victims) {
-    if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;
+    if (!victim.alive || !canCombatantsDamage(c.id, victim.id) || victim.invulnerabilityTimer > 0) continue;
     const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
     const targetRadius = usesRosterLifecycle(state) ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
     if (Math.hypot(victim.pos.x - impact.x, cy - impact.y, victim.pos.z - impact.z) <= targetRadius) {
@@ -486,7 +486,7 @@ function resolveLungeHit(
   events: KillEvent[]
 ): void {
   for (const v of state.combatants) {
-    if (!v.alive || !areHostile(attacker, v)) continue;
+    if (!v.alive || !canCombatantsDamage(attacker.id, v.id)) continue;
     if (v.invulnerabilityTimer > 0) continue;
     const d = Math.hypot(v.pos.x - attacker.pos.x, v.pos.z - attacker.pos.z);
     if (d <= LUNGE_KILL_RADIUS) {
@@ -503,21 +503,33 @@ export function tickWeaponIntentTimers(c: SimCombatant, dt: number, swapTimersAd
   if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
 }
 
-/** Committed roster flight: one selected target, one contact, elapsed timeout and AI cooldown. */
+/** Committed roster flight: nearest contact (including allies), elapsed timeout and AI cooldown. */
 function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[], feedback?: RosterLungeFeedback, learning?: RosterCombatLearning): void | 'trade_return' {
   c.lungeTimer += dt;
-  const target = findCombatant(state, c.lungeTargetId!);
+  let target = findCombatant(state, c.lungeTargetId!);
+  const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+  let contactDistance = Infinity;
+  // Keep the intended target on ties, matching live flight.
+  for (const candidate of [...(target ? [target] : []), ...state.combatants]) {
+    if (!canCombatantsDamage(c.id, candidate.id) || !candidate.alive || candidate.hp <= 0 ||
+      candidate.respawnTimer > 0 || candidate.invulnerabilityTimer > 0 ||
+      (state.localPlayerIsObserver && candidate.id === state.localPlayerId)) continue;
+    const distance = Math.hypot(candidate.pos.x - c.pos.x, centerY(candidate) - centerY(c), candidate.pos.z - c.pos.z);
+    if (distance <= adjustRangeForTargetModel(1.5, candidate.modelType) && distance < contactDistance) {
+      target = candidate;
+      contactDistance = distance;
+    }
+  }
   const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>, actor = c, damageAlreadyRecorded = false) => {
     actor.isLunging = false; actor.weaponState = 'idle'; actor.weaponTimer = 0; actor.weaponPhaseElapsed = 0;
     actor.lungeOutcome = outcome; actor.attackCooldown = settings.swordLungeReload ?? 1.2;
     actor.vel.x = actor.vel.z = 0;
     if (actor.pos.y > .01 || Math.abs(actor.vel.y) > .01) { actor.vel.y = Math.min(actor.vel.y, 0); actor.isJumping = true; }
     else { actor.vel.y = 0; actor.isJumping = false; }
-    feedback?.finish(actor, outcome, actor === c ? c.lungeTargetId : c.id, damageAlreadyRecorded);
+    feedback?.finish(actor, outcome, actor === c ? target?.id ?? c.lungeTargetId : c.id, damageAlreadyRecorded);
   };
-  if (!target || !target.alive || !areHostile(c, target)) { finish('target_dead'); return; }
-  const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
-  if (target.invulnerabilityTimer <= 0 && Math.hypot(target.pos.x - c.pos.x, centerY(target) - centerY(c), target.pos.z - c.pos.z) <= adjustRangeForTargetModel(1.5, target.modelType)) {
+  if (!target || !target.alive || !canCombatantsDamage(c.id, target.id)) { finish('target_dead'); return; }
+  if (Number.isFinite(contactDistance)) {
     const primaryActive = (target.weaponState === 'windup' || target.weaponState === 'active')
       && (target.attackKind === 'slash' || target.attackKind === 'strike');
     const now = state.combatTimeMs ?? state.tick * 1000 / 60;
@@ -584,7 +596,7 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
   // Live main AI wins exact-distance ties before roster iteration.
   const candidates = [...state.combatants].sort((a, b) => Number(b.id === 'main_ai') - Number(a.id === 'main_ai'));
   for (const v of candidates) {
-    if (!v.alive || v.hp <= 0 || v.respawnTimer > 0 || v.invulnerabilityTimer > 0 || !areHostile(c, v)) continue;
+    if (!v.alive || v.hp <= 0 || v.respawnTimer > 0 || v.invulnerabilityTimer > 0 || !canCombatantsDamage(c.id, v.id)) continue;
     const d = Math.hypot(v.pos.x - c.pos.x, centerY(v) - centerY(c), v.pos.z - c.pos.z);
     if (d < distance) { distance = d; target = v; }
   }
@@ -760,7 +772,7 @@ export function stepCombatantWeapons(
         } else if ((decisionReady || engagement?.sequentialOpportunities && committedHere && command.kind === 'melee' && command.weapon === 'hammer' && !command.swipe) && c.weaponReadyTimer <= 0 && (c.dashRemaining <= 0 || engagement && command.kind === 'melee' || engagement?.sequentialOpportunities && command.kind === 'lunge')) {
           if (command.kind === 'lunge') {
             const target = findCombatant(state, command.targetId);
-            if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || target.team === c.team || target.invulnerabilityTimer > 0) continue;
+            if (c.weapon !== 'sword' || !target?.alive || target.hp <= 0 || !areHostile(c, target) || target.invulnerabilityTimer > 0) continue;
             c.lungeTargetId = command.targetId; c.lungeAimDirection = { ...command.direction };
             startLunge(c, settings, state); c.lastAttackTick = state.tick;
             if (engagement) engagement.lungeStarted = true;

@@ -88,7 +88,7 @@ export function createScriptedCombatLearning(state: SimState, control: ScriptedC
         observePlayerDamageDealt(model(actor.id));
         observePlayerDamageReceived(model(target.id));
       }
-      if (target.hp > 0) notifyBotDamageTag(ai.coordinator, actor.id, target.id, tuning.damageTagTtl);
+      if (target.hp > 0 && actor.team !== target.team) notifyBotDamageTag(ai.coordinator, actor.id, target.id, tuning.damageTagTtl);
     },
   };
 }

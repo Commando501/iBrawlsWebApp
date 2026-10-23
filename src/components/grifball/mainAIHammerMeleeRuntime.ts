@@ -1,3 +1,4 @@
+import { isFriendlyFireForState } from './combatScoring';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent } from '../../types';
@@ -16,7 +17,7 @@ export function applyMainAIHammerMeleeImpactForState({
   mainAI,
   target,
   isMultiplayer,
-  areCombatantsHostile,
+  canCombatantsDamage,
   recordPlayerDamageTaken,
   tryRecordCalibrationCounterSuccess,
   playSwing,
@@ -32,7 +33,7 @@ export function applyMainAIHammerMeleeImpactForState({
   mainAI: Combatant | undefined;
   target: EnemyAITarget | null;
   isMultiplayer: boolean;
-  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+  canCombatantsDamage: (attackerId: string, victimId: string) => boolean;
   recordPlayerDamageTaken: () => void;
   tryRecordCalibrationCounterSuccess: (botId: string) => void;
   playSwing: () => void;
@@ -66,7 +67,7 @@ export function applyMainAIHammerMeleeImpactForState({
 
   if (isMultiplayer) return;
 
-  if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
+  if (target.hp > 0 && target.invuln <= 0 && canCombatantsDamage(MAIN_AI_ID, target.id)) {
     const dist = aiEyePos.distanceTo(targetBodyCenter);
 
     if (dist <= adjustRangeForTargetModel(MELEE_HAMMER_SWIPE_REACH, target.modelType)) {
@@ -77,9 +78,11 @@ export function applyMainAIHammerMeleeImpactForState({
         if (state.playerHP <= 0) {
           state.playerHP = 0;
           state.playerRespawnTimer = 3.0;
-          state.scoreEnemy += 1;
           state.playerDeaths += 1;
-          state.enemyKills += 1;
+          if (!isFriendlyFireForState(state, MAIN_AI_ID, 'player')) {
+            state.scoreEnemy += 1;
+            state.enemyKills += 1;
+          }
           playDeath();
           state.pWeaponState = 'ready';
           state.pWeaponTimer = 0;
@@ -122,8 +125,10 @@ export function applyMainAIHammerMeleeImpactForState({
           if (other.hp <= 0) {
             other.hp = 0;
             other.respawnTimer = 3.0;
-            state.scoreEnemy += 1;
-            state.enemyKills += 1;
+            if (!isFriendlyFireForState(state, MAIN_AI_ID, other.id)) {
+              state.scoreEnemy += 1;
+              state.enemyKills += 1;
+            }
             other.deaths = (other.deaths || 0) + 1;
             playDeath();
 

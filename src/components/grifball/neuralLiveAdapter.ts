@@ -395,7 +395,7 @@ export function resolveNeuralPlanarVelocity(
   if (inputLength <= 0) return new THREE.Vector3(0, 0, 0);
 
   const isRunner = activeWeapon === 'ball';
-  const baseSpeed = isCrouching && !isRunner ? CROUCH_SPEED : BASE_SPEED;
+  const baseSpeed = isCrouching ? CROUCH_SPEED : BASE_SPEED;
 
   const normForward = action.moveZ / inputLength;
   const normRight = action.moveX / inputLength;
