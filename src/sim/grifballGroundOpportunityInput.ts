@@ -13,6 +13,8 @@ import type { ScriptedCombatCommand, ScriptedCombatInput } from './scriptedComba
 import type { SimState } from './simState';
 import { idleAction } from './actions';
 import { normalizeYaw } from './physics';
+import { createSimGrifballTacticalSnapshot } from './grifballTacticalAdapter';
+import { resolveGrifballRunnerPursuitLaunch } from '../game/aiGrifballRunnerPursuitLaunch';
 
 /** Local weapon state from preceding priorities. Live AI retains its original
  * readiness decision and captured lockout even if later branches spend clocks
@@ -56,6 +58,12 @@ export function resolveSimGrifballGroundOpportunityInput(state: SimState, plan: 
   let lungeObservation: { distance: number } | null = null;
   const lungeDistance = observation.prediction.targetAirborne ? observation.range.combatDistanceToTarget : observation.prediction.distanceToTarget;
   const frame = resolveAIGroundAttackOpportunityForCombatant({ state, self, botId,
+    resolveRunnerPursuitLaunch: () => {
+      const assignment = plan.assignments.get(botId);
+      if (!assignment?.defense?.pursuit) return { kind: 'ordinary' };
+      return resolveGrifballRunnerPursuitLaunch(assignment,
+        createSimGrifballTacticalSnapshot(state, { scriptedBots, tactics: plan.snapshot?.tactics }), target.id);
+    },
     target: { ...observeSimTacticalWeaponTarget(state, target, context.targetMemory), pos: point(target.pos), vel: point(target.vel), maxHp: target.maxHp,
       isCrouching: target.isCrouching, playerName: target.id, modelType: target.modelType },
     frame: { pos: point(self.pos), vel: point(self.vel), aiState: memory.aiState, timer: memory.timer, weaponState },

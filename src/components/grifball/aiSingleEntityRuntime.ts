@@ -65,6 +65,7 @@ import {
   createGrifballAIObjectiveFrameFromLocals,
 } from './aiFrameAdapters';
 import { resolveAIGroundAttackOpportunityForCombatant } from './aiGroundAttackOpportunityRuntime';
+import { resolveGrifballRunnerPursuitLaunch } from '../../game/aiGrifballRunnerPursuitLaunch';
 import { resolveAIGroundMovementPreludeForCombatant } from './aiGroundMovementPreludeRuntime';
 import { resolveAILungeEvasionForCombatant } from './aiLungeEvasionRuntime';
 import { resolveNoTargetAIFrameForCombatant } from './aiNoTargetRuntime';
@@ -1287,6 +1288,12 @@ export function createAISingleEntityUpdaterForState({
         const groundAttackOpportunity = resolveAIGroundAttackOpportunityForCombatant({
           state: s,
           self,
+          resolveRunnerPursuitLaunch: () => {
+            const assignment = s.aiMatchContext.grifballTeamPlan.assignments.get(botId);
+            if (s.isMultiplayer || s.settings.gameMode !== 'grifball' || !assignment?.defense?.pursuit) return { kind: 'ordinary' };
+            return resolveGrifballRunnerPursuitLaunch(assignment,
+              createLiveGrifballTacticalSnapshot(s, grifballEnemyGoalPos, getActiveCustomMap()), target.id);
+          },
           frame: {
             pos,
             vel,

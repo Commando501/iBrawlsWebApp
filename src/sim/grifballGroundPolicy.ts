@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { selectGrifballEscortEvasion } from '../game/aiGrifballEvasion';
 import { createSimGrifballTacticalSnapshot } from './grifballTacticalAdapter';
+import { resolveGrifballRunnerPursuitLaunch } from '../game/aiGrifballRunnerPursuitLaunch';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import { getPincerApproachOffset } from '../game/aiBotCoordinator';
 import { getPlayerFeintMultiplier, isFeintEligible, rollFeintAttempt, rollFeintCooldownDuration } from '../game/aiFeints';
@@ -105,6 +106,12 @@ export function createSimGrifballGroundOwner(botId: string, scriptedBots: Readon
         },
       },
       opportunity: { targetAirborne: o.prediction.targetAirborne, enemyInKillRange: o.range.enemyInKillRange,
+        resolveRunnerPursuitLaunch: () => {
+          const plan = ai.grifballTeamPlan, assignment = plan.assignments.get(botId);
+          if (!assignment?.defense?.pursuit) return { kind: 'ordinary' };
+          return resolveGrifballRunnerPursuitLaunch(assignment,
+            createSimGrifballTacticalSnapshot(state, { scriptedBots, tactics: plan.snapshot?.tactics }), target.id);
+        },
         selfGrounded: o.range.selfGrounded, swordForbidden: a.swordForbidden, hammerForbidden: a.hammerForbidden,
         swapLockoutRemaining: weapon.observedSwapLockout, swapFeintActive: (ai.weaponSwapFeintTimers.get(botId) ?? 0) > 0,
         comboActive: priorities.combo.frame.comboActive, lungeDistanceToTarget: o.prediction.targetAirborne

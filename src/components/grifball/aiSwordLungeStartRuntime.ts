@@ -18,6 +18,7 @@ export function tryStartAISwordLungeForCombatant<TSelf>({
   lungeDistanceToTarget,
   triggerCombatantLunge,
   recordCombatantObservation,
+  interceptPoint,
 }: {
   self: TSelf;
   target: TacticalTargetCandidate;
@@ -34,12 +35,14 @@ export function tryStartAISwordLungeForCombatant<TSelf>({
     vel: THREE.Vector3
   ) => void;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
+  /** Fresh, physically checked ground pursuit aim. Ordinary duels retain learned aim bias. */
+  interceptPoint?: { x: number; z: number };
 }): boolean {
-  const lungeDir = target.pos.clone().sub(pos);
+  const lungeDir = (interceptPoint ? new THREE.Vector3(interceptPoint.x, pos.y, interceptPoint.z) : target.pos.clone()).sub(pos);
   if (!targetAirborne) lungeDir.y = 0;
   if (lungeDir.lengthSq() <= 0.0001) return false;
 
-  if (playerModel) {
+  if (playerModel && !interceptPoint) {
     const biased = applyLungeAimBias(lungeDir.x, lungeDir.z, playerModel);
     lungeDir.x = biased.x;
     lungeDir.z = biased.z;

@@ -1,4 +1,5 @@
 import { simulationRandom } from '../../game/simulationRandom';
+import type { RunnerPursuitLaunch } from '../../game/aiGrifballRunnerPursuitLaunch';
 import * as THREE from 'three';
 import {
   canAttemptLungeFakeout,
@@ -87,6 +88,7 @@ export function resolveAIGroundAttackOpportunityForCombatant<TSelf>({
   getTargetPlayerModel,
   triggerCombatantLunge,
   recordCombatantObservation,
+  resolveRunnerPursuitLaunch,
   random = simulationRandom,
 }: {
   state: Pick<GrifballRuntimeState, 'settings'>;
@@ -133,6 +135,8 @@ export function resolveAIGroundAttackOpportunityForCombatant<TSelf>({
   ) => void;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
   random?: () => number;
+  /** Lazy observation: only evaluate after readiness, chance and feint arbitration. */
+  resolveRunnerPursuitLaunch?: () => RunnerPursuitLaunch;
 }): AIGroundAttackOpportunityResult {
   let feintLungeFakeout = false;
   let currentActiveWeapon = activeWeapon;
@@ -224,13 +228,21 @@ export function resolveAIGroundAttackOpportunityForCombatant<TSelf>({
         frame.aiState = 'DANCING_FORWARD';
         frame.timer = tuning.lungeFakeoutForwardTimer;
       } else {
+        const pursuit = !swordForbidden && !comboActive && !swapFeintActive && selfGrounded && !targetAirborne && state.settings.gameMode === 'grifball'
+          ? resolveRunnerPursuitLaunch?.() : undefined;
+        // Decline only this uncommitted launch; the ordinary movement FSM can
+        // return to its ground cut. No additional clocks or randomness are spent.
+        if (pursuit?.kind === 'hold') return { mode: 'continue', activeWeapon: currentActiveWeapon,
+          canStartWeaponAction: currentCanStartWeaponAction, aiState: frame.aiState, timer: frame.timer,
+          weaponState: frame.weaponState, feintLungeFakeout };
         if (!tryStartAISwordLungeForCombatant({
           self,
           target,
           pos: frame.pos,
           vel: frame.vel,
           targetAirborne,
-          playerModel: getTargetPlayerModel(target.id),
+          playerModel: pursuit?.kind === 'intercept' ? null : getTargetPlayerModel(target.id),
+          interceptPoint: pursuit?.kind === 'intercept' ? pursuit.point : undefined,
           botId,
           lungeDistanceToTarget,
           triggerCombatantLunge,

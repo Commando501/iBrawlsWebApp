@@ -21,7 +21,7 @@ export type ScriptedAIGroundOpportunity = Pick<OpportunityInput,
   'targetAirborne' | 'enemyInKillRange' | 'selfGrounded' | 'swordForbidden' |
   'swapLockoutRemaining' | 'swapFeintActive' | 'comboActive' | 'lungeDistanceToTarget' |
   'hasVerticalLungeLine' | 'combatDistanceToTarget' | 'aggressiveLungeMult' | 'tuning' |
-  'startWeaponSwapFeintTimer' | 'getTargetPlayerModel' | 'recordCombatantObservation'> & { hammerForbidden: boolean };
+  'startWeaponSwapFeintTimer' | 'getTargetPlayerModel' | 'recordCombatantObservation' | 'resolveRunnerPursuitLaunch'> & { hammerForbidden: boolean };
 
 type EngineFields = 'settings' | 'frame' | 'target' | 'botHP' | 'botId' | 'dt' | 'savedVelY' |
   'startOffensiveHammerJump' | 'playDash' | 'triggerCombatantAttack';
@@ -64,6 +64,8 @@ function validateRequest(state: SimState, actor: SimCombatant, request: Scripted
   const p = request?.policy, m = request?.memory;
   const o = request?.opportunity;
   if (o) {
+    if (o.resolveRunnerPursuitLaunch !== undefined && typeof o.resolveRunnerPursuitLaunch !== 'function')
+      throw new Error('Invalid ground opportunity callback: resolveRunnerPursuitLaunch');
     for (const key of ['targetAirborne', 'enemyInKillRange', 'selfGrounded', 'swordForbidden', 'hammerForbidden',
       'swapFeintActive', 'comboActive', 'hasVerticalLungeLine'] as const)
       if (typeof o[key] !== 'boolean') throw new Error(`Invalid ground opportunity flag: ${key}`);
@@ -163,6 +165,7 @@ export function executeScriptedAIGround(state: SimState, actor: SimCombatant, se
       random: atPose(policy.random), tryFeintRoll: atPose(policy.tryFeintRoll), commitFeint: atPose(policy.commitFeint),
       startWeaponSwapFeintTimer: atPose(o.startWeaponSwapFeintTimer), getTargetPlayerModel: atPose(o.getTargetPlayerModel),
       recordCombatantObservation: atPose(o.recordCombatantObservation),
+      resolveRunnerPursuitLaunch: o.resolveRunnerPursuitLaunch ? atPose(o.resolveRunnerPursuitLaunch) : undefined,
       constrainCombatantToArena: () => {
         actor.grounded = constrainCombatantToArenaBounds({ pos: frame.pos, vel: frame.vel,
           activeCustomMap: state.map, arenaRadius: state.map.arenaRadius }).grounded || frame.pos.y <= .0001;
